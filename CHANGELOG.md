@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- Auto-update works for anyone, without the GitHub CLI or a login: it reads the public releases over HTTPS (one API call per check, within the 60 an hour GitHub allows unauthenticated) and downloads `bundle.zip` from its public link. The CI check moves to the publisher, which releases a bundle only after tare.tools CI passed on `main` for its OS commit and says so in the notes; an installed copy takes only such releases. An installation older than the newest hundred releases finds its own by name instead of never updating.
 - The isolation sweep creates the folder its pytest runs use as `--basetemp` parent: pytest creates `--basetemp` only inside an existing folder, so the first sweep on main failed every run at setup.
 - A manual CI run with the `isolation` input looks for tests that pass only by luck of order or company: each shard runs every one of its test files alone, then all of them in a shuffled order seeded by the run id (`scripts/ci_suite.py isolate`), and reports what failed, without touching the test map.
 - `test_streamed_reply_redraws_only_its_tail_and_reads_the_same_as_one_message` flushes the live reply before reading it: the 80 ms flush timer had not ticked after the last block on a loaded Linux runner, so the sampled view missed it.

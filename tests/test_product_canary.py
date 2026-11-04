@@ -174,19 +174,18 @@ def test_auto_qualification_refusal_keeps_selection_and_bounds_failed_storage(tm
     def latest(repo,current,*,after):
         looked.append(after)
         return None if after==identifier else 'product-'+identifier[:16]
-    def download(argv,**kw):
-        if argv[:3]!=['gh','release','download']:return None
-        downloads.append(argv)
-        destination=argv[argv.index('--dir')+1]
+    def download(repo,tag,folder):
+        downloads.append(tag)
         from pathlib import Path
-        with zipfile.ZipFile(Path(destination)/'bundle.zip','w') as archive:
+        with zipfile.ZipFile(Path(folder)/'bundle.zip','w') as archive:
             for path in candidate.iterdir():archive.write(path,path.name)
     def refused(home,old,new):
         value={'status':outcome,'reason':'controlled failure','incumbent':old,'candidate':new}
         product.write_json(home/'last-catalog-trial.json',value)
         return value
     monkeypatch.setattr(product,'latest_published',latest)
-    monkeypatch.setattr(product.subprocess,'run',download)
+    monkeypatch.setattr(product,'download_bundle',download)
+    monkeypatch.setattr(product.subprocess,'run',lambda *a,**k:None)
     monkeypatch.setattr(product,'qualify_transition',refused)
     result=product.auto_update(home)
     actual=product.state(home)

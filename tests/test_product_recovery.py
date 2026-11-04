@@ -91,19 +91,16 @@ def test_manual_rollback_pauses_and_resume_is_byte_idempotent(recovery, monkeypa
 
 
 def test_rejected_B_excludes_all_older_candidates_but_allows_C(monkeypatch):
-    rows = [{'tagName': 'product-' + value[:16], 'publishedAt': str(i), 'createdAt': str(i)}
-            for i, value in enumerate((A, B, C))]
-    class Reply:
-        stdout = json.dumps(rows)
-    monkeypatch.setattr(product.subprocess, 'run', lambda *a, **k: Reply())
-    asked = []
-    monkeypatch.setattr(product, 'ci_green', lambda repo, tag: asked.append(tag) or True)
-    assert product.latest_published('fixture', A, after=B) == 'product-' + C[:16]
-    assert asked == ['product-' + C[:16]]
-    asked.clear()
-    assert product.latest_published('fixture', C, after=B) is None
-    assert product.latest_published('fixture', A, after='d' * 64) is None
-    assert asked == []
+    import urllib.error
+    rows = [{'tag_name': 'product-' + value[:16], 'published_at': str(i), 'created_at': str(i),
+             'body': product.CI_PASSED + 'https://ci/runs/' + str(i)} for i, value in enumerate((A, B, C))]
+    def api(path):
+        if path.endswith('?per_page=100'):
+            return rows
+        raise urllib.error.HTTPError(path, 404, 'Not Found', {}, None)  # no release for an unknown bundle
+    assert product.latest_published('fixture', A, after=B, api=api) == 'product-' + C[:16]
+    assert product.latest_published('fixture', C, after=B, api=api) is None
+    assert product.latest_published('fixture', A, after='d' * 64, api=api) is None
 
 
 def _lock_contender(home, queue):
@@ -169,12 +166,11 @@ def test_installation_without_managed_serve_can_still_auto_update(recovery, monk
     monkeypatch.setattr(product, '_port_open', lambda: False)
     monkeypatch.setattr(product.WindowsServeTask, 'available', lambda self: False)
     monkeypatch.setattr(product, 'latest_published', lambda *a, **kw: 'product-'+B[:16])
-    def download(argv, **kw):
-        assert argv[:3] == ['gh', 'release', 'download']
-        with zipfile.ZipFile(home/argv[argv.index('--dir')+1]/'bundle.zip', 'w') as archive:
+    def download(repo, tag, folder):
+        assert (repo, tag) == (product.UPDATE_REPO, 'product-'+B[:16])
+        with zipfile.ZipFile(home/folder/'bundle.zip', 'w') as archive:
             archive.writestr('bundle.json', '{}')
-        return subprocess.CompletedProcess(argv, 0)
-    monkeypatch.setattr(product.subprocess, 'run', download)
+    monkeypatch.setattr(product, 'download_bundle', download)
     monkeypatch.setattr(product, '_install_locked', lambda bundle, home: selected(home, B, A))
     monkeypatch.setattr(product, 'published_models', lambda: [])
     monkeypatch.setattr(product, 'sync_vscode', lambda models: [])
