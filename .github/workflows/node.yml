@@ -1,7 +1,7 @@
 name: Node service
 
-# node/ is the GPU node service: a package of its own whose lease tests need Linux flock. It runs here on a
-# GitHub-hosted runner instead of the self-hosted suites, which skip node/ (scripts/ci_suite.py).
+# node/ is the GPU node service: a package of its own whose lease tests need Linux flock. Its tests run here, on a
+# Linux runner; the platform suites in ci.yml skip node/ (scripts/ci_suite.py).
 on:
   workflow_dispatch:
   push:
