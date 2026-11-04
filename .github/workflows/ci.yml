@@ -2,6 +2,11 @@ name: tare.tools CI
 
 on:
   workflow_dispatch:
+    inputs:
+      isolation:
+        description: 'Run every test file alone, then all in a shuffled order, to find tests that pass only by luck of order or company'
+        type: boolean
+        default: false
   # Pushes run the tests that ran the changed code; this nightly run proves everything and refreshes
   # the test map (scripts/ci_suite.py).
   schedule:
@@ -47,7 +52,7 @@ jobs:
           - { platform: windows, shard: 5, shards: 6, runner: "${{ vars.CI_RUNNER_WINDOWS || '\"windows-latest\"' }}" }
           - { platform: windows, shard: 6, shards: 6, runner: "${{ vars.CI_RUNNER_WINDOWS || '\"windows-latest\"' }}" }
     runs-on: ${{ fromJSON(matrix.runner) }}
-    timeout-minutes: ${{ matrix.platform == 'windows' && 40 || 30 }}
+    timeout-minutes: ${{ inputs.isolation && 120 || (matrix.platform == 'windows' && 40 || 30) }}
     env:
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: core.longpaths
@@ -135,7 +140,7 @@ jobs:
         run: python satellites/tare.tools.kernel/tools/install_test_ripgrep.py
 
       - name: Quick contract checks
-        if: steps.slice.outputs.tests == 'true'
+        if: steps.slice.outputs.tests == 'true' && !inputs.isolation
         timeout-minutes: 5
         run: >-
           python -B scripts/ci_suite.py quick
@@ -144,15 +149,23 @@ jobs:
           --map "${{ steps.paths.outputs.map }}"
 
       - name: Selected or full regression
-        if: steps.slice.outputs.tests == 'true'
+        if: steps.slice.outputs.tests == 'true' && !inputs.isolation
         run: >-
           python -B scripts/ci_suite.py regression
           --output "${{ steps.paths.outputs.output }}"
           --basetemp "${{ runner.temp }}/pytest-regression"
           --map "${{ steps.paths.outputs.map }}"
 
+      - name: Isolation sweep
+        # A dispatched run plans the full suite; each shard runs its files alone, then shuffled (ci_suite.py isolate).
+        if: steps.slice.outputs.tests == 'true' && inputs.isolation
+        run: >-
+          python -B scripts/ci_suite.py isolate --seed ${{ github.run_id }}
+          --output "${{ steps.paths.outputs.output }}"
+          --basetemp "${{ runner.temp }}/pytest-isolation"
+
       - name: Report scope and test durations
-        if: always() && steps.slice.outputs.tests == 'true'
+        if: always() && steps.slice.outputs.tests == 'true' && !inputs.isolation
         run: python -B scripts/ci_suite.py summary --output "${{ steps.paths.outputs.output }}"
 
       - name: Preserve validation evidence
@@ -181,8 +194,9 @@ jobs:
   result:
     name: Tests (${{ matrix.platform }})
     needs: shard
+    # An isolation sweep leaves the test map alone; its shards are the verdict.
     if: >-
-      !cancelled() && (github.event_name != 'pull_request'
+      !cancelled() && !inputs.isolation && (github.event_name != 'pull_request'
       || github.event.pull_request.head.repo.full_name == github.repository
       || (!vars.CI_RUNNER_LINUX && !vars.CI_RUNNER_WINDOWS))
     strategy:

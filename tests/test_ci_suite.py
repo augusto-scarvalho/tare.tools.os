@@ -705,3 +705,25 @@ def test_merge_freshens_the_map_only_when_every_shard_finished_its_share(root, m
     red = shard(3, [], ['tests/test_b.py'], [], code=1)
     (red/'shard.json').write_text(json.dumps({'shard': 2, 'shards': 2, 'quick': [], 'regression': ['tests/test_b.py']}))
     assert ci.merge([one, red], 2, root/'merged-red', store) == 1  # a red shard fails the platform
+
+
+def test_isolate_finds_a_test_that_passes_only_after_another(root, monkeypatch):
+    monkeypatch.chdir(root)
+    monkeypatch.delenv('GITHUB_STEP_SUMMARY', raising=False)
+    # In-process state, like a module imported for the first time under another test's patch: a file on disk
+    # would outlive each separate run and hide the dependency.
+    (root/'tests/shared_state.py').write_text('ready = False\n')
+    (root/'tests/test_a.py').write_text('import shared_state\n\ndef test_sets():\n    shared_state.ready = True\n')
+    (root/'tests/test_b.py').write_text('import shared_state\n\ndef test_needs_a():\n    assert shared_state.ready\n')
+    output = root/'out'
+    output.mkdir()
+    (output/'shard.json').write_text(json.dumps({'shard': 1, 'shards': 1, 'quick': ['tests/test_leaf.py'],
+                                                 'regression': ['tests/test_a.py', 'tests/test_b.py']}))
+    assert ci.isolate(output, root/'tmp', seed=7) == 1
+    receipt = json.loads((output/'isolation/isolation.json').read_text())
+    assert list(receipt['alone_failed']) == ['tests/test_b.py']  # alone it has no marker
+    assert receipt['alone_failed']['tests/test_b.py'] == ['tests.test_b::test_needs_a']
+    assert receipt['seed'] == 7 and sorted(receipt['shuffled_order']) == [
+        'tests/test_a.py', 'tests/test_b.py', 'tests/test_leaf.py']
+    (root/'tests/test_b.py').write_text('def test_alone():\n    pass\n')
+    assert ci.isolate(output, root/'tmp2', seed=7) == 0

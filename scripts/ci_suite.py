@@ -14,6 +14,7 @@ import ast
 import json
 import os
 from pathlib import Path, PurePosixPath
+import random
 import re
 import subprocess
 import sys
@@ -741,6 +742,56 @@ def merge(inputs, shards, output, map_path=None):
     return 1 if problems or value is None else 0
 
 
+def failed_cases(xml):
+    """Test ids that failed or errored in a JUnit report."""
+    try:
+        cases = list(ET.parse(xml).iter('testcase'))
+    except (OSError, ET.ParseError):
+        return []
+    return [case.get('classname', '')+'::'+case.get('name', '') for case in cases
+            if case.find('failure') is not None or case.find('error') is not None]
+
+
+def isolate(output, basetemp, seed=None):
+    """Find tests that pass only by luck of order or company: run each of this shard's test files alone, then all
+    of them in a shuffled file order (pytest runs files in the order given). The seed is recorded so a shuffled
+    failure can be replayed with `--seed`. The test map is neither read nor written."""
+    part = json.loads((output/'shard.json').read_text(encoding='utf-8'))
+    files = sorted({*part['quick'], *part['regression']})
+    seed = random.randrange(2**32) if seed is None else seed
+    folder = output/'isolation'
+    folder.mkdir(parents=True, exist_ok=True)
+
+    def pytest(targets, name):
+        return subprocess.run([sys.executable, '-B', '-m', 'pytest', *targets, '-q', '-p', 'no:cacheprovider',
+                               '--junitxml='+str(folder/(name+'.xml')), '--basetemp', str(Path(basetemp)/name)]
+                              ).returncode
+    alone = {name: pytest([name], f'alone-{index}') for index, name in enumerate(files)}
+    order = random.Random(seed).sample(files, len(files))
+    shuffled = pytest(order, 'shuffled') if order else 0
+    passed = (0, 5)  # 5: nothing collected (every test of the file skipped on this platform)
+    receipt = {'seed': seed, 'files': len(files),
+               'alone_failed': {name: failed_cases(folder/f'alone-{index}.xml') or code
+                                for index, (name, code) in enumerate(alone.items()) if code not in passed},
+               'shuffled_exit_code': shuffled, 'shuffled_failed': failed_cases(folder/'shuffled.xml'),
+               'shuffled_order': order}
+    (folder/'isolation.json').write_text(json.dumps(receipt, indent=2)+'\n', encoding='utf-8')
+    lines = ['## Test isolation', '', f"{len(files)} test files, each alone and then all in a shuffled order "
+             f"(seed `{seed}`).", '']
+    lines += [f'- alone: `{name}` failed: {cases}' for name, cases in receipt['alone_failed'].items()]
+    lines += [f'- shuffled: `{case}` failed' for case in receipt['shuffled_failed']]
+    if shuffled not in passed and not receipt['shuffled_failed']:
+        lines.append(f'- shuffled: pytest exited {shuffled} without a failed case')
+    if len(lines) == 4:
+        lines.append('No test depends on order or company here.')
+    text = '\n'.join(lines)+'\n'
+    if os.environ.get('GITHUB_STEP_SUMMARY'):
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as stream:
+            stream.write(text)
+    print(text)
+    return 0 if not receipt['alone_failed'] and shuffled in passed else 1
+
+
 def summary(output):
     value = json.loads((output/'plan.json').read_text(encoding='utf-8'))
     lines = ['## CI validation', '', 'Scope: **'+value['scope']+'**; reason: `'+value['reason']+'`.',
@@ -775,7 +826,9 @@ def summary(output):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('plan', 'check', 'slice', 'quick', 'regression', 'summary', 'merge'))
+    parser.add_argument('action', choices=('plan', 'check', 'slice', 'quick', 'regression', 'summary', 'merge',
+                                           'isolate'))
+    parser.add_argument('--seed', type=int, help='isolate: the shuffled order to replay')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--basetemp', type=Path)
     parser.add_argument('--map', type=Path, help="the test map (CI keeps it in the Actions cache)")
@@ -798,6 +851,10 @@ def main(argv=None):
         if not args.shards:
             parser.error('--shards is required for merge')
         return merge(args.inputs, args.shards, args.output, args.map)
+    elif args.action == 'isolate':
+        if args.basetemp is None:
+            parser.error('--basetemp is required for isolate')
+        return isolate(args.output, args.basetemp, args.seed)
     elif args.action == 'summary':
         summary(args.output)
     elif args.action == 'check':
