@@ -167,37 +167,48 @@ def test_files_tare_cannot_safely_edit_are_left_as_they_are(tmp_path):
     assert product.sync_vscode([{'id': 'tare'}], appdata=tmp_path/'no-vscode') == []  # VS Code not installed
 
 
-def test_the_newest_publication_wins_when_releases_share_a_commit(monkeypatch):
-    # gh lists newest first, and both releases of one OS commit carry that commit's date as createdAt
-    listed = [{'tagName': 'product-new', 'createdAt': '2026-10-02T00:29:51Z', 'publishedAt': '2026-10-02T00:38:21Z'},
-              {'tagName': 'product-old', 'createdAt': '2026-10-02T00:29:51Z', 'publishedAt': '2026-10-02T00:34:02Z'}]
-    monkeypatch.setattr(product, 'ci_green', lambda repo, tag: True)
-    monkeypatch.setattr(product.subprocess, 'run',
-                        lambda argv, **kw: subprocess.CompletedProcess(argv, 0, stdout=json.dumps(listed)))
-    assert product.latest_published('owner/repo') == 'product-new'
+def release(tag, published, passed=True):
+    # The publisher writes the CI line into the notes only after CI passed on main for the release's commit.
+    return {'tag_name': tag, 'created_at': '2026-10-02T00:29:51Z', 'published_at': published, 'draft': False,
+            'body': 'Product bundle for Python 3.12 on Windows: ...'
+                    + ('\n\n' + product.CI_PASSED + 'https://ci/runs/7' if passed else '')}
 
 
-def test_only_a_release_whose_commit_passed_ci_on_main_is_installed(monkeypatch):
-    # A push publishes its release in minutes; its CI takes half an hour and may end red.
-    listed = [{'tagName': f'product-{n}', 'createdAt': f'2026-10-05T0{n}:00:00Z'} for n in (1, 2, 3)]
-    runs = {'product-3': [{'conclusion': None, 'headBranch': 'main'}],          # still running
-            'product-2': [{'conclusion': 'failure', 'headBranch': 'main'}],     # red
-            'product-1': [{'conclusion': 'success', 'headBranch': 'main'}]}
+def test_the_newest_publication_wins_when_releases_share_a_commit():
+    # Both releases of one OS commit carry that commit's date as their created time.
+    listed = [release('product-new', '2026-10-02T00:38:21Z'), release('product-old', '2026-10-02T00:34:02Z')]
+    assert product.latest_published('owner/repo', api=lambda path: listed) == 'product-new'
+
+
+def test_only_a_release_ci_passed_is_installed_and_never_an_older_one():
+    listed = [release('product-3', '2026-10-05T03:00:00Z', passed=False),  # no CI line: published before the gate
+              release('product-2', '2026-10-05T02:00:00Z'),
+              release('product-1', '2026-10-05T01:00:00Z')]
     asked = []
-    def run(argv, **kw):
-        if argv[:2] == ['gh', 'api']:
-            return subprocess.CompletedProcess(argv, 0, stdout=argv[2].rsplit('/', 1)[1] + '\n')
-        if argv[:3] == ['gh', 'run', 'list']:
-            asked.append(argv[argv.index('--commit') + 1])
-            return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(runs[argv[argv.index('--commit') + 1]]))
-        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(listed))
-    monkeypatch.setattr(product.subprocess, 'run', run)
-    assert product.latest_published('owner/repo') == 'product-1' and asked == ['product-3', 'product-2', 'product-1']
-    # Never back: with product-2 installed, the older green product-1 is not a candidate (it would come forward again).
-    asked.clear()
-    assert product.latest_published('owner/repo', current='2' + 'f' * 63) is None and asked == ['product-3']
-    runs['product-3'] = [{'conclusion': 'success', 'headBranch': 'main'}]
-    assert product.latest_published('owner/repo', current='2' + 'f' * 63) == 'product-3'
-    runs['product-1'] = [{'conclusion': 'success', 'headBranch': 'dev'}]  # green elsewhere is not green on main
-    runs['product-3'] = [{'conclusion': 'failure', 'headBranch': 'main'}]
-    assert product.latest_published('owner/repo') is None
+    def api(path):
+        asked.append(path)
+        return listed
+    assert product.latest_published('owner/repo', api=api) == 'product-2'
+    assert asked == ['/repos/owner/repo/releases?per_page=100']  # one call, no CI lookups, no login
+    # Never back: with product-2 installed, the older product-1 is not a candidate (it would come forward again).
+    assert product.latest_published('owner/repo', current='2' + 'f' * 63, api=api) is None
+    listed[0]['body'] += '\n\n' + product.CI_PASSED + 'https://ci/runs/8'
+    assert product.latest_published('owner/repo', current='2' + 'f' * 63, api=api) == 'product-3'
+    assert product.latest_published('owner/repo', after='3' + 'f' * 63, api=api) is None  # a rejected candidate is a floor
+
+
+def test_an_installed_release_older_than_the_listed_hundred_is_found_by_name():
+    import urllib.error
+    listed = [release('product-new', '2026-11-04T00:00:00Z')]
+    asked = []
+    def api(path):
+        asked.append(path)
+        if path.endswith('/releases?per_page=100'):
+            return listed
+        if path.endswith('/releases/tags/product-' + 'a' * 16):
+            return release('product-' + 'a' * 16, '2026-09-01T00:00:00Z')
+        raise urllib.error.HTTPError(path, 404, 'Not Found', {}, None)
+    assert product.latest_published('owner/repo', current='a' * 64, api=api) == 'product-new'
+    assert asked[-1] == '/repos/owner/repo/releases/tags/product-' + 'a' * 16
+    # A release the repository no longer has: its place in the order is unknown, so nothing is installed.
+    assert product.latest_published('owner/repo', current='b' * 64, api=api) is None

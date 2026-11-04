@@ -445,11 +445,14 @@ update and rollback.
 Maintainers publish releases: every push that changes `main` in one of the five repositories can become a
 release. `python scripts/ops/publish_product.py` builds the bundle from its own mirrors (in
 `%LOCALAPPDATA%/tare.tools/publisher/mirrors`, never the development checkouts), tests the installation in a
-disposable folder and publishes the GitHub release `product-<id>`. On the maintainers' machine a scheduled task,
-`Tare-Publish`, runs it.
+disposable folder and publishes the GitHub release `product-<id>`, but only once tare.tools CI passed on `main` for
+the OS commit it was built from; its notes then end with `CI passed on main: <run>`. On the maintainers' machine a
+scheduled task, `Tare-Publish`, runs it.
 
-On each machine, the `Tare-Update` task runs `tare.cmd auto-update` at logon and every 5 minutes (it uses the
-already authenticated `gh`). It installs the new release next to the current one and uses the
+On each machine, the `Tare-Update` task runs `tare.cmd auto-update` at logon and every 5 minutes. It reads the
+public releases over HTTPS (one GitHub API call, two when the installed release is older than the newest hundred; no
+login and no GitHub CLI), takes the newest release whose notes say CI passed and that is newer than the installed
+one, and downloads its `bundle.zip`. It installs the new release next to the current one and uses the
 I2I-02 transition described above to reconcile Serve safely. The TUI is never
 closed: it warns once that an update is installed, and the next launch
 already uses the new version; conversations continue where they stopped.

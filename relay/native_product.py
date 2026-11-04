@@ -261,38 +261,54 @@ UPDATE_REPO = 'augusto-scarvalho/tare.tools.os'  # product releases are tagged p
 SERVE_TASK, SERVE_HEALTH = 'Tare-Serve', 'http://127.0.0.1:8790/health'
 
 
-def ci_green(repo, tag):
-    """Whether the OS commit a release was built from passed tare.tools CI on main. A push publishes its release in
-    minutes and CI takes half an hour: a commit whose CI is running, red or was cancelled is not installed."""
-    def gh(*args):
-        return subprocess.run(['gh', *args], check=True, capture_output=True, text=True, timeout=120).stdout
-    sha = gh('api', f'repos/{repo}/commits/{tag}', '--jq', '.sha').strip()
-    runs = json.loads(gh('run', 'list', '--repo', repo, '--commit', sha, '--workflow', 'ci.yml', '--json',
-                         'conclusion,headBranch') or '[]') if sha else []
-    return any(r.get('conclusion') == 'success' and r.get('headBranch') == 'main' for r in runs)
+# The publisher releases a bundle only after tare.tools CI passed on main for its OS commit, and says so in the notes
+# (scripts/ops/publish_product.py, CI_PASSED). An installed copy takes only such releases and never asks about CI.
+CI_PASSED = 'CI passed on main: '
 
 
-def latest_published(repo, current=None, *, after=None):
-    """Tag of the newest product release whose commit passed CI on main and that is newer than the `current`
-    bundle, through the signed-in GitHub CLI (the repository is private); None while none is. Never an older
-    release: going back to a green one would install code without this gate, which would come forward again."""
-    listed = subprocess.run(['gh', 'release', 'list', '--repo', repo, '--limit', '30', '--json',
-                             'tagName,createdAt,publishedAt'], check=True, capture_output=True, text=True, timeout=120).stdout
-    # A release's createdAt is its tagged commit's date: two releases of one OS commit (a republish, a satellite-only
-    # change) tie on it, and the older one won. The publication time orders them.
-    tags = sorted((r for r in json.loads(listed) if r['tagName'].startswith('product-')),
-                  key=lambda r: r.get('publishedAt') or r['createdAt'])
-    boundaries = [value for value in (current, after) if value]
-    positions = []
-    for boundary in boundaries:
-        matches = [i for i, row in enumerate(tags)
-                   if boundary.startswith(row['tagName'].removeprefix('product-'))]
-        if len(matches) != 1:
-            return None  # bounded catalog cannot establish order; never infer a downgrade
-        positions.append(matches[0])
-    newer = [row['tagName'] for row in reversed(tags[max(positions) + 1:] if positions else tags)]
-    # ponytail: the 10 newest only (two gh calls each); a longer red streak waits for a green push.
-    return next((tag for tag in newer[:10] if ci_green(repo, tag)), None)
+def github(path):
+    """GET from GitHub's REST API over HTTPS. The repository is public: no login, no GitHub CLI (an unauthenticated
+    client may make 60 calls an hour; an update check makes one, two when the installed release is old)."""
+    import urllib.request
+    request = urllib.request.Request('https://api.github.com' + path,
+                                     headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'tare.tools'})
+    with urllib.request.urlopen(request, timeout=60) as reply:
+        return json.load(reply)
+
+
+def latest_published(repo, current=None, *, after=None, api=github):
+    """Tag of the newest product release that CI passed (its notes say so) and that is newer than the `current`
+    bundle and the `after` one; None while none is. Never an older release: going back would install code that
+    the next update replaces again."""
+    import urllib.error
+    # A release's created time is its tagged commit's date: two releases of one OS commit (a republish, a
+    # satellite-only change) tie on it. The publication time orders them.
+    def when(row):
+        return row.get('published_at') or row['created_at']
+    releases = sorted((row for row in api(f'/repos/{repo}/releases?per_page=100')
+                       if row['tag_name'].startswith('product-') and not row.get('draft')), key=when)
+    floor = ''
+    for boundary in (value for value in (current, after) if value):
+        row = next((row for row in releases if boundary.startswith(row['tag_name'].removeprefix('product-'))), None)
+        if row is None:  # older than the newest hundred: ask for it by name
+            try:
+                row = api(f'/repos/{repo}/releases/tags/product-{boundary[:16]}')
+            except urllib.error.HTTPError as exc:
+                if exc.code == 404:
+                    return None  # its place in the order is unknown; never infer a downgrade
+                raise
+        floor = max(floor, when(row))
+    passed = [row for row in releases if when(row) > floor and CI_PASSED in (row.get('body') or '')]
+    return passed[-1]['tag_name'] if passed else None
+
+
+def download_bundle(repo, tag, folder):
+    """The release's bundle.zip into folder, from its public download link."""
+    import urllib.request
+    request = urllib.request.Request(f'https://github.com/{repo}/releases/download/{tag}/bundle.zip',
+                                     headers={'User-Agent': 'tare.tools'})
+    with urllib.request.urlopen(request, timeout=1800) as reply, open(Path(folder)/'bundle.zip', 'wb') as target:
+        shutil.copyfileobj(reply, target)
 
 
 def serve_health(url=SERVE_HEALTH):
@@ -506,8 +522,7 @@ def _auto_update_locked(home, *, repo, wait_seconds):
     tag = latest_published(repo, selected['current'], after=policy.get('after'))
     if tag and not (selected['current'] or '').startswith(tag.removeprefix('product-')):
         with tempfile.TemporaryDirectory(dir=home, prefix='download-') as folder:
-            subprocess.run(['gh', 'release', 'download', tag, '--repo', repo, '--pattern', 'bundle.zip',
-                            '--dir', folder], check=True, capture_output=True, timeout=1800)
+            download_bundle(repo, tag, folder)
             with zipfile.ZipFile(Path(folder)/'bundle.zip') as archive:
                 archive.extractall(Path(folder)/'bundle')
             _require_pair(home, selected)

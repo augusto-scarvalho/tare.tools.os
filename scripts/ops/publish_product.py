@@ -207,6 +207,18 @@ def refresh_tools(state, *, force=False, peers=()):
         *[arg for peer in peers for arg in ('--peer',peer)]])
 
 
+CI_PASSED = 'CI passed on main: '  # installed copies take only releases whose notes carry it (native_product.py)
+
+
+def ci_passed(commit):
+    """The URL of a successful tare.tools CI run of this OS commit on main; None while it runs, failed or never ran."""
+    runs = json.loads(subprocess.run(['gh', 'run', 'list', '--repo', f"{OWNER}/{REPOS['os']}", '--commit', commit,
+                                      '--workflow', 'ci.yml', '--json', 'conclusion,headBranch,url'],
+                                     check=True, capture_output=True, text=True, timeout=120).stdout or '[]')
+    return next((run['url'] for run in runs
+                 if run.get('conclusion') == 'success' and run.get('headBranch') == 'main'), None)
+
+
 def publish(state, *, force=False, peers=(), tooling_commit=None):
     started = time.monotonic()
     mirrors, remote_heads = {}, {}
@@ -224,6 +236,11 @@ def publish(state, *, force=False, peers=(), tooling_commit=None):
         # Hooks, docs and tests are not in the product: note the heads, keep the release and the machines as they are.
         published.write_text(json.dumps({**last, 'heads': heads}, indent=2), encoding='utf-8')
         return {'status': 'no packaged change', 'tag': last.get('tag')}
+    passed = ci_passed(heads['os'])
+    if not passed:
+        # A release goes out only for a commit CI passed on main, so installed copies need not ask GitHub about CI
+        # (unauthenticated, they may make 60 API calls an hour). The heads stay unrecorded: the next run checks again.
+        return {'status': 'waiting for CI', 'commit': heads['os'], 'tag': last.get('tag')}
     work = state/'work'
     shutil.rmtree(work, ignore_errors=True)  # one build at a time; nothing of an earlier one is kept
     work.mkdir(parents=True)
@@ -252,7 +269,8 @@ def publish(state, *, force=False, peers=(), tooling_commit=None):
     versions = ', '.join(f"{s['package']} {s['version']} ({s['commit'][:7]})" for s in lock['sources'])
     subprocess.run(['gh', 'release', 'create', tag, archive, '--repo', f"{OWNER}/{REPOS['os']}",
                     '--title', f"tare.tools {next(s['version'] for s in lock['sources'] if s['id'] == 'os')}",
-                    '--notes', 'Product bundle for Python 3.12 on Windows: ' + versions], check=True)
+                    '--notes', 'Product bundle for Python 3.12 on Windows: ' + versions + '\n\n' + CI_PASSED + passed],
+                   check=True)
     record = {'heads': heads, 'tag': tag, 'bundle': identifier,
               'published': datetime.now(timezone.utc).isoformat(timespec='seconds'),
               'seconds': round(time.monotonic() - started)}

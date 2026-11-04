@@ -124,6 +124,7 @@ def test_ignored_remote_main_does_not_hide_later_qualified_pin_change(tmp_path, 
     def build(*args):
         raise RuntimeError('build_boundary')  # Stop before any actual build, download or publication.
     monkeypatch.setattr(publisher, 'build_python', build)
+    monkeypatch.setattr(publisher, 'ci_passed', lambda commit: 'https://ci/runs/1')
     assert publisher.publish(state) == {'status':'unchanged','tag':'product-qualified'}
     assert marker.read_bytes() == original and seen == []
     selected.update(os='c'*40, backlog=remote['backlog'])
@@ -132,6 +133,30 @@ def test_ignored_remote_main_does_not_hide_later_qualified_pin_change(tmp_path, 
         publisher.publish(state)
     assert seen == [(previous, selected)]
     assert marker.read_bytes() == original
+
+
+def test_a_release_waits_until_ci_passed_on_main_for_its_os_commit(tmp_path, monkeypatch):
+    import hashlib
+    from relay import native_product
+    assert publisher.CI_PASSED == native_product.CI_PASSED  # the line installed copies look for in the notes
+    heads = {key: hashlib.sha1(key.encode()).hexdigest() for key in publisher.REPOS}
+    state = tmp_path/'publisher'
+    state.mkdir()
+    monkeypatch.setattr(publisher, 'mirror', lambda state, key: (key+'-mirror', heads[key]))
+    monkeypatch.setattr(publisher, 'lock_for', lambda mirrors, h: {
+        'sources': [{'id': key, 'commit': value} for key, value in heads.items()], 'build_tools': {}})
+    monkeypatch.setattr(publisher, 'build_python', lambda *a: pytest.fail('built before CI passed'))
+    runs = [{'conclusion': None, 'headBranch': 'main', 'url': 'https://ci/runs/2'},          # still running
+            {'conclusion': 'success', 'headBranch': 'dev', 'url': 'https://ci/runs/1'}]      # green elsewhere
+    asked = []
+    def run(argv, **kw):
+        asked.append(argv[argv.index('--commit') + 1])
+        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(runs))
+    monkeypatch.setattr(publisher.subprocess, 'run', run)
+    assert publisher.publish(state) == {'status': 'waiting for CI', 'commit': heads['os'], 'tag': None}
+    assert asked == [heads['os']] and not (state/'published.json').exists()  # unrecorded: the next run asks again
+    runs[0]['conclusion'] = 'success'
+    assert publisher.ci_passed(heads['os']) == 'https://ci/runs/2'
 
 
 def test_only_changes_to_packaged_files_make_a_release(tmp_path):
