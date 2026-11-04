@@ -5,6 +5,14 @@ import tempfile
 
 import pytest
 
+# The kernel's CodexHttpClient subclasses compute_plane.native_models.NativeHttpClient, and relay imports its module
+# on first use. Tests replace NativeHttpClient with stand-in functions: imported for the first time under such a
+# patch, the subclass inherits from the function and the import fails. Import it once, before any test patches.
+try:
+    import compute_plane.native_codex_auth  # noqa: F401
+except ImportError:  # no kernel installed: the tests that need it skip themselves
+    pass
+
 
 @pytest.fixture(autouse=True)
 def disable_installed_flow_assessor(monkeypatch, tmp_path_factory):
