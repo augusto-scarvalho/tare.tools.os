@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- `test_powershell_read_host_with_live_display` waits up to 60 s for the PowerShell prompt and 30 s for the answer, each with its own ceiling, under a 120 s test limit: a cold `powershell.exe` on a loaded hosted Windows runner missed the shared 10 s. The loops still end as soon as the text appears (1.7 s locally).
 - The test session imports the kernel's Codex client module before any test replaces `NativeHttpClient`: imported for the first time under such a patch, `CodexHttpClient` inherited from a stand-in function and failed, so `test_work_parallel` broke whenever no earlier test in its shard had imported the module (it fails alone, too).
 - CI runs each platform in shards on separate runners, 4 on Linux and 6 on Windows: `scripts/ci_suite.py slice` gives each shard a share of the plan's test files balanced by their measured seconds, and `Tests (linux)` / `Tests (windows)` merge the shards into one verdict, the test map and the seconds (`ci_suite.py merge`). The full regression drops from about 28 (Linux) and 38 (Windows) minutes on one runner to about 7 per shard; required checks keep their names.
 - The rename dialog tests that check a finished save wait for the save worker before asserting: the save runs in a worker thread, and one UI pause was not enough on a slower runner (`test_ui_rename_write_failure_ui_unchanged` saw the dialog still saving on the hosted Windows runner).

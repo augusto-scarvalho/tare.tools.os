@@ -161,6 +161,7 @@ def test_pipe_panel_line_input_then_eof(tmp_path,monkeypatch):
 
 
 @pytest.mark.skipif(os.name != 'nt',reason='Windows PowerShell')
+@pytest.mark.timeout(120)  # a cold powershell.exe on a loaded runner can take well over the suite's 30 s
 def test_powershell_read_host_with_live_display(tmp_path):
     project = tmp_path/'project'; project.mkdir()
     terminals = ConsoleTerminals()
@@ -171,13 +172,16 @@ def test_powershell_read_host_with_live_display(tmp_path):
             argv=['powershell.exe','-NoLogo','-NoProfile','-Command',
                   "Write-Host 'SHELL_READY'; $answer = Read-Host 'Value'; Write-Output ('ACK:'+$answer)"])
         handle = started['handle']
-        deadline = time.monotonic()+10
+        # Ceilings, not delays: each loop ends as soon as its text appears. A cold PowerShell start on a loaded
+        # hosted Windows runner exceeded the earlier shared 10 s.
+        deadline = time.monotonic()+60
         while time.monotonic()<deadline:
             view = service.view(handle)['text']
             if view is not None and 'Value:' in view.plain: break
             time.sleep(.05)
         assert view is not None and 'Value:' in view.plain
         service.send(handle,'rendered\r')
+        deadline = time.monotonic()+30
         while time.monotonic()<deadline:
             view = service.view(handle)['text']
             if view is not None and 'ACK:rendered' in view.plain: break
