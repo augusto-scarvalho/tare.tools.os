@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- `test_streamed_reply_redraws_only_its_tail_and_reads_the_same_as_one_message` flushes the live reply before reading it: the 80 ms flush timer had not ticked after the last block on a loaded Linux runner, so the sampled view missed it.
 - `test_powershell_read_host_with_live_display` waits up to 60 s for the PowerShell prompt and 30 s for the answer, each with its own ceiling, under a 120 s test limit: a cold `powershell.exe` on a loaded hosted Windows runner missed the shared 10 s. The loops still end as soon as the text appears (1.7 s locally).
 - The test session imports the kernel's Codex client module before any test replaces `NativeHttpClient`: imported for the first time under such a patch, `CodexHttpClient` inherited from a stand-in function and failed, so `test_work_parallel` broke whenever no earlier test in its shard had imported the module (it fails alone, too).
 - ADR-073 supersedes ADR-068 with the branch practice the repositories follow: `main` everywhere (tare.tools.local-labs renamed `master`), changes through pull requests from short-lived branches, no required `dev`, merged branches deleted by GitHub. The locality guide links tare.tools.local-labs on `main`.

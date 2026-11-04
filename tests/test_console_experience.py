@@ -125,6 +125,8 @@ def test_streamed_reply_redraws_only_its_tail_and_reads_the_same_as_one_message(
             for _ in range(12):
                 output.stream({'channel': 'text', 'call_id': '1', 'text': block})
                 await pilot.pause(.1)
+            # The 80 ms flush timer may not have ticked after the last block on a slow runner: flush as it would.
+            output.flush_live(); await pilot.pause()
             live = output.live
             assert len(live.pieces) >= 2  # finished blocks stopped changing
             streamed = [line for piece in [*live.pieces, live.tail] for line in lines(piece)]
