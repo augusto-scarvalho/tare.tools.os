@@ -538,7 +538,7 @@ def test_ui_rename_recheck_scope_and_stale_revision_fails_safely(tmp_path, monke
             app.demand_revision = 999  # Changed in background
             dialog = app.screen
             dialog.query_one('#rename-input', Input).value = 'Conflict Title'
-            await pilot.press('enter'); await pilot.pause()
+            await pilot.press('enter'); await app.workers.wait_for_complete(); await pilot.pause()
             assert isinstance(app.screen, RenameDialog)
             assert 'changed' in str(dialog.query_one('#rename-error', Static).render()).lower()
             await pilot.press('escape'); await pilot.pause()
@@ -553,7 +553,7 @@ def test_ui_rename_recheck_scope_and_stale_revision_fails_safely(tmp_path, monke
             dialog = app.screen
             app.demand_id = 'different_demand_id'
             dialog.query_one('#rename-input', Input).value = 'Different Active'
-            await pilot.press('enter'); await pilot.pause()
+            await pilot.press('enter'); await app.workers.wait_for_complete(); await pilot.pause()
             assert isinstance(app.screen, RenameDialog)
             assert 'active conversation changed' in str(dialog.query_one('#rename-error', Static).render()).lower()
             await pilot.press('escape'); await pilot.pause()
@@ -567,7 +567,7 @@ def test_ui_rename_recheck_scope_and_stale_revision_fails_safely(tmp_path, monke
             dialog = app.screen
             app.screen_stack[0].query_one('#root', Input).value = str(other_root)
             dialog.query_one('#rename-input', Input).value = 'Wrong Workspace'
-            await pilot.press('enter'); await pilot.pause()
+            await pilot.press('enter'); await app.workers.wait_for_complete(); await pilot.pause()
             assert isinstance(app.screen, RenameDialog)
             assert 'workspace changed' in str(dialog.query_one('#rename-error', Static).render()).lower()
             await pilot.press('escape'); await pilot.pause()
@@ -579,7 +579,7 @@ def test_ui_rename_recheck_scope_and_stale_revision_fails_safely(tmp_path, monke
             dialog = app.screen
             monkeypatch.setattr(relay_mesh, 'RELAY_ROOT', other_control)
             dialog.query_one('#rename-input', Input).value = 'Wrong Control'
-            await pilot.press('enter'); await pilot.pause()
+            await pilot.press('enter'); await app.workers.wait_for_complete(); await pilot.pause()
             assert isinstance(app.screen, RenameDialog)
             assert 'control root changed' in str(dialog.query_one('#rename-error', Static).render()).lower()
             await pilot.press('escape'); await pilot.pause()
@@ -591,7 +591,7 @@ def test_ui_rename_recheck_scope_and_stale_revision_fails_safely(tmp_path, monke
             dialog = app.screen
             app.navigation_generation += 1
             dialog.query_one('#rename-input', Input).value = 'Wrong Gen'
-            await pilot.press('enter'); await pilot.pause()
+            await pilot.press('enter'); await app.workers.wait_for_complete(); await pilot.pause()
             assert isinstance(app.screen, RenameDialog)
             assert 'conversations list changed' in str(dialog.query_one('#rename-error', Static).render()).lower()
             await pilot.press('escape'); await pilot.pause()
@@ -626,7 +626,7 @@ def test_ui_rename_write_failure_ui_unchanged(project, monkeypatch):
             dialog = app.screen
 
             dialog.query_one('#rename-input', Input).value = 'Faulty Save'
-            await pilot.press('enter'); await pilot.pause()
+            await pilot.press('enter'); await app.workers.wait_for_complete(); await pilot.pause()
 
             # Dialog must stay open, show error, re-enable buttons
             assert isinstance(app.screen, RenameDialog)
@@ -678,7 +678,7 @@ def test_ui_rename_saving_flag_blocks_cancel_and_double_save(project, monkeypatc
             dialog = app.screen
 
             dialog.query_one('#rename-input', Input).value = 'Slow Saved Title'
-            await pilot.press('enter'); await pilot.pause()
+            await pilot.press('enter'); await pilot.pause()  # the save is held open: do not wait for it
 
             # Wait until slow_save_json starts
             for _ in range(50):
