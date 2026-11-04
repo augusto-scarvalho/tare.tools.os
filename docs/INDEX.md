@@ -212,6 +212,7 @@ Dated records of individual deliveries and qualifications.
 | [ADR-071](adr/ADR-071_NODE_SERVICE_IN_THE_OS.md) | Accepted | The GPU node service lives in tare.tools.os as `node/`, a package of its own. |
 | [ADR-072](adr/ADR-072_SHIP_DELEGATED_DELIVERY.md) | Accepted | Ship: delegated delivery through remote CI/CD as a deterministic flow; models only diagnose and fix. |
 | [ADR-073](adr/ADR-073_BRANCHES_OF_THE_TARE_TOOLS_REPOSITORIES.md) | Accepted | tare.tools repositories change `main` through short-lived branches and pull requests; no `dev` required. |
+| [ADR-074](adr/ADR-074_PRODUCT_RELEASES_FROM_CI.md) | Accepted | CI builds, attests and publishes the product releases after tare.tools CI passes on `main`. |
 | [ADR-OS-SPECGRAPH-001](decisions/ADR-OS-SPECGRAPH-001.md) | Accepted | Economical composition of project intelligence in the existing session hooks. |
 
 - [Antigravity prompt-hook feasibility, 2026-08-24](decisions/ANTIGRAVITY_PROMPT_HOOK_FEASIBILITY_2026-08-24.json):

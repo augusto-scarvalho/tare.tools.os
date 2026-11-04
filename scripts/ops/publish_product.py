@@ -1,13 +1,17 @@
-"""Publish a product release when the OS-qualified sources move (a scheduled task on the build machine).
+"""Publish a product release when the OS-qualified sources move. CI runs it (.github/workflows/release.yml) after
+tare.tools CI passed on main; elsewhere it publishes nothing unless told `--here`.
 
 Mirrors of the five repositories live under the publisher's state, never the development checkouts, so work in
 progress cannot enter. The newest PRODUCT_RELEASE_INPUTS_* lock on OS main is the template: OS uses that main,
 while satellites use its gitlink pins, never their independent mains. Versions and timestamps come only from
 these selected commits; missing or unavailable pins refuse publication. The build (twice, reproducible) runs in a venv
 pinned to the lock's tools, is packed with its dependencies, smoke-installed into a throwaway home and published
-as the GitHub release product-<bundle id prefix>, which `tare.cmd auto-update` installs on every machine.
+as the GitHub release product-<bundle id prefix>, which `tare.cmd auto-update` installs on every machine. The release
+carries published.json (the heads it was built from), which the next run reads to tell whether anything packaged
+changed.
 
-  python scripts/ops/publish_product.py [--state DIR] [--force]
+  python scripts/ops/publish_product.py [--state DIR] [--force] [--commit SHA] [--state-from-release]
+                                        [--bundle-out PATH] [--here]
 """
 import argparse
 from datetime import datetime, timezone
@@ -213,23 +217,48 @@ CI_PASSED = 'CI passed on main: '  # installed copies take only releases whose n
 def ci_passed(commit):
     """The URL of a successful tare.tools CI run of this OS commit on main; None while it runs, failed or never ran."""
     runs = json.loads(subprocess.run(['gh', 'run', 'list', '--repo', f"{OWNER}/{REPOS['os']}", '--commit', commit,
-                                      '--workflow', 'ci.yml', '--json', 'conclusion,headBranch,url'],
+                                      '--workflow', 'ci.yml', '--event', 'push',  # a pull request's branch may be named main too
+                                      '--json', 'conclusion,headBranch,url'],
                                      check=True, capture_output=True, text=True, timeout=120).stdout or '[]')
     return next((run['url'] for run in runs
                  if run.get('conclusion') == 'success' and run.get('headBranch') == 'main'), None)
 
 
-def publish(state, *, force=False, peers=(), tooling_commit=None):
+def last_release(state):
+    """The newest product release's published.json (the heads it was built from) into the state folder, where
+    publish() compares with it; CI starts with an empty folder. A release without one leaves nothing to compare."""
+    listed = json.loads(subprocess.run(['gh', 'release', 'list', '--repo', f"{OWNER}/{REPOS['os']}", '--limit', '30',
+                                        '--json', 'tagName,publishedAt'], check=True, capture_output=True,
+                                       text=True, timeout=120).stdout or '[]')
+    newest = max((row for row in listed if row['tagName'].startswith('product-')),
+                 key=lambda row: row['publishedAt'], default=None)
+    if newest:
+        subprocess.run(['gh', 'release', 'download', newest['tagName'], '--repo', f"{OWNER}/{REPOS['os']}",
+                        '--pattern', 'published.json', '--dir', str(state), '--clobber'], capture_output=True)
+    return newest and newest['tagName']
+
+
+def publish(state, *, force=False, peers=(), tooling_commit=None, commit=None, bundle_out=None):
     started = time.monotonic()
     mirrors, remote_heads = {}, {}
     for source in REPOS:
         mirrors[source], remote_heads[source] = mirror(state, source)
+    if commit:  # CI publishes the commit it tested, which main may have moved past since
+        if subprocess.run(['git', '-C', str(mirrors['os']), 'merge-base', '--is-ancestor', commit,
+                           'refs/heads/main']).returncode:
+            raise ValueError(f'{commit} is not on main; only a commit of main is published.')
+        remote_heads['os'] = commit
     lock = lock_for(mirrors, remote_heads)
     heads = {source['id']: source['commit'] for source in lock['sources']}
     if tooling_commit is not None and heads['os'] != tooling_commit:
         raise ValueError('Publisher source moved while selecting tools; retry on the next scheduled check.')
     published = state/'published.json'
     last = json.loads(published.read_text(encoding='utf-8')) if published.exists() else {}
+    newest = last.get('heads', {}).get('os')
+    if commit and newest and newest != commit and subprocess.run(
+            ['git', '-C', str(mirrors['os']), 'merge-base', '--is-ancestor', newest, commit]).returncode:
+        # CI runs on main can finish out of order: never publish a commit older than the newest release's.
+        return {'status': 'older than the newest release', 'commit': commit, 'tag': last.get('tag')}
     if last.get('heads') == heads and not force:
         return {'status': 'unchanged', 'tag': last.get('tag')}
     if last.get('heads') and not force and not packaged_changes(mirrors, last['heads'], lock):
@@ -266,8 +295,13 @@ def publish(state, *, force=False, peers=(), tooling_commit=None):
     identifier = hashlib.sha256((work/'bundle/bundle.json').read_bytes()).hexdigest()
     archive = shutil.make_archive(str(work/'bundle'), 'zip', work/'bundle')
     tag = 'product-' + identifier[:16]
+    if bundle_out:
+        Path(bundle_out).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(archive, bundle_out)
+    heads_file = work/'published.json'  # read back by the next run (last_release)
+    heads_file.write_text(json.dumps({'heads': heads, 'tag': tag, 'bundle': identifier}, indent=2), encoding='utf-8')
     versions = ', '.join(f"{s['package']} {s['version']} ({s['commit'][:7]})" for s in lock['sources'])
-    subprocess.run(['gh', 'release', 'create', tag, archive, '--repo', f"{OWNER}/{REPOS['os']}",
+    subprocess.run(['gh', 'release', 'create', tag, archive, str(heads_file), '--repo', f"{OWNER}/{REPOS['os']}",
                     '--title', f"tare.tools {next(s['version'] for s in lock['sources'] if s['id'] == 'os')}",
                     '--notes', 'Product bundle for Python 3.12 on Windows: ' + versions + '\n\n' + CI_PASSED + passed],
                    check=True)
@@ -288,11 +322,24 @@ def main(argv=None):
     parser.add_argument('--tooling-commit', help=argparse.SUPPRESS)
     parser.add_argument('--peer', action='append', default=[], help='user@host whose Tare-Update starts over ssh '
                         'right after a release is published; repeat')
+    parser.add_argument('--commit', help='publish this OS commit of main (the one CI tested) instead of main itself')
+    parser.add_argument('--state-from-release', action='store_true',
+                        help="first read the newest release's published.json (CI starts with an empty state)")
+    parser.add_argument('--bundle-out', type=Path, help='also copy the published bundle.zip here (provenance)')
+    parser.add_argument('--here', action='store_true', help='publish from this machine; CI normally does')
     args = parser.parse_args(argv)
+    if not os.environ.get('GITHUB_ACTIONS') and not args.here:
+        # The maintainers' scheduled task runs main's publisher: it stops publishing once CI does.
+        print(json.dumps({'status': 'skipped: CI publishes releases (.github/workflows/release.yml)'}), flush=True)
+        return 0
+    if args.state_from_release:
+        args.state.mkdir(parents=True, exist_ok=True)
+        last_release(args.state.resolve())
     if args.latest_tools:
         return refresh_tools(args.state.resolve(),force=args.force,peers=args.peer)
     print(json.dumps(publish(args.state.resolve(), force=args.force, peers=args.peer,
-                             tooling_commit=args.tooling_commit), indent=2), flush=True)
+                             tooling_commit=args.tooling_commit, commit=args.commit, bundle_out=args.bundle_out),
+                     indent=2), flush=True)
     return 0
 
 

@@ -151,6 +151,7 @@ def test_a_release_waits_until_ci_passed_on_main_for_its_os_commit(tmp_path, mon
     asked = []
     def run(argv, **kw):
         asked.append(argv[argv.index('--commit') + 1])
+        assert argv[argv.index('--event') + 1] == 'push'  # a pull request's branch named main is not main
         return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(runs))
     monkeypatch.setattr(publisher.subprocess, 'run', run)
     assert publisher.publish(state) == {'status': 'waiting for CI', 'commit': heads['os'], 'tag': None}
@@ -319,3 +320,50 @@ def test_native_git_pin_and_safe_extraction(tmp_path,monkeypatch,unsafe):
         assert publisher.fetch_mingit(target,opener)==target
         assert (target/'ucrt64/bin/sh.exe').read_bytes()==b'native shell stub'
         assert json.loads((target/'tare-source.json').read_text())['sha256']==hashlib.sha256(raw).hexdigest()
+
+
+def test_only_ci_publishes_unless_told_here(tmp_path, monkeypatch, capsys):
+    # The maintainers' scheduled task runs main's publisher: once CI publishes, it must not publish too.
+    monkeypatch.delenv('GITHUB_ACTIONS', raising=False)
+    monkeypatch.setattr(publisher, 'publish', lambda *a, **k: pytest.fail('published outside CI'))
+    assert publisher.main(['--state', str(tmp_path)]) == 0
+    assert 'CI publishes releases' in capsys.readouterr().out
+    monkeypatch.setattr(publisher, 'publish', lambda state, **k: {'status': 'published', **k})
+    assert publisher.main(['--state', str(tmp_path), '--here', '--commit', 'c'*40]) == 0
+    assert '"commit": "' + 'c'*40 in capsys.readouterr().out
+
+
+def test_ci_publishes_only_a_commit_of_main(tmp_path, monkeypatch):
+    monkeypatch.setattr(publisher, 'mirror', lambda state, key: (key+'-mirror', 'a'*40))
+    monkeypatch.setattr(publisher.subprocess, 'run', lambda argv, **k: subprocess.CompletedProcess(argv, 1))
+    monkeypatch.setattr(publisher, 'lock_for', lambda *a: pytest.fail('a commit off main went further'))
+    with pytest.raises(ValueError, match='not on main'):
+        publisher.publish(tmp_path, commit='b'*40)
+
+
+def test_ci_never_publishes_a_commit_older_than_the_newest_release(tmp_path, monkeypatch):
+    # Two merges in a row: the second one's CI can finish and publish first.
+    newest, older = 'n'*40, 'o'*40
+    (tmp_path/'published.json').write_text(json.dumps({'heads': {'os': newest}, 'tag': 'product-newest'}))
+    monkeypatch.setattr(publisher, 'mirror', lambda state, key: (key+'-mirror', newest))
+    monkeypatch.setattr(publisher, 'lock_for', lambda mirrors, heads: {'sources': [{'id': 'os', 'commit': heads['os']}]})
+    monkeypatch.setattr(publisher, 'ci_passed', lambda commit: pytest.fail('went on to publish'))
+    on_main = lambda argv, **k: subprocess.CompletedProcess(argv, 0 if argv[-1] == 'refs/heads/main' else 1)
+    monkeypatch.setattr(publisher.subprocess, 'run', on_main)
+    assert publisher.publish(tmp_path, commit=older) == {
+        'status': 'older than the newest release', 'commit': older, 'tag': 'product-newest'}
+
+
+def test_the_newest_release_tells_ci_what_was_published_last(tmp_path, monkeypatch):
+    listed = [{'tagName': 'product-old', 'publishedAt': '2026-11-04T10:00:00Z'},
+              {'tagName': 'product-new', 'publishedAt': '2026-11-04T12:00:00Z'},
+              {'tagName': 'v1', 'publishedAt': '2026-11-04T13:00:00Z'}]  # not a product release
+    calls = []
+    def run(argv, **k):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(listed))
+    monkeypatch.setattr(publisher.subprocess, 'run', run)
+    assert publisher.last_release(tmp_path) == 'product-new'
+    download = calls[-1]
+    assert download[:4] == ['gh', 'release', 'download', 'product-new']
+    assert download[download.index('--pattern')+1] == 'published.json' and str(tmp_path) in download
