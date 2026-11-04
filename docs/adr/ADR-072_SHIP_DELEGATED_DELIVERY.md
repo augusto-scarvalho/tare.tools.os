@@ -108,9 +108,9 @@ Publishing the repositories on 2026-11-04 exercised that path and showed where i
     `AUTH_REQUIRED`); no approving its own pull request or a fork's workflow run; no deployment. Every `git` and `gh`
     invocation goes through one allowlisted function, which also gives permission prompts one stable surface.
 
-13. **Branch names:** tare.tools repositories follow the ecosystem's branch standard
-    ([ADR-068](ADR-068_UNIVERSAL_BRANCH_STANDARDIZATION_AND_CI_PIPELINES.md) or its successor); for any other project
-    Ship uses the repository's own default branch.
+13. **Branch names:** tare.tools repositories change `main` through short-lived branches
+    ([ADR-073](ADR-073_BRANCHES_OF_THE_TARE_TOOLS_REPOSITORIES.md)); for any other project Ship uses the repository's
+    own default branch.
 
 ## Situations considered
 

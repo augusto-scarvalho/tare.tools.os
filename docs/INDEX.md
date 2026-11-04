@@ -207,10 +207,11 @@ Dated records of individual deliveries and qualifications.
 | [ADR-057](adr/ADR-057_AGENT_RUNTIME_BOUNDED_CONTEXT_AND_REPOSITORY.md) | Ratified | The agent loop as its own bounded context and repository (`tare.tools.agent-runtime`); the legacy harness stays frozen. |
 | [ADR-058](adr/ADR-058_PROPORTIONAL_DELIVERY_EVIDENCE_AND_BEHAVIOR_RELEVANT_COVERAGE.md) | Ratified | Delivery evidence and test coverage proportional to behavior and risk. |
 | [ADR-062](adr/ADR-062_UNIVERSAL_FRUGAL_ENGINEERING_DOCTRINE_AND_SOVEREIGN_BYOC.md) | Ratified | Universal frugal engineering doctrine, ambidextrous innovation and compute freedom (BYOC). |
-| [ADR-068](adr/ADR-068_UNIVERSAL_BRANCH_STANDARDIZATION_AND_CI_PIPELINES.md) | Ratified | Universal repository branching, CI/CD pipeline standard and legacy alias deprecation. |
+| [ADR-068](adr/ADR-068_UNIVERSAL_BRANCH_STANDARDIZATION_AND_CI_PIPELINES.md) | Superseded by ADR-073 | Universal repository branching, CI/CD pipeline standard and legacy alias deprecation. |
 | [ADR-069](adr/ADR-069_SPECGRAPH_OPERATIONAL_CODE_SCOPE.md) | Accepted | Separate SpecGraph's operational code retrieval scope from its governance scope. |
 | [ADR-071](adr/ADR-071_NODE_SERVICE_IN_THE_OS.md) | Accepted | The GPU node service lives in tare.tools.os as `node/`, a package of its own. |
 | [ADR-072](adr/ADR-072_SHIP_DELEGATED_DELIVERY.md) | Accepted | Ship: delegated delivery through remote CI/CD as a deterministic flow; models only diagnose and fix. |
+| [ADR-073](adr/ADR-073_BRANCHES_OF_THE_TARE_TOOLS_REPOSITORIES.md) | Accepted | tare.tools repositories change `main` through short-lived branches and pull requests; no `dev` required. |
 | [ADR-OS-SPECGRAPH-001](decisions/ADR-OS-SPECGRAPH-001.md) | Accepted | Economical composition of project intelligence in the existing session hooks. |
 
 - [Antigravity prompt-hook feasibility, 2026-08-24](decisions/ANTIGRAVITY_PROMPT_HOOK_FEASIBILITY_2026-08-24.json):
