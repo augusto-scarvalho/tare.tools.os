@@ -1,8 +1,8 @@
 # EXP-3: locality and loading cost
 
-The bounded measurement belongs to Local Labs: [maintained result](https://github.com/augusto-scarvalho/tare.tools.local-labs/blob/master/docs/research/LOCALITY_COST_QUALIFICATION.md),
-[machine-readable summary](https://github.com/augusto-scarvalho/tare.tools.local-labs/blob/master/docs/research/LOCALITY_COST_QUALIFICATION.json)
-and [offline replay tool](https://github.com/augusto-scarvalho/tare.tools.local-labs/blob/master/tools/analysis/locality_study.py).
+The bounded measurement belongs to Local Labs: [maintained result](https://github.com/augusto-scarvalho/tare.tools.local-labs/blob/main/docs/research/LOCALITY_COST_QUALIFICATION.md),
+[machine-readable summary](https://github.com/augusto-scarvalho/tare.tools.local-labs/blob/main/docs/research/LOCALITY_COST_QUALIFICATION.json)
+and [offline replay tool](https://github.com/augusto-scarvalho/tare.tools.local-labs/blob/main/tools/analysis/locality_study.py).
 
 Six public TUI read-only sessions used existing Qwen38-GSQ/RTX3090 and GPT-6.1 Sol
 routes. Local model loading took 12.11 s; it is already included in measured wall

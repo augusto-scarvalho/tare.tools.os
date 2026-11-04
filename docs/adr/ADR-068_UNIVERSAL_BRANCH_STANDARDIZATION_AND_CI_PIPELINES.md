@@ -1,6 +1,7 @@
 # ADR-068: Universal Repository Branching, CI/CD Pipeline Standardization, and Legacy Alias Deprecation
 
 * **Status:** RATIFIED (Tripartite Byzantine Consensus 3/3)
+* **Superseded:** by [ADR-073](ADR-073_BRANCHES_OF_THE_TARE_TOOLS_REPOSITORIES.md) on 2026-11-04; kept as the record of the earlier decision.
 * **Date:** 2026-08-21
 * **Deliberation Case:** [`CASE-2026-08-21-RFC-009`](https://github.com/augusto-scarvalho/tare.tools.library/blob/main/cases/CASE-2026-08-21-RFC-009-UNIVERSAL-BRANCH-STANDARDIZATION-AND-CI-PIPELINES/DECISION.md)
 * **Predecessors:** [ADR-049](ADR-049_REPO_FEDERATION_AND_ANTI_DRIFT_GOVERNANCE.md), ADR-065 (retired), [ADR-067](https://github.com/augusto-scarvalho/tare.tools.library/blob/main/docs/adr/ADR-067_CANONICAL_REPOSITORY_TAXONOMY_AND_GHOST_PURGE.md)
