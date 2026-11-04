@@ -2,9 +2,9 @@
   "schema": "tare.tools/os-specgraph-ci-pins/1",
   "scope": "CI integration copies only; committed satellites unchanged",
   "repositories": {
-    "tare.tools.agent-runtime": "cba0565a11efde0e0bf645b99241ed0f8b9d07f9",
-    "tare.tools.backlog-graph": "3f03686ae3d6918860f38ccfcf3b79c006f046b9",
-    "tare.tools.kernel": "74d3c72c45ad53da44084734f972272bfb05c079",
-    "tare.tools.specgraph": "370727fc728bb2b51e5c2d52c5941a60df9a77d2"
+    "tare.tools.agent-runtime": "133d9bba5c584c1959595a50e86430670bf666f2",
+    "tare.tools.backlog-graph": "0fd1e7c3311cbde35afe277b99667a00a720a7c6",
+    "tare.tools.kernel": "35cc5dc18c0e9da72085144f94e371d2389aab91",
+    "tare.tools.specgraph": "cce9edde05950bfcce980a1634f974d48308437c"
   }
 }
