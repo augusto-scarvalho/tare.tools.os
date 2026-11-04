@@ -319,3 +319,37 @@ def test_native_git_pin_and_safe_extraction(tmp_path,monkeypatch,unsafe):
         assert publisher.fetch_mingit(target,opener)==target
         assert (target/'ucrt64/bin/sh.exe').read_bytes()==b'native shell stub'
         assert json.loads((target/'tare-source.json').read_text())['sha256']==hashlib.sha256(raw).hexdigest()
+
+
+def test_only_ci_publishes_unless_told_here(tmp_path, monkeypatch, capsys):
+    # The maintainers' scheduled task runs main's publisher: once CI publishes, it must not publish too.
+    monkeypatch.delenv('GITHUB_ACTIONS', raising=False)
+    monkeypatch.setattr(publisher, 'publish', lambda *a, **k: pytest.fail('published outside CI'))
+    assert publisher.main(['--state', str(tmp_path)]) == 0
+    assert 'CI publishes releases' in capsys.readouterr().out
+    monkeypatch.setattr(publisher, 'publish', lambda state, **k: {'status': 'published', **k})
+    assert publisher.main(['--state', str(tmp_path), '--here', '--commit', 'c'*40]) == 0
+    assert '"commit": "' + 'c'*40 in capsys.readouterr().out
+
+
+def test_ci_publishes_only_a_commit_of_main(tmp_path, monkeypatch):
+    monkeypatch.setattr(publisher, 'mirror', lambda state, key: (key+'-mirror', 'a'*40))
+    monkeypatch.setattr(publisher.subprocess, 'run', lambda argv, **k: subprocess.CompletedProcess(argv, 1))
+    monkeypatch.setattr(publisher, 'lock_for', lambda *a: pytest.fail('a commit off main went further'))
+    with pytest.raises(ValueError, match='not on main'):
+        publisher.publish(tmp_path, commit='b'*40)
+
+
+def test_the_newest_release_tells_ci_what_was_published_last(tmp_path, monkeypatch):
+    listed = [{'tagName': 'product-old', 'publishedAt': '2026-11-04T10:00:00Z'},
+              {'tagName': 'product-new', 'publishedAt': '2026-11-04T12:00:00Z'},
+              {'tagName': 'v1', 'publishedAt': '2026-11-04T13:00:00Z'}]  # not a product release
+    calls = []
+    def run(argv, **k):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(listed))
+    monkeypatch.setattr(publisher.subprocess, 'run', run)
+    assert publisher.last_release(tmp_path) == 'product-new'
+    download = calls[-1]
+    assert download[:4] == ['gh', 'release', 'download', 'product-new']
+    assert download[download.index('--pattern')+1] == 'published.json' and str(tmp_path) in download

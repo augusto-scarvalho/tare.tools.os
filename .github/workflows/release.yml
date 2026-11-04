@@ -1,0 +1,63 @@
+name: Product release
+
+# Builds and publishes the product bundle (scripts/ops/publish_product.py) after tare.tools CI passed on main, for
+# the commit CI tested. It publishes only when something packaged changed since the newest release (whose
+# published.json says what it was built from), and attests the bundle's build provenance.
+on:
+  workflow_run:
+    workflows: ['tare.tools CI']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Publish even when nothing packaged changed'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write      # create the release
+  actions: read        # find the CI run that passed (publish_product.ci_passed)
+  id-token: write      # sign the provenance attestation
+  attestations: write
+
+concurrency:
+  group: product-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    runs-on: windows-latest  # the bundle is for Python 3.12 on Windows
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: "true"
+    steps:
+      - name: Checkout the tested commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Build, test and publish the bundle
+        run: >-
+          python -X utf8 scripts/ops/publish_product.py --state "${{ runner.temp }}/publisher"
+          --commit ${{ env.COMMIT }} --state-from-release --bundle-out dist/bundle.zip
+          ${{ inputs.force && '--force' || '' }}
+
+      - name: Attest the bundle's build provenance
+        if: hashFiles('dist/bundle.zip') != ''
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/bundle.zip
