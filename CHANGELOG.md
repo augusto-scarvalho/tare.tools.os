@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The isolation sweep creates the folder its pytest runs use as `--basetemp` parent: pytest creates `--basetemp` only inside an existing folder, so the first sweep on main failed every run at setup.
 - A manual CI run with the `isolation` input looks for tests that pass only by luck of order or company: each shard runs every one of its test files alone, then all of them in a shuffled order seeded by the run id (`scripts/ci_suite.py isolate`), and reports what failed, without touching the test map.
 - `test_streamed_reply_redraws_only_its_tail_and_reads_the_same_as_one_message` flushes the live reply before reading it: the 80 ms flush timer had not ticked after the last block on a loaded Linux runner, so the sampled view missed it.
 - `test_powershell_read_host_with_live_display` waits up to 60 s for the PowerShell prompt and 30 s for the answer, each with its own ceiling, under a 120 s test limit: a cold `powershell.exe` on a loaded hosted Windows runner missed the shared 10 s. The loops still end as soon as the text appears (1.7 s locally).

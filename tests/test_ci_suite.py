@@ -719,7 +719,7 @@ def test_isolate_finds_a_test_that_passes_only_after_another(root, monkeypatch):
     output.mkdir()
     (output/'shard.json').write_text(json.dumps({'shard': 1, 'shards': 1, 'quick': ['tests/test_leaf.py'],
                                                  'regression': ['tests/test_a.py', 'tests/test_b.py']}))
-    assert ci.isolate(output, root/'tmp', seed=7) == 1
+    assert ci.isolate(output, root/'not-yet/tmp', seed=7) == 1  # the runs' parent folder need not exist
     receipt = json.loads((output/'isolation/isolation.json').read_text())
     assert list(receipt['alone_failed']) == ['tests/test_b.py']  # alone it has no marker
     assert receipt['alone_failed']['tests/test_b.py'] == ['tests.test_b::test_needs_a']

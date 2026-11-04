@@ -761,6 +761,7 @@ def isolate(output, basetemp, seed=None):
     seed = random.randrange(2**32) if seed is None else seed
     folder = output/'isolation'
     folder.mkdir(parents=True, exist_ok=True)
+    Path(basetemp).mkdir(parents=True, exist_ok=True)  # pytest creates --basetemp only inside an existing folder
 
     def pytest(targets, name):
         return subprocess.run([sys.executable, '-B', '-m', 'pytest', *targets, '-q', '-p', 'no:cacheprovider',
