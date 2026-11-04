@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- SPEC-OS-SHIP-001 AC-21 and the backlog item `ship-workflow-trust-20261104`: Ship's preflight flags workflows that publish or deploy while trusting code they should not (`workflow_run` jobs that do not require a `push` run of the same repository or check out the triggering commit, `pull_request_target` jobs that check out the pull request's head), refusing a pull request that adds one and reporting one already on the default branch.
 - Auto-update works for anyone, without the GitHub CLI or a login: it reads the public releases over HTTPS (one API call per check, within the 60 an hour GitHub allows unauthenticated) and downloads `bundle.zip` from its public link. The CI check moves to the publisher, which releases a bundle only after tare.tools CI passed on `main` for its OS commit and says so in the notes; an installed copy takes only such releases. An installation older than the newest hundred releases finds its own by name instead of never updating.
 - The isolation sweep creates the folder its pytest runs use as `--basetemp` parent: pytest creates `--basetemp` only inside an existing folder, so the first sweep on main failed every run at setup.
 - A manual CI run with the `isolation` input looks for tests that pass only by luck of order or company: each shard runs every one of its test files alone, then all of them in a shuffled order seeded by the run id (`scripts/ci_suite.py isolate`), and reports what failed, without touching the test map.
