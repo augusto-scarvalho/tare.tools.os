@@ -117,8 +117,9 @@ Read [AGENTS.md](AGENTS.md) first: it holds the rules every contributor, human o
   work branch the hook pushes it; it never pushes `main` or `dev`.
 - Run only the tests of what you changed (`python scripts/ops/run_focused_tests.py`); CI runs what a change reaches
   and the whole suite nightly ([CI feedback](docs/guides/CI_FEEDBACK.md)).
-- CI runs on the maintainer's self-hosted runners, so pull requests from forks are not tested there; a maintainer
-  moves an accepted contribution onto a branch of this repository to test it.
+- CI runs on GitHub-hosted Linux and Windows runners, pull requests from forks included (GitHub asks a maintainer to
+  approve a first-time contributor's run). The repository variables `CI_RUNNER_LINUX` and `CI_RUNNER_WINDOWS` move
+  it to your own runners; pull requests from forks then skip it.
 
 The full documentation map is [docs/INDEX.md](docs/INDEX.md); notable changes are in [CHANGELOG.md](CHANGELOG.md).
 

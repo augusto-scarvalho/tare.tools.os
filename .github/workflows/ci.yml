@@ -3,7 +3,7 @@ name: tare.tools CI
 on:
   workflow_dispatch:
   # Pushes run the tests that ran the changed code; this nightly run proves everything and refreshes
-  # each runner's test map (scripts/ci_suite.py).
+  # the test map (scripts/ci_suite.py).
   schedule:
     - cron: '17 5 * * *'
   push:
@@ -11,33 +11,34 @@ on:
   pull_request:
     branches: [ main, dev ]
 
+permissions:
+  contents: read
+  actions: read  # scripts/ci_suite.py looks up the pull request run that already tested a merge
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   test:
-    name: Test Suite & Falsifiers (${{ matrix.platform }})
+    name: Tests (${{ matrix.platform }})
+    # GitHub-hosted runners by default. The repository variables CI_RUNNER_LINUX and CI_RUNNER_WINDOWS (a JSON
+    # label or label list, e.g. ["self-hosted","Linux"]) move a platform to your own runners; pull requests from
+    # forks then skip this job, since they could run any code there.
+    if: >-
+      github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+      || (!vars.CI_RUNNER_LINUX && !vars.CI_RUNNER_WINDOWS)
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: windows-host
-            runner: '["self-hosted","Windows","aaaaa"]'
-            python: python
-            pip_flags: ''
-          - platform: linux-wsl2
-            runner: '["self-hosted","Linux","wsl2","aaaaa"]'
-            python: python3
-            pip_flags: ''
+          - platform: linux
+            runner: ${{ vars.CI_RUNNER_LINUX || '"ubuntu-latest"' }}
+          - platform: windows
+            runner: ${{ vars.CI_RUNNER_WINDOWS || '"windows-latest"' }}
     runs-on: ${{ fromJSON(matrix.runner) }}
-    # Self-hosted runners execute the checked-out code on the owner's workstation: a pull request from a
-    # fork never reaches them. Its tests run once the change is on a branch of this repository.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    # Full Windows regression outgrew 55 minutes (run 39065482726: 3790 passes
-    # before the job deadline). Keep coverage and allow setup/cleanup margin.
-    # Include dependency setup, the full suite, bounded artifact retry and cleanup.
-    timeout-minutes: ${{ matrix.platform == 'windows-host' && 75 || 40 }}
+    # The full Windows regression is the long one; the limits leave room for setup and evidence upload.
+    timeout-minutes: ${{ matrix.platform == 'windows' && 150 || 60 }}
     env:
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: core.longpaths
@@ -49,47 +50,56 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Locate the test map
+        id: paths
+        shell: bash
+        run: |
+          echo "output=$RUNNER_TEMP/tare-ci-$GITHUB_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "maps=$RUNNER_TEMP/tare-ci-map" >> "$GITHUB_OUTPUT"
+          echo "map=$RUNNER_TEMP/tare-ci-map/test-map-${{ matrix.platform }}.json" >> "$GITHUB_OUTPUT"
+
+      # The map of which tests ran which functions, and the last verified commit per branch, live in the
+      # Actions cache between runs: the newest one saved on this branch, else on the base branch.
+      - name: Restore the test map
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.paths.outputs.maps }}
+          key: tare-ci-map-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: tare-ci-map-${{ matrix.platform }}-
+
       - name: Select validation scope
         id: scope
         env:
           # A merge into main whose bytes already passed CI in their pull request is not run twice.
           GITHUB_TOKEN: ${{ github.token }}
-        run: ${{ matrix.python }} -B scripts/ci_suite.py plan --output "${{ runner.temp }}/tare-ci-${{ github.run_id }}" --map "${{ runner.tool_cache }}/tare-ci/test-map-${{ matrix.platform }}.json"
+        run: python -B scripts/ci_suite.py plan --output "${{ steps.paths.outputs.output }}" --map "${{ steps.paths.outputs.map }}"
 
       - name: Check patch whitespace
-        run: ${{ matrix.python }} -B scripts/ci_suite.py check --output "${{ runner.temp }}/tare-ci-${{ github.run_id }}"
+        run: python -B scripts/ci_suite.py check --output "${{ steps.paths.outputs.output }}"
 
-      - name: Checkout pinned satellites with runner Git credentials
-        if: steps.scope.outputs.scope != 'docs' && runner.os != 'Windows'
-        # Private satellites require read access for the runner service account.
-        # An interactive user's gh login is not the service account's credential.
+      - name: Checkout pinned satellites
+        if: steps.scope.outputs.scope != 'docs'
         env:
           GIT_TERMINAL_PROMPT: '0'
-          GCM_INTERACTIVE: Never
         run: git submodule update --init
-
-      - name: Checkout pinned satellites with read-only Windows deploy keys
-        if: steps.scope.outputs.scope != 'docs' && runner.os == 'Windows'
-        env:
-          GIT_TERMINAL_PROMPT: '0'
-          GIT_SSH_COMMAND: 'C:/Windows/System32/OpenSSH/ssh.exe -F C:/ProgramData/tare-tools/ci/ssh_config'
-        run: |
-          foreach ($owner in @('kernel', 'specgraph', 'agent-runtime')) {
-            git config "submodule.satellites/tare.tools.$owner.url" "git@tare-os-ci-${owner}:augusto-scarvalho/tare.tools.$owner.git"
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-          git submodule update --init
 
       - name: Select validation scope with the satellites checked out
         # The plan above ran without the satellites: a changed pin now becomes the files its new commit
         # changed inside the satellite, and scripts/ci_suite.py rewrites plan.json.
         if: steps.scope.outputs.scope != 'docs'
-        run: ${{ matrix.python }} -B scripts/ci_suite.py plan --output "${{ runner.temp }}/tare-ci-${{ github.run_id }}" --map "${{ runner.tool_cache }}/tare-ci/test-map-${{ matrix.platform }}.json"
+        run: python -B scripts/ci_suite.py plan --output "${{ steps.paths.outputs.output }}" --map "${{ steps.paths.outputs.map }}"
 
       - name: Create isolated Python environment
         if: steps.scope.outputs.scope != 'docs'
         run: >-
-          ${{ matrix.python }} -c "import os, pathlib, venv;
+          python -c "import os, pathlib, venv;
           venv.create('.venv', with_pip=True);
           scripts = pathlib.Path('.venv') / ('Scripts' if os.name == 'nt' else 'bin');
           open(os.environ['GITHUB_PATH'], 'a').write(str(scripts.resolve()) + '\n')"
@@ -97,41 +107,54 @@ jobs:
       - name: Install dependencies
         if: steps.scope.outputs.scope != 'docs'
         run: |
-          ${{ matrix.python }} -m pip install ${{ matrix.pip_flags }} --upgrade pip
-          ${{ matrix.python }} -m pip install ${{ matrix.pip_flags }} pytest pytest-timeout anyio trafilatura firecrawl boto3 mistune beautifulsoup4 psutil "jsonschema>=4.18" "openai>=1,<3"
-          ${{ matrix.python }} -m pip install -e satellites/tare.tools.agent-runtime -e "satellites/tare.tools.kernel[attachments]" -e satellites/tare.tools.specgraph -e satellites/tare.tools.backlog-graph -e ".[mcp]"
-          ${{ matrix.python }} -c "import subprocess; root = 'satellites/tare.tools.specgraph'; path = 'src/tare_tools_specgraph.egg-info'; tracked = subprocess.check_output(['git', '-C', root, 'ls-files', '--', path]); tracked and subprocess.run(['git', '-C', root, 'restore', '--', path], check=True)"
+          python -m pip install --upgrade pip
+          python -m pip install pytest pytest-timeout anyio trafilatura firecrawl boto3 mistune beautifulsoup4 psutil "jsonschema>=4.18" "openai>=1,<3"
+          python -m pip install -e satellites/tare.tools.agent-runtime -e "satellites/tare.tools.kernel[attachments]" -e satellites/tare.tools.specgraph -e satellites/tare.tools.backlog-graph -e ".[mcp]"
+          python -c "import subprocess; root = 'satellites/tare.tools.specgraph'; path = 'src/tare_tools_specgraph.egg-info'; tracked = subprocess.check_output(['git', '-C', root, 'ls-files', '--', path]); tracked and subprocess.run(['git', '-C', root, 'restore', '--', path], check=True)"
 
       - name: Expose installed Python entrypoints to subprocess tests
         if: steps.scope.outputs.scope != 'docs'
         run: >-
-          ${{ matrix.python }} -c "import os, sysconfig; open(os.environ['GITHUB_PATH'], 'a').write(sysconfig.get_path('scripts') + '\n')"
+          python -c "import os, sysconfig; open(os.environ['GITHUB_PATH'], 'a').write(sysconfig.get_path('scripts') + '\n')"
 
       - name: Install pinned ripgrep for real capability tests
         if: steps.scope.outputs.scope != 'docs'
-        run: >-
-          ${{ matrix.python }} satellites/tare.tools.kernel/tools/install_test_ripgrep.py
+        run: python satellites/tare.tools.kernel/tools/install_test_ripgrep.py
 
       - name: Quick contract checks
         if: steps.scope.outputs.scope != 'docs'
         timeout-minutes: 5
         run: >-
-          ${{ matrix.python }} -B scripts/ci_suite.py quick
-          --output "${{ runner.temp }}/tare-ci-${{ github.run_id }}"
+          python -B scripts/ci_suite.py quick
+          --output "${{ steps.paths.outputs.output }}"
           --basetemp "${{ runner.temp }}/pytest-quick"
-          --map "${{ runner.tool_cache }}/tare-ci/test-map-${{ matrix.platform }}.json"
+          --map "${{ steps.paths.outputs.map }}"
 
       - name: Selected or full regression
         if: steps.scope.outputs.scope != 'docs'
         run: >-
-          ${{ matrix.python }} -B scripts/ci_suite.py regression
-          --output "${{ runner.temp }}/tare-ci-${{ github.run_id }}"
+          python -B scripts/ci_suite.py regression
+          --output "${{ steps.paths.outputs.output }}"
           --basetemp "${{ runner.temp }}/pytest-regression"
-          --map "${{ runner.tool_cache }}/tare-ci/test-map-${{ matrix.platform }}.json"
+          --map "${{ steps.paths.outputs.map }}"
 
       - name: Report scope and test durations
         if: always() && steps.scope.outcome == 'success'
-        run: ${{ matrix.python }} -B scripts/ci_suite.py summary --output "${{ runner.temp }}/tare-ci-${{ github.run_id }}"
+        run: python -B scripts/ci_suite.py summary --output "${{ steps.paths.outputs.output }}"
+
+      - name: Check for a test map to save
+        id: map
+        if: always() && steps.scope.outcome == 'success'
+        shell: bash
+        # hashFiles() sees only the workspace; the map lives in the runner's temporary folder.
+        run: if ls "${{ steps.paths.outputs.maps }}"/*.json >/dev/null 2>&1; then echo "present=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Save the test map
+        if: always() && steps.map.outputs.present == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.paths.outputs.maps }}
+          key: tare-ci-map-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Preserve validation evidence
         id: evidence
@@ -143,7 +166,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ci-${{ matrix.platform }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/tare-ci-${{ github.run_id }}
+          path: ${{ steps.paths.outputs.output }}
           retention-days: 7
 
       - name: Retry validation evidence upload once
@@ -153,5 +176,5 @@ jobs:
         with:
           # A partial first upload may already own its artifact name.
           name: ci-${{ matrix.platform }}-${{ github.run_attempt }}-retry
-          path: ${{ runner.temp }}/tare-ci-${{ github.run_id }}
+          path: ${{ steps.paths.outputs.output }}
           retention-days: 7
