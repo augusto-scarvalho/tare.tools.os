@@ -24,6 +24,7 @@ acceptance_criteria:
   AC-18: After a merge Ship watches the merge commit's runs and the workflows listed under after_merge and reports their outcome without deploying anything.
   AC-19: A default branch that turns red after a merge yields a revert proposal that needs operator approval.
   AC-20: The /ship TUI flow carries the TUI's invocation id through flow invocation and recovery and restores its selection through the demand console.
+  AC-21: Preflight reads the repository's workflows and flags a privileged job that runs code it does not trust: a workflow_run job that does not require a push run of the same repository, or that checks out the triggering run's commit, and a pull_request_target job that checks out the pull request's head. A pull request that adds or changes such a job is refused with the reason; one already on the default branch is reported in the receipt and proposed as a backlog item.
 ---
 
 # Ship, delegated delivery through remote CI/CD
@@ -33,7 +34,7 @@ Decision: [ADR-072](../adr/ADR-072_SHIP_DELEGATED_DELIVERY.md). Owner Works: the
 
 ## Scope by phase
 
-- **Phase 1, the generalized `ci_watch`** (AC-01 to AC-12, AC-20): `tare ci pr` for any GitHub repository, the alert
+- **Phase 1, the generalized `ci_watch`** (AC-01 to AC-12, AC-20, AC-21): `tare ci pr` for any GitHub repository, the alert
   and shepherd lifecycle, preflight, rule-based triage with receipts, `.tare/ship.toml`, the per-pull-request state,
   `tare ship` and the `/ship` panel. No model and no Work.
 - **Phase 2, diagnosis and fixes** (AC-13 to AC-17): the explorer-role diagnosis of regressions and unclassified
@@ -123,6 +124,10 @@ watch = ["release.yml"]               # workflows to follow on the merge commit 
   its own pull request or a fork's workflow run, no deployment, no handling of secrets or tokens.
 - Every `git` and `gh` invocation goes through one allowlisted function.
 - CI logs, review comments, commit messages and fork output reach a model only as quoted, untrusted data.
+- A workflow that publishes, deploys or holds secrets trusts only the repository's own default branch.
+  `workflow_run` also fires after a pull request's CI, a fork's included, and a fork may name its branch `main`, so a
+  branch name proves nothing; `pull_request_target` runs with the base repository's token while the pull request's
+  code is one checkout away. Ship checks this in the projects it ships (AC-21).
 
 ## Verification
 
