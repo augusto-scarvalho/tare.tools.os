@@ -443,11 +443,14 @@ update and rollback.
 ## Automatic updates
 
 Maintainers publish releases: every push that changes `main` in one of the five repositories can become a
-release. `python scripts/ops/publish_product.py` builds the bundle from its own mirrors (in
-`%LOCALAPPDATA%/tare.tools/publisher/mirrors`, never the development checkouts), tests the installation in a
-disposable folder and publishes the GitHub release `product-<id>`, but only once tare.tools CI passed on `main` for
-the OS commit it was built from; its notes then end with `CI passed on main: <run>`. On the maintainers' machine a
-scheduled task, `Tare-Publish`, runs it.
+release. CI publishes it ([ADR-074](../adr/ADR-074_PRODUCT_RELEASES_FROM_CI.md)): when tare.tools CI passes on
+`main`, `.github/workflows/release.yml` runs `python scripts/ops/publish_product.py` on a GitHub-hosted Windows
+runner for the commit CI tested. It builds the bundle from fresh mirrors of the five repositories (never a
+development checkout), tests the installation in a disposable folder and publishes the GitHub release
+`product-<id>` with `bundle.zip` and `published.json` (the heads it was built from, which the next run compares
+with); its notes end with `CI passed on main: <run>`. The workflow attests the bundle's build provenance: check a
+download with `gh attestation verify bundle.zip -R augusto-scarvalho/tare.tools.os`. Outside GitHub Actions the
+publisher publishes nothing unless given `--here`.
 
 On each machine, the `Tare-Update` task runs `tare.cmd auto-update` at logon and every 5 minutes. It reads the
 public releases over HTTPS (one GitHub API call, two when the installed release is older than the newest hundred; no
