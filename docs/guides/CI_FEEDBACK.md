@@ -52,9 +52,9 @@ setup should use explicit imports or `conftest.py`. Dependencies reaching
 
 **Sample observation (SPECGRAPH-COMPLETION-X5).** This is one ordinary delivery attempt, not a benchmark. This shipment adds the catalog listing contracts in both text and JSON form and the frontier role-admission test to the quick phase; the five-minute ceiling is unchanged, and the full regression still runs every file the quick phase does not. Locally measured facts are only those in the local focused verification receipts written by `scripts/ops/run_focused_tests.py` for the four files this shipment touched: a first attempt failed 3 selector cases after 18.04 s (helper `seconds` 20.078), and the corrected attempt passed 115 tests in 15.77 s (helper `seconds` 17.125, scratch removed). Those numbers cover only those four files. The quick and regression wall times of this sample on each platform, review time and the monetary or API cost of the run were not captured; they stay unknown rather than zero, and a CI `elapsed_seconds` is a different measurement from the helper's local `seconds`. Revisions are the candidate commit that CI and the focused run reported, not a published baseline. Failures are kept as the receipts report them; a later green attempt does not overwrite an earlier red one. This observation claims no paid comparison, no saving, no independent acceptance and no cohort conclusion, and it does not reopen FLOW-19.
 
-The workflow keeps existing job names and does not change repository branch
-protection. Job success requires every selected phase; quick success alone does
-not satisfy a run whose plan requires full regression.
+The jobs are `Tests (linux)` and `Tests (windows)`. Job success requires every
+selected phase; quick success alone does not satisfy a run whose plan requires
+full regression.
 
 An evidence upload has one bounded retry, with a three-minute ceiling for each
 attempt. The retry only uploads the same completed reports; it never repeats or
@@ -67,11 +67,23 @@ also always requests full coverage. Event/ref concurrency cancels superseded
 push or PR runs without letting a push cancel the scheduled regression. No
 automatic retries hide flaky test failures.
 
+## Runners
+
+CI runs on GitHub-hosted runners (`ubuntu-latest`, `windows-latest`); the tests are offline fixtures and need no
+GPU, provider or machine of the maintainer. A hosted runner starts empty, so the test map that focused runs read
+(which tests ran which functions, and the last verified commit per branch) is kept in the Actions cache: each run
+restores the newest map saved on its branch, else on the base branch, and saves its own. Without a fresh map (older
+than seven days, or none yet) a code change runs the full regression.
+
+The repository variables `CI_RUNNER_LINUX` and `CI_RUNNER_WINDOWS` (a JSON label or label list, for example
+`["self-hosted","Linux"]`) move a platform to your own runners. Pull requests from forks then skip the job, since
+they could run any code there.
+
 ## Pull requests into main
 
 `main` is protected for everyone, administrators included: changes arrive only through pull requests that
-are up to date with `main` and whose checks passed (`Test Suite & Falsifiers` on both platforms and the
-changelog policy). `tare ci pr` pushes the current branch, opens or reuses its pull request, turns on
+are up to date with `main` and whose checks passed (`Tests (linux)`, `Tests (windows)`, the node service's
+`node (Linux flock)` and the changelog policy). `tare ci pr` pushes the current branch, opens or reuses its pull request, turns on
 auto-merge with a merge commit and updates the branch when `main` moved. A merge keeps the branch's commits,
 so a long-lived work branch opens its next pull request with only what is new.
 
@@ -141,8 +153,7 @@ fixtures remain necessary for tests that actually use coordinator operations.
 
 Use the published timing reports to identify repeated expensive setup, UI waits
 and slow integration groups. Split or parallelize only groups with proven state
-isolation; both self-hosted platform runners (label `aaaaa`) currently run on the
-same machine.
+isolation; each platform job runs on its own GitHub-hosted runner.
 Do not remove process/cleanup or Windows-specific tests merely to improve a number.
 
 This delivery improves selection and time-to-first-result. It does not claim

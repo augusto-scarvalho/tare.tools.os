@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("compute_plane.workspace", reason="pinned private Kernel package is unavailable on this runner")
+pytest.importorskip("compute_plane.workspace", reason="the pinned Kernel package is not installed")
 
 from relay import relay_mesh, work_run
 from relay.landing_policy import create_evidence, write_evidence
