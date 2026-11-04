@@ -32,6 +32,11 @@ nobody else could check.
 4. Outside GitHub Actions the publisher publishes nothing unless told `--here`. The maintainers' scheduled task runs
    main's publisher, so it stops publishing by itself; it can then be deleted.
 5. Machines are no longer told to update over ssh: each `Tare-Update` checks every five minutes.
+6. Only this repository's `main` is trusted. `workflow_run` also fires after a pull request's CI, a fork's included,
+   and a fork may name its branch `main`; the job runs only for a `push` run of this repository, always runs the
+   publisher from `main` (never the triggering run's code), and the publisher builds the tested commit from GitHub
+   mirrors after checking it is on `main`. `ci_passed` counts only `push` runs.
+7. CI runs on `main` can finish out of order; the publisher never publishes a commit older than the newest release's.
 
 ## Consequences
 

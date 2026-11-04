@@ -3,6 +3,10 @@ name: Product release
 # Builds and publishes the product bundle (scripts/ops/publish_product.py) after tare.tools CI passed on main, for
 # the commit CI tested. It publishes only when something packaged changed since the newest release (whose
 # published.json says what it was built from), and attests the bundle's build provenance.
+#
+# Trust: workflow_run also fires for pull requests' CI, a fork's included, and a fork may name its branch main. So the
+# job accepts only push runs of this repository, and the code that runs is always this repository's main, never the
+# triggering run's commit: main's publisher builds the tested commit from GitHub mirrors after checking it is on main.
 on:
   workflow_run:
     workflows: ['tare.tools CI']
@@ -28,8 +32,11 @@ concurrency:
 jobs:
   publish:
     if: >-
-      github.event_name == 'workflow_dispatch'
-      || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+      || (github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.event == 'push'
+          && github.event.workflow_run.head_branch == 'main'
+          && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: windows-latest  # the bundle is for Python 3.12 on Windows
     timeout-minutes: 45
     env:
@@ -39,10 +46,10 @@ jobs:
       GIT_CONFIG_KEY_0: core.longpaths
       GIT_CONFIG_VALUE_0: "true"
     steps:
-      - name: Checkout the tested commit
+      - name: Checkout main (the publisher that runs)
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: main
           persist-credentials: false
 
       - name: Set up Python

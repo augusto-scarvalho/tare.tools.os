@@ -217,7 +217,8 @@ CI_PASSED = 'CI passed on main: '  # installed copies take only releases whose n
 def ci_passed(commit):
     """The URL of a successful tare.tools CI run of this OS commit on main; None while it runs, failed or never ran."""
     runs = json.loads(subprocess.run(['gh', 'run', 'list', '--repo', f"{OWNER}/{REPOS['os']}", '--commit', commit,
-                                      '--workflow', 'ci.yml', '--json', 'conclusion,headBranch,url'],
+                                      '--workflow', 'ci.yml', '--event', 'push',  # a pull request's branch may be named main too
+                                      '--json', 'conclusion,headBranch,url'],
                                      check=True, capture_output=True, text=True, timeout=120).stdout or '[]')
     return next((run['url'] for run in runs
                  if run.get('conclusion') == 'success' and run.get('headBranch') == 'main'), None)
@@ -253,6 +254,11 @@ def publish(state, *, force=False, peers=(), tooling_commit=None, commit=None, b
         raise ValueError('Publisher source moved while selecting tools; retry on the next scheduled check.')
     published = state/'published.json'
     last = json.loads(published.read_text(encoding='utf-8')) if published.exists() else {}
+    newest = last.get('heads', {}).get('os')
+    if commit and newest and newest != commit and subprocess.run(
+            ['git', '-C', str(mirrors['os']), 'merge-base', '--is-ancestor', newest, commit]).returncode:
+        # CI runs on main can finish out of order: never publish a commit older than the newest release's.
+        return {'status': 'older than the newest release', 'commit': commit, 'tag': last.get('tag')}
     if last.get('heads') == heads and not force:
         return {'status': 'unchanged', 'tag': last.get('tag')}
     if last.get('heads') and not force and not packaged_changes(mirrors, last['heads'], lock):

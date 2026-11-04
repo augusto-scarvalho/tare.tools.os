@@ -151,6 +151,7 @@ def test_a_release_waits_until_ci_passed_on_main_for_its_os_commit(tmp_path, mon
     asked = []
     def run(argv, **kw):
         asked.append(argv[argv.index('--commit') + 1])
+        assert argv[argv.index('--event') + 1] == 'push'  # a pull request's branch named main is not main
         return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(runs))
     monkeypatch.setattr(publisher.subprocess, 'run', run)
     assert publisher.publish(state) == {'status': 'waiting for CI', 'commit': heads['os'], 'tag': None}
@@ -338,6 +339,19 @@ def test_ci_publishes_only_a_commit_of_main(tmp_path, monkeypatch):
     monkeypatch.setattr(publisher, 'lock_for', lambda *a: pytest.fail('a commit off main went further'))
     with pytest.raises(ValueError, match='not on main'):
         publisher.publish(tmp_path, commit='b'*40)
+
+
+def test_ci_never_publishes_a_commit_older_than_the_newest_release(tmp_path, monkeypatch):
+    # Two merges in a row: the second one's CI can finish and publish first.
+    newest, older = 'n'*40, 'o'*40
+    (tmp_path/'published.json').write_text(json.dumps({'heads': {'os': newest}, 'tag': 'product-newest'}))
+    monkeypatch.setattr(publisher, 'mirror', lambda state, key: (key+'-mirror', newest))
+    monkeypatch.setattr(publisher, 'lock_for', lambda mirrors, heads: {'sources': [{'id': 'os', 'commit': heads['os']}]})
+    monkeypatch.setattr(publisher, 'ci_passed', lambda commit: pytest.fail('went on to publish'))
+    on_main = lambda argv, **k: subprocess.CompletedProcess(argv, 0 if argv[-1] == 'refs/heads/main' else 1)
+    monkeypatch.setattr(publisher.subprocess, 'run', on_main)
+    assert publisher.publish(tmp_path, commit=older) == {
+        'status': 'older than the newest release', 'commit': older, 'tag': 'product-newest'}
 
 
 def test_the_newest_release_tells_ci_what_was_published_last(tmp_path, monkeypatch):
