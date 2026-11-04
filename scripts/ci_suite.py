@@ -1,9 +1,13 @@
 """CI selection and timed pytest phases, using only the standard library.
 
 Pushes and pull requests run the tests that ran the changed code: `scripts/test_map.py` records, per test
-file, the repository files whose functions it ran, and each runner keeps that map in its tool cache. The
+file, the repository files whose functions it ran, and CI keeps that map in the Actions cache. The
 nightly schedule (and a manual dispatch) runs everything and refreshes the map; without a fresh map, or
 when a change touches a gate or shared setup, the whole suite runs.
+
+CI splits each platform's run into shards on separate runners: `slice` gives each shard a share of the plan's
+test files balanced by their measured seconds, and `merge` folds the shards' records into the map, the seconds
+and one verdict.
 """
 import argparse
 import ast
@@ -559,10 +563,49 @@ def write_plan(output, map_path=None):
     print(json.dumps(value))
 
 
+def test_files(root):
+    """Every file pytest collects from tests/ (`python_files = test_*.py`), repository-relative."""
+    return sorted(path.relative_to(root).as_posix() for path in Path(root, 'tests').rglob('test_*.py'))
+
+
+def seconds_path(map_path):
+    """Measured seconds per test file, kept next to the test map."""
+    return Path(map_path).with_name(Path(map_path).stem+'-seconds.json')
+
+
+def partition(files, shards, seconds):
+    """Longest first onto the least loaded shard: `shards` sorted lists of similar measured time. A file never
+    measured counts as the mean of the measured ones."""
+    known = [seconds[name] for name in files if name in seconds]
+    default = sum(known)/len(known) if known else 1.0
+    loads, parts = [0.0]*shards, [[] for _ in range(shards)]
+    for name in sorted(files, key=lambda name: (-seconds.get(name, default), name)):
+        lightest = loads.index(min(loads))
+        loads[lightest] += seconds.get(name, default)
+        parts[lightest].append(name)
+    return [sorted(part) for part in parts]
+
+
+def shard_plan(value, shard, shards, root, map_path=None):
+    """The quick and regression files of shard `shard` (1-based) of `shards`, from the plan."""
+    try:
+        seconds = json.loads(seconds_path(map_path).read_text(encoding='utf-8')) if map_path else {}
+    except (OSError, ValueError):
+        seconds = {}
+    quick = [] if value['scope'] == 'docs' else list(value['quick'])
+    regression = ([] if value['scope'] == 'docs' else
+                  [name for name in test_files(root) if name not in quick] if value['scope'] == 'full' else
+                  list(value['selected']))
+    return {'shard': shard, 'shards': shards, 'quick': partition(quick, shards, seconds)[shard-1],
+            'regression': partition(regression, shards, seconds)[shard-1]}
+
+
 def pytest_args(value, phase, output, basetemp):
     if value['scope'] == 'docs':
         return []
-    if phase == 'quick':
+    if (output/'shard.json').exists():  # a CI shard runs only its share (`slice`)
+        targets = json.loads((output/'shard.json').read_text(encoding='utf-8'))[phase]
+    elif phase == 'quick':
         targets = value['quick']
     elif value['scope'] == 'full':
         targets = ['tests/', *['--ignore='+path for path in value['quick']]]
@@ -616,6 +659,88 @@ def run(value, phase, output, basetemp, map_path=None):
     return result.returncode
 
 
+def junit_seconds(xml):
+    """Seconds per test file from a JUnit report (`tests.test_x[.Class]` classnames)."""
+    seconds = {}
+    for case in ET.parse(xml).iter('testcase'):
+        parts = case.get('classname', '').split('.')
+        module = next((i for i, part in enumerate(parts) if part.startswith('test_')), None)
+        if module is not None:
+            name = '/'.join(parts[:module+1])+'.py'
+            seconds[name] = seconds.get(name, 0.0)+float(case.get('time') or 0)
+    return seconds
+
+
+def merge(inputs, shards, output, map_path=None):
+    """Fold the shards' outputs into one result: the test map (fresh only when every shard ran its whole share),
+    the measured seconds per test file and a summary. Nonzero when a shard is missing, unfinished or red."""
+    found, problems, value = {}, [], None
+    # A folder of downloaded artifacts stands for the shard folders inside it.
+    folders = [child for path in map(Path, inputs) for child in
+               ([path] if (path/'shard.json').exists() or not path.is_dir() else sorted(path.iterdir()))]
+    for folder in folders:
+        try:
+            part = json.loads((folder/'shard.json').read_text(encoding='utf-8'))
+            value = value or json.loads((folder/'plan.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        found[part['shard']] = (folder, part)
+    missing = sorted(set(range(1, shards+1))-set(found))
+    if missing:
+        problems.append('missing shard output: '+', '.join(map(str, missing)))
+    lines = ['## CI shards', '', '| Shard | Phase | Files | Seconds | Exit |', '| ---: | --- | ---: | ---: | ---: |']
+    records, codes, seconds, unfinished = {'quick': {}, 'regression': {}}, {'quick': [], 'regression': []}, {}, False
+    for shard, (folder, part) in sorted(found.items()):
+        for phase in ('quick', 'regression'):
+            if not part[phase]:
+                continue
+            try:
+                receipt = json.loads((folder/(phase+'.json')).read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                problems.append(f'shard {shard}: {phase} did not finish')
+                unfinished = True
+                lines.append(f'| {shard} | {phase} | {len(part[phase])} | Not run / interrupted | — |')
+                continue
+            codes[phase].append(receipt['exit_code'])
+            lines.append(f"| {shard} | {phase} | {len(part[phase])} | {receipt['elapsed_seconds']} | {receipt['exit_code']} |")
+            if receipt['exit_code']:
+                problems.append(f"shard {shard}: {phase} exited {receipt['exit_code']}")
+            try:
+                records[phase].update(json.loads((folder/(phase+'-map.json')).read_text(encoding='utf-8')))
+            except (OSError, ValueError):
+                pass
+            if (folder/(phase+'.xml')).exists():
+                for name, spent in junit_seconds(folder/(phase+'.xml')).items():
+                    seconds[name] = seconds.get(name, 0.0)+spent
+    output.mkdir(parents=True, exist_ok=True)
+    for phase in ('quick', 'regression'):  # remember() reads quick-map.json beside the regression record
+        (output/(phase+'-map.json')).write_text(json.dumps(records[phase], sort_keys=True)+'\n', encoding='utf-8')
+    if map_path and value and value['scope'] != 'docs':
+        complete = not missing and not unfinished
+        for phase in ('quick', 'regression'):
+            if codes[phase] or records[phase]:
+                remember(Path(map_path), output/(phase+'-map.json'), value, phase,
+                         max(codes[phase], default=0) if complete else 2)
+        if seconds:
+            try:
+                known = json.loads(seconds_path(map_path).read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                known = {}
+            known.update({name: round(spent, 3) for name, spent in seconds.items()})
+            seconds_path(map_path).parent.mkdir(parents=True, exist_ok=True)
+            seconds_path(map_path).write_text(json.dumps(known, sort_keys=True)+'\n', encoding='utf-8')
+        if complete and not problems:
+            mark_verified(Path(map_path), value['head'])
+    lines += ['', 'Scope: **'+(value['scope'] if value else 'unknown')+'**.', '']
+    lines += ['Problems:', *('- '+problem for problem in problems)] if problems else ['Every shard passed.']
+    text = '\n'.join(lines)+'\n'
+    if os.environ.get('GITHUB_STEP_SUMMARY'):
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as stream:
+            stream.write(text)
+    print(text)
+    return 1 if problems or value is None else 0
+
+
 def summary(output):
     value = json.loads((output/'plan.json').read_text(encoding='utf-8'))
     lines = ['## CI validation', '', 'Scope: **'+value['scope']+'**; reason: `'+value['reason']+'`.',
@@ -650,13 +775,29 @@ def summary(output):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('plan', 'check', 'quick', 'regression', 'summary'))
+    parser.add_argument('action', choices=('plan', 'check', 'slice', 'quick', 'regression', 'summary', 'merge'))
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--basetemp', type=Path)
-    parser.add_argument('--map', type=Path, help="this runner's test map, kept in its tool cache")
+    parser.add_argument('--map', type=Path, help="the test map (CI keeps it in the Actions cache)")
+    parser.add_argument('--shard', help='slice: this shard of the plan, K/N (1-based)')
+    parser.add_argument('--shards', type=int, help='merge: how many shards ran')
+    parser.add_argument('inputs', nargs='*', type=Path, help="merge: the shards' output folders")
     args = parser.parse_args(argv)
     if args.action == 'plan':
         write_plan(args.output/'plan.json', args.map)
+    elif args.action == 'slice':
+        shard, shards = (int(number) for number in (args.shard or '1/1').split('/'))
+        part = shard_plan(json.loads((args.output/'plan.json').read_text(encoding='utf-8')), shard, shards,
+                          Path.cwd(), args.map)
+        (args.output/'shard.json').write_text(json.dumps(part, indent=2)+'\n', encoding='utf-8')
+        if os.environ.get('GITHUB_OUTPUT'):
+            with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
+                stream.write('tests='+str(bool(part['quick'] or part['regression'])).lower()+'\n')
+        print(json.dumps(part))
+    elif args.action == 'merge':
+        if not args.shards:
+            parser.error('--shards is required for merge')
+        return merge(args.inputs, args.shards, args.output, args.map)
     elif args.action == 'summary':
         summary(args.output)
     elif args.action == 'check':

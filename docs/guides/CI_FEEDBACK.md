@@ -72,8 +72,15 @@ automatic retries hide flaky test failures.
 CI runs on GitHub-hosted runners (`ubuntu-latest`, `windows-latest`); the tests are offline fixtures and need no
 GPU, provider or machine of the maintainer. A hosted runner starts empty, so the test map that focused runs read
 (which tests ran which functions, and the last verified commit per branch) is kept in the Actions cache: each run
-restores the newest map saved on its branch, else on the base branch, and saves its own. Without a fresh map (older
-than seven days, or none yet) a code change runs the full regression.
+restores the newest map saved on its branch, else on the base branch. Without a fresh map (older than seven days, or
+none yet) a code change runs the full regression.
+
+Each platform runs in shards on separate runners (Linux 4, Windows 6; `.github/workflows/ci.yml`). Every shard
+plans the same way and `scripts/ci_suite.py slice` gives it a share of the plan's test files, quick and regression,
+balanced by the seconds each file took in earlier runs (kept beside the test map); a shard with no share skips the
+installation. `Tests (linux)` and `Tests (windows)` merge the shards (`ci_suite.py merge`): they fail when a shard
+is missing, unfinished or red, refresh the test map only when every shard finished its share, record the seconds,
+and save the map. A full Windows regression that took about 38 minutes on one runner takes about 6.5 per shard.
 
 The repository variables `CI_RUNNER_LINUX` and `CI_RUNNER_WINDOWS` (a JSON label or label list, for example
 `["self-hosted","Linux"]`) move a platform to your own runners. Pull requests from forks then skip the job, since
