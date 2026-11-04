@@ -182,6 +182,16 @@ flowchart TD
         research_fail_closed_receipt(["research-fail-closed-receipt: research() fails closed on provider errors and never orphans the explorer lock"])
         research_redirect_allowlist(["research-redirect-allowlist: research collect() validates the effective URL after redirects against the domain allowlist"])
         research_reduce_integrity(["research-reduce-integrity: reduce_facts() validates partial refs against the corpus and keeps reducing until the final prompt fits batch_chars"])
+        ship_ci_generalize_20261104["ship-ci-generalize-20261104: tare ci pr for any GitHub repository"]
+        ship_alert_lifecycle_20261104["ship-alert-lifecycle-20261104: Alerts and shepherds end when their subject ends"]
+        ship_preflight_20261104["ship-preflight-20261104: Ship preflight: identity, protection and merge method"]
+        ship_triage_rules_20261104["ship-triage-rules-20261104: Ship triage rules with receipts"]
+        ship_project_config_20261104["ship-project-config-20261104: Ship project configuration in .tare/ship.toml"]
+        ship_state_commands_20261104["ship-state-commands-20261104: Ship state, tare ship and the /ship panel"]
+        ship_fix_loop_20261104["ship-fix-loop-20261104: Ship diagnosis and fix loop"]
+        ship_review_loop_20261104["ship-review-loop-20261104: Ship answers review comments"]
+        ship_after_merge_20261104["ship-after-merge-20261104: Ship follows the merge and declared workflows"]
+        ship_chained_repos_20261104["ship-chained-repos-20261104: Ship chains across repositories"]
     end
     subgraph Governance___Authority_History["Governance / Authority History"]
         gov_audit_leg(["gov-audit-leg: Audit becomes fourth governance leg"])
@@ -572,6 +582,15 @@ flowchart TD
     SPECGRAPH_COMPLETION_X1 -->|unlocks| SPECGRAPH_RESPONSE_CONTRACT_20260908
     SPECGRAPH_RESPONSE_CONTRACT_20260908 -->|unlocks| SPECGRAPH_FOLLOWUP_HOST_ADOPTION_20260908
     node_serving_stack_home_20261008 -->|unlocks| node_service_in_os_20261104
+    ship_ci_generalize_20261104 -->|unlocks| ship_state_commands_20261104
+    ship_alert_lifecycle_20261104 -->|unlocks| ship_state_commands_20261104
+    ship_preflight_20261104 -->|unlocks| ship_state_commands_20261104
+    ship_triage_rules_20261104 -->|unlocks| ship_state_commands_20261104
+    ship_project_config_20261104 -->|unlocks| ship_state_commands_20261104
+    ship_state_commands_20261104 -->|unlocks| ship_fix_loop_20261104
+    ship_fix_loop_20261104 -->|unlocks| ship_review_loop_20261104
+    ship_state_commands_20261104 -->|unlocks| ship_after_merge_20261104
+    ship_state_commands_20261104 -->|unlocks| ship_chained_repos_20261104
 
     classDef done fill:#10b98122,stroke:#10b981,stroke-width:2px,color:#d1fae5;
     classDef ready fill:#06b6d422,stroke:#06b6d4,stroke-width:2px,color:#cffafe;
@@ -813,3 +832,13 @@ flowchart TD
     class gpu_lease_remote_holder_20261008 done;
     class gpu_named_reservation_20261008 done;
     class node_service_in_os_20261104 done;
+    class ship_ci_generalize_20261104 ready;
+    class ship_alert_lifecycle_20261104 ready;
+    class ship_preflight_20261104 ready;
+    class ship_triage_rules_20261104 ready;
+    class ship_project_config_20261104 ready;
+    class ship_state_commands_20261104 blocked;
+    class ship_fix_loop_20261104 blocked;
+    class ship_review_loop_20261104 blocked;
+    class ship_after_merge_20261104 blocked;
+    class ship_chained_repos_20261104 blocked;
