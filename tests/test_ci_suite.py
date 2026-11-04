@@ -642,3 +642,66 @@ def test_a_changed_pin_runs_the_federation_test_even_in_a_narrow_plan(root, sate
     value = ci.plan(root, {SAT: 'M'}, test_map=satellite, previous=lambda path: old, satellites=pin({'src/kernel/engine.py': 'M'}))
     assert value['scope'] == 'focused' and ci.FEDERATION in value['quick']
     assert ci.FEDERATION not in ci.plan(root, {'README.md': 'M'})['quick']  # prose alone stays a docs plan
+
+
+def test_shards_split_the_plan_into_disjoint_shares_of_similar_measured_time(root):
+    for name in ('a', 'b', 'c', 'd', 'e'):
+        (root/f'tests/test_{name}.py').write_text('def test(): pass\n')
+    full = {'scope': 'full', 'quick': ['tests/test_leaf.py'], 'selected': []}
+    store = root/'cache/test-map-linux.json'
+    store.parent.mkdir()
+    ci.seconds_path(store).write_text(json.dumps({'tests/test_a.py': 50, 'tests/test_b.py': 30, 'tests/test_c.py': 20}))
+    shares = [ci.shard_plan(full, shard, 3, root, store) for shard in (1, 2, 3)]
+    regression = [name for share in shares for name in share['regression']]
+    assert sorted(regression) == ['tests/test_a.py', 'tests/test_b.py', 'tests/test_c.py', 'tests/test_d.py',
+                                  'tests/test_e.py']  # every file once, the quick ones in the quick phase only
+    assert shares[0]['regression'] == ['tests/test_a.py']  # the longest file gets a shard to itself
+    assert [name for share in shares for name in share['quick']] == ['tests/test_leaf.py']
+    assert ci.shard_plan(full, 2, 3, root, store) == shares[1]  # every shard computes the same split
+    focused = {'scope': 'focused', 'quick': [], 'selected': ['tests/test_d.py']}
+    assert [ci.shard_plan(focused, shard, 2, root)['regression'] for shard in (1, 2)] == [['tests/test_d.py'], []]
+    assert ci.shard_plan({'scope': 'docs', 'quick': [], 'selected': []}, 1, 2, root) == {
+        'shard': 1, 'shards': 2, 'quick': [], 'regression': []}
+
+
+def test_a_shard_runs_only_its_share(root):
+    value = {'scope': 'full', 'quick': ['tests/test_leaf.py'], 'selected': []}
+    (root/'shard.json').write_text(json.dumps({'shard': 2, 'shards': 2, 'quick': [], 'regression': ['tests/test_b.py']}))
+    args = ci.pytest_args(value, 'regression', root, root/'tmp')
+    assert 'tests/test_b.py' in args and 'tests/' not in args
+    assert ci.pytest_args(value, 'quick', root, root/'tmp') == []
+
+
+def test_merge_freshens_the_map_only_when_every_shard_finished_its_share(root, monkeypatch):
+    monkeypatch.setenv('GITHUB_EVENT_NAME', 'push')
+    monkeypatch.setenv('GITHUB_REF_NAME', 'main')
+    monkeypatch.delenv('GITHUB_STEP_SUMMARY', raising=False)
+    plan = {'scope': 'full', 'head': 'abc', 'quick': ['tests/test_leaf.py'], 'selected': []}
+    def shard(number, quick, regression, ran, code=0):
+        folder = root/f'out-{number}'
+        folder.mkdir()
+        (folder/'plan.json').write_text(json.dumps(plan))
+        (folder/'shard.json').write_text(json.dumps({'shard': number, 'shards': 2, 'quick': quick,
+                                                     'regression': regression}))
+        for phase, files in (('quick', quick), ('regression', regression)):
+            if files:
+                (folder/(phase+'.json')).write_text(json.dumps({'exit_code': code, 'elapsed_seconds': 1}))
+                (folder/(phase+'-map.json')).write_text(json.dumps({name: ran for name in files}))
+                (folder/(phase+'.xml')).write_text('<testsuite>' + ''.join(
+                    f'<testcase classname="{name[:-3].replace("/", ".")}" name="t" time="2.5"/>' for name in files)
+                    + '</testsuite>')
+        return folder
+    one = shard(1, ['tests/test_leaf.py'], ['tests/test_a.py'], ['relay/a.py::run'])
+    store = root/'cache/test-map-linux.json'
+    assert ci.merge([one], 2, root/'merged', store) == 1  # shard 2 never reported: no fresh map, no verdict
+    assert 'full_at' not in json.loads(store.read_text()) and not ci.verified_path(store).exists()
+    two = shard(2, [], ['tests/test_b.py'], ['relay/b.py::run'])
+    assert ci.merge([one, two], 2, root/'merged', store) == 0
+    value = json.loads(store.read_text())
+    assert value['full_head'] == 'abc' and set(value['tests']) == {
+        'tests/test_leaf.py', 'tests/test_a.py', 'tests/test_b.py'}
+    assert json.loads(ci.verified_path(store).read_text())['main'] == 'abc'
+    assert json.loads(ci.seconds_path(store).read_text())['tests/test_b.py'] == 2.5
+    red = shard(3, [], ['tests/test_b.py'], [], code=1)
+    (red/'shard.json').write_text(json.dumps({'shard': 2, 'shards': 2, 'quick': [], 'regression': ['tests/test_b.py']}))
+    assert ci.merge([one, red], 2, root/'merged-red', store) == 1  # a red shard fails the platform

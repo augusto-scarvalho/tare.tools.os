@@ -19,12 +19,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Each platform's tests run in shards on separate runners (Linux 4, Windows 6): `ci_suite.py slice` gives each
+# shard a share of the plan's test files balanced by their measured seconds, and the `Tests (<platform>)` job
+# merges the shards into one verdict, the test map and the seconds. Change a platform's shard count in both jobs.
+#
+# GitHub-hosted runners by default. The repository variables CI_RUNNER_LINUX and CI_RUNNER_WINDOWS (a JSON label
+# or label list, e.g. ["self-hosted","Linux"]) move a platform's shards to your own runners; pull requests from
+# forks then skip CI, since they could run any code there.
 jobs:
-  test:
-    name: Tests (${{ matrix.platform }})
-    # GitHub-hosted runners by default. The repository variables CI_RUNNER_LINUX and CI_RUNNER_WINDOWS (a JSON
-    # label or label list, e.g. ["self-hosted","Linux"]) move a platform to your own runners; pull requests from
-    # forks then skip this job, since they could run any code there.
+  shard:
+    name: Shard (${{ matrix.platform }} ${{ matrix.shard }}/${{ matrix.shards }})
     if: >-
       github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
       || (!vars.CI_RUNNER_LINUX && !vars.CI_RUNNER_WINDOWS)
@@ -32,13 +36,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: linux
-            runner: ${{ vars.CI_RUNNER_LINUX || '"ubuntu-latest"' }}
-          - platform: windows
-            runner: ${{ vars.CI_RUNNER_WINDOWS || '"windows-latest"' }}
+          - { platform: linux, shard: 1, shards: 4, runner: "${{ vars.CI_RUNNER_LINUX || '\"ubuntu-latest\"' }}" }
+          - { platform: linux, shard: 2, shards: 4, runner: "${{ vars.CI_RUNNER_LINUX || '\"ubuntu-latest\"' }}" }
+          - { platform: linux, shard: 3, shards: 4, runner: "${{ vars.CI_RUNNER_LINUX || '\"ubuntu-latest\"' }}" }
+          - { platform: linux, shard: 4, shards: 4, runner: "${{ vars.CI_RUNNER_LINUX || '\"ubuntu-latest\"' }}" }
+          - { platform: windows, shard: 1, shards: 6, runner: "${{ vars.CI_RUNNER_WINDOWS || '\"windows-latest\"' }}" }
+          - { platform: windows, shard: 2, shards: 6, runner: "${{ vars.CI_RUNNER_WINDOWS || '\"windows-latest\"' }}" }
+          - { platform: windows, shard: 3, shards: 6, runner: "${{ vars.CI_RUNNER_WINDOWS || '\"windows-latest\"' }}" }
+          - { platform: windows, shard: 4, shards: 6, runner: "${{ vars.CI_RUNNER_WINDOWS || '\"windows-latest\"' }}" }
+          - { platform: windows, shard: 5, shards: 6, runner: "${{ vars.CI_RUNNER_WINDOWS || '\"windows-latest\"' }}" }
+          - { platform: windows, shard: 6, shards: 6, runner: "${{ vars.CI_RUNNER_WINDOWS || '\"windows-latest\"' }}" }
     runs-on: ${{ fromJSON(matrix.runner) }}
-    # The full Windows regression is the long one; the limits leave room for setup and evidence upload.
-    timeout-minutes: ${{ matrix.platform == 'windows' && 150 || 60 }}
+    timeout-minutes: ${{ matrix.platform == 'windows' && 40 || 30 }}
     env:
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: core.longpaths
@@ -65,8 +74,8 @@ jobs:
           echo "maps=$RUNNER_TEMP/tare-ci-map" >> "$GITHUB_OUTPUT"
           echo "map=$RUNNER_TEMP/tare-ci-map/test-map-${{ matrix.platform }}.json" >> "$GITHUB_OUTPUT"
 
-      # The map of which tests ran which functions, and the last verified commit per branch, live in the
-      # Actions cache between runs: the newest one saved on this branch, else on the base branch.
+      # The map of which tests ran which functions, the seconds each test file took and the last verified commit
+      # per branch live in the Actions cache: the newest one saved on this branch, else on the base branch.
       - name: Restore the test map
         uses: actions/cache/restore@v4
         with:
@@ -96,8 +105,12 @@ jobs:
         if: steps.scope.outputs.scope != 'docs'
         run: python -B scripts/ci_suite.py plan --output "${{ steps.paths.outputs.output }}" --map "${{ steps.paths.outputs.map }}"
 
+      - name: Take this shard's share
+        id: slice
+        run: python -B scripts/ci_suite.py slice --shard ${{ matrix.shard }}/${{ matrix.shards }} --output "${{ steps.paths.outputs.output }}" --map "${{ steps.paths.outputs.map }}"
+
       - name: Create isolated Python environment
-        if: steps.scope.outputs.scope != 'docs'
+        if: steps.slice.outputs.tests == 'true'
         run: >-
           python -c "import os, pathlib, venv;
           venv.create('.venv', with_pip=True);
@@ -105,7 +118,7 @@ jobs:
           open(os.environ['GITHUB_PATH'], 'a').write(str(scripts.resolve()) + '\n')"
 
       - name: Install dependencies
-        if: steps.scope.outputs.scope != 'docs'
+        if: steps.slice.outputs.tests == 'true'
         run: |
           python -m pip install --upgrade pip
           python -m pip install pytest pytest-timeout anyio trafilatura firecrawl boto3 mistune beautifulsoup4 psutil "jsonschema>=4.18" "openai>=1,<3"
@@ -113,16 +126,16 @@ jobs:
           python -c "import subprocess; root = 'satellites/tare.tools.specgraph'; path = 'src/tare_tools_specgraph.egg-info'; tracked = subprocess.check_output(['git', '-C', root, 'ls-files', '--', path]); tracked and subprocess.run(['git', '-C', root, 'restore', '--', path], check=True)"
 
       - name: Expose installed Python entrypoints to subprocess tests
-        if: steps.scope.outputs.scope != 'docs'
+        if: steps.slice.outputs.tests == 'true'
         run: >-
           python -c "import os, sysconfig; open(os.environ['GITHUB_PATH'], 'a').write(sysconfig.get_path('scripts') + '\n')"
 
       - name: Install pinned ripgrep for real capability tests
-        if: steps.scope.outputs.scope != 'docs'
+        if: steps.slice.outputs.tests == 'true'
         run: python satellites/tare.tools.kernel/tools/install_test_ripgrep.py
 
       - name: Quick contract checks
-        if: steps.scope.outputs.scope != 'docs'
+        if: steps.slice.outputs.tests == 'true'
         timeout-minutes: 5
         run: >-
           python -B scripts/ci_suite.py quick
@@ -131,7 +144,7 @@ jobs:
           --map "${{ steps.paths.outputs.map }}"
 
       - name: Selected or full regression
-        if: steps.scope.outputs.scope != 'docs'
+        if: steps.slice.outputs.tests == 'true'
         run: >-
           python -B scripts/ci_suite.py regression
           --output "${{ steps.paths.outputs.output }}"
@@ -139,12 +152,88 @@ jobs:
           --map "${{ steps.paths.outputs.map }}"
 
       - name: Report scope and test durations
-        if: always() && steps.scope.outcome == 'success'
+        if: always() && steps.slice.outputs.tests == 'true'
         run: python -B scripts/ci_suite.py summary --output "${{ steps.paths.outputs.output }}"
+
+      - name: Preserve validation evidence
+        id: evidence
+        if: always() && steps.slice.outcome == 'success'
+        # The Tests job merges these. A transport reset must not discard a completed test run: retry only this
+        # upload once; either failed tests or a failed second upload keep CI red.
+        continue-on-error: true
+        timeout-minutes: 3
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-${{ matrix.platform }}-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: ${{ steps.paths.outputs.output }}
+          retention-days: 7
+
+      - name: Retry validation evidence upload once
+        if: always() && !cancelled() && steps.evidence.outcome == 'failure'
+        timeout-minutes: 3
+        uses: actions/upload-artifact@v4
+        with:
+          # A partial first upload may already own its artifact name.
+          name: ci-${{ matrix.platform }}-${{ matrix.shard }}-${{ github.run_attempt }}-retry
+          path: ${{ steps.paths.outputs.output }}
+          retention-days: 7
+
+  result:
+    name: Tests (${{ matrix.platform }})
+    needs: shard
+    if: >-
+      !cancelled() && (github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+      || (!vars.CI_RUNNER_LINUX && !vars.CI_RUNNER_WINDOWS))
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux, shards: 4, runner: "${{ vars.CI_RUNNER_LINUX || '\"ubuntu-latest\"' }}" }
+          - { platform: windows, shards: 6, runner: "${{ vars.CI_RUNNER_WINDOWS || '\"windows-latest\"' }}" }
+    # The same runners as the shards: the Actions cache is bound to the operating system and the cached paths.
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Locate the test map
+        id: paths
+        shell: bash
+        run: |
+          echo "maps=$RUNNER_TEMP/tare-ci-map" >> "$GITHUB_OUTPUT"
+          echo "map=$RUNNER_TEMP/tare-ci-map/test-map-${{ matrix.platform }}.json" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the test map
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.paths.outputs.maps }}
+          key: tare-ci-map-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: tare-ci-map-${{ matrix.platform }}-
+
+      - name: Download the shards' evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ci-${{ matrix.platform }}-*-${{ github.run_attempt }}*
+          path: ${{ runner.temp }}/shards
+
+      - name: Merge the shards
+        run: >-
+          python -B scripts/ci_suite.py merge --shards ${{ matrix.shards }}
+          --output "${{ runner.temp }}/merged" --map "${{ steps.paths.outputs.map }}"
+          "${{ runner.temp }}/shards"
 
       - name: Check for a test map to save
         id: map
-        if: always() && steps.scope.outcome == 'success'
+        if: always()
         shell: bash
         # hashFiles() sees only the workspace; the map lives in the runner's temporary folder.
         run: if ls "${{ steps.paths.outputs.maps }}"/*.json >/dev/null 2>&1; then echo "present=true" >> "$GITHUB_OUTPUT"; fi
@@ -155,26 +244,3 @@ jobs:
         with:
           path: ${{ steps.paths.outputs.maps }}
           key: tare-ci-map-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
-
-      - name: Preserve validation evidence
-        id: evidence
-        if: always() && steps.scope.outcome == 'success'
-        # A transport reset must not discard a completed test run. Retry only this
-        # upload once; either failed tests or a failed second upload keep CI red.
-        continue-on-error: true
-        timeout-minutes: 3
-        uses: actions/upload-artifact@v4
-        with:
-          name: ci-${{ matrix.platform }}-${{ github.run_attempt }}
-          path: ${{ steps.paths.outputs.output }}
-          retention-days: 7
-
-      - name: Retry validation evidence upload once
-        if: always() && !cancelled() && steps.evidence.outcome == 'failure'
-        timeout-minutes: 3
-        uses: actions/upload-artifact@v4
-        with:
-          # A partial first upload may already own its artifact name.
-          name: ci-${{ matrix.platform }}-${{ github.run_attempt }}-retry
-          path: ${{ steps.paths.outputs.output }}
-          retention-days: 7
