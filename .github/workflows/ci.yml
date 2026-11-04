@@ -1,0 +1,157 @@
+name: tare.tools CI
+
+on:
+  workflow_dispatch:
+  # Pushes run the tests that ran the changed code; this nightly run proves everything and refreshes
+  # each runner's test map (scripts/ci_suite.py).
+  schedule:
+    - cron: '17 5 * * *'
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test Suite & Falsifiers (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-host
+            runner: '["self-hosted","Windows","aaaaa"]'
+            python: python
+            pip_flags: ''
+          - platform: linux-wsl2
+            runner: '["self-hosted","Linux","wsl2","aaaaa"]'
+            python: python3
+            pip_flags: ''
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    # Self-hosted runners execute the checked-out code on the owner's workstation: a pull request from a
+    # fork never reaches them. Its tests run once the change is on a branch of this repository.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Full Windows regression outgrew 55 minutes (run 39065482726: 3790 passes
+    # before the job deadline). Keep coverage and allow setup/cleanup margin.
+    # Include dependency setup, the full suite, bounded artifact retry and cleanup.
+    timeout-minutes: ${{ matrix.platform == 'windows-host' && 75 || 40 }}
+    env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: "true"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Select validation scope
+        id: scope
+        env:
+          # A merge into main whose bytes already passed CI in their pull request is not run twice.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ${{ matrix.python }} -B scripts/ci_suite.py plan --output "${{ runner.temp }}/tare-ci-${{ github.run_id }}" --map "${{ runner.tool_cache }}/tare-ci/test-map-${{ matrix.platform }}.json"
+
+      - name: Check patch whitespace
+        run: ${{ matrix.python }} -B scripts/ci_suite.py check --output "${{ runner.temp }}/tare-ci-${{ github.run_id }}"
+
+      - name: Checkout pinned satellites with runner Git credentials
+        if: steps.scope.outputs.scope != 'docs' && runner.os != 'Windows'
+        # Private satellites require read access for the runner service account.
+        # An interactive user's gh login is not the service account's credential.
+        env:
+          GIT_TERMINAL_PROMPT: '0'
+          GCM_INTERACTIVE: Never
+        run: git submodule update --init
+
+      - name: Checkout pinned satellites with read-only Windows deploy keys
+        if: steps.scope.outputs.scope != 'docs' && runner.os == 'Windows'
+        env:
+          GIT_TERMINAL_PROMPT: '0'
+          GIT_SSH_COMMAND: 'C:/Windows/System32/OpenSSH/ssh.exe -F C:/ProgramData/tare-tools/ci/ssh_config'
+        run: |
+          foreach ($owner in @('kernel', 'specgraph', 'agent-runtime')) {
+            git config "submodule.satellites/tare.tools.$owner.url" "git@tare-os-ci-${owner}:augusto-scarvalho/tare.tools.$owner.git"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          git submodule update --init
+
+      - name: Select validation scope with the satellites checked out
+        # The plan above ran without the satellites: a changed pin now becomes the files its new commit
+        # changed inside the satellite, and scripts/ci_suite.py rewrites plan.json.
+        if: steps.scope.outputs.scope != 'docs'
+        run: ${{ matrix.python }} -B scripts/ci_suite.py plan --output "${{ runner.temp }}/tare-ci-${{ github.run_id }}" --map "${{ runner.tool_cache }}/tare-ci/test-map-${{ matrix.platform }}.json"
+
+      - name: Create isolated Python environment
+        if: steps.scope.outputs.scope != 'docs'
+        run: >-
+          ${{ matrix.python }} -c "import os, pathlib, venv;
+          venv.create('.venv', with_pip=True);
+          scripts = pathlib.Path('.venv') / ('Scripts' if os.name == 'nt' else 'bin');
+          open(os.environ['GITHUB_PATH'], 'a').write(str(scripts.resolve()) + '\n')"
+
+      - name: Install dependencies
+        if: steps.scope.outputs.scope != 'docs'
+        run: |
+          ${{ matrix.python }} -m pip install ${{ matrix.pip_flags }} --upgrade pip
+          ${{ matrix.python }} -m pip install ${{ matrix.pip_flags }} pytest pytest-timeout anyio trafilatura firecrawl boto3 mistune beautifulsoup4 psutil "jsonschema>=4.18" "openai>=1,<3"
+          ${{ matrix.python }} -m pip install -e satellites/tare.tools.agent-runtime -e "satellites/tare.tools.kernel[attachments]" -e satellites/tare.tools.specgraph -e satellites/tare.tools.backlog-graph -e ".[mcp]"
+          ${{ matrix.python }} -c "import subprocess; root = 'satellites/tare.tools.specgraph'; path = 'src/tare_tools_specgraph.egg-info'; tracked = subprocess.check_output(['git', '-C', root, 'ls-files', '--', path]); tracked and subprocess.run(['git', '-C', root, 'restore', '--', path], check=True)"
+
+      - name: Expose installed Python entrypoints to subprocess tests
+        if: steps.scope.outputs.scope != 'docs'
+        run: >-
+          ${{ matrix.python }} -c "import os, sysconfig; open(os.environ['GITHUB_PATH'], 'a').write(sysconfig.get_path('scripts') + '\n')"
+
+      - name: Install pinned ripgrep for real capability tests
+        if: steps.scope.outputs.scope != 'docs'
+        run: >-
+          ${{ matrix.python }} satellites/tare.tools.kernel/tools/install_test_ripgrep.py
+
+      - name: Quick contract checks
+        if: steps.scope.outputs.scope != 'docs'
+        timeout-minutes: 5
+        run: >-
+          ${{ matrix.python }} -B scripts/ci_suite.py quick
+          --output "${{ runner.temp }}/tare-ci-${{ github.run_id }}"
+          --basetemp "${{ runner.temp }}/pytest-quick"
+          --map "${{ runner.tool_cache }}/tare-ci/test-map-${{ matrix.platform }}.json"
+
+      - name: Selected or full regression
+        if: steps.scope.outputs.scope != 'docs'
+        run: >-
+          ${{ matrix.python }} -B scripts/ci_suite.py regression
+          --output "${{ runner.temp }}/tare-ci-${{ github.run_id }}"
+          --basetemp "${{ runner.temp }}/pytest-regression"
+          --map "${{ runner.tool_cache }}/tare-ci/test-map-${{ matrix.platform }}.json"
+
+      - name: Report scope and test durations
+        if: always() && steps.scope.outcome == 'success'
+        run: ${{ matrix.python }} -B scripts/ci_suite.py summary --output "${{ runner.temp }}/tare-ci-${{ github.run_id }}"
+
+      - name: Preserve validation evidence
+        id: evidence
+        if: always() && steps.scope.outcome == 'success'
+        # A transport reset must not discard a completed test run. Retry only this
+        # upload once; either failed tests or a failed second upload keep CI red.
+        continue-on-error: true
+        timeout-minutes: 3
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-${{ matrix.platform }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/tare-ci-${{ github.run_id }}
+          retention-days: 7
+
+      - name: Retry validation evidence upload once
+        if: always() && !cancelled() && steps.evidence.outcome == 'failure'
+        timeout-minutes: 3
+        uses: actions/upload-artifact@v4
+        with:
+          # A partial first upload may already own its artifact name.
+          name: ci-${{ matrix.platform }}-${{ github.run_attempt }}-retry
+          path: ${{ runner.temp }}/tare-ci-${{ github.run_id }}
+          retention-days: 7

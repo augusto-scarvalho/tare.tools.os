@@ -1,0 +1,33 @@
+{
+  "regime": "existing ordinary owner receipts; no backfill",
+  "work_receipts": 25,
+  "completed_executions": 6,
+  "comparison_groups": 0,
+  "reviewable_candidates": 2,
+  "recorded_operator_reviews": 0,
+  "completed_executions_with_linked_audit": 0,
+  "gap_counts": {
+    "effort_missing_or_mixed": 6,
+    "observed_model_missing_or_mixed": 6,
+    "protocol_missing_or_mixed": 6,
+    "runtime_call_identity_mismatch": 1,
+    "runtime_version_missing_or_mixed": 6,
+    "task_class_missing_or_mixed": 6,
+    "usage_attribution_partial": 6,
+    "project_missing_or_mixed": 5,
+    "requested_model_missing_or_mixed": 5
+  },
+  "historical_audit_dispositions": {
+    "confirmed_corrected": 4,
+    "unreviewed": 4
+  },
+  "provider_calls": 0,
+  "receipt_writes": 0,
+  "observed_at": "2026-10-21",
+  "source_owner": "existing OS control-owner Work receipts",
+  "observation_scope": "Read-only reconstruction; no receipt, model preference or historical declaration rewritten",
+  "new_functionality": "Candidate-bound operator review and controller-attempt runtime/effort collection",
+  "quality_preference": null,
+  "representative_cohort": null,
+  "next_review": "Use ordinary completed deliveries with explicit task class, model attribution and audit decisions; ten is a review cadence, not a gate."
+}

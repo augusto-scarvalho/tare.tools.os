@@ -1,0 +1,15 @@
+#!/bin/sh
+
+branch=$(git symbolic-ref --quiet --short HEAD) || exit 0
+
+case "$branch" in
+  main|dev) exit 0 ;;
+esac
+
+# tare ci shepherd may have merged main into the pushed branch: take that in first, when it merges cleanly.
+if git fetch --quiet origin "$branch" 2>/dev/null && ! git merge-base --is-ancestor "origin/$branch" HEAD; then
+  git merge --no-edit --quiet "origin/$branch" || git merge --abort
+fi
+
+git push --quiet --set-upstream origin "$branch" ||
+  printf 'warning: commit saved locally; the automatic push of %s failed\n' "$branch" >&2

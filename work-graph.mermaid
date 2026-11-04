@@ -1,0 +1,815 @@
+flowchart TD
+    subgraph 00_North_Star["00 North Star"]
+        north_star["north-star: tare.tools Agent Operating System North Star"]
+    end
+    subgraph 01_Current_anchors["01 Current anchors"]
+        repo_main["repo-main: Canonical remote main"]
+        repo_staging["repo-staging: staging — current integration incumbent @ (pre-publication commit)"]
+        taskstore["taskstore: Canonical TaskStore"]
+        workgraph_poc["workgraph-poc: Backlog / Work Graph POC v0.5 — audit-remediated shadow projection"]
+    end
+    subgraph 02_Recovery_Bridge["02 Recovery Bridge"]
+        r3_audit(["r3-audit: Independent R3 audit / settlement"])
+        rb01(["rb01: RB-01 exact candidate materialization + CandidateCI"])
+        rb02(["rb02: RB-02 exact DEV transition + IntegrationCI"])
+        rb03(["rb03: RB-03 PR #16 protected landing"])
+        rb04a(["rb04a: RB-04A PR #13 requalification"])
+        rb04b(["rb04b: RB-04B PR #13 protected landing"])
+        rb05(["rb05: RB-05 Canonical candidate evidence plane"])
+        rb06(["rb06: RB-06 Bounded Recovery Permit + retirement contract"])
+    end
+    subgraph 03_Trusted_Control_Plane["03 Trusted Control Plane"]
+        tcp01(["tcp01: TCP-01 Trusted first byte / incumbent controller root"])
+        tcp02(["tcp02: TCP-02 Execution provenance binding"])
+        tcp03(["tcp03: TCP-03 Canonical owner decision / promotion binding"])
+        tcp04["tcp04: TCP-04 Filesystem confinement / producer authenticity"]
+        tcp05(["tcp05: TCP-05 Trusted CI control plane"])
+        tcp06(["tcp06: TCP-06 Genesis / strict eligibility activation"])
+        tcp07(["tcp07: TCP-07 Retire Recovery authority"])
+        PROCESS_REPAIR_01(["PROCESS-REPAIR-01: Process-Repair Packet: Phase-T Bootstrap Authority Composition v1"])
+    end
+    subgraph 04_Incumbent_evolution["04 Incumbent evolution"]
+        i2i01["i2i01: I2I-01 Transition contract using existing primitives"]
+        i2i02["i2i02: I2I-02 Replay / rollback / freeze / concurrency semantics"]
+        i2i03["i2i03: I2I-03 Shadow qualification + canary rotation"]
+        i2i04["i2i04: I2I-04 First real incumbent N→N+1 rotation"]
+        i2i05["i2i05: I2I-05 Generalize transition pattern carefully"]
+        i2i06["i2i06: I2I-06 Formal model + chaos/recovery suite"]
+    end
+    subgraph 05_Cross_cutting["05 Cross-cutting"]
+        x01(["x01: Authority Dependency Graph / SCC detector"])
+        x02(["x02: Progress Governor for agentic corrective loops"])
+        x03["x03: Evidence / provenance discipline"]
+        x04(["x04: Windows / POSIX assurance"])
+        x05(["x05: Economics / resource measurements"])
+        x06(["x06: Research → Findings → ADR/SPEC/BDD promotion discipline"])
+    end
+    subgraph 06_Portfolio_view["06 Portfolio view"]
+        p00(["p00: P0.0 Truthful promotion path"])
+        p01["p01: P0.1 Assurance Topology / Evidence Acquisition"]
+        p02(["p02: P0.2 Trusted Judge / Promotion Separation"])
+        p03(["p03: P0.3 Capability/Effect + Reliability closure"])
+        p10(["p10: P1.0 Durable Work + Evidence Backbone"])
+        p11(["p11: P1.1 Relay automation under bounded Authority"])
+        p12(["p12: P1.2 Routing / ExecutionBinding shadow convergence"])
+        p20(["p20: P2.0 Adaptive Assurance + Resource Scheduling"])
+        p21["p21: P2.1 Reputation / Qualification from evidence"]
+        p30["p30: P3 Memory / Experience / Evolution Control"]
+    end
+    subgraph 07_Assurance___task_alignment["07 Assurance / task alignment"]
+        assurance_topology(["assurance-topology: ASSURANCE-TOPOLOGY-01 shadow GatePlan"])
+        backlog_align["backlog-align: BACKLOG-ALIGN-01 canonical TaskStore reconciliation"]
+        ci_regression_02(["ci-regression-02: CI-REGRESSION-02 historical train"])
+        cli_golden(["cli-golden: CLI-GOLDEN-01 residual issue"])
+        continuity["continuity: SESSION-CONTINUITY-01 rolling continuity ledger"]
+        trust_genesis_ro(["trust-genesis-ro: TRUST-GENESIS-01 archaeology"])
+        windows_sao(["windows-sao: WINDOWS-SAO-RELIABILITY-01 residual issue"])
+    end
+    subgraph 08_Relay___Work_convergence["08 Relay / Work convergence"]
+        relay_automation(["relay-automation: Relay automation / local dispatcher with bounded Authority"])
+        relay_confinement["relay-confinement: Implementer filesystem confinement"]
+        relay_q0(["relay-q0: Relay Q0 end-to-end evidence exchange"])
+        relay_q7_a2(["relay-q7-a2: Relay/Q7 A2 shadow execution candidate"])
+        relay_role_identity(["relay-role-identity: Relay role separation for the trusted local operator"])
+        work_relay_reconcile(["work-relay-reconcile: Work Registry × Relay × durable Work × GitHub Issues × Kanban projection reconciliation"])
+        GRAPH_BACKLOG_02(["GRAPH-BACKLOG-02: Graph-Backlog-02: Implement Harness Thin Client Adapter (graph_backlog_adapter.py)"])
+        RELAY_CONTROL_PLANE_01(["RELAY-CONTROL-PLANE-01: RELAY-CONTROL-PLANE-01 - Exactly-once relay, compact board, bounded watchers"])
+        RELAY_PLANNER_VENDOR_FAILOVER_01(["RELAY-PLANNER-VENDOR-FAILOVER-01: RELAY-PLANNER-VENDOR-FAILOVER-01 - Vendor-neutral Planner succession and takeover"])
+        RELAY_INTAKE_DOGFOODING_CONSENSUS_01(["RELAY-INTAKE-DOGFOODING-CONSENSUS-01: RELAY-INTAKE-DOGFOODING-CONSENSUS-01 - Asynchronous human intake queue and multi-agent dogfooding consensus"])
+        INTAKE_RELAY_OWNER_COCKPIT_01_O_8ec9472cba(["INTAKE-RELAY-OWNER-COCKPIT-01-O-8ec9472cba: RELAY-OWNER-COCKPIT-01 — Owner Cockpit: Private Web Projection, Approval Inbox & Intake"])
+        INTAKE_OS_CR_DITOS_DO_GOOGLE_GE_2a34cc3db9(["INTAKE-OS-CR-DITOS-DO-GOOGLE-GE-2a34cc3db9: The google gemini anti gravity 5h credits ran out in the middle of an important process!!!"])
+        CONSENSUS_PROP_MULTI_HOST_COORDINATION_IMMUNITY_(["CONSENSUS-PROP-MULTI-HOST-COORDINATION-IMMUNITY-: Multi-Host Coordination Immunity & Zero Split-Brain Protocol"])
+        CONSENSUS_PROP_WORKER_PROMPT_HARMONIZATION_01(["CONSENSUS-PROP-WORKER-PROMPT-HARMONIZATION-01: Universal Multi-Agent Worker Prompt Harmonization & U-7D Alignment"])
+        INTAKE_P0_NENHUM_IMPLEMENTER_ES_9525898e0a(["INTAKE-P0-NENHUM-IMPLEMENTER-ES-9525898e0a: P0 - no implementer is able to run!"])
+        CONSENSUS_PROP_TAILSCALE_RPC_COORDINATOR_WORKER_MESH_01(["CONSENSUS-PROP-TAILSCALE-RPC-COORDINATOR-WORKER-MESH-01: Tailscale Direct RPC Coordinator & Multi-PC Compute Grid"])
+        INTAKE_D_BITO_T_CNICO_GARANTIA__61c5fe5ef5(["INTAKE-D-BITO-T-CNICO-GARANTIA--61c5fe5ef5: Pages projection availability for approved records"])
+        INTAKE_D_BITO_T_CNICO_AUTORIDAD_a96988b70f(["INTAKE-D-BITO-T-CNICO-AUTORIDAD-a96988b70f: Technical debt: Cutover Authority:** No cutover authority (`CURRENT`/`TARGET`) was"])
+        INTAKE_D_BITO_T_CNICO_PARIDADE__467668c266(["INTAKE-D-BITO-T-CNICO-PARIDADE--467668c266: Technical debt: Parity with Incumbent:** The incumbent parity overlay depends on the environ"])
+        INTAKE_E2E_TEST_DEMAND_17869320_60cb521a86(["INTAKE-E2E-TEST-DEMAND-17869320-60cb521a86: E2E Test Demand 1786932084"])
+        INTAKE_E2E_TEST_DEMAND_17869325_139434f2fa(["INTAKE-E2E-TEST-DEMAND-17869325-139434f2fa: E2E Test Demand 1786932552"])
+        INTAKE_E2E_TEST_DEMAND_17869331_2757886eec(["INTAKE-E2E-TEST-DEMAND-17869331-2757886eec: E2E Test Demand 1786933129"])
+        INTAKE_E2E_TEST_DEMAND_17869338_d45aff3381["INTAKE-E2E-TEST-DEMAND-17869338-d45aff3381: E2E Test Demand 1786933872"]
+        INTAKE_E2E_TEST_DEMAND_17869339_a8cd83c959["INTAKE-E2E-TEST-DEMAND-17869339-a8cd83c959: E2E Test Demand 1786933916"]
+        INTAKE_E2E_TEST_DEMAND_17869341_d40e598c42["INTAKE-E2E-TEST-DEMAND-17869341-d40e598c42: E2E Test Demand 1786934173"]
+        INTAKE_E2E_TEST_DEMAND_17869343_81dd01c8f7["INTAKE-E2E-TEST-DEMAND-17869343-81dd01c8f7: E2E Test Demand 1786934326"]
+        INTAKE_E2E_TEST_DEMAND_17869369_3691ff5f2d["INTAKE-E2E-TEST-DEMAND-17869369-3691ff5f2d: E2E Test Demand 1786936911"]
+        INTAKE_E2E_TEST_DEMAND_17869371_ca7c6a10f8["INTAKE-E2E-TEST-DEMAND-17869371-ca7c6a10f8: E2E Test Demand 1786937105"]
+        INTAKE_E2E_TEST_DEMAND_17869388_88234deb77["INTAKE-E2E-TEST-DEMAND-17869388-88234deb77: E2E Test Demand 1786938806"]
+        canonical_hooks_dogfood_qualification(["canonical-hooks-dogfood-qualification: Qualify existing canonical hooks on the Agent Runtime dogfood through OS composition"])
+    end
+    subgraph 09_Planning_research_candidates["09 Planning research candidates"]
+        plan_ip_a(["plan-ip-a: Planning IP-A Work Projection & Golden Queries"])
+        plan_ip_b(["plan-ip-b: Planning IP-B Structural Planning Analyzer"])
+        plan_ip_c(["plan-ip-c: Reevaluate progress/liveness controls in the native Runtime/TUI"])
+        plan_ip_d(["plan-ip-d: Planning IP-D Cross-Task Frontier + Packetization Advisor"])
+        plan_ip_e["plan-ip-e: Planning IP-E Solver Adapter Qualification"]
+    end
+    subgraph 10_Resource___Assurance_research["10 Resource / Assurance research"]
+        res_exp_backpressure(["res-exp-backpressure: EXP-2 Admission/backpressure"])
+        res_exp_evidence(["res-exp-evidence: EXP-5 Evidence scheduling: offline comparison and admission decision"])
+        res_exp_isolation(["res-exp-isolation: EXP-4 Compare isolation boundaries for the current Windows profile"])
+        res_exp_locality(["res-exp-locality: EXP-3 Measure locality, model loading and cost coverage"])
+        res_ip_a["res-ip-a: Resource IP-A Historical-duration scenario scheduler"]
+        res_ip_b(["res-ip-b: Resource IP-B Structured unschedulable reasons"])
+        res_ip_c(["res-ip-c: Resource IP-C Local resource observation"])
+        res_ip_d(["res-ip-d: Resource IP-D Shared GPU lease lifecycle qualification"])
+    end
+    subgraph 11_Research_frontier["11 Research frontier"]
+        durable_state(["durable-state: Durable state: current-owner scope and faithful recovery reports"])
+        identity_lineage["identity-lineage: Identity / Authority / lineage refinement"]
+        information_survival["information-survival: Information Survival / Reconstructability follow-up"]
+        local_llm_runtime(["local-llm-runtime: Local LLM/runtime qualification backbone"])
+        project_admission["project-admission: Project Admission & Adoption / Operating Model reconciliation"]
+        protocols(["protocols: Protocols / interoperability refinement"])
+        research_knowledge(["research-knowledge: Research Knowledge Substrate refinement"])
+        tui_repl(["tui-repl: TUI/REPL experience modernization"])
+        vendor_adapters(["vendor-adapters: Vendor/model/runtime adapter expansion"])
+        workflow_lifecycle(["workflow-lifecycle: Task & Workflow lifecycle refinement"])
+    end
+    subgraph 12_Research_publication["12 Research publication"]
+        planning_source_relay_current["planning-source-relay-current: Planning research source pack — exact relay materialization current"]
+        research_companions["research-companions: Editorialize remaining planning research companions"]
+        research_pr22(["research-pr22: Research PR #22 — Hierarchical Work Planning"])
+        source_truth_derivative_reconcile(["source-truth-derivative-reconcile: Reconcile rich sources ↔ canonical/Pages derivatives"])
+        source_truth_exact_byte_acquisition["source-truth-exact-byte-acquisition: Exact-byte acquisition path for File Library references"]
+        source_truth_gov_exact_recovery(["source-truth-gov-exact-recovery: Governance-deadlock archaeology — 6 rich sources exact-recovered"])
+        source_truth_incident["source-truth-incident: Research source-truth incident / forensic recovery state"]
+        source_truth_materializer(["source-truth-materializer: CURRENT exact-byte File Library materialization seam"])
+        source_truth_materializer_preflight_atomicity["source-truth-materializer-preflight-atomicity: Materializer preflight/atomicity hardening after partial-effect failure"]
+        source_truth_p0_first_batch(["source-truth-p0-first-batch: SR-1 first actual P0 batch — 3 source subjects"])
+        source_truth_p0_rehydrate["source-truth-p0-rehydrate: P0 research corpus rehydration — 29 reference-only originals"]
+        source_truth_publication_gate["source-truth-publication-gate: Shadow Source-Closure gate for research publication"]
+        source_truth_rest_rehydrate["source-truth-rest-rehydrate: P1–P3 research corpus rehydration — remaining 43 originals"]
+        source_truth_sr1_poc(["source-truth-sr1-poc: SR-1 — exact-byte materialization shadow POC"])
+    end
+    subgraph 13_Superseded___historical["13 Superseded / historical"]
+        fsv_old_train["fsv-old-train: P1/CF/IP-2 trust-hardening train"]
+        remote_lanes_legacy["remote-lanes-legacy: Remote DEV→STAGING→MAIN migration backlog 2026-08-12"]
+    end
+    subgraph 14_Graph_audit_remediation["14 Graph audit remediation"]
+        graph_audit_frontier_semantics(["graph-audit-frontier-semantics: Graph audit P0 — relation taxonomy + frontier readiness semantics"])
+        graph_audit_provenance_archaeology(["graph-audit-provenance-archaeology: Graph audit P1 — anchored chat/source provenance"])
+        graph_audit_reproducible_build(["graph-audit-reproducible-build: Graph audit P0 — reproducible build + real qualification"])
+        graph_audit_schema_validation(["graph-audit-schema-validation: Graph audit P0 — schema normalization + fail-closed validation"])
+        graph_audit_shadow_reconciliation(["graph-audit-shadow-reconciliation: Graph audit P1 — reconcile/trace/full-diff + shadow parity"])
+    end
+    subgraph 15_Flow_program___Work_Console["15 Flow program / Work Console"]
+        flow_01_reconciliar_o_primeiro_slice_e(["flow-01-reconciliar-o-primeiro-slice-e: FLOW-01 — Reconcile the first slice and its owners"])
+        flow_02_executar_work_explicito_pela_fachada(["flow-02-executar-work-explicito-pela-fachada: FLOW-02 — Run explicit Work through the tare facade"])
+        flow_03_fechar_settlement_landing_e_reconciliacao["flow-03-fechar-settlement-landing-e-reconciliacao: FLOW-03 — Close settlement, landing and backlog reconciliation"]
+        flow_04_parada_orcamento_e_recuperacao_basicos["flow-04-parada-orcamento-e-recuperacao-basicos: FLOW-04 — Basic stop, budget and recovery from the start"]
+        flow_05_instrumentar_uso_real_sem_criar["flow-05-instrumentar-uso-real-sem-criar: FLOW-05 — Instrument real use without creating a learning barrier"]
+        flow_06_segunda_realizacao_e_routing_jit["flow-06-segunda-realizacao-e-routing-jit: FLOW-06 — Second realization and simple JIT routing"]
+        flow_07_console_conversacional_minimo_e_comandos["flow-07-console-conversacional-minimo-e-comandos: FLOW-07 — Minimal conversational console and explicit commands"]
+        flow_08_empacotamento_e_adocao_reproduzivel(["flow-08-empacotamento-e-adocao-reproduzivel: FLOW-08 — Packaging and reproducible adoption"])
+        flow_09_ir_e_compiler_minimos_para(["flow-09-ir-e-compiler-minimos-para: FLOW-09 — Minimal IR and compiler for the known flow"])
+        flow_10_reducer_de_workflow_duravel_e["flow-10-reducer-de-workflow-duravel-e: FLOW-10 — Durable workflow reducer and dispatch of ready nodes"]
+        flow_11_interpretacao_grounded_e_planner_limitado["flow-11-interpretacao-grounded-e-planner-limitado: FLOW-11 — Grounded interpretation and bounded planner"]
+        flow_12_replan_localizado_com_preservacao_de["flow-12-replan-localizado-com-preservacao-de: FLOW-12 — Localized replan with progress preservation"]
+        flow_13_paralelismo_limitado_por_efeitos_e(["flow-13-paralelismo-limitado-por-efeitos-e: FLOW-13 — Parallelism bounded by effects and resources"])
+        flow_14_trains_de_multiplos_work_sem(["flow-14-trains-de-multiplos-work-sem: FLOW-14 — Trains of multiple Works without fictitious atomicity"])
+        flow_15_planejamento_de_horizonte_e_graphpatch["flow-15-planejamento-de-horizonte-e-graphpatch: FLOW-15 — Horizon planning and reviewable GraphPatch"]
+        flow_16_pesquisa_e_ideacao_federada_como(["flow-16-pesquisa-e-ideacao-federada-como: FLOW-16 — Federated research and ideation as explicit flows"])
+        flow_17_espera_humana_e_controle_operacional["flow-17-espera-humana-e-controle-operacional: FLOW-17 — Human wait and operational control without a permanent session"]
+        flow_18_perfis_comportamentais_como_projecao_read["flow-18-perfis-comportamentais-como-projecao-read: FLOW-18 — Behavioral profiles as a read-only projection"]
+        flow_19_canary_de_routing_orientado_por(["flow-19-canary-de-routing-orientado-por: FLOW-19 — Implementer profiles: Cheap, Intermediate and Smart"])
+        flow_20_experimento_de_scaffolding_nao_personalidade(["flow-20-experimento-de-scaffolding-nao-personalidade: FLOW-20 — Scaffolding experiment, not vendor personality"])
+        flow_21_frugalidade_do_proprio_audit_e(["flow-21-frugalidade-do-proprio-audit-e: FLOW-21 — Frugality of the audit itself and of the gates"])
+        flow_22_beta_de_produto_com_usuarios["flow-22-beta-de-produto-com-usuarios: FLOW-22 — Product beta with real users and projects"]
+        flow_23_backend_duravel_externo_somente_contra["flow-23-backend-duravel-externo-somente-contra: FLOW-23 — External durable backend only against a demonstrated gap"]
+        flow_24_mineracao_de_metodos_e_otimizacao["flow-24-mineracao-de-metodos-e-otimizacao: FLOW-24 — Method mining and offline flow optimization"]
+        research_shared_explorer_lock(["research-shared-explorer-lock: research and explore share one explorer lock per custody"])
+        research_fail_closed_receipt(["research-fail-closed-receipt: research() fails closed on provider errors and never orphans the explorer lock"])
+        research_redirect_allowlist(["research-redirect-allowlist: research collect() validates the effective URL after redirects against the domain allowlist"])
+        research_reduce_integrity(["research-reduce-integrity: reduce_facts() validates partial refs against the corpus and keeps reducing until the final prompt fits batch_chars"])
+    end
+    subgraph Governance___Authority_History["Governance / Authority History"]
+        gov_audit_leg(["gov-audit-leg: Audit becomes fourth governance leg"])
+        gov_control_plane(["gov-control-plane: Gate control-plane enters own surface"])
+        gov_dogfood(["gov-dogfood: Governed commit dogfood"])
+        gov_frozen_scenario(["gov-frozen-scenario: Scenario gate bound to frozen candidate tree"])
+        gov_kernel(["gov-kernel: Governance Kernel / CommitAuthority"])
+        gov_liveness_proof(["gov-liveness-proof: Gate re-enabled after liveness proof"])
+        gov_mutation_leg(["gov-mutation-leg: Mutation enters governance join"])
+        gov_no_waiver(["gov-no-waiver: Strict no-waiver governance"])
+        gov_process_receipts(["gov-process-receipts: Process-boundary receipts corrective"])
+        gov_proof_authority(["gov-proof-authority: Proof authority / transaction correctness"])
+        gov_reckon_leg(["gov-reckon-leg: Reckon dimension enters commit gate"])
+        gov_seat_provenance(["gov-seat-provenance: Seat provenance / proof-minting attempt"])
+        gov_selfwrite_cas(["gov-selfwrite-cas: Self-write CAS wedge correction"])
+        issue32_stale_open(["issue32-stale-open: GitHub Issue #32 — coordination surface remains open after R3 landing"])
+    end
+    subgraph Historical_TaskStore["Historical TaskStore"]
+        task_chat_gate_tracker(["task-chat-gate-tracker: Chat gate sub-tracker"])
+        task_chat_plan_hud(["task-chat-plan-hud: Chat plan HUD"])
+        task_chat_tool_chips(["task-chat-tool-chips: Chat tool/result chips"])
+        task_codex_stream_parity(["task-codex-stream-parity: CodexEngine streaming parity"])
+        task_m5_1(["task-m5-1: M5.1 — stdlib HTTP supervision panel"])
+        task_m5_2(["task-m5-2: M5.2 — panel security hardening"])
+        task_m5_3(["task-m5-3: M5.3 — escalation queue ranked by blast radius"])
+        task_queue_cancel_worker(["task-queue-cancel-worker: Queue cancel worker"])
+        task_queue_reorder(["task-queue-reorder: Queue workflow reorder"])
+        task_queue_view_live(["task-queue-view-live: Queue live derived view"])
+        task_spec115(["task-spec115: SPEC-115 — model-card CRUD + routing profiles"])
+        task_spec116(["task-spec116: SPEC-116 — SDD+BDD two-door flow"])
+        task_tasks_board_read(["task-tasks-board-read: Tasks board derived read model"])
+        task_tasks_enqueue(["task-tasks-enqueue: Send to work queue"])
+        task_tasks_store_cli(["task-tasks-store-cli: TaskStore single-writer CLI"])
+        task_tasks_target_board(["task-tasks-target-board: Per-target boards"])
+        task_webgui_design_phases(["task-webgui-design-phases: Web GUI design system phases 2–6 (de-genericification)"])
+    end
+    subgraph RELAY_GOVERNANCE["RELAY_GOVERNANCE"]
+        INTAKE_D_BITO_T_CNICO_PROJE_ES__d5fc95f9f1(["INTAKE-D-BITO-T-CNICO-PROJE-ES--d5fc95f9f1: Task INTAKE-D-BITO-T-CNICO-PROJE-ES--d5fc95f9f1 (admitted via train TRAIN-20-PAGES-PROJECTION-VERIFICATION-01)"])
+    end
+    subgraph Relay___Runtime["Relay / Runtime"]
+        relay_q1(["relay-q1: Relay Q1 — coordination contract/bootstrap corrective"])
+        relay_q1_corrective(["relay-q1-corrective: Relay Q1 corrective — GitHub/Drive relay truthfulness"])
+        relay_q2q3(["relay-q2q3: Relay Q2+Q3 — Operations v1"])
+        relay_q4(["relay-q4: Relay Q4 — bounded relay iteration"])
+        relay_q5(["relay-q5: Relay Q5 — bounded relay iteration"])
+        relay_q6(["relay-q6: Relay Q6 — bounded relay iteration"])
+        relay_q6c1(["relay-q6c1: Relay Q6C / F5L-02 A1 autonomy probe"])
+        relay_q6c2(["relay-q6c2: Relay Q6C2 / F5L-03"])
+        relay_q6c3(["relay-q6c3: Relay Q6C3 / F5L-04"])
+        relay_q6c4(["relay-q6c4: Relay Q6C4 / F5L-05"])
+        relay_q8_a2(["relay-q8-a2: Relay Q8 / F5L-07 A2 — Task↔Run durable identity + Work projection"])
+    end
+    subgraph SpecGraph["SpecGraph"]
+        SPECGRAPH_GRAPHIFY_COMPARISON_20260908(["SPECGRAPH-GRAPHIFY-COMPARISON-20260908: Local retrieval comparison Graphify × SpecGraph"])
+        SPECGRAPH_SEARCH_LEXICAL_20260908(["SPECGRAPH-SEARCH-LEXICAL-20260908: Retrieve code by vocabulary, preserving exact search"])
+        SPECGRAPH_INTENT_PROJECTION_20260908(["SPECGRAPH-INTENT-PROJECTION-20260908: Deliver the intent relations already stored"])
+        SPECGRAPH_OS_COVERAGE_20260908(["SPECGRAPH-OS-COVERAGE-20260908: Explicitly index the OS operational code"])
+        SPECGRAPH_CROSSFILE_ALIASES_20260908(["SPECGRAPH-CROSSFILE-ALIASES-20260908: Resolve aliases across TS/Rust files with explicit limits"])
+        SPECGRAPH_LEXICAL_QUALITY_20260908(["SPECGRAPH-LEXICAL-QUALITY-20260908: Improve inflections and lexical ranking with bounded evidence"])
+    end
+    subgraph SpecGraph_completion["SpecGraph completion"]
+        SPECGRAPH_COMPLETION_C0(["SPECGRAPH-COMPLETION-C0: Honest capabilities and a reproducible benchmark"])
+        SPECGRAPH_COMPLETION_C1(["SPECGRAPH-COMPLETION-C1: Python identity and structural resolution"])
+        SPECGRAPH_COMPLETION_C2(["SPECGRAPH-COMPLETION-C2: SQLite read model, snapshots and minimal MCP"])
+        SPECGRAPH_COMPLETION_C3(["SPECGRAPH-COMPLETION-C3: Incremental extraction and verifiable freshness"])
+        SPECGRAPH_COMPLETION_C4(["SPECGRAPH-COMPLETION-C4: Budgeted code search and context"])
+        SPECGRAPH_COMPLETION_C5(["SPECGRAPH-COMPLETION-C5: Federated intent and evidence with validity"])
+        SPECGRAPH_COMPLETION_C6(["SPECGRAPH-COMPLETION-C6: TypeScript, Rust and an offline viewer"])
+        SPECGRAPH_COMPLETION_C7(["SPECGRAPH-COMPLETION-C7: Context services for hooks and doctor"])
+        SPECGRAPH_COMPLETION_C8(["SPECGRAPH-COMPLETION-C8: Qualification of the complete vision and release"])
+        SPECGRAPH_COMPLETION_X1(["SPECGRAPH-COMPLETION-X1: Context selection by usefulness and risk"])
+        SPECGRAPH_COMPLETION_X2(["SPECGRAPH-COMPLETION-X2: Scoped absence and answer coverage"])
+        SPECGRAPH_COMPLETION_X3(["SPECGRAPH-COMPLETION-X3: Temporal context deltas by handle"])
+        SPECGRAPH_COMPLETION_X4(["SPECGRAPH-COMPLETION-X4: Witness chain for an architectural violation"])
+        SPECGRAPH_COMPLETION_X5["SPECGRAPH-COMPLETION-X5: Qualify test selection by scope and total cost — X5"]
+        SPECGRAPH_COMPLETION_20260908(["SPECGRAPH-COMPLETION-20260908: SpecGraph — complete, fast and verifiable project intelligence"])
+        SPECGRAPH_RESPONSE_CONTRACT_20260908(["SPECGRAPH-RESPONSE-CONTRACT-20260908: Qualify the complete response before measuring context"])
+    end
+    subgraph SpecGraph_post_qualification["SpecGraph post-qualification"]
+        SPECGRAPH_FOLLOWUP_GOVERNANCE_20260908["SPECGRAPH-FOLLOWUP-GOVERNANCE-20260908: Resolve residual governance per exact target, preserving debt and proof of execution"]
+        SPECGRAPH_FOLLOWUP_HOST_ADOPTION_20260908["SPECGRAPH-FOLLOWUP-HOST-ADOPTION-20260908: Qualify native AGY/Aider adoption and end-to-end utility with explicit Work and source"]
+    end
+    subgraph Validation___Assurance["Validation / Assurance"]
+        baseline_ci01(["baseline-ci01: BASELINE-CI-01 — baseline hygiene repair"])
+        baseline_ci02(["baseline-ci02: BASELINE-CI-02 — semantic/spec ownership corrective"])
+        ci_regression01(["ci-regression01: CI-REGRESSION-01 — scenario evidence semantics corrective"])
+        ip2_strict_subject(["ip2-strict-subject: IP-2 strict-subject — explicit subject-root contract"])
+        p1_core_fsv(["p1-core-fsv: P1 Core FSV — qualified FSV core integration"])
+        p5_release_rendering["p5-release-rendering: P5 partial — release-artifact rendering/verification"]
+    end
+    subgraph Workflow["Workflow"]
+        controlled_write_track(["controlled-write-track: Controlled-write workflow track — locks/workspace/merge plan/validation/rollback"])
+        durable_async_workflow(["durable-async-workflow: Durable async workflow start/await execution"])
+    end
+    subgraph general["general"]
+        storage_maintenance_20260924(["storage-maintenance-20260924: Prevent temporary files and evidence from filling the SSD"])
+    end
+    subgraph os_core["os-core"]
+        assisted_exploration_20260924(["assisted-exploration-20260924: Delegate economical exploration within the flows"])
+        main_green_pr_auto_merge_20261005(["main-green-pr-auto-merge-20261005: Main always green: PR with automatic merge"])
+        gpu_lease_kernel_os_20261007(["gpu-lease-kernel-os-20261007: GPU lease and coordinated work as a kernel and OS capability"])
+        role_guidance_capsules_20261007(["role-guidance-capsules-20261007: Guidance per role: each role's own capsule, minimal common guidance, isolated CLIs"])
+        gpu_busy_retry_after_node_20261008(["gpu-busy-retry-after-node-20261008: The node gateway says how long to wait (Retry-After and ETA)"])
+        node_serving_stack_home_20261008(["node-serving-stack-home-20261008: A home of its own for the node service (gateway, model lifecycle, ComfyUI hook)"])
+        gpu_lease_remote_holder_20261008(["gpu-lease-remote-holder-20261008: GPU lease over the network, with a deadline, renewal and reservation number"])
+        gpu_named_reservation_20261008(["gpu-named-reservation-20261008: Long, named GPU reservation for a batch, with a maximum time"])
+        node_service_in_os_20261104(["node-service-in-os-20261104: The node service lives in tare.tools.os as node/"])
+    end
+    assurance_topology ---|UNLOCKS_RESEARCH| res_exp_evidence
+    assurance_topology ---|UNLOCKS_RESEARCH| res_ip_a
+    backlog_align ---|INFORMS| work_relay_reconcile
+    baseline_ci01 ---|LINEAGE_TO| baseline_ci02
+    baseline_ci02 ---|LINEAGE_TO| ci_regression01
+    ci_regression_02 ---|BECAME_RECOVERY_SUBJECT| rb01
+    ci_regression_02 ---|BECAME_RECOVERY_SUBJECT_FOR| rb01
+    ci_regression01 ---|LINEAGE_TO| ci_regression_02
+    cli_golden ---|SATISFIED_OR_SUPERSEDED_BY| ci_regression_02
+    p10 ---|LINEAGE_TO| durable_state
+    fsv_old_train ---|SUPERSEDED_BY| tcp01
+    gov_audit_leg ---|LINEAGE_TO| gov_kernel
+    gov_control_plane ---|LINEAGE_TO| gov_mutation_leg
+    gov_dogfood ---|LINEAGE_TO| gov_proof_authority
+    gov_frozen_scenario ---|LINEAGE_TO| p1_core_fsv
+    gov_kernel ---|LINEAGE_TO| gov_dogfood
+    gov_liveness_proof ---|LINEAGE_TO| gov_selfwrite_cas
+    gov_mutation_leg ---|LINEAGE_TO| gov_audit_leg
+    gov_no_waiver ---|LINEAGE_TO| gov_frozen_scenario
+    gov_process_receipts ---|LINEAGE_TO| gov_no_waiver
+    gov_proof_authority ---|LINEAGE_TO| gov_seat_provenance
+    gov_reckon_leg ---|LINEAGE_TO| gov_control_plane
+    gov_seat_provenance ---|LINEAGE_TO| gov_process_receipts
+    gov_selfwrite_cas ---|LINEAGE_TO| gov_reckon_leg
+    graph_audit_frontier_semantics -->|unlocks| graph_audit_shadow_reconciliation
+    graph_audit_provenance_archaeology -->|unlocks| graph_audit_shadow_reconciliation
+    graph_audit_reproducible_build -->|unlocks| graph_audit_shadow_reconciliation
+    graph_audit_schema_validation -->|unlocks| graph_audit_frontier_semantics
+    graph_audit_schema_validation -->|unlocks| graph_audit_reproducible_build
+    i2i01 -->|unlocks| i2i02
+    i2i02 -->|unlocks| i2i03
+    i2i03 -->|unlocks| i2i04
+    i2i04 -->|unlocks| i2i05
+    i2i05 -->|unlocks| i2i06
+    identity_lineage ---|RELATED_RESEARCH| p21
+    identity_lineage ---|RELATED_RESEARCH| p30
+    x03 ---|LINEAGE_TO| information_survival
+    ip2_strict_subject ---|LINEAGE_TO| p5_release_rendering
+    p12 ---|LINEAGE_TO| local_llm_runtime
+    repo_main ---|LINEAGE_TO| north_star
+    p00 ---|MAPS_TO| rb04b
+    p01 ---|MAPS_TO| assurance_topology
+    p03 ---|MAPS_TO| rb05
+    p03 ---|MAPS_TO| tcp04
+    p1_core_fsv ---|LINEAGE_TO| ip2_strict_subject
+    p10 ---|CONSTRAINS| plan_ip_d
+    p10 ---|CONSTRAINS| relay_automation
+    p10 ---|MAPS_TO| work_relay_reconcile
+    p10 -->|unlocks| p21
+    p11 ---|MAPS_TO| relay_automation
+    p12 -->|unlocks| p21
+    p20 ---|MAPS_TO| res_ip_a
+    p21 -->|unlocks| p30
+    plan_ip_a ---|UNLOCKS_RESEARCH| plan_ip_b
+    plan_ip_b ---|UNLOCKS_RESEARCH| plan_ip_c
+    plan_ip_b ---|UNLOCKS_RESEARCH| plan_ip_d
+    plan_ip_d ---|UNLOCKS_RESEARCH| plan_ip_e
+    planning_source_relay_current ---|PARTIALLY_SUPERSEDES_SNAPSHOT| source_truth_incident
+    planning_source_relay_current ---|PROVENANCE_SUPPORT| research_pr22
+    p10 ---|LINEAGE_TO| project_admission
+    protocols ---|RELATED_RESEARCH| relay_automation
+    r3_audit -->|unlocks| tcp01
+    rb01 -->|unlocks| rb02
+    rb02 -->|unlocks| rb03
+    rb03 -->|unlocks| rb04a
+    rb04a -->|unlocks| rb04b
+    rb04b -->|unlocks| rb05
+    rb04b -->|unlocks| rb06
+    rb05 ---|CAN_RUN_IN_SAME_BOUNDED_SESSION| rb06
+    rb05 ---|COORDINATION_PROJECTED_AS| issue32_stale_open
+    rb05 ---|PROVIDES_EVIDENCE_SEAMS_FOR| assurance_topology
+    rb05 ---|REQUIRES_AUDIT| r3_audit
+    rb05 -->|unlocks| relay_automation
+    rb06 ---|COORDINATION_PROJECTED_AS| issue32_stale_open
+    rb06 ---|REQUIRES_AUDIT| r3_audit
+    relay_q0 ---|LINEAGE_TO| relay_q1
+    relay_q1 ---|LINEAGE_TO| relay_q1_corrective
+    relay_q1_corrective ---|LINEAGE_TO| relay_q2q3
+    relay_q2q3 ---|LINEAGE_TO| relay_q4
+    relay_q4 ---|LINEAGE_TO| relay_q5
+    relay_q5 ---|LINEAGE_TO| relay_q6
+    relay_q6 ---|LINEAGE_TO| relay_q6c1
+    relay_q6c1 ---|LINEAGE_TO| relay_q6c2
+    relay_q6c2 ---|LINEAGE_TO| relay_q6c3
+    relay_q6c3 ---|LINEAGE_TO| relay_q6c4
+    relay_q6c4 ---|LINEAGE_TO| relay_q7_a2
+    relay_q7_a2 ---|EVIDENCE_FOR| p12
+    relay_q7_a2 ---|INFORMS| relay_automation
+    relay_q7_a2 ---|LINEAGE_TO| relay_q8_a2
+    relay_role_identity ---|BLOCKS_STRONGER_AUTOMATION| relay_automation
+    repo_staging ---|LINEAGE_TO| repo_main
+    rb05 ---|LINEAGE_TO| repo_staging
+    res_ip_c ---|UNLOCKS_RESEARCH| res_exp_locality
+    x06 ---|LINEAGE_TO| research_knowledge
+    research_pr22 ---|UNLOCKS_EDITORIAL_WORK| research_companions
+    source_truth_derivative_reconcile ---|CAN_RUN_PARALLEL_WITH| rb05
+    source_truth_derivative_reconcile ---|INFORMS| source_truth_publication_gate
+    source_truth_exact_byte_acquisition ---|BLOCKS| source_truth_p0_first_batch
+    source_truth_exact_byte_acquisition ---|UNBLOCKS| source_truth_p0_rehydrate
+    source_truth_gov_exact_recovery ---|EVIDENCE_FOR| x01
+    source_truth_gov_exact_recovery ---|EVIDENCE_FOR| x02
+    source_truth_gov_exact_recovery ---|SUPPORTS_LINEAGE| rb05
+    source_truth_incident ---|EVIDENCE_FOR| information_survival
+    source_truth_incident ---|EVIDENCE_FOR| research_knowledge
+    source_truth_incident ---|EVIDENCE_FOR| x03
+    source_truth_incident ---|EVIDENCE_FOR| x06
+    source_truth_materializer -.->|enables| source_truth_p0_rehydrate
+    source_truth_materializer -.->|enables| source_truth_rest_rehydrate
+    source_truth_materializer_preflight_atomicity ---|HARDENING_SUPPORTS| source_truth_p0_rehydrate
+    source_truth_p0_first_batch ---|PILOT_FOR| source_truth_p0_rehydrate
+    source_truth_p0_rehydrate ---|CAN_RUN_PARALLEL_WITH| rb05
+    source_truth_p0_rehydrate ---|PRECEDES| source_truth_rest_rehydrate
+    source_truth_p0_rehydrate ---|UNLOCKS_EVIDENCE| source_truth_derivative_reconcile
+    source_truth_p0_rehydrate ---|UNLOCKS_RESEARCH_EVIDENCE| identity_lineage
+    source_truth_p0_rehydrate ---|UNLOCKS_RESEARCH_EVIDENCE| information_survival
+    source_truth_p0_rehydrate ---|UNLOCKS_RESEARCH_EVIDENCE| p01
+    source_truth_p0_rehydrate ---|UNLOCKS_RESEARCH_EVIDENCE| p03
+    source_truth_p0_rehydrate ---|UNLOCKS_RESEARCH_EVIDENCE| p10
+    source_truth_p0_rehydrate ---|UNLOCKS_RESEARCH_EVIDENCE| project_admission
+    source_truth_p0_rehydrate ---|UNLOCKS_RESEARCH_EVIDENCE| protocols
+    source_truth_sr1_poc ---|CONFIRMS_BLOCKER| source_truth_exact_byte_acquisition
+    source_truth_sr1_poc ---|DISCOVERS| source_truth_materializer_preflight_atomicity
+    source_truth_sr1_poc ---|QUALIFIES_EXISTING_SEAM| source_truth_materializer
+    taskstore ---|PROJECTED_BY| workgraph_poc
+    taskstore ---|RECORDED_COMPLETION| task_chat_gate_tracker
+    taskstore ---|RECORDED_COMPLETION| task_chat_plan_hud
+    taskstore ---|RECORDED_COMPLETION| task_chat_tool_chips
+    taskstore ---|RECORDED_COMPLETION| task_codex_stream_parity
+    taskstore ---|RECORDED_COMPLETION| task_m5_1
+    taskstore ---|RECORDED_COMPLETION| task_m5_2
+    taskstore ---|RECORDED_COMPLETION| task_m5_3
+    taskstore ---|RECORDED_COMPLETION| task_queue_cancel_worker
+    taskstore ---|RECORDED_COMPLETION| task_queue_reorder
+    taskstore ---|RECORDED_COMPLETION| task_queue_view_live
+    taskstore ---|RECORDED_COMPLETION| task_spec115
+    taskstore ---|RECORDED_COMPLETION| task_spec116
+    taskstore ---|RECORDED_COMPLETION| task_tasks_board_read
+    taskstore ---|RECORDED_COMPLETION| task_tasks_enqueue
+    taskstore ---|RECORDED_COMPLETION| task_tasks_store_cli
+    taskstore ---|RECORDED_COMPLETION| task_tasks_target_board
+    taskstore ---|RECORDED_COMPLETION| task_webgui_design_phases
+    tcp01 -->|unlocks| tcp02
+    tcp01 -->|unlocks| tcp03
+    tcp02 -->|required by| tcp04
+    tcp03 -->|required by| tcp04
+    tcp04 ---|CONSTRAINS| res_exp_isolation
+    tcp04 ---|ENABLES_STRONGER_EFFECT_CEILING| relay_automation
+    tcp04 -->|unlocks| tcp05
+    tcp05 -->|unlocks| tcp06
+    tcp06 -->|unlocks| tcp07
+    tcp07 -->|unlocks| i2i01
+    trust_genesis_ro ---|INFORMS| tcp02
+    trust_genesis_ro ---|INFORMS| tcp06
+    p12 ---|LINEAGE_TO| vendor_adapters
+    windows_sao ---|SATISFIED_OR_SUPERSEDED_BY| ci_regression_02
+    work_relay_reconcile -->|required by| relay_automation
+    work_relay_reconcile ---|UNLOCKS_RESEARCH| plan_ip_a
+    p10 ---|LINEAGE_TO| workflow_lifecycle
+    workgraph_poc ---|DOGFOOD_INPUT| x01
+    workgraph_poc ---|INFORMS| backlog_align
+    x01 ---|INFORMS| i2i01
+    x01 ---|INFORMS| tcp01
+    x02 ---|INFORMS| i2i06
+    x03 ---|CROSS_CUTS| i2i01
+    x03 ---|CROSS_CUTS| i2i02
+    x03 ---|CROSS_CUTS| rb05
+    x03 ---|CROSS_CUTS| rb06
+    x03 ---|CROSS_CUTS| tcp01
+    x03 ---|CROSS_CUTS| tcp02
+    x03 ---|CROSS_CUTS| tcp03
+    x03 ---|CROSS_CUTS| tcp04
+    x03 ---|CROSS_CUTS| tcp05
+    x03 ---|CROSS_CUTS| tcp06
+    x04 ---|CROSS_CUTS| assurance_topology
+    x04 ---|CROSS_CUTS| i2i06
+    x04 ---|CROSS_CUTS| tcp06
+    x05 ---|INFORMS| assurance_topology
+    x06 ---|CONSTRAINS| backlog_align
+    rb06 -->|unlocks| PROCESS_REPAIR_01
+    PROCESS_REPAIR_01 -->|unlocks| tcp01
+    i2i06 -->|unlocks| north_star
+    PROCESS_REPAIR_01 -->|unlocks| GRAPH_BACKLOG_02
+    GRAPH_BACKLOG_02 ---|LINEAGE_TO| relay_automation
+    continuity ---|EVIDENCE_FOR| x03
+    continuity ---|INFORMS| tcp02
+    p10 ---|EVIDENCE_FOR| controlled_write_track
+    p10 ---|EVIDENCE_FOR| durable_async_workflow
+    assurance_topology ---|UNLOCKS_RESEARCH| res_exp_backpressure
+    assurance_topology ---|UNLOCKS_RESEARCH| res_ip_b
+    assurance_topology ---|UNLOCKS_RESEARCH| res_ip_d
+    identity_lineage ---|UNLOCKS_RESEARCH| tui_repl
+    RELAY_CONTROL_PLANE_01 -->|unlocks| RELAY_PLANNER_VENDOR_FAILOVER_01
+    RELAY_CONTROL_PLANE_01 -->|unlocks| RELAY_INTAKE_DOGFOODING_CONSENSUS_01
+    RELAY_INTAKE_DOGFOODING_CONSENSUS_01 -.->|enables| work_relay_reconcile
+    tcp04 -->|required by| relay_confinement
+    RELAY_CONTROL_PLANE_01 -->|required by| relay_role_identity
+    RELAY_CONTROL_PLANE_01 -->|unlocks| p11
+    tcp05 -->|unlocks| p02
+    tcp06 -.->|enables| p02
+    tcp07 -->|unlocks| p20
+    RELAY_CONTROL_PLANE_01 -->|unlocks| continuity
+    tcp05 -->|unlocks| x04
+    p10 -->|unlocks| x05
+    graph_audit_schema_validation ---|PRECEDES| graph_audit_provenance_archaeology
+    RELAY_CONTROL_PLANE_01 ---|PROVIDES_EVIDENCE_SEAMS_FOR| planning_source_relay_current
+    tcp04 -->|unlocks| res_ip_c
+    repo_main ---|LINEAGE_TO| fsv_old_train
+    repo_main ---|LINEAGE_TO| remote_lanes_legacy
+    repo_staging ---|LINEAGE_TO| taskstore
+    SPECGRAPH_COMPLETION_C0 -->|unlocks| SPECGRAPH_COMPLETION_C1
+    SPECGRAPH_COMPLETION_C1 -->|unlocks| SPECGRAPH_COMPLETION_C2
+    SPECGRAPH_COMPLETION_C2 -->|unlocks| SPECGRAPH_COMPLETION_C3
+    SPECGRAPH_COMPLETION_C3 -->|unlocks| SPECGRAPH_COMPLETION_C4
+    SPECGRAPH_COMPLETION_C4 -->|unlocks| SPECGRAPH_COMPLETION_C5
+    SPECGRAPH_COMPLETION_C5 -->|unlocks| SPECGRAPH_COMPLETION_C6
+    SPECGRAPH_COMPLETION_C5 -->|unlocks| SPECGRAPH_COMPLETION_C7
+    SPECGRAPH_COMPLETION_C6 -->|unlocks| SPECGRAPH_COMPLETION_C8
+    SPECGRAPH_COMPLETION_C7 -->|unlocks| SPECGRAPH_COMPLETION_C8
+    SPECGRAPH_COMPLETION_X2 -->|unlocks| SPECGRAPH_COMPLETION_C8
+    SPECGRAPH_COMPLETION_C4 -->|unlocks| SPECGRAPH_COMPLETION_X1
+    SPECGRAPH_COMPLETION_C4 -->|unlocks| SPECGRAPH_COMPLETION_X2
+    SPECGRAPH_COMPLETION_C4 -->|unlocks| SPECGRAPH_COMPLETION_X3
+    SPECGRAPH_COMPLETION_C5 -->|unlocks| SPECGRAPH_COMPLETION_X4
+    SPECGRAPH_COMPLETION_C5 -->|unlocks| SPECGRAPH_COMPLETION_X5
+    SPECGRAPH_COMPLETION_C8 -->|unlocks| SPECGRAPH_COMPLETION_20260908
+    SPECGRAPH_COMPLETION_C8 -->|unlocks| SPECGRAPH_FOLLOWUP_GOVERNANCE_20260908
+    SPECGRAPH_COMPLETION_C8 -->|unlocks| SPECGRAPH_FOLLOWUP_HOST_ADOPTION_20260908
+    flow_01_reconciliar_o_primeiro_slice_e -->|unlocks| flow_02_executar_work_explicito_pela_fachada
+    flow_02_executar_work_explicito_pela_fachada -->|unlocks| flow_03_fechar_settlement_landing_e_reconciliacao
+    flow_02_executar_work_explicito_pela_fachada -->|unlocks| flow_04_parada_orcamento_e_recuperacao_basicos
+    flow_02_executar_work_explicito_pela_fachada -->|unlocks| flow_05_instrumentar_uso_real_sem_criar
+    flow_03_fechar_settlement_landing_e_reconciliacao -->|unlocks| flow_06_segunda_realizacao_e_routing_jit
+    flow_04_parada_orcamento_e_recuperacao_basicos -->|unlocks| flow_06_segunda_realizacao_e_routing_jit
+    flow_05_instrumentar_uso_real_sem_criar -->|unlocks| flow_06_segunda_realizacao_e_routing_jit
+    flow_02_executar_work_explicito_pela_fachada -->|unlocks| flow_07_console_conversacional_minimo_e_comandos
+    flow_05_instrumentar_uso_real_sem_criar -->|unlocks| flow_07_console_conversacional_minimo_e_comandos
+    flow_06_segunda_realizacao_e_routing_jit -->|unlocks| flow_08_empacotamento_e_adocao_reproduzivel
+    flow_07_console_conversacional_minimo_e_comandos -->|unlocks| flow_08_empacotamento_e_adocao_reproduzivel
+    flow_03_fechar_settlement_landing_e_reconciliacao -->|unlocks| flow_09_ir_e_compiler_minimos_para
+    flow_04_parada_orcamento_e_recuperacao_basicos -->|unlocks| flow_09_ir_e_compiler_minimos_para
+    flow_09_ir_e_compiler_minimos_para -->|unlocks| flow_10_reducer_de_workflow_duravel_e
+    flow_04_parada_orcamento_e_recuperacao_basicos -->|unlocks| flow_10_reducer_de_workflow_duravel_e
+    flow_05_instrumentar_uso_real_sem_criar -->|unlocks| flow_10_reducer_de_workflow_duravel_e
+    flow_09_ir_e_compiler_minimos_para -->|unlocks| flow_11_interpretacao_grounded_e_planner_limitado
+    flow_06_segunda_realizacao_e_routing_jit -->|unlocks| flow_11_interpretacao_grounded_e_planner_limitado
+    flow_10_reducer_de_workflow_duravel_e -->|unlocks| flow_12_replan_localizado_com_preservacao_de
+    flow_11_interpretacao_grounded_e_planner_limitado -->|unlocks| flow_12_replan_localizado_com_preservacao_de
+    flow_10_reducer_de_workflow_duravel_e -->|unlocks| flow_13_paralelismo_limitado_por_efeitos_e
+    flow_03_fechar_settlement_landing_e_reconciliacao -->|unlocks| flow_14_trains_de_multiplos_work_sem
+    flow_10_reducer_de_workflow_duravel_e -->|unlocks| flow_14_trains_de_multiplos_work_sem
+    flow_03_fechar_settlement_landing_e_reconciliacao -->|unlocks| flow_15_planejamento_de_horizonte_e_graphpatch
+    flow_06_segunda_realizacao_e_routing_jit -->|unlocks| flow_15_planejamento_de_horizonte_e_graphpatch
+    flow_06_segunda_realizacao_e_routing_jit -->|unlocks| flow_16_pesquisa_e_ideacao_federada_como
+    flow_07_console_conversacional_minimo_e_comandos -->|unlocks| flow_16_pesquisa_e_ideacao_federada_como
+    flow_10_reducer_de_workflow_duravel_e -->|unlocks| flow_17_espera_humana_e_controle_operacional
+    flow_07_console_conversacional_minimo_e_comandos -->|unlocks| flow_17_espera_humana_e_controle_operacional
+    flow_05_instrumentar_uso_real_sem_criar -->|unlocks| flow_18_perfis_comportamentais_como_projecao_read
+    flow_03_fechar_settlement_landing_e_reconciliacao -->|unlocks| flow_18_perfis_comportamentais_como_projecao_read
+    flow_06_segunda_realizacao_e_routing_jit -->|unlocks| flow_19_canary_de_routing_orientado_por
+    flow_18_perfis_comportamentais_como_projecao_read -->|unlocks| flow_19_canary_de_routing_orientado_por
+    flow_18_perfis_comportamentais_como_projecao_read -->|unlocks| flow_20_experimento_de_scaffolding_nao_personalidade
+    flow_03_fechar_settlement_landing_e_reconciliacao -->|unlocks| flow_21_frugalidade_do_proprio_audit_e
+    flow_05_instrumentar_uso_real_sem_criar -->|unlocks| flow_21_frugalidade_do_proprio_audit_e
+    flow_08_empacotamento_e_adocao_reproduzivel -->|unlocks| flow_22_beta_de_produto_com_usuarios
+    flow_10_reducer_de_workflow_duravel_e -->|unlocks| flow_23_backend_duravel_externo_somente_contra
+    flow_11_interpretacao_grounded_e_planner_limitado -->|unlocks| flow_24_mineracao_de_metodos_e_otimizacao
+    flow_18_perfis_comportamentais_como_projecao_read -->|unlocks| flow_24_mineracao_de_metodos_e_otimizacao
+    flow_01_reconciliar_o_primeiro_slice_e ---|RELATED_RESEARCH| canonical_hooks_dogfood_qualification
+    SPECGRAPH_COMPLETION_C8 -->|unlocks| SPECGRAPH_GRAPHIFY_COMPARISON_20260908
+    SPECGRAPH_GRAPHIFY_COMPARISON_20260908 -->|unlocks| SPECGRAPH_SEARCH_LEXICAL_20260908
+    SPECGRAPH_GRAPHIFY_COMPARISON_20260908 -->|unlocks| SPECGRAPH_INTENT_PROJECTION_20260908
+    SPECGRAPH_GRAPHIFY_COMPARISON_20260908 -->|unlocks| SPECGRAPH_OS_COVERAGE_20260908
+    SPECGRAPH_SEARCH_LEXICAL_20260908 -->|unlocks| SPECGRAPH_FOLLOWUP_HOST_ADOPTION_20260908
+    SPECGRAPH_INTENT_PROJECTION_20260908 -->|unlocks| SPECGRAPH_FOLLOWUP_HOST_ADOPTION_20260908
+    SPECGRAPH_OS_COVERAGE_20260908 -->|unlocks| SPECGRAPH_FOLLOWUP_HOST_ADOPTION_20260908
+    SPECGRAPH_GRAPHIFY_COMPARISON_20260908 -->|unlocks| SPECGRAPH_CROSSFILE_ALIASES_20260908
+    SPECGRAPH_SEARCH_LEXICAL_20260908 -->|unlocks| SPECGRAPH_LEXICAL_QUALITY_20260908
+    SPECGRAPH_OS_COVERAGE_20260908 -->|unlocks| SPECGRAPH_LEXICAL_QUALITY_20260908
+    SPECGRAPH_LEXICAL_QUALITY_20260908 -->|unlocks| SPECGRAPH_FOLLOWUP_HOST_ADOPTION_20260908
+    SPECGRAPH_COMPLETION_X1 -->|unlocks| SPECGRAPH_RESPONSE_CONTRACT_20260908
+    SPECGRAPH_RESPONSE_CONTRACT_20260908 -->|unlocks| SPECGRAPH_FOLLOWUP_HOST_ADOPTION_20260908
+    node_serving_stack_home_20261008 -->|unlocks| node_service_in_os_20261104
+
+    classDef done fill:#10b98122,stroke:#10b981,stroke-width:2px,color:#d1fae5;
+    classDef ready fill:#06b6d422,stroke:#06b6d4,stroke-width:2px,color:#cffafe;
+    classDef blocked fill:#f43f5e22,stroke:#f43f5e,stroke-width:1px,color:#ffe4e6;
+    class assurance_topology done;
+    class backlog_align ready;
+    class baseline_ci01 done;
+    class baseline_ci02 done;
+    class ci_regression_02 done;
+    class ci_regression01 done;
+    class cli_golden done;
+    class continuity ready;
+    class controlled_write_track done;
+    class durable_async_workflow done;
+    class durable_state done;
+    class fsv_old_train ready;
+    class gov_audit_leg done;
+    class gov_control_plane done;
+    class gov_dogfood done;
+    class gov_frozen_scenario done;
+    class gov_kernel done;
+    class gov_liveness_proof done;
+    class gov_mutation_leg done;
+    class gov_no_waiver done;
+    class gov_process_receipts done;
+    class gov_proof_authority done;
+    class gov_reckon_leg done;
+    class gov_seat_provenance done;
+    class gov_selfwrite_cas done;
+    class graph_audit_frontier_semantics done;
+    class graph_audit_provenance_archaeology done;
+    class graph_audit_reproducible_build done;
+    class graph_audit_schema_validation done;
+    class graph_audit_shadow_reconciliation done;
+    class i2i01 ready;
+    class i2i02 blocked;
+    class i2i03 blocked;
+    class i2i04 blocked;
+    class i2i05 blocked;
+    class i2i06 blocked;
+    class identity_lineage ready;
+    class information_survival ready;
+    class ip2_strict_subject done;
+    class issue32_stale_open done;
+    class local_llm_runtime done;
+    class north_star blocked;
+    class p00 done;
+    class p01 ready;
+    class p02 done;
+    class p03 done;
+    class p1_core_fsv done;
+    class p10 done;
+    class p11 done;
+    class p12 done;
+    class p20 done;
+    class p21 ready;
+    class p30 ready;
+    class p5_release_rendering ready;
+    class plan_ip_a done;
+    class plan_ip_b done;
+    class plan_ip_c done;
+    class plan_ip_d done;
+    class plan_ip_e ready;
+    class planning_source_relay_current ready;
+    class project_admission ready;
+    class protocols done;
+    class r3_audit done;
+    class rb01 done;
+    class rb02 done;
+    class rb03 done;
+    class rb04a done;
+    class rb04b done;
+    class rb05 done;
+    class rb06 done;
+    class relay_automation done;
+    class relay_confinement ready;
+    class relay_q0 done;
+    class relay_q1 done;
+    class relay_q1_corrective done;
+    class relay_q2q3 done;
+    class relay_q4 done;
+    class relay_q5 done;
+    class relay_q6 done;
+    class relay_q6c1 done;
+    class relay_q6c2 done;
+    class relay_q6c3 done;
+    class relay_q6c4 done;
+    class relay_q7_a2 done;
+    class relay_q8_a2 done;
+    class relay_role_identity done;
+    class remote_lanes_legacy ready;
+    class repo_main ready;
+    class repo_staging ready;
+    class res_exp_backpressure done;
+    class res_exp_evidence done;
+    class res_exp_isolation done;
+    class res_exp_locality done;
+    class res_ip_a ready;
+    class res_ip_b done;
+    class res_ip_c done;
+    class res_ip_d done;
+    class research_companions ready;
+    class research_knowledge done;
+    class research_pr22 done;
+    class source_truth_derivative_reconcile done;
+    class source_truth_exact_byte_acquisition ready;
+    class source_truth_gov_exact_recovery done;
+    class source_truth_incident ready;
+    class source_truth_materializer done;
+    class source_truth_materializer_preflight_atomicity ready;
+    class source_truth_p0_first_batch done;
+    class source_truth_p0_rehydrate blocked;
+    class source_truth_publication_gate ready;
+    class source_truth_rest_rehydrate ready;
+    class source_truth_sr1_poc done;
+    class task_chat_gate_tracker done;
+    class task_chat_plan_hud done;
+    class task_chat_tool_chips done;
+    class task_codex_stream_parity done;
+    class task_m5_1 done;
+    class task_m5_2 done;
+    class task_m5_3 done;
+    class task_queue_cancel_worker done;
+    class task_queue_reorder done;
+    class task_queue_view_live done;
+    class task_spec115 done;
+    class task_spec116 done;
+    class task_tasks_board_read done;
+    class task_tasks_enqueue done;
+    class task_tasks_store_cli done;
+    class task_tasks_target_board done;
+    class task_webgui_design_phases done;
+    class taskstore ready;
+    class tcp01 done;
+    class tcp02 done;
+    class tcp03 done;
+    class tcp04 ready;
+    class tcp05 done;
+    class tcp06 done;
+    class tcp07 done;
+    class trust_genesis_ro done;
+    class tui_repl done;
+    class vendor_adapters done;
+    class windows_sao done;
+    class work_relay_reconcile done;
+    class workflow_lifecycle done;
+    class workgraph_poc ready;
+    class x01 done;
+    class x02 done;
+    class x03 ready;
+    class x04 done;
+    class x05 done;
+    class x06 done;
+    class PROCESS_REPAIR_01 done;
+    class GRAPH_BACKLOG_02 done;
+    class RELAY_CONTROL_PLANE_01 done;
+    class RELAY_PLANNER_VENDOR_FAILOVER_01 done;
+    class RELAY_INTAKE_DOGFOODING_CONSENSUS_01 done;
+    class INTAKE_RELAY_OWNER_COCKPIT_01_O_8ec9472cba done;
+    class INTAKE_OS_CR_DITOS_DO_GOOGLE_GE_2a34cc3db9 done;
+    class CONSENSUS_PROP_MULTI_HOST_COORDINATION_IMMUNITY_ done;
+    class CONSENSUS_PROP_WORKER_PROMPT_HARMONIZATION_01 done;
+    class INTAKE_P0_NENHUM_IMPLEMENTER_ES_9525898e0a done;
+    class CONSENSUS_PROP_TAILSCALE_RPC_COORDINATOR_WORKER_MESH_01 done;
+    class INTAKE_D_BITO_T_CNICO_GARANTIA__61c5fe5ef5 done;
+    class INTAKE_D_BITO_T_CNICO_AUTORIDAD_a96988b70f done;
+    class INTAKE_D_BITO_T_CNICO_PARIDADE__467668c266 done;
+    class INTAKE_E2E_TEST_DEMAND_17869320_60cb521a86 done;
+    class INTAKE_E2E_TEST_DEMAND_17869325_139434f2fa done;
+    class INTAKE_E2E_TEST_DEMAND_17869331_2757886eec done;
+    class INTAKE_E2E_TEST_DEMAND_17869338_d45aff3381 ready;
+    class INTAKE_E2E_TEST_DEMAND_17869339_a8cd83c959 ready;
+    class INTAKE_E2E_TEST_DEMAND_17869341_d40e598c42 ready;
+    class INTAKE_E2E_TEST_DEMAND_17869343_81dd01c8f7 ready;
+    class INTAKE_E2E_TEST_DEMAND_17869369_3691ff5f2d ready;
+    class INTAKE_E2E_TEST_DEMAND_17869371_ca7c6a10f8 ready;
+    class INTAKE_D_BITO_T_CNICO_PROJE_ES__d5fc95f9f1 done;
+    class INTAKE_E2E_TEST_DEMAND_17869388_88234deb77 ready;
+    class canonical_hooks_dogfood_qualification done;
+    class SPECGRAPH_COMPLETION_C0 done;
+    class SPECGRAPH_COMPLETION_C1 done;
+    class SPECGRAPH_COMPLETION_C2 done;
+    class SPECGRAPH_COMPLETION_C3 done;
+    class SPECGRAPH_COMPLETION_C4 done;
+    class SPECGRAPH_COMPLETION_C5 done;
+    class SPECGRAPH_COMPLETION_C6 done;
+    class SPECGRAPH_COMPLETION_C7 done;
+    class SPECGRAPH_COMPLETION_C8 done;
+    class SPECGRAPH_COMPLETION_X1 done;
+    class SPECGRAPH_COMPLETION_X2 done;
+    class SPECGRAPH_COMPLETION_X3 done;
+    class SPECGRAPH_COMPLETION_X4 done;
+    class SPECGRAPH_COMPLETION_X5 ready;
+    class SPECGRAPH_COMPLETION_20260908 done;
+    class SPECGRAPH_FOLLOWUP_GOVERNANCE_20260908 ready;
+    class SPECGRAPH_FOLLOWUP_HOST_ADOPTION_20260908 ready;
+    class flow_01_reconciliar_o_primeiro_slice_e done;
+    class flow_02_executar_work_explicito_pela_fachada done;
+    class flow_03_fechar_settlement_landing_e_reconciliacao ready;
+    class flow_04_parada_orcamento_e_recuperacao_basicos ready;
+    class flow_05_instrumentar_uso_real_sem_criar ready;
+    class flow_06_segunda_realizacao_e_routing_jit blocked;
+    class flow_07_console_conversacional_minimo_e_comandos blocked;
+    class flow_08_empacotamento_e_adocao_reproduzivel done;
+    class flow_09_ir_e_compiler_minimos_para done;
+    class flow_10_reducer_de_workflow_duravel_e blocked;
+    class flow_11_interpretacao_grounded_e_planner_limitado blocked;
+    class flow_12_replan_localizado_com_preservacao_de blocked;
+    class flow_13_paralelismo_limitado_por_efeitos_e done;
+    class flow_14_trains_de_multiplos_work_sem done;
+    class flow_15_planejamento_de_horizonte_e_graphpatch blocked;
+    class flow_16_pesquisa_e_ideacao_federada_como done;
+    class flow_17_espera_humana_e_controle_operacional blocked;
+    class flow_18_perfis_comportamentais_como_projecao_read blocked;
+    class flow_19_canary_de_routing_orientado_por done;
+    class flow_20_experimento_de_scaffolding_nao_personalidade done;
+    class flow_21_frugalidade_do_proprio_audit_e done;
+    class flow_22_beta_de_produto_com_usuarios ready;
+    class flow_23_backend_duravel_externo_somente_contra blocked;
+    class flow_24_mineracao_de_metodos_e_otimizacao blocked;
+    class research_shared_explorer_lock done;
+    class research_fail_closed_receipt done;
+    class research_redirect_allowlist done;
+    class research_reduce_integrity done;
+    class SPECGRAPH_GRAPHIFY_COMPARISON_20260908 done;
+    class SPECGRAPH_SEARCH_LEXICAL_20260908 done;
+    class SPECGRAPH_INTENT_PROJECTION_20260908 done;
+    class SPECGRAPH_OS_COVERAGE_20260908 done;
+    class SPECGRAPH_CROSSFILE_ALIASES_20260908 done;
+    class SPECGRAPH_LEXICAL_QUALITY_20260908 done;
+    class SPECGRAPH_RESPONSE_CONTRACT_20260908 done;
+    class storage_maintenance_20260924 done;
+    class assisted_exploration_20260924 done;
+    class main_green_pr_auto_merge_20261005 done;
+    class gpu_lease_kernel_os_20261007 done;
+    class role_guidance_capsules_20261007 done;
+    class gpu_busy_retry_after_node_20261008 done;
+    class node_serving_stack_home_20261008 done;
+    class gpu_lease_remote_holder_20261008 done;
+    class gpu_named_reservation_20261008 done;
+    class node_service_in_os_20261104 done;

@@ -1,0 +1,15 @@
+{
+  "native_execution_limits": {
+    "max_model_calls": null,
+    "max_stagnant_turns": null,
+    "max_model_retries": 0,
+    "max_seconds": null,
+    "request_seconds": null,
+    "connect_seconds": null,
+    "read_seconds": null
+  },
+  "context_policy": {
+    "max_compactions": null
+  },
+  "supervisor_timeout_seconds": null
+}

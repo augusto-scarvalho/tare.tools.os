@@ -1,0 +1,122 @@
+# Python
+# Local reviewed intent receipts and per-Work manifest exports
+.tare/work-intake/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing & Linting
+.pytest_cache-*/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+Thumbs.db
+Desktop.ini
+
+# Archives & Temporary Artifacts
+*.zip
+*.tar.gz
+scratch/
+temporary-evidence/
+fast_extract_remote.py
+.*.atomic_scratch/
+side_projects/
+.aider*
+
+# Records stay on the machine that made them, out of git (2026-10-08): relay runtime state and history, session
+# reports, evidence, audits, chat transcripts. The code creates each folder when it writes there.
+/continuity/
+/relay/history/
+/relay/round_tables/
+/relay/inbox/
+/relay/intake/
+/relay/trains/
+/relay/leases/
+/relay/nodes/
+/relay/*.log
+/relay/BOARD.json
+/relay/CURRENT_BOARD.md
+/docs/operations/
+/docs/evidence/
+/docs/audits/
+/docs/archive/
+/docs/intake/
+/docs/ARCHITECTURAL_QA_LEDGER.md
+
+# Local credentials and private working material (never publication inputs)
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.local.env
+/.aws/
+/.ssh/
+/.secrets/
+/.credentials/
+/.private/
+/.internal/
+/.reconciliation/
+credentials.local.*
+id_rsa
+id_ed25519
+*.p12
+*.pfx
+.claude/settings.local.json
+.aider*
+
+# SQLite runtime sidecars can contain the same private data as the database
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
+
+# Regenerable local tool state
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tare.tools/candidate-change/1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "train_id", "descriptor_sha256", "work_id", "repository",
+    "base_commit", "worktree_id", "workspace_ready_sha256", "candidate_commit", "candidate_tree",
+    "diff_sha256", "changed_paths", "changed_entries"
+  ],
+  "properties": {
+    "schema": {"const": "tare.tools/candidate-change/1"},
+    "train_id": {"type": "string"},
+    "descriptor_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "work_id": {"type": "string"},
+    "repository": {"type": "string"},
+    "base_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "worktree_id": {"type": "string"},
+    "workspace_ready_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "candidate_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "candidate_tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "diff_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "changed_paths": {"type": "array", "items": {"type": "string"}},
+    "changed_entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "old_mode", "new_mode", "status"],
+        "properties": {
+          "path": {"type": "string"},
+          "old_mode": {"type": "string"},
+          "new_mode": {"type": "string"},
+          "status": {"enum": ["A", "D", "M", "T"]}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "schema": "tare.tools/os-specgraph-ci-pins/1",
+  "scope": "CI integration copies only; committed satellites unchanged",
+  "repositories": {
+    "tare.tools.agent-runtime": "cba0565a11efde0e0bf645b99241ed0f8b9d07f9",
+    "tare.tools.backlog-graph": "3f03686ae3d6918860f38ccfcf3b79c006f046b9",
+    "tare.tools.kernel": "74d3c72c45ad53da44084734f972272bfb05c079",
+    "tare.tools.specgraph": "370727fc728bb2b51e5c2d52c5941a60df9a77d2"
+  }
+}

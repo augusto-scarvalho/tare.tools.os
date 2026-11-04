@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tare.tools/audit-result/1",
+  "type": "object",
+  "required": ["schema", "case_id", "attempt", "run_id", "packet_id", "packet_sha256", "execution_status", "review_status", "review", "reason", "next_action", "authority"],
+  "properties": {
+    "schema": {"const": "tare.tools/audit-result/1"},
+    "case_id": {"type": "string"},
+    "attempt": {"type": "integer", "minimum": 1},
+    "run_id": {"type": "string"},
+    "packet_id": {"type": "string"},
+    "packet_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "execution_status": {"enum": ["COMPLETED", "FAILED", "TIMED_OUT", "CANCELLED", "BUDGET_STOP"]},
+    "review_status": {"enum": ["VALID", "PARTIAL", "INVALID", "MISSING"]},
+    "review": {"type": ["object", "null"]},
+    "reason": {"type": ["string", "null"]},
+    "next_action": {"enum": ["IMPLEMENT_FINDINGS", "PROVIDE_CONTEXT", "DIAGNOSE_EXECUTION", "REVIEW_COMPLETE_NO_ADMISSION_AUTHORITY", "USER_DECISION_REQUIRED"]},
+    "authority": {"const": "NONE"}
+  }
+}

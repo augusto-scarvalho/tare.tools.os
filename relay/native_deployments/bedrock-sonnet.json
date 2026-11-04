@@ -1,0 +1,30 @@
+{
+  "id": "bedrock-sonnet",
+  "runner": "native-http",
+  "model": "claude-sonnet-4.6",
+  "native_credential_env": "AWS_BEARER_TOKEN_BEDROCK",
+  "native_profile": {
+    "protocol": "bedrock-converse",
+    "model": "us.anthropic.claude-sonnet-4-6",
+    "context_window": 1000000,
+    "output_tokens": 16384,
+    "endpoint": "https://bedrock-runtime.us-east-1.amazonaws.com",
+    "source": "docs/operations/NATIVE_BEDROCK_ROUTES_2026-09-10.md: AWS card and bounded live native canary; window not stress tested",
+    "count_model": "anthropic.claude-sonnet-4-6",
+    "count_model_source": "docs/operations/NATIVE_BEDROCK_ROUTES_2026-09-10.md: live Sonnet CountTokens",
+    "parameters_json": "{\"additionalModelRequestFields\": {\"thinking\": {\"type\": \"adaptive\"}, \"output_config\": {\"effort\": \"high\"}}}",
+    "cache_system": true,
+    "cache_support_source": "docs/operations/NATIVE_BEDROCK_ROUTES_2026-09-10.md: 2221-token system cache cold/write then warm/read"
+  },
+  "native_usage_contract": {
+    "layout": "converse-exclusive",
+    "source": "AWS Converse response usage"
+  },
+  "native_image_media_types": [
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp"
+  ],
+  "native_image_support_source": "docs/guides/NATIVE_ATTACHMENTS.md: AWS model card and Converse ImageBlock; transport tested with fixtures, live vision qualification pending"
+}

@@ -1,0 +1,35 @@
+{
+ "fixture": [
+  "Olá! Como posso ajudar?",
+  "Quatro."
+ ],
+ "steps": [
+  {
+   "set": {
+    "#profile": "$FIXTURE_PROFILE"
+   },
+   "note": "fixture provider"
+  },
+  {
+   "click": "Ask anything"
+  },
+  {
+   "paste": "oi amiguinho"
+  },
+  {
+   "press": "ctrl+enter",
+   "until": "Como posso ajudar?"
+  },
+  {
+   "paste": "quanto é 2+2?"
+  },
+  {
+   "press": "ctrl+enter",
+   "until": "Quatro."
+  },
+  {
+   "quit": true
+  }
+ ],
+ "note": "Pilot backend: two-turn natural chat against the loopback fixture."
+}

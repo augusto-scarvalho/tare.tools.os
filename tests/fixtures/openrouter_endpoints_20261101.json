@@ -1,0 +1,273 @@
+{
+  "observed_at": "2026-11-01",
+  "endpoints": {
+    "openrouter-deepseek-v4-1-flash-1017": {
+      "tag": "morph/fp8",
+      "quantization": "fp8",
+      "context_length": 1048576,
+      "max_completion_tokens": 943718,
+      "supported_parameters": [
+        "reasoning",
+        "include_reasoning",
+        "max_tokens",
+        "temperature",
+        "stop",
+        "top_p",
+        "top_k",
+        "min_p",
+        "frequency_penalty",
+        "presence_penalty",
+        "repetition_penalty",
+        "seed",
+        "logit_bias",
+        "tools",
+        "tool_choice",
+        "structured_outputs",
+        "response_format",
+        "reasoning_effort"
+      ],
+      "source": "https://openrouter.ai/api/v1/models/deepseek/deepseek-v4.1-flash-1017/endpoints"
+    },
+    "openrouter-glm-5-3-flash": {
+      "tag": "z-ai/fp8",
+      "quantization": "fp8",
+      "context_length": 1048576,
+      "max_completion_tokens": 131072,
+      "supported_parameters": [
+        "reasoning",
+        "include_reasoning",
+        "max_tokens",
+        "temperature",
+        "top_p",
+        "tools",
+        "tool_choice",
+        "top_k",
+        "response_format",
+        "reasoning_effort"
+      ],
+      "source": "https://openrouter.ai/api/v1/models/z-ai/glm-5.3-flash/endpoints"
+    },
+    "openrouter-glm-5-3": {
+      "tag": "z-ai/fp8",
+      "quantization": "fp8",
+      "context_length": 1048576,
+      "max_completion_tokens": 131072,
+      "supported_parameters": [
+        "reasoning",
+        "include_reasoning",
+        "max_tokens",
+        "temperature",
+        "top_p",
+        "tools",
+        "tool_choice",
+        "top_k",
+        "response_format",
+        "reasoning_effort"
+      ],
+      "source": "https://openrouter.ai/api/v1/models/z-ai/glm-5.3/endpoints"
+    },
+    "openrouter-grok-4-7": {
+      "tag": "xai/zdr",
+      "quantization": "unknown",
+      "context_length": 500000,
+      "max_completion_tokens": 450000,
+      "supported_parameters": [
+        "reasoning",
+        "include_reasoning",
+        "structured_outputs",
+        "response_format",
+        "max_tokens",
+        "temperature",
+        "top_p",
+        "seed",
+        "logprobs",
+        "top_logprobs",
+        "tools",
+        "tool_choice",
+        "reasoning_effort"
+      ],
+      "source": "https://openrouter.ai/api/v1/models/x-ai/grok-4.7/endpoints"
+    },
+    "openrouter-kimi-k3-1-pro": {
+      "tag": "moonshotai/mxfp4",
+      "quantization": "mxfp4",
+      "context_length": 1048576,
+      "max_completion_tokens": 943718,
+      "supported_parameters": [
+        "reasoning",
+        "include_reasoning",
+        "max_tokens",
+        "stop",
+        "frequency_penalty",
+        "presence_penalty",
+        "structured_outputs",
+        "response_format",
+        "tool_choice",
+        "tools",
+        "logprobs",
+        "top_logprobs",
+        "reasoning_effort"
+      ],
+      "source": "https://openrouter.ai/api/v1/models/moonshotai/kimi-k3.1-pro/endpoints"
+    },
+    "openrouter-ling-3-1-flash": {
+      "tag": "novita",
+      "quantization": "unknown",
+      "context_length": 1000000,
+      "max_completion_tokens": 262144,
+      "supported_parameters": [
+        "reasoning",
+        "include_reasoning",
+        "max_tokens",
+        "temperature",
+        "top_p",
+        "stop",
+        "frequency_penalty",
+        "presence_penalty",
+        "seed",
+        "top_k",
+        "repetition_penalty",
+        "tools",
+        "tool_choice",
+        "logprobs",
+        "top_logprobs"
+      ],
+      "source": "https://openrouter.ai/api/v1/models/inclusionai/ling-3.1-flash/endpoints"
+    },
+    "openrouter-mimo-v2-6-pro": {
+      "tag": "xiaomi/fp8",
+      "quantization": "fp8",
+      "context_length": 1048576,
+      "max_completion_tokens": 131072,
+      "supported_parameters": [
+        "reasoning",
+        "include_reasoning",
+        "max_tokens",
+        "temperature",
+        "top_p",
+        "stop",
+        "response_format",
+        "tools",
+        "tool_choice",
+        "frequency_penalty",
+        "presence_penalty",
+        "structured_outputs"
+      ],
+      "source": "https://openrouter.ai/api/v1/models/xiaomi/mimo-v2.6-pro/endpoints"
+    },
+    "openrouter-mistral-large-4": {
+      "tag": "mistral/zdr",
+      "quantization": "unknown",
+      "context_length": 1048576,
+      "max_completion_tokens": 262144,
+      "supported_parameters": [
+        "reasoning",
+        "include_reasoning",
+        "max_tokens",
+        "temperature",
+        "top_p",
+        "stop",
+        "frequency_penalty",
+        "presence_penalty",
+        "seed",
+        "response_format",
+        "structured_outputs",
+        "tools",
+        "tool_choice",
+        "logprobs",
+        "top_logprobs",
+        "reasoning_effort"
+      ],
+      "source": "https://openrouter.ai/api/v1/models/mistralai/mistral-large-4-0/endpoints"
+    },
+    "openrouter-muse-spark-1-3-contributor": {
+      "tag": "meta",
+      "quantization": "unknown",
+      "context_length": 1048576,
+      "max_completion_tokens": 943718,
+      "supported_parameters": [
+        "reasoning",
+        "include_reasoning",
+        "max_tokens",
+        "repetition_penalty",
+        "top_k",
+        "temperature",
+        "top_p",
+        "tools",
+        "tool_choice",
+        "structured_outputs",
+        "response_format",
+        "reasoning_effort"
+      ],
+      "source": "https://openrouter.ai/api/v1/models/meta/muse-spark-1.3-contributor/endpoints"
+    },
+    "openrouter-muse-wonder": {
+      "tag": "meta",
+      "quantization": "unknown",
+      "context_length": 1048576,
+      "max_completion_tokens": 943718,
+      "supported_parameters": [
+        "reasoning",
+        "include_reasoning",
+        "max_tokens",
+        "repetition_penalty",
+        "top_k",
+        "temperature",
+        "top_p",
+        "tools",
+        "tool_choice",
+        "structured_outputs",
+        "response_format",
+        "reasoning_effort"
+      ],
+      "source": "https://openrouter.ai/api/v1/models/meta/muse-wonder/endpoints"
+    },
+    "openrouter-qwen3-8-omni-flash": {
+      "tag": "alibaba",
+      "quantization": "unknown",
+      "context_length": 1000000,
+      "max_completion_tokens": 131072,
+      "supported_parameters": [
+        "reasoning",
+        "include_reasoning",
+        "max_tokens",
+        "temperature",
+        "top_p",
+        "seed",
+        "presence_penalty",
+        "response_format",
+        "tools",
+        "structured_outputs",
+        "top_k",
+        "frequency_penalty",
+        "stop",
+        "logprobs",
+        "top_logprobs",
+        "tool_choice"
+      ],
+      "source": "https://openrouter.ai/api/v1/models/qwen/qwen3.8-omni-flash/endpoints"
+    },
+    "openrouter-step-5-preview": {
+      "tag": "gmicloud/fp8",
+      "quantization": "fp8",
+      "context_length": 1048576,
+      "max_completion_tokens": 943718,
+      "supported_parameters": [
+        "reasoning",
+        "include_reasoning",
+        "max_tokens",
+        "temperature",
+        "top_p",
+        "seed",
+        "response_format",
+        "structured_outputs",
+        "tools",
+        "tool_choice",
+        "logprobs",
+        "top_logprobs",
+        "reasoning_effort"
+      ],
+      "source": "https://openrouter.ai/api/v1/models/stepfun/step-5-preview/endpoints"
+    }
+  }
+}

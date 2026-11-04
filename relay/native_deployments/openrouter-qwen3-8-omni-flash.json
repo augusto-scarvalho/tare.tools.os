@@ -1,0 +1,28 @@
+{
+  "id": "openrouter-qwen3-8-omni-flash",
+  "runner": "native-http",
+  "model": "qwen/qwen3.8-omni-flash",
+  "native_credential_env": "OPENROUTER_API_KEY",
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_profile": {
+    "protocol": "openai-chat",
+    "model": "qwen/qwen3.8-omni-flash",
+    "endpoint": "https://openrouter.ai/api/v1",
+    "context_window": 1000000,
+    "output_tokens": 16384,
+    "parameters_json": "{\"reasoning\":{\"enabled\":true},\"provider\":{\"only\":[\"alibaba\"],\"order\":[\"alibaba\"],\"require_parameters\":true,\"allow_fallbacks\":false,\"data_collection\":\"deny\"},\"transforms\":[]}",
+    "source": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality. https://openrouter.ai/qwen/qwen3.8-omni-flash/providers"
+  },
+  "native_usage_contract": {
+    "layout": "openrouter-inclusive",
+    "source": "https://openrouter.ai/docs/guides/best-practices/prompt-caching; raw inclusive input and cache counters; absent fields remain unknown."
+  },
+  "native_openrouter": {
+    "label": "Qwen3.8 Omni Flash",
+    "publisher": "Alibaba",
+    "precision_provenance": "unknown",
+    "precision_note": "Endpoint precision is a serving label, not evidence of training dtype, QAT, extra quantization or quality. Native FP4/FP8 is admissible.",
+    "source": "https://openrouter.ai/qwen/qwen3.8-omni-flash/providers",
+    "observed_at": "2026-11-01"
+  }
+}

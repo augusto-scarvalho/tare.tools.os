@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "engine": "comfyui",
+  "presets": {
+    "juggernaut-xl": {
+      "display_name": "Juggernaut XL v9",
+      "architecture": "sdxl",
+      "checkpoint": "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors",
+      "summary": "SDXL photo checkpoint preset routed to ComfyUI.",
+      "default_width": 512,
+      "default_height": 512,
+      "default_steps": 20,
+      "cfg": 7.0,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1.0
+    },
+    "illustrious-xl": {
+      "display_name": "Illustrious XL v0.1",
+      "architecture": "sdxl",
+      "checkpoint": "Illustrious-XL-v0.1.safetensors",
+      "summary": "Illustrious XL checkpoint preset routed to ComfyUI.",
+      "default_width": 512,
+      "default_height": 512,
+      "default_steps": 20,
+      "cfg": 7.0,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1.0
+    }
+  }
+}

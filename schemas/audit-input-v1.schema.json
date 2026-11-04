@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tare.tools/audit-input/1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "packet_id", "intent", "scope", "non_goals", "changes", "obligations", "sources", "evidence", "context", "response_schema"],
+  "properties": {
+    "schema": {"const": "tare.tools/audit-input/1"},
+    "packet_id": {"type": "string", "maxLength": 64},
+    "intent": {"type": "string", "minLength": 1},
+    "scope": {"type": "string", "minLength": 1},
+    "non_goals": {"type": "array", "items": {"type": "string"}},
+    "changes": {"type": "array", "minItems": 1, "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "repository", "path", "kind", "diff_ref", "context_refs", "why"],
+      "properties": {
+        "id": {"type": "string"}, "repository": {"type": "string"}, "path": {"type": "string"},
+        "kind": {"enum": ["added", "deleted", "modified"]}, "diff_ref": {"type": "string"},
+        "context_refs": {"type": "array", "items": {"type": "string"}}, "why": {"type": "string"},
+        "diff_basis": {"type": "string"},
+        "symbols": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "omitted_changed_lines": {"type": "object", "required": ["before", "after"],
+          "properties": {"before": {"type": "integer", "minimum": 0}, "after": {"type": "integer", "minimum": 0}}}
+      }
+    }},
+    "obligations": {"type": "array", "minItems": 1, "items": {
+      "type": "object", "required": ["id", "claim", "change_ids", "falsify"],
+      "properties": {
+        "id": {"type": "string"}, "claim": {"type": "string"},
+        "change_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "falsify": {"type": "string"}
+      }
+    }},
+    "sources": {"type": "array", "items": {
+      "type": "object", "required": ["id", "kind", "repository", "path", "text", "why", "obligation_ids"],
+      "properties": {
+        "id": {"type": "string"}, "kind": {"enum": ["source", "diff"]},
+        "repository": {"type": "string"}, "path": {"type": "string"},
+        "revision": {"type": "string"}, "start_line": {"const": 1},
+        "text": {"type": "string"}, "why": {"type": "string"},
+        "segments": {"type": "array", "items": {"type": "object", "required": ["start_line", "text"],
+          "properties": {"start_line": {"type": "integer", "minimum": 1}, "text": {"type": "string"}}}},
+        "obligation_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+      }
+    }},
+    "evidence": {"type": "array", "items": {"type": "object",
+      "required": ["id", "kind", "text", "sha256", "why", "obligation_ids", "executed_by"],
+      "properties": {"kind": {"const": "test_receipt"}, "executed_by": {"const": "implementer_claim"}}
+    }},
+    "context": {"type": "object", "required": ["missing", "impact_assurance"],
+      "properties": {"missing": {"type": "array", "maxItems": 0},
+                     "impact_assurance": {"const": "explicit_selection_not_semantic_completeness"}}},
+    "response_schema": {"const": "tare.tools/audit-review/1"},
+    "previous_review": {"type": "object"},
+    "correction": {"type": "object"}
+  }
+}

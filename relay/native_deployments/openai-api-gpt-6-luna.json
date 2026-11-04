@@ -1,0 +1,27 @@
+{
+  "id": "openai-api-gpt-6-luna",
+  "runner": "native-http",
+  "model": "gpt-6-luna",
+  "native_credential_env": "OPENAI_API_KEY",
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_reasoning_levels": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+  ],
+  "native_profile": {
+    "protocol": "openai-responses",
+    "model": "gpt-6-luna",
+    "endpoint": "https://api.openai.com/v1",
+    "context_window": 131072,
+    "output_tokens": 8192,
+    "parameters_json": "{\"reasoning\":{\"effort\":\"medium\"}}",
+    "source": "https://developers.openai.com/api/docs/models/gpt-6-luna; conservative Tare context/output caps, not provider maxima"
+  },
+  "native_usage_contract": {
+    "layout": "responses-inclusive",
+    "source": "https://platform.openai.com/docs/api-reference/responses"
+  }
+}

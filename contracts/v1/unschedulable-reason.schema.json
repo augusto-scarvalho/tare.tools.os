@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tare.tools/contracts/v1/unschedulable-reason.schema.json",
+  "title": "UnschedulableReason",
+  "description": "A fixed diagnostic projection of an authoritative scheduling decision. Retryability is a hint, not permission or an automatic retry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "category", "message", "action", "retryable"],
+  "properties": {
+    "code": {"type": "string", "minLength": 1},
+    "category": {"enum": ["resource", "policy", "dependency", "configuration", "unknown"]},
+    "message": {"type": "string", "minLength": 1},
+    "action": {"type": "string", "minLength": 1},
+    "retryable": {"type": "boolean"},
+    "retry_after_seconds": {"type": "integer", "minimum": 0, "maximum": 86400}
+  }
+}

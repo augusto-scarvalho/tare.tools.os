@@ -1,0 +1,20 @@
+{
+  "id": "bedrock-glm",
+  "runner": "native-http",
+  "model": "glm-5",
+  "native_credential_env": "AWS_BEARER_TOKEN_BEDROCK",
+  "native_profile": {
+    "protocol": "bedrock-converse",
+    "model": "zai.glm-5",
+    "context_window": 200000,
+    "output_tokens": 4096,
+    "endpoint": "https://bedrock-runtime.us-east-1.amazonaws.com",
+    "source": "docs/operations/NATIVE_BEDROCK_ROUTES_2026-09-10.md: AWS card and bounded live native canary; window not stress tested; UTF-8 envelope estimate selected explicitly because CountTokens is unsupported; reasoning_config high qualified",
+    "parameters_json": "{\"additionalModelRequestFields\": {\"reasoning_config\": \"high\"}}"
+  },
+  "native_usage_contract": {
+    "layout": "converse-exclusive",
+    "source": "AWS Converse response usage"
+  },
+  "native_counter_protocol": "utf8-envelope-estimate-v1"
+}

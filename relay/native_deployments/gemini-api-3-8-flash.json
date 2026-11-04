@@ -1,0 +1,25 @@
+{
+  "id": "gemini-api-3-8-flash",
+  "runner": "native-http",
+  "model": "gemini-3.8-flash",
+  "native_credential_env": "GEMINI_API_KEY",
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_reasoning_levels": [
+    "low",
+    "medium",
+    "high"
+  ],
+  "native_profile": {
+    "protocol": "openai-chat",
+    "model": "gemini-3.8-flash",
+    "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "context_window": 131072,
+    "output_tokens": 8192,
+    "parameters_json": "{\"reasoning_effort\":\"medium\"}",
+    "source": "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash; conservative Tare context/output caps, not provider maxima; existing compatibility protocol and implicit cache"
+  },
+  "native_usage_contract": {
+    "layout": "gemini-chat",
+    "source": "https://discuss.ai.google.dev/t/gemini-3-6-flash-openai-compatible-token-limits-response-fields-and-auth-keys/183372; compatibility totals include thinking, completion_tokens exclude it; missing cache stays unknown"
+  }
+}

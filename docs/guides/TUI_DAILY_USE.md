@@ -1,0 +1,286 @@
+# TUI Daily Use — Quickstart
+
+English quickstart for everyday work in the tare terminal UI (TUI). This replaces the
+daily-use parts of the outdated `FLOWS_TUI_USER_GUIDE.md`. Graphs and flows are **optional
+helpers**, not prerequisites. Individual Work execution supports explicitly selected
+project graphs; sequences still use the control graph.
+
+## 1. Open a project
+
+Run `tare` from your project folder, or pass another folder:
+
+```powershell
+cd C:/path/to/your-project
+tare
+tare "C:/path/to/another project"
+```
+
+Windows command setup is described in [product installation](PRODUCT_INSTALLATION.md).
+The command uses the managed release and its automatic updates; reopen the TUI
+after an update. `tare console --root PATH` and the desktop shortcut still work.
+History stays outside projects in the installation's configured storage.
+
+For a saved conversation with a finite allowance, an operator can explicitly raise
+its totals when opening the TUI:
+`tare console --root PATH --resume-coordinator-seconds 3600 --resume-coordinator-calls 90`.
+These apply only when sending a follow-up to a saved assistant conversation. The
+call total is the OS pool shared with workers; the runtime's effective call ceiling
+follows the explicit grant while its original budget identity and journal stay fixed. Used calls and active time remain
+charged, and repeating the same total does not replenish either allowance. The
+agent cannot grant itself more budget. The equivalent public `agent` options are
+`--active-time-budget` and `--active-call-budget`.
+
+Completed waits for your reply are excluded from a finite conversation deadline.
+An unfinished or uncertain invocation does not automatically receive that time
+back. After an interruption, inspect saved effects before retrying: an interrupted
+implementation is not silently replayed or accepted.
+
+After a cancelled read-only audit, a new human request can start one bounded
+review when the previous process has confirmed local cleanup. The candidate and
+earlier usage remain recorded, including unknown remote charges. The new review
+uses the current reviewer choice; accepted or adverse verdicts stay final.
+
+For a saved delivery, `/recheck` repeats the candidate's checks and independent audit
+without calling the coordinator or implementer. Use `/retry_delivery` when an audit
+finding requires another implementation attempt, and `/repair_plan` when the saved
+plan needs a scope correction. These commands retain the candidate, previous findings,
+history and charged usage. They still require the existing permissions and remaining
+budget; a failed check or audit keeps the delivery blocked.
+
+The symbol beside the status animates while a model or tool is working, including
+silent waits before the first token. The terminal tab follows the same activity:
+`⠋ - tare - my-project`. `○` means ready, `?` waits for your input, `✓` marks a
+finished turn, `■` means stopped, and `!` needs attention. A finished turn does not
+by itself mean a Work is verified or settled. Cancellation keeps animating until
+the runner stops. Closing tare restores the shell title where supported.
+
+### Choose connections for one launch
+
+Append a switch to `tare` or `tare PATH`. It lasts for this TUI and its delegated
+work only. Closing it restores the usual routing; saved machine settings, model
+preferences and conversation prompts are not replaced by these switches.
+
+| Switch | Effect |
+| --- | --- |
+| `--subscription_only` | Use Codex, Claude and AGY CLIs. Hosted Jev stays available. |
+| `--local_only` | Use local models; replace hosted Jev with the local judge. Search APIs stay available. |
+| `--api_only` | Use inference APIs. Hosted Jev and search APIs stay available. |
+| `--pro_planner` | Use OpenAI Sol PRO, then Astra PRO if available, for the separate planner only, with at least high reasoning. Requires an API key. |
+| `--prefer_api` | Prefer available inference APIs for planner and auditors; fall back to other allowed connections. |
+| `--prefer_subscription` | Prefer available subscription CLIs for planner and auditors; fall back to other allowed connections. |
+| `--prefer_local` | Keep coordinator, explorer, implementer and researcher on local inference; use qualified external planner and auditors. Hosted Jev stays available. |
+| `--disable_judge` | Disable hosted Jev and the local judge. Protected commands require human approval when necessary; YOLO skips those questions. Checks, final audits, sandbox and native Codex Auto-review remain. |
+
+```powershell
+tare --subscription_only
+tare "C:/path/to/your-project" --prefer_local
+tare --prefer_subscription --pro_planner
+tare --local_only --disable_judge
+```
+
+Choose at most one `*_only` mode and one `--prefer_*` mode. Conflicting combinations
+are rejected before opening the TUI. PRO cannot be combined with local-only or
+subscription-only. Hyphen spellings such as `--local-only` also work.
+The TUI displays the active launch switches above the conversation. Existing
+exclusions, budgets, audit independence and GPU leases still apply. If no allowed
+connection is available, tare reports the block rather than starting another kind
+of inference. A saved chat pinned to an excluded connection must be continued on an
+allowed connection; its original history and cache prefix stay intact.
+
+The local judge is used only while already loaded and idle. If command classification
+needs it and it is unavailable, tare asks for approval (or honors YOLO); it does not
+load another model over an active GPU lease. Bulk hosted-Jev optimizations remain off
+in local-only mode; their existing deterministic/explorer fallback handles the work.
+
+From a source install, run `tare PATH` in the activated environment; its history
+goes to `.reconciliation` next to the clone unless `TARE_STORAGE_ROOT` is set.
+
+For roadmap/backlog investigations, see [project-data reads](PROJECT_DATA_READS.md).
+Use `/backlog` to select the project's graph explicitly and `/new` for the updated
+JSON read tools. Existing conversations keep their original tool contract.
+
+## Optional SpecGraph lookup
+
+In workspace settings (F2 on small terminals), **SpecGraph advisory lookup** is
+off by default. Enable it before starting a new conversation. The `context` tool
+queries existing published snapshots only; it does not index, run another LLM,
+or enable the edit gate. Saved conversations retain their capabilities, model
+parameters and limits independently of the default for new conversations; no
+settings change is needed to resume. The CLI still rejects explicit startup
+flags such as `--specgraph-context` or `--no-context` with `--resume`.
+
+Publish an index explicitly with the installed SpecGraph CLI:
+
+```powershell
+Set-Location -LiteralPath "C:\path\to\your-project"
+python -m specgraph.cli index
+tare agent --root "C:\path\to\your-project" --specgraph-context --instruction "Find callers of parse"
+```
+
+The legacy CLI default and `--no-context` retain their behavior. The new
+`--specgraph-context` flag enables consultative lookup independently of editing.
+An index hit is snapshot metadata, not proof of current source contents or full
+coverage; stale, absent or partial indexes require ordinary `read`/`search`
+fallback. Read current sources before editing or asserting evidence. Queries
+are bounded to the selected repository/index and their response limits; they do
+not expand permissions, admit a Work, update its graph, or prove its criteria.
+Normal conversations do not acquire a Work binding through lookup. No sustained
+savings are claimed; the small paired TUI qualification remains separate.
+
+## 2. Select another project
+
+Use `/project` (or F5) to open the project/workspace selector and pick another project
+folder. "Reload workspace" changes the folder and starts a separate conversation for it;
+saved conversations remain available for their own folder. You can also reload with Ctrl+R.
+
+## 3. Execution permission
+
+Ask for the change in the conversation. When the saved plan needs edit access,
+tare offers **Allow for this task**, **Always allow in this project**, and **Deny**. It shows
+the project, files and checks. An approval continues that plan in the same chat and
+covers its corrections; a new plan or other files ask again. The coordinator stays read-only. Waiting for your decision makes no model calls.
+Remembered edit access, including an existing commands/yolo policy, needs no extra
+edit confirmation. Plan-only requests still do not execute.
+
+For advanced defaults, open `/permissions`:
+
+- **Read only** — no file edits or terminal.
+- **Edit files** — write within the chosen scope; terminal disabled.
+- **Edit + system commands** — file edits plus terminal commands.
+
+Defaults are saved separately for each project. A coordinator's own tools, model,
+instructions and history remain fixed; worker authorization is checked separately
+when executing a plan. Explicit `/session` conversations retain their original
+capabilities. Commands can access the host and network: file edit scope alone is
+not a system sandbox.
+
+## 4. Send a normal coding request
+
+Type your request and press **Enter** to send. **Shift+Enter** or **Ctrl+J** inserts
+a newline; **Ctrl+Enter** also sends. Completion menus use Enter to accept the
+selected command or file first. The coordinator delegates planning to the configured
+planner routes, then implementation, host verification and independent review.
+
+Text pasted into the composer remains an editable draft. The field grows up to
+eight rows. Drafts of at least 1 KiB or more than eight lines show a byte/line
+count; drafts above the 16 KiB direct-prompt limit show a warning. Shorten the
+draft or attach supporting material before sending. Pasting does not submit
+the message or start inference.
+
+## 5. Slash completion
+
+Typing `/` opens the completion list. Use the arrow keys to choose, Tab or Enter to
+complete the command, and Esc to close the list. Accepted commands include `/new`,
+`/resume`, `/model`, `/diff`, `/sessions`, `/project`, `/permissions`, `/backlog`,
+`/terminal`, `/attach`, `/status`, and `/help`.
+
+The command palette also includes **Artifacts and feedback**, **Tasks and agents**,
+**Available tools**, and **Project skills**. Their slash commands are `/artifacts`,
+`/tasks`, `/tools`, and `/skills`.
+
+## 6. Corrections
+
+If the result is wrong, just send another ordinary message describing the correction —
+the session is persistent, so context carries over. During execution, Send becomes Queue;
+corrections are saved for a subsequent model round. A delivery receipt is not proof that
+the model followed the correction. For a clean start use `/new`; for a
+different model preference for the next conversation use `/model`.
+
+### Comment on a response or diff
+
+Open `/artifacts` to choose a retained response, or **F3 → Comment** for the
+selected recorded file diff. Select a passage in the preview, write a comment,
+and choose **Add to draft**. A short response can be quoted whole without a
+selection. The existing draft is preserved; review it and send normally.
+
+Feedback carries a hash of the captured text and, for diffs, its session and edit
+reference. This identifies the reviewed version, not the current file or a full
+untruncated artifact. Excerpts are limited to 2 KiB and comments to 4 KiB. Adding
+feedback makes no model call. Changing projects/conversations, a running task,
+or a failed draft save prevents adding it to the wrong destination. Closing the
+panel before **Add to draft** discards the unsubmitted comment.
+
+### Inspect usage, tasks, tools and project skills
+
+- `/usage` shows recorded conversation calls, tokens, cache reads/writes, known
+  costs by currency and configured limits. Missing counts, unpriced calls and
+  subscription balance remain explicit; no vendor balance is queried. Reopen
+  the panel after a running task finishes to read its saved totals.
+- `/tasks` shows the current execution and retained tool activity grouped by
+  child session/stage. It refreshes while open and can cancel the **whole current
+  execution**. A successful tool operation does not mean that a task was accepted.
+  This is the current console's observed history, not a global background-agent
+  registry. Profile and recorded call/token/cache totals appear when available;
+  subscription balance remains unknown.
+- `/tools` shows the saved conversation's effective tools and scope, or the
+  pending scope for a new conversation, plus project instructions. Use
+  `/permissions` to change defaults for future conversations.
+- `/skills` previews immediate `skills/<name>/SKILL.md` and
+  `.agents/skills/<name>/SKILL.md` files. **Add to draft** explicitly asks the agent
+  to read and use that skill when you send. It does not execute the skill or
+  expand permissions. Each skill is limited to 32 KiB; only the first 128 directory
+  entries in each location are inspected and the returned inventory is sorted.
+  Linked paths, junctions, invalid UTF-8 and changed previews are rejected.
+  The draft carries a path reference: the agent reads current contents at execution.
+
+External MCP server management, global/user skill catalogs, conversation branching,
+and independent steering of flow children remain follow-up work.
+
+## 7. Cancellation
+
+Press **Ctrl+X** to cancel a running task. **Ctrl+Q** quits the TUI.
+
+After cancellation, type a correction and press **Enter** in the same conversation.
+The new message takes precedence over actions that had not started. Completed changes
+and prior context remain saved; cancellation does not undo them or renew budgets.
+An external action with an unresolved outcome must be reconciled before continuing.
+
+## 8. Sessions and resume
+
+Open the saved-conversation list with **F1** or `/sessions`, then open a conversation.
+Send a message to continue or correct it. **Resume** continues the saved turn and queued
+messages without adding a new instruction.
+`/resume` also starts a resume from the composer. Conversations are stored per project
+folder, so a saved conversation remains available when you switch back to its folder.
+
+## 9. Review changes with /diff
+
+Use `/diff` (or F3) to inspect confirmed file-tool changes, their diffs and recorded
+checks. The panel also supports explicit undo and rerunning recorded checks. Shell-made
+edits are not automatically file-tool snapshots; inspect those with Git or file tools.
+
+## Other useful keys
+
+- F4 / `/terminal` — inspect session processes. `/attach` adds file or image context.
+- F6 — next step; Ctrl+End — jump to the latest output.
+- F2 — workspace settings on small terminals.
+
+## Optional flows (not required for daily use)
+
+`/session TASK`, `/explore QUESTION` (read-only), `/plan DEMAND`, and `/research QUESTION
+URL` present a suggestion that you start explicitly. `/work WORK-ID` proposes implementation of a graph Work. These are optional; ordinary messages work without any graph or flow.
+
+### Execute a Work in another project
+
+1. Open the project with F5 and bind its graph through `/backlog`.
+2. Use `/plan DEMAND`, review the proposal and Apply, or select an existing Work.
+3. Use `/work WORK-ID` and start the suggested flow. For an unprepared proposal,
+   open Setup → **Create source from this Work**, enter acceptance criteria and the
+   verification command (one argument per line), preview and confirm preparation.
+4. **Start** runs plan review, implementation in an isolated Git worktree, verification,
+   admission and landing. **Review** inspects the retained evidence.
+5. **Resume** continues the selected Work using its saved graph, project, model and
+   limits. For an interrupted model response it authorizes another call only when
+   local transport cleanup is confirmed and the original budget remains. The lost
+   response's remote completion and usage stay unknown; tools are not replayed.
+
+The project must have a Git baseline. Graph identity separates Work locks, native
+coordinator state, trains and receipts even when two projects use the same Work ID.
+Landing updates the selected graph. Applying a plan alone does not admit execution.
+
+In Work mode, **Pause Work** finishes the current agent round before stopping.
+Wait for “Work paused” before closing the TUI. **Inspect controls** reads the saved
+pause after reopening. **Resume** explicitly continues the same attempt and budget.
+To guide an unfinished agent, inspect controls while paused and **Save note**.
+A declined implementation decision can be reopened with **Reconsider decision**;
+it still needs a new answer. See [Work pause](WORK_PAUSE.md) for limits and recovery.

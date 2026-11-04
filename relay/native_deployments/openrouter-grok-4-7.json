@@ -1,0 +1,31 @@
+{
+  "id": "openrouter-grok-4-7",
+  "runner": "native-http",
+  "model": "x-ai/grok-4.7",
+  "native_credential_env": "OPENROUTER_API_KEY",
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_profile": {
+    "protocol": "openai-responses",
+    "model": "x-ai/grok-4.7",
+    "endpoint": "https://openrouter.ai/api/v1",
+    "context_window": 500000,
+    "output_tokens": 16384,
+    "parameters_json": "{\"reasoning\":{\"effort\":\"high\"},\"provider\":{\"only\":[\"xai/zdr\"],\"order\":[\"xai/zdr\"],\"require_parameters\":true,\"allow_fallbacks\":false,\"data_collection\":\"deny\"},\"transforms\":[]}",
+    "source": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality. https://openrouter.ai/x-ai/grok-4.7/providers"
+  },
+  "native_usage_contract": {
+    "layout": "openrouter-responses-inclusive",
+    "source": "https://openrouter.ai/docs/guides/best-practices/prompt-caching; raw inclusive input and cache counters; absent fields remain unknown."
+  },
+  "native_openrouter": {
+    "label": "Grok 4.7",
+    "publisher": "SpaceXAI",
+    "precision_provenance": "unknown",
+    "precision_note": "Endpoint precision is a serving label, not evidence of training dtype, QAT, extra quantization or quality. Native FP4/FP8 is admissible.",
+    "source": "https://openrouter.ai/x-ai/grok-4.7/providers",
+    "observed_at": "2026-11-01"
+  },
+  "native_reasoning_levels": [
+    "high"
+  ]
+}

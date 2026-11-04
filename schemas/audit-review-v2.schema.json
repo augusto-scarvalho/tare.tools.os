@@ -1,0 +1,229 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "tare.tools/audit-review/2",
+ "type": "object",
+ "additionalProperties": false,
+ "required": [
+  "schema",
+  "packet_id",
+  "verdict",
+  "coverage",
+  "findings",
+  "context_requests",
+  "residuals",
+  "frugality_notes"
+ ],
+ "properties": {
+  "schema": {
+   "const": "tare.tools/audit-review/2"
+  },
+  "packet_id": {
+   "type": "string"
+  },
+  "verdict": {
+   "enum": [
+    "ACCEPTED_BOUNDED",
+    "CHANGES_REQUESTED",
+    "NEEDS_CONTEXT",
+    "INCONCLUSIVE"
+   ]
+  },
+  "coverage": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+     "obligation_id",
+     "status",
+     "finding_ids",
+     "evidence_refs"
+    ],
+    "properties": {
+     "obligation_id": {
+      "type": "string"
+     },
+     "status": {
+      "enum": [
+       "CHECKED",
+       "FAILED",
+       "NOT_CHECKED"
+      ]
+     },
+     "finding_ids": {
+      "$ref": "#/$defs/strings"
+     },
+     "evidence_refs": {
+      "$ref": "#/$defs/strings"
+     }
+    }
+   }
+  },
+  "findings": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+     "id",
+     "obligation_id",
+     "severity",
+     "category",
+     "location",
+     "claim",
+     "falsifier",
+     "minimal_fix",
+     "scenario"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "obligation_id": {
+      "type": "string"
+     },
+     "severity": {
+      "enum": [
+       "P0",
+       "P1",
+       "P2",
+       "P3"
+      ]
+     },
+     "category": {
+      "type": "string"
+     },
+     "claim": {
+      "type": "string"
+     },
+     "minimal_fix": {
+      "type": "string"
+     },
+     "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "source_ref",
+       "start_line",
+       "end_line"
+      ],
+      "properties": {
+       "source_ref": {
+        "type": "string"
+       },
+       "start_line": {
+        "type": "integer",
+        "minimum": 1
+       },
+       "end_line": {
+        "type": "integer",
+        "minimum": 1
+       }
+      }
+     },
+     "falsifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "kind",
+       "execution",
+       "setup",
+       "action",
+       "expected",
+       "observed_or_predicted"
+      ],
+      "properties": {
+       "kind": {
+        "enum": [
+         "test",
+         "benchmark",
+         "invariant"
+        ]
+       },
+       "execution": {
+        "const": "PROPOSED"
+       },
+       "setup": {
+        "type": "string"
+       },
+       "action": {
+        "type": "string"
+       },
+       "expected": {
+        "type": "string"
+       },
+       "observed_or_predicted": {
+        "type": "string"
+       }
+      }
+     },
+     "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "actor",
+       "window",
+       "access",
+       "plausibility"
+      ],
+      "properties": {
+       "actor": {
+        "type": "string"
+       },
+       "window": {
+        "type": "string"
+       },
+       "access": {
+        "type": "string"
+       },
+       "plausibility": {
+        "enum": [
+         "operational",
+         "adversarial_operator",
+         "laboratory"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  "context_requests": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+     "obligation_id",
+     "request",
+     "why"
+    ],
+    "properties": {
+     "obligation_id": {
+      "type": "string"
+     },
+     "request": {
+      "type": "string"
+     },
+     "why": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  "residuals": {
+   "$ref": "#/$defs/strings"
+  },
+  "frugality_notes": {
+   "$ref": "#/$defs/strings"
+  }
+ },
+ "$defs": {
+  "strings": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  }
+ }
+}

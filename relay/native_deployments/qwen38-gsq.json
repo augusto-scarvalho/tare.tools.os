@@ -1,0 +1,20 @@
+{
+  "id": "fleet-qwen38-gsq",
+  "runner": "native-http",
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_reasoning_levels": ["low", "medium", "xhigh"],
+  "native_profile": {
+    "protocol": "openai-chat",
+    "model": "qwen38-gsq",
+    "expected_response_model": "qwen38-gsq",
+    "context_window": 131072,
+    "output_tokens": 16384,
+    "source": "local-labs qwen38-gsq card (NInfer-3090 0.11 f118551, Qwen3.8 27B GSQ-RCO IQ3_S, 128K rk8v4 KV, MTP 3, thinking budget 2048); 12/12 in two paired runs on 2026-09-28 (runs/requalification/NINFER-011-COHORT-2026-09-28); output 16384 like swift27b on the same server, since 6272 cut off whole-file edits",
+    "endpoint": "http://local-gateway:8080/v1",
+    "parameters_json": "{\"temperature\": 1.0, \"top_p\": 0.95, \"presence_penalty\": 0.0, \"seed\": 0, \"chat_template_kwargs\": {\"enable_thinking\": true, \"reasoning_effort\": \"low\"}, \"reasoning_format\": \"deepseek\", \"cache_prompt\": true, \"top_k\": 20, \"min_p\": 0.0, \"repeat_penalty\": 1.0}"
+  },
+  "native_usage_contract": {
+    "layout": "chat-inclusive",
+    "source": "NInfer per-request OpenAI usage; fields absent remain unknown"
+  }
+}

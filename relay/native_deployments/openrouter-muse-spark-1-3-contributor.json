@@ -1,0 +1,31 @@
+{
+  "id": "openrouter-muse-spark-1-3-contributor",
+  "runner": "native-http",
+  "model": "meta/muse-spark-1.3-contributor",
+  "native_credential_env": "OPENROUTER_API_KEY",
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_profile": {
+    "protocol": "openai-chat",
+    "model": "meta/muse-spark-1.3-contributor",
+    "endpoint": "https://openrouter.ai/api/v1",
+    "context_window": 1048576,
+    "output_tokens": 16384,
+    "parameters_json": "{\"reasoning\":{\"effort\":\"high\"},\"provider\":{\"only\":[\"meta\"],\"order\":[\"meta\"],\"require_parameters\":true,\"allow_fallbacks\":false,\"data_collection\":\"allow\"},\"transforms\":[],\"prompt_cache_key\":\"tare-openrouter-muse-spark-1-3-contributor-v1\"}",
+    "source": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality. https://openrouter.ai/meta/muse-spark-1.3-contributor/providers"
+  },
+  "native_usage_contract": {
+    "layout": "openrouter-inclusive",
+    "source": "https://openrouter.ai/docs/guides/best-practices/prompt-caching; raw inclusive input and cache counters; absent fields remain unknown."
+  },
+  "native_openrouter": {
+    "label": "Muse Spark 1.3 Contributor",
+    "publisher": "Meta",
+    "precision_provenance": "unknown",
+    "precision_note": "Endpoint precision is a serving label, not evidence of training dtype, QAT, extra quantization or quality. Native FP4/FP8 is admissible.",
+    "source": "https://openrouter.ai/meta/muse-spark-1.3-contributor/providers",
+    "observed_at": "2026-11-01"
+  },
+  "native_reasoning_levels": [
+    "high"
+  ]
+}

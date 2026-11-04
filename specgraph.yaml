@@ -1,0 +1,33 @@
+schema_version: '1.0'
+# Preserve the previous default namespace; this is a scope change, not migration.
+project_name: tare.tools.project
+# Keep governed roots in extraction too; indexed_paths replaces the default.
+indexed_paths: [src, relay, tools]
+python_source_roots: [src, '.']
+governed_paths: [src]
+search_paths: []
+intent_mapping_paths: []
+spec_paths: [specs, docs/specs]
+test_paths: [tests]
+schema_paths: [src, schemas, sql, docs/schemas]
+api_paths: [src]
+adr_paths: [docs/adr, adrs, rfcs, docs/decisions]
+strict_orphan_check: true
+excluded_paths:
+  - __pycache__
+  - .git
+  - .pytest_cache
+  - fixtures
+  - scratch
+  - .system_generated
+  # Custody/history may contain copied source, never current implementation.
+  - relay/history
+  - relay/trains
+  - relay/round_tables
+  - relay/intake
+  - relay/inbox
+  - relay/leases
+  - relay/approvals
+  # Test discovery remains tests/; these are test-only code, not runtime roots.
+  - relay/test_ai_bookkeeper.py
+  - tools/tests

@@ -1,0 +1,251 @@
+{
+  "schema": "tare.tools/flow14-paired-comparison/1",
+  "scope": "One descriptive controlled pair, two actual native Works per arm, through the public development TUI. Not eight AB8 pairs or ordinary customer deliveries.",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "protocol": "openai-codex-responses",
+  "seed_commit": "ccc1e5574c0ee9018c564756505a41aac7db77ec",
+  "protocol_sha256": "f6ca40bd08eb668fbc0945316cf939a78bc93d85a360cff9512cfdd8a9964bf6",
+  "frozen_input_hash_basis": "UTF-8 LF Git blobs; Windows checkout line-ending conversion is not an edit. Native custody uses exact stored bytes.",
+  "frozen_inputs_sha256": "2df5ccbc6000bf35b3962ff2a78a1efb648e34d3c5b8f813692e21b8e5ed99bf",
+  "arms": {
+    "A": {
+      "work_statuses": [
+        {
+          "work_id": "ledger-report",
+          "status": "SETTLED",
+          "calls": 12,
+          "stage_calls": {
+            "plan-auditor": 6,
+            "implementer": 6
+          },
+          "duration_ms": 52484,
+          "candidate_commit": "76b16e53146ce34dcfaf1432017a490b5fa6479f",
+          "recorded_audit_outcome": "plan_verdict=ACCEPT; admission_verdict=ADMITTED",
+          "independent_code_audit": false,
+          "receipt_sha256": "117ea57fa63b5bc036e9923d3fac76e196265b19bf85e6b5e2e55334d9b486c7",
+          "observed_tokens": {
+            "input_tokens": 47231,
+            "output_tokens": 1614,
+            "total_tokens": 48845,
+            "cache_read_tokens": 0
+          }
+        },
+        {
+          "work_id": "ledger-normalize",
+          "status": "SETTLED",
+          "calls": 11,
+          "stage_calls": {
+            "plan-auditor": 5,
+            "implementer": 6
+          },
+          "duration_ms": 48938,
+          "candidate_commit": "758ec3635d12a12d030ae756a679af8afe72308e",
+          "recorded_audit_outcome": "plan_verdict=ACCEPT; admission_verdict=ADMITTED",
+          "independent_code_audit": false,
+          "receipt_sha256": "035457b2802dbca0f42913b5565f50a09454707f03732a654d7697aa3b66dcb7",
+          "observed_tokens": {
+            "input_tokens": 53998,
+            "output_tokens": 1744,
+            "total_tokens": 55742,
+            "cache_read_tokens": 0
+          }
+        }
+      ],
+      "accepted_items": 2,
+      "requested_items": 2,
+      "model_intents": 23,
+      "stage_calls": {
+        "plan-auditor": 11,
+        "implementer": 12
+      },
+      "active_work_ms": 101422,
+      "explicit_public_starts": 2,
+      "maintainer_unittest_cases_passed": 10,
+      "source_review": "Both normalizers satisfy the frozen type/duplicate/nonmutation rules; both reports call normalize and aggregate signed amounts in sorted tag order.",
+      "tokens": {
+        "cache_read_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 0
+        },
+        "cache_write_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 0
+        },
+        "input_tokens": {
+          "known_sum": 101229,
+          "unknown_calls": 0
+        },
+        "output_tokens": {
+          "known_sum": 3358,
+          "unknown_calls": 0
+        },
+        "reasoning_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 0
+        },
+        "total_tokens": {
+          "known_sum": 104587,
+          "unknown_calls": 0
+        },
+        "uncached_input_tokens": {
+          "known_sum": 101229,
+          "unknown_calls": 0
+        }
+      },
+      "unknown_or_partial_price_calls": 23,
+      "physical_attempts": "UNKNOWN_IN_OWNER_USAGE"
+    },
+    "B": {
+      "work_statuses": [
+        {
+          "work_id": "ledger-normalize",
+          "status": "SETTLED",
+          "calls": 11,
+          "stage_calls": {
+            "plan-auditor": 5,
+            "implementer": 6
+          },
+          "duration_ms": 53625,
+          "candidate_commit": "9b0d385ff2432141e45f29c8a9feb44626755dbd",
+          "recorded_audit_outcome": "plan_verdict=ACCEPT; admission_verdict=ADMITTED",
+          "independent_code_audit": false,
+          "receipt_sha256": "af7b95dbed9d37f6d87dffa6f6345b37a630eeced1bf9ce2c122a1dfd753b52b",
+          "observed_tokens": {
+            "input_tokens": 53987,
+            "output_tokens": 1680,
+            "total_tokens": 55667,
+            "cache_read_tokens": 0
+          }
+        },
+        {
+          "work_id": "ledger-report",
+          "status": "SETTLED",
+          "calls": 12,
+          "stage_calls": {
+            "plan-auditor": 6,
+            "implementer": 6
+          },
+          "duration_ms": 50125,
+          "candidate_commit": "21bbc6319f98749efafe65bbce1469862ad419f9",
+          "recorded_audit_outcome": "plan_verdict=ACCEPT; admission_verdict=ADMITTED",
+          "independent_code_audit": false,
+          "receipt_sha256": "426898410e01813d9c39ca306141eff5eef3db137f261f1b969d7f015a60e9fd",
+          "observed_tokens": {
+            "input_tokens": 56029,
+            "output_tokens": 1653,
+            "total_tokens": 57682,
+            "cache_read_tokens": 0
+          }
+        }
+      ],
+      "accepted_items": 2,
+      "requested_items": 2,
+      "model_intents": 23,
+      "stage_calls": {
+        "plan-auditor": 11,
+        "implementer": 12
+      },
+      "active_work_ms": 103750,
+      "explicit_public_starts": 1,
+      "maintainer_unittest_cases_passed": 10,
+      "source_review": "Both normalizers satisfy the frozen type/duplicate/nonmutation rules; both reports call normalize and aggregate signed amounts in sorted tag order.",
+      "tokens": {
+        "cache_read_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 0
+        },
+        "cache_write_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 0
+        },
+        "input_tokens": {
+          "known_sum": 110016,
+          "unknown_calls": 0
+        },
+        "output_tokens": {
+          "known_sum": 3333,
+          "unknown_calls": 0
+        },
+        "reasoning_tokens": {
+          "known_sum": 47,
+          "unknown_calls": 0
+        },
+        "total_tokens": {
+          "known_sum": 113349,
+          "unknown_calls": 0
+        },
+        "uncached_input_tokens": {
+          "known_sum": 110016,
+          "unknown_calls": 0
+        }
+      },
+      "unknown_or_partial_price_calls": 23,
+      "physical_attempts": "UNKNOWN_IN_OWNER_USAGE"
+    }
+  },
+  "summary": {
+    "comparison_data_model_intents": 46,
+    "data_intent_ceiling": 48,
+    "implementation_model_intents": 16,
+    "A_model_intents": 23,
+    "B_model_intents": 23,
+    "A_accepted": 2,
+    "B_accepted": 2,
+    "explicit_start_reduction": 1,
+    "monetary_savings": "UNKNOWN",
+    "human_context_minutes": "NOT_MEASURED",
+    "observed_material_correctives": 0,
+    "observed_rollbacks": 0,
+    "decision": "KEEP_EXPLICIT_SEQUENCES_NO_AUTOMATIC_CLUSTERING_OR_COST_SAVING_CLAIM"
+  },
+  "limits": [
+    "Single selected pair, fixed A then B order, one model; no effect attribution, significance or representative quality claim.",
+    "Independent sessions and slightly different valid implementation patches; reported token differences are descriptive.",
+    "Current sequence starts a native plan and implementation per Work, retaining individual criteria and settlement.",
+    "Existing optional code audit was not selected; maintainer checks are not an independent-lineage audit.",
+    "Returned usage is complete for attributed intents, but tariffs, invoice, quota headroom and physical HTTP attempts remain unknown.",
+    "Local count estimates are not paid generation calls and are excluded; active Work duration excludes UI/navigation waits."
+  ],
+  "frozen_workload": {
+    "files": {
+      ".gitignore": "__pycache__/\n.pytest_cache/\n*.pyc\n",
+      "AGENTS.md": "This is a small offline ledger project for a bounded Work-composition qualification.\nThe exact Work criteria and tests define the task. Use Python standard library only.\nEdit only the selected Work's declared production path. Keep specs/tests unchanged.\nReuse normalize() in the report Work; preserve every already satisfied Work.\nRead before editing and run the configured verifier before delivery. No shell,\nnetwork, dependency installation or other projects. Report unfinished work honestly.\n",
+      "docs/SPEC.md": "---\nid: SPEC-FLOW14-LEDGER\nstatus: ACCEPTED\nacceptance_criteria:\n  AC-01: Normalize ledger records without mutation and reject malformed or duplicate normalized identifiers.\n  AC-02: Summarize normalized records deterministically by tag, preserving the normalization contract.\n---\n# Offline ledger\n\nAC-01 is flowledger.normalize.normalize(records). Accept only a list of dictionaries\nwith exactly id, cents and tag. id/tag must be nonempty strings after stripping.\ncents must be an integer (not bool), positive, zero or negative. Reject duplicate\nstripped identifiers and every malformed record with ValueError. Return new\ndictionaries with stripped id/tag and original cents, sorted by id. Never mutate\ninputs, including on rejection. Empty input is valid and returns [].\n\nAC-02 is flowledger.report.summarize(records). Call normalize(records); do not\nduplicate its validation. Return exactly count, total_cents and by_tag. by_tag\nmaps sorted tags to dictionaries with count and total_cents; sum signed amounts.\nEmpty input gives count 0, total_cents 0 and by_tag {}. Invalid records propagate\nValueError and inputs remain unchanged. AC-02 depends on completed AC-01.\n\nThese are separate Works. Each has its own immutable tests and settlement.\nA first Work passing never establishes that the second Work is complete.\n",
+      "flowledger/normalize.py": "def normalize(records):\n    raise NotImplementedError\n",
+      "flowledger/report.py": "from .normalize import normalize\n\ndef summarize(records):\n    raise NotImplementedError\n",
+      "flowledger/__init__.py": "\"\"\"Small offline ledger.\"\"\"\n",
+      "tests/test_normalize.py": "import copy\nimport unittest\nfrom flowledger.normalize import normalize\n\nclass NormalizeTests(unittest.TestCase):\n    def test_sorted_fresh_trimmed_values(self):\n        rows = [{'id':' b ', 'cents':-7, 'tag':' x '}, {'id':'a','cents':0,'tag':'y'}]\n        before = copy.deepcopy(rows)\n        result = normalize(rows)\n        self.assertEqual(result, [{'id':'a','cents':0,'tag':'y'}, {'id':'b','cents':-7,'tag':'x'}])\n        self.assertEqual(rows, before)\n        self.assertIsNot(result, rows)\n        self.assertTrue(all(a is not b for a in result for b in rows))\n    def test_empty(self):\n        self.assertEqual(normalize([]), [])\n    def test_duplicate_normalized_id(self):\n        with self.assertRaises(ValueError):\n            normalize([{'id':' a','cents':2,'tag':'x'}, {'id':'a ','cents':4,'tag':'y'}])\n    def test_bad_containers_fields_and_types(self):\n        bad = [None, {}, (), 'abc', [None], [{}], [{'id':'a','tag':'x'}],\n               [{'id':'a','cents':1,'tag':'x','extra':True}]]\n        for row in bad:\n            with self.subTest(row=row), self.assertRaises(ValueError): normalize(row)\n    def test_bad_field_values(self):\n        good = {'id':'a','cents':1,'tag':'x'}\n        for field, values in [('id',[None,0,'',' ']), ('tag',[None,False,'',' ']),\n                              ('cents',[None,True,1.0,'2'])]:\n            for value in values:\n                with self.subTest(field=field,value=value), self.assertRaises(ValueError):\n                    normalize([dict(good, **{field:value})])\n    def test_rejection_does_not_mutate_earlier_rows(self):\n        rows = [{'id':' a ','cents':2,'tag':' x '}, {'id':'bad','cents':True,'tag':'y'}]\n        before = copy.deepcopy(rows)\n        with self.assertRaises(ValueError): normalize(rows)\n        self.assertEqual(rows, before)\n",
+      "tests/test_report.py": "import copy\nimport unittest\nfrom unittest.mock import patch\nfrom flowledger.report import summarize\n\nclass ReportTests(unittest.TestCase):\n    def test_signed_group_totals_and_exact_keys(self):\n        rows = [{'id':'c','cents':8,'tag':' z '}, {'id':'a','cents':-3,'tag':'a'},\n                {'id':'b','cents':2,'tag':'z'}]\n        before = copy.deepcopy(rows)\n        result = summarize(rows)\n        self.assertEqual(result, {'count':3,'total_cents':7,'by_tag':{\n            'a':{'count':1,'total_cents':-3}, 'z':{'count':2,'total_cents':10}}})\n        self.assertEqual(list(result['by_tag']), ['a','z'])\n        self.assertEqual(rows, before)\n    def test_empty(self):\n        self.assertEqual(summarize([]), {'count':0,'total_cents':0,'by_tag':{}})\n    def test_invalid_records_reuse_normalization(self):\n        for rows in [None, [{'id':'a','cents':False,'tag':'x'}],\n                     [{'id':'a','cents':1,'tag':'x'}, {'id':' a ','cents':2,'tag':'y'}]]:\n            with self.subTest(rows=rows), self.assertRaises(ValueError): summarize(rows)\n    def test_uses_normalizer_result(self):\n        with patch('flowledger.report.normalize', return_value=[{'id':'n','cents':11,'tag':'normalized'}]) as call:\n            self.assertEqual(summarize(['input']), {'count':1,'total_cents':11,'by_tag':{\n                'normalized':{'count':1,'total_cents':11}}})\n            call.assert_called_once_with(['input'])\n",
+      "tests/__init__.py": ""
+    },
+    "sha256": {
+      ".gitignore": "c30f9bc45238a2e6624722bb4ef666e23f8823fcc9f3bc4fc5277723185fa701",
+      "AGENTS.md": "474b864b5f459dbfa4e121edc1d660011efc8fcf518ad9a0be0b0869e4fe3355",
+      "docs/SPEC.md": "efab66de06eec3286413ed00b730b55e68fb2fcd6889904a6f437df15d281f26",
+      "flowledger/normalize.py": "f29f2f462c11f87ee914e618c3abbe18026e6d92e89de92e92e2e9a245d02fc4",
+      "flowledger/report.py": "012430a92cb246eddea47c0f0b833cc65ec05e35e958f44b8047e3ee60c05a80",
+      "flowledger/__init__.py": "884d1215ec4b8eef6fb613b433236a276a287268c58b8028cb3bd649d3f6b764",
+      "tests/test_normalize.py": "0543de37f51f089d577d15ae17fb2cbe3ad85dad35feeb3b1a362ecda5bee1b1",
+      "tests/test_report.py": "40b7a0b7f23a58fd76ae6d5a4fa4e029c29d9f28e3739decb36c35164b9c1bf5",
+      "tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "candidate_patches": {
+    "A": {
+      "ledger-normalize": "diff --git a/flowledger/normalize.py b/flowledger/normalize.py\nindex ab5f3b6..bf8f9c6 100644\n--- a/flowledger/normalize.py\n+++ b/flowledger/normalize.py\n@@ -1,2 +1,29 @@\n def normalize(records):\n-    raise NotImplementedError\n+    \"\"\"Return fresh records sorted by stripped id, without modifying inputs.\n+\n+    Require a list of dictionaries containing exactly id, cents and tag.\n+    Text fields must be nonblank strings; cents must be an integer, not bool.\n+    Malformed records and duplicate stripped identifiers raise ValueError.\n+    \"\"\"\n+    if not isinstance(records, list):\n+        raise ValueError(\"records must be a list\")\n+\n+    normalized = []\n+    seen = set()\n+    for record in records:\n+        if not isinstance(record, dict) or set(record) != {\"id\", \"cents\", \"tag\"}:\n+            raise ValueError(\"each record must contain exactly id, cents and tag\")\n+        identifier, tag, cents = record[\"id\"], record[\"tag\"], record[\"cents\"]\n+        if not isinstance(identifier, str) or not isinstance(tag, str):\n+            raise ValueError(\"id and tag must be strings\")\n+        identifier, tag = identifier.strip(), tag.strip()\n+        if not identifier or not tag:\n+            raise ValueError(\"id and tag must not be blank\")\n+        if not isinstance(cents, int) or isinstance(cents, bool):\n+            raise ValueError(\"cents must be an integer, not bool\")\n+        if identifier in seen:\n+            raise ValueError(\"duplicate normalized id\")\n+        seen.add(identifier)\n+        normalized.append({\"id\": identifier, \"cents\": cents, \"tag\": tag})\n+\n+    return sorted(normalized, key=lambda record: record[\"id\"])\n",
+      "ledger-report": "diff --git a/flowledger/report.py b/flowledger/report.py\nindex 89075c5..1617095 100644\n--- a/flowledger/report.py\n+++ b/flowledger/report.py\n@@ -1,4 +1,24 @@\n from .normalize import normalize\n \n def summarize(records):\n-    raise NotImplementedError\n+    \"\"\"Summarize normalized records with signed totals and sorted tag keys.\n+\n+    Delegate validation to normalize, preserving its ValueError and nonmutation\n+    contract. Empty input produces zero totals and an empty tag mapping.\n+    \"\"\"\n+    normalized = normalize(records)\n+    by_tag = {}\n+    total_cents = 0\n+    for record in normalized:\n+        tag = record[\"tag\"]\n+        cents = record[\"cents\"]\n+        group = by_tag.setdefault(tag, {\"count\": 0, \"total_cents\": 0})\n+        group[\"count\"] += 1\n+        group[\"total_cents\"] += cents\n+        total_cents += cents\n+\n+    return {\n+        \"count\": len(normalized),\n+        \"total_cents\": total_cents,\n+        \"by_tag\": {tag: by_tag[tag] for tag in sorted(by_tag)},\n+    }\n"
+    },
+    "B": {
+      "ledger-normalize": "diff --git a/flowledger/normalize.py b/flowledger/normalize.py\nindex ab5f3b6..3fd7bba 100644\n--- a/flowledger/normalize.py\n+++ b/flowledger/normalize.py\n@@ -1,2 +1,29 @@\n def normalize(records):\n-    raise NotImplementedError\n+    \"\"\"Return fresh records sorted by stripped id, without modifying inputs.\n+\n+    Require a list of dictionaries with exactly id, cents and tag. Text fields\n+    must be nonempty after stripping; cents must be an integer other than bool.\n+    Malformed records and duplicate stripped identifiers raise ValueError.\n+    \"\"\"\n+    if not isinstance(records, list):\n+        raise ValueError(\"records must be a list\")\n+\n+    normalized = []\n+    identifiers = set()\n+    for record in records:\n+        if not isinstance(record, dict) or set(record) != {\"id\", \"cents\", \"tag\"}:\n+            raise ValueError(\"each record must contain exactly id, cents and tag\")\n+        identifier, cents, tag = record[\"id\"], record[\"cents\"], record[\"tag\"]\n+        if not isinstance(identifier, str) or not isinstance(tag, str):\n+            raise ValueError(\"id and tag must be strings\")\n+        identifier, tag = identifier.strip(), tag.strip()\n+        if not identifier or not tag:\n+            raise ValueError(\"id and tag must be nonempty after stripping\")\n+        if not isinstance(cents, int) or isinstance(cents, bool):\n+            raise ValueError(\"cents must be an integer, not bool\")\n+        if identifier in identifiers:\n+            raise ValueError(\"duplicate normalized identifier\")\n+        identifiers.add(identifier)\n+        normalized.append({\"id\": identifier, \"cents\": cents, \"tag\": tag})\n+\n+    return sorted(normalized, key=lambda record: record[\"id\"])\n",
+      "ledger-report": "diff --git a/flowledger/report.py b/flowledger/report.py\nindex 89075c5..cb21c29 100644\n--- a/flowledger/report.py\n+++ b/flowledger/report.py\n@@ -1,4 +1,23 @@\n from .normalize import normalize\n \n def summarize(records):\n-    raise NotImplementedError\n+    \"\"\"Summarize signed cents by sorted tag, using normalize's validation.\n+\n+    Inputs remain unchanged and normalization errors propagate as ValueError.\n+    \"\"\"\n+    normalized = normalize(records)\n+    by_tag = {}\n+    total_cents = 0\n+    for record in normalized:\n+        tag = record[\"tag\"]\n+        cents = record[\"cents\"]\n+        group = by_tag.setdefault(tag, {\"count\": 0, \"total_cents\": 0})\n+        group[\"count\"] += 1\n+        group[\"total_cents\"] += cents\n+        total_cents += cents\n+\n+    return {\n+        \"count\": len(normalized),\n+        \"total_cents\": total_cents,\n+        \"by_tag\": {tag: by_tag[tag] for tag in sorted(by_tag)},\n+    }\n"
+    }
+  },
+  "data_replay": "tests/test_flow14_comparison.py reconstructs both candidates and checks partial obligations offline; no model, network, customer data or raw conversation is required.",
+  "format_qualification": {
+    "new_explicit_limit_format": "tare.tools/work-sequence/2",
+    "prior_0_1_88_reader_refuses": true,
+    "prior_reader_probe_sha256": "e31ce490b3a22452235924ccd70618a039eb5e747036bc03c55f81c399ad6441",
+    "note": "The pre-release source-TUI pilot used prototype v1 states with explicit limits; final writers use v2 so older releases cannot ignore them. Current readers retain prototype/legacy compatibility."
+  }
+}

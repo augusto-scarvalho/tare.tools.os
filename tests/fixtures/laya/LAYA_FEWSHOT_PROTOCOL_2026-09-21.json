@@ -1,0 +1,783 @@
+{
+  "schema": "tare.tools/laya-fewshot-screen/1",
+  "source_commit": "782adea",
+  "source_facts_sha256": "e2efb826d9ce7ff970eb1fe4f38280e7329517351adc826dc6c5dcfa0f986f2f",
+  "case_count": 32,
+  "max_calls": 32,
+  "wall_timeout_seconds": 600,
+  "seed": 428,
+  "demonstrations": "Solved examples using fictional models; these are not evidence about the current candidates.\nExample 1: Require 80% task-suite success. Cedar: 90%, cost $2; Maple: 90%, cost $6. Decision: Cedar, because both meet quality and Cedar costs less.\nExample 2: Require measured task-suite success. Birch: unknown; Elm: unknown. Decision: insufficient, because neither has quality evidence.\n\n",
+  "scope": "Four new authored diagnostic scenarios, each in two orders, crossed with descriptions and two-shot context. Demonstrations are separate illustrative cases and contain no test answers. Synthetic facts do not qualify candidate vendors.",
+  "gate": "Per condition: 8/8 correct and 4/4 stable pairs; all 32 valid/untruncated. Any passing condition still needs fresh production-shaped holdout qualification; no automatic routing authorization.",
+  "no_adaptive_tuning": true,
+  "cases": [
+    {
+      "id": "generic_zero-abstention-1",
+      "condition": "generic_zero",
+      "group": "abstention",
+      "category": "abstention",
+      "request": {
+        "state": "Current case:\n{\"task\":{\"title\":\"Select a route for a new dependency migration only with measured task-suite quality. If no such evidence exists, abstain.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "insufficient",
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-fable-5-1@high@vendor-cli"
+      },
+      "order": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "generic_few-effort-1",
+      "condition": "generic_few",
+      "group": "effort",
+      "category": "effort",
+      "request": {
+        "state": "Solved examples using fictional models; these are not evidence about the current candidates.\nExample 1: Require 80% task-suite success. Cedar: 90%, cost $2; Maple: 90%, cost $6. Decision: Cedar, because both meet quality and Cedar costs less.\nExample 2: Require measured task-suite success. Birch: unknown; Elm: unknown. Decision: insufficient, because neither has quality evidence.\n\nCurrent case:\n{\"task\":{\"title\":\"Review transaction rollback correctness. Require at least 90% task-suite success. Select an adequate effort.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":94,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":80,\"unit\":\"percent\",\"tested_effort\":\"low\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-sonnet-5@high@vendor-cli",
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-sonnet-5@low@vendor-cli"
+      },
+      "order": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "descriptive_few-effort-0",
+      "condition": "descriptive_few",
+      "group": "effort",
+      "category": "effort",
+      "request": {
+        "state": "Solved examples using fictional models; these are not evidence about the current candidates.\nExample 1: Require 80% task-suite success. Cedar: 90%, cost $2; Maple: 90%, cost $6. Decision: Cedar, because both meet quality and Cedar costs less.\nExample 2: Require measured task-suite success. Birch: unknown; Elm: unknown. Decision: insufficient, because neither has quality evidence.\n\nCurrent case:\n{\"task\":{\"title\":\"Review transaction rollback correctness. Require at least 90% task-suite success. Select an adequate effort.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":80,\"unit\":\"percent\",\"tested_effort\":\"low\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":94,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "claude-sonnet-5; low effort; suite success 80%; input/output tariff unknown.",
+          "candidate_2": "claude-sonnet-5; high effort; suite success 94%; input/output tariff unknown.",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-sonnet-5@high@vendor-cli",
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@low@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli"
+      },
+      "order": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "descriptive_zero-cost-1",
+      "condition": "descriptive_zero",
+      "group": "cost",
+      "category": "cost",
+      "request": {
+        "state": "Current case:\n{\"task\":{\"title\":\"Process repetitive repository updates. Both meet the 90% success requirement. Choose the lower input/output tariff.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":92,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"7\",\"output_tokens\":\"21\"},\"scope\":\"Synthetic HTTP tariff; not CLI billing.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":92,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"3\",\"output_tokens\":\"9\"},\"scope\":\"Synthetic HTTP tariff; not CLI billing.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "claude-fable-5-1; high effort; suite success 92%; input/output tariff 7/21 USD/MTok.",
+          "candidate_2": "claude-sonnet-5; high effort; suite success 92%; input/output tariff 3/9 USD/MTok.",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-sonnet-5@high@openai-chat",
+      "choice_identity": {
+        "candidate_1": "claude-fable-5-1@high@openai-chat",
+        "candidate_2": "claude-sonnet-5@high@openai-chat"
+      },
+      "order": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "descriptive_few-abstention-0",
+      "condition": "descriptive_few",
+      "group": "abstention",
+      "category": "abstention",
+      "request": {
+        "state": "Solved examples using fictional models; these are not evidence about the current candidates.\nExample 1: Require 80% task-suite success. Cedar: 90%, cost $2; Maple: 90%, cost $6. Decision: Cedar, because both meet quality and Cedar costs less.\nExample 2: Require measured task-suite success. Birch: unknown; Elm: unknown. Decision: insufficient, because neither has quality evidence.\n\nCurrent case:\n{\"task\":{\"title\":\"Select a route for a new dependency migration only with measured task-suite quality. If no such evidence exists, abstain.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "claude-fable-5-1; high effort; suite success unknown; input/output tariff unknown.",
+          "candidate_2": "claude-sonnet-5; high effort; suite success unknown; input/output tariff unknown.",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "insufficient",
+      "choice_identity": {
+        "candidate_1": "claude-fable-5-1@high@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli"
+      },
+      "order": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "descriptive_few-quality-1",
+      "condition": "descriptive_few",
+      "group": "quality",
+      "category": "quality",
+      "request": {
+        "state": "Solved examples using fictional models; these are not evidence about the current candidates.\nExample 1: Require 80% task-suite success. Cedar: 90%, cost $2; Maple: 90%, cost $6. Decision: Cedar, because both meet quality and Cedar costs less.\nExample 2: Require measured task-suite success. Birch: unknown; Elm: unknown. Decision: insufficient, because neither has quality evidence.\n\nCurrent case:\n{\"task\":{\"title\":\"Repair a parser edge case. Require at least 85% success on the supplied task suite.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":84,\"unit\":\"percent\",\"tested_effort\":\"low\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":87,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "claude-opus-5; low effort; suite success 84%; input/output tariff unknown.",
+          "candidate_2": "claude-fable-5-1; high effort; suite success 87%; input/output tariff unknown.",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-fable-5-1@high@vendor-cli",
+      "choice_identity": {
+        "candidate_1": "claude-opus-5@low@vendor-cli",
+        "candidate_2": "claude-fable-5-1@high@vendor-cli"
+      },
+      "order": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "descriptive_few-effort-1",
+      "condition": "descriptive_few",
+      "group": "effort",
+      "category": "effort",
+      "request": {
+        "state": "Solved examples using fictional models; these are not evidence about the current candidates.\nExample 1: Require 80% task-suite success. Cedar: 90%, cost $2; Maple: 90%, cost $6. Decision: Cedar, because both meet quality and Cedar costs less.\nExample 2: Require measured task-suite success. Birch: unknown; Elm: unknown. Decision: insufficient, because neither has quality evidence.\n\nCurrent case:\n{\"task\":{\"title\":\"Review transaction rollback correctness. Require at least 90% task-suite success. Select an adequate effort.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":94,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":80,\"unit\":\"percent\",\"tested_effort\":\"low\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "claude-sonnet-5; high effort; suite success 94%; input/output tariff unknown.",
+          "candidate_2": "claude-sonnet-5; low effort; suite success 80%; input/output tariff unknown.",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-sonnet-5@high@vendor-cli",
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-sonnet-5@low@vendor-cli"
+      },
+      "order": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "generic_few-abstention-0",
+      "condition": "generic_few",
+      "group": "abstention",
+      "category": "abstention",
+      "request": {
+        "state": "Solved examples using fictional models; these are not evidence about the current candidates.\nExample 1: Require 80% task-suite success. Cedar: 90%, cost $2; Maple: 90%, cost $6. Decision: Cedar, because both meet quality and Cedar costs less.\nExample 2: Require measured task-suite success. Birch: unknown; Elm: unknown. Decision: insufficient, because neither has quality evidence.\n\nCurrent case:\n{\"task\":{\"title\":\"Select a route for a new dependency migration only with measured task-suite quality. If no such evidence exists, abstain.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "insufficient",
+      "choice_identity": {
+        "candidate_1": "claude-fable-5-1@high@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli"
+      },
+      "order": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "generic_few-effort-0",
+      "condition": "generic_few",
+      "group": "effort",
+      "category": "effort",
+      "request": {
+        "state": "Solved examples using fictional models; these are not evidence about the current candidates.\nExample 1: Require 80% task-suite success. Cedar: 90%, cost $2; Maple: 90%, cost $6. Decision: Cedar, because both meet quality and Cedar costs less.\nExample 2: Require measured task-suite success. Birch: unknown; Elm: unknown. Decision: insufficient, because neither has quality evidence.\n\nCurrent case:\n{\"task\":{\"title\":\"Review transaction rollback correctness. Require at least 90% task-suite success. Select an adequate effort.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":80,\"unit\":\"percent\",\"tested_effort\":\"low\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":94,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-sonnet-5@high@vendor-cli",
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@low@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli"
+      },
+      "order": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "descriptive_zero-effort-1",
+      "condition": "descriptive_zero",
+      "group": "effort",
+      "category": "effort",
+      "request": {
+        "state": "Current case:\n{\"task\":{\"title\":\"Review transaction rollback correctness. Require at least 90% task-suite success. Select an adequate effort.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":94,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":80,\"unit\":\"percent\",\"tested_effort\":\"low\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "claude-sonnet-5; high effort; suite success 94%; input/output tariff unknown.",
+          "candidate_2": "claude-sonnet-5; low effort; suite success 80%; input/output tariff unknown.",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-sonnet-5@high@vendor-cli",
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-sonnet-5@low@vendor-cli"
+      },
+      "order": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "generic_zero-abstention-0",
+      "condition": "generic_zero",
+      "group": "abstention",
+      "category": "abstention",
+      "request": {
+        "state": "Current case:\n{\"task\":{\"title\":\"Select a route for a new dependency migration only with measured task-suite quality. If no such evidence exists, abstain.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "insufficient",
+      "choice_identity": {
+        "candidate_1": "claude-fable-5-1@high@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli"
+      },
+      "order": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "descriptive_zero-cost-0",
+      "condition": "descriptive_zero",
+      "group": "cost",
+      "category": "cost",
+      "request": {
+        "state": "Current case:\n{\"task\":{\"title\":\"Process repetitive repository updates. Both meet the 90% success requirement. Choose the lower input/output tariff.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":92,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"3\",\"output_tokens\":\"9\"},\"scope\":\"Synthetic HTTP tariff; not CLI billing.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}},{\"key\":\"candidate_2\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":92,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"7\",\"output_tokens\":\"21\"},\"scope\":\"Synthetic HTTP tariff; not CLI billing.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "claude-sonnet-5; high effort; suite success 92%; input/output tariff 3/9 USD/MTok.",
+          "candidate_2": "claude-fable-5-1; high effort; suite success 92%; input/output tariff 7/21 USD/MTok.",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-sonnet-5@high@openai-chat",
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@openai-chat",
+        "candidate_2": "claude-fable-5-1@high@openai-chat"
+      },
+      "order": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "descriptive_zero-quality-1",
+      "condition": "descriptive_zero",
+      "group": "quality",
+      "category": "quality",
+      "request": {
+        "state": "Current case:\n{\"task\":{\"title\":\"Repair a parser edge case. Require at least 85% success on the supplied task suite.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":84,\"unit\":\"percent\",\"tested_effort\":\"low\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":87,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "claude-opus-5; low effort; suite success 84%; input/output tariff unknown.",
+          "candidate_2": "claude-fable-5-1; high effort; suite success 87%; input/output tariff unknown.",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-fable-5-1@high@vendor-cli",
+      "choice_identity": {
+        "candidate_1": "claude-opus-5@low@vendor-cli",
+        "candidate_2": "claude-fable-5-1@high@vendor-cli"
+      },
+      "order": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "generic_zero-effort-0",
+      "condition": "generic_zero",
+      "group": "effort",
+      "category": "effort",
+      "request": {
+        "state": "Current case:\n{\"task\":{\"title\":\"Review transaction rollback correctness. Require at least 90% task-suite success. Select an adequate effort.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":80,\"unit\":\"percent\",\"tested_effort\":\"low\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":94,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-sonnet-5@high@vendor-cli",
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@low@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli"
+      },
+      "order": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "generic_few-cost-0",
+      "condition": "generic_few",
+      "group": "cost",
+      "category": "cost",
+      "request": {
+        "state": "Solved examples using fictional models; these are not evidence about the current candidates.\nExample 1: Require 80% task-suite success. Cedar: 90%, cost $2; Maple: 90%, cost $6. Decision: Cedar, because both meet quality and Cedar costs less.\nExample 2: Require measured task-suite success. Birch: unknown; Elm: unknown. Decision: insufficient, because neither has quality evidence.\n\nCurrent case:\n{\"task\":{\"title\":\"Process repetitive repository updates. Both meet the 90% success requirement. Choose the lower input/output tariff.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":92,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"3\",\"output_tokens\":\"9\"},\"scope\":\"Synthetic HTTP tariff; not CLI billing.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}},{\"key\":\"candidate_2\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":92,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"7\",\"output_tokens\":\"21\"},\"scope\":\"Synthetic HTTP tariff; not CLI billing.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-sonnet-5@high@openai-chat",
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@openai-chat",
+        "candidate_2": "claude-fable-5-1@high@openai-chat"
+      },
+      "order": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "generic_zero-quality-0",
+      "condition": "generic_zero",
+      "group": "quality",
+      "category": "quality",
+      "request": {
+        "state": "Current case:\n{\"task\":{\"title\":\"Repair a parser edge case. Require at least 85% success on the supplied task suite.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":87,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":84,\"unit\":\"percent\",\"tested_effort\":\"low\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-fable-5-1@high@vendor-cli",
+      "choice_identity": {
+        "candidate_1": "claude-fable-5-1@high@vendor-cli",
+        "candidate_2": "claude-opus-5@low@vendor-cli"
+      },
+      "order": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "generic_zero-effort-1",
+      "condition": "generic_zero",
+      "group": "effort",
+      "category": "effort",
+      "request": {
+        "state": "Current case:\n{\"task\":{\"title\":\"Review transaction rollback correctness. Require at least 90% task-suite success. Select an adequate effort.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":94,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":80,\"unit\":\"percent\",\"tested_effort\":\"low\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-sonnet-5@high@vendor-cli",
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-sonnet-5@low@vendor-cli"
+      },
+      "order": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "descriptive_zero-effort-0",
+      "condition": "descriptive_zero",
+      "group": "effort",
+      "category": "effort",
+      "request": {
+        "state": "Current case:\n{\"task\":{\"title\":\"Review transaction rollback correctness. Require at least 90% task-suite success. Select an adequate effort.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":80,\"unit\":\"percent\",\"tested_effort\":\"low\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":94,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "claude-sonnet-5; low effort; suite success 80%; input/output tariff unknown.",
+          "candidate_2": "claude-sonnet-5; high effort; suite success 94%; input/output tariff unknown.",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-sonnet-5@high@vendor-cli",
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@low@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli"
+      },
+      "order": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "generic_zero-cost-0",
+      "condition": "generic_zero",
+      "group": "cost",
+      "category": "cost",
+      "request": {
+        "state": "Current case:\n{\"task\":{\"title\":\"Process repetitive repository updates. Both meet the 90% success requirement. Choose the lower input/output tariff.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":92,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"3\",\"output_tokens\":\"9\"},\"scope\":\"Synthetic HTTP tariff; not CLI billing.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}},{\"key\":\"candidate_2\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":92,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"7\",\"output_tokens\":\"21\"},\"scope\":\"Synthetic HTTP tariff; not CLI billing.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-sonnet-5@high@openai-chat",
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@openai-chat",
+        "candidate_2": "claude-fable-5-1@high@openai-chat"
+      },
+      "order": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "descriptive_zero-abstention-1",
+      "condition": "descriptive_zero",
+      "group": "abstention",
+      "category": "abstention",
+      "request": {
+        "state": "Current case:\n{\"task\":{\"title\":\"Select a route for a new dependency migration only with measured task-suite quality. If no such evidence exists, abstain.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "claude-sonnet-5; high effort; suite success unknown; input/output tariff unknown.",
+          "candidate_2": "claude-fable-5-1; high effort; suite success unknown; input/output tariff unknown.",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "insufficient",
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-fable-5-1@high@vendor-cli"
+      },
+      "order": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "generic_few-abstention-1",
+      "condition": "generic_few",
+      "group": "abstention",
+      "category": "abstention",
+      "request": {
+        "state": "Solved examples using fictional models; these are not evidence about the current candidates.\nExample 1: Require 80% task-suite success. Cedar: 90%, cost $2; Maple: 90%, cost $6. Decision: Cedar, because both meet quality and Cedar costs less.\nExample 2: Require measured task-suite success. Birch: unknown; Elm: unknown. Decision: insufficient, because neither has quality evidence.\n\nCurrent case:\n{\"task\":{\"title\":\"Select a route for a new dependency migration only with measured task-suite quality. If no such evidence exists, abstain.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "insufficient",
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-fable-5-1@high@vendor-cli"
+      },
+      "order": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "descriptive_few-cost-0",
+      "condition": "descriptive_few",
+      "group": "cost",
+      "category": "cost",
+      "request": {
+        "state": "Solved examples using fictional models; these are not evidence about the current candidates.\nExample 1: Require 80% task-suite success. Cedar: 90%, cost $2; Maple: 90%, cost $6. Decision: Cedar, because both meet quality and Cedar costs less.\nExample 2: Require measured task-suite success. Birch: unknown; Elm: unknown. Decision: insufficient, because neither has quality evidence.\n\nCurrent case:\n{\"task\":{\"title\":\"Process repetitive repository updates. Both meet the 90% success requirement. Choose the lower input/output tariff.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":92,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"3\",\"output_tokens\":\"9\"},\"scope\":\"Synthetic HTTP tariff; not CLI billing.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}},{\"key\":\"candidate_2\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":92,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"7\",\"output_tokens\":\"21\"},\"scope\":\"Synthetic HTTP tariff; not CLI billing.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "claude-sonnet-5; high effort; suite success 92%; input/output tariff 3/9 USD/MTok.",
+          "candidate_2": "claude-fable-5-1; high effort; suite success 92%; input/output tariff 7/21 USD/MTok.",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-sonnet-5@high@openai-chat",
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@openai-chat",
+        "candidate_2": "claude-fable-5-1@high@openai-chat"
+      },
+      "order": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "generic_few-quality-1",
+      "condition": "generic_few",
+      "group": "quality",
+      "category": "quality",
+      "request": {
+        "state": "Solved examples using fictional models; these are not evidence about the current candidates.\nExample 1: Require 80% task-suite success. Cedar: 90%, cost $2; Maple: 90%, cost $6. Decision: Cedar, because both meet quality and Cedar costs less.\nExample 2: Require measured task-suite success. Birch: unknown; Elm: unknown. Decision: insufficient, because neither has quality evidence.\n\nCurrent case:\n{\"task\":{\"title\":\"Repair a parser edge case. Require at least 85% success on the supplied task suite.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":84,\"unit\":\"percent\",\"tested_effort\":\"low\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":87,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-fable-5-1@high@vendor-cli",
+      "choice_identity": {
+        "candidate_1": "claude-opus-5@low@vendor-cli",
+        "candidate_2": "claude-fable-5-1@high@vendor-cli"
+      },
+      "order": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "descriptive_few-quality-0",
+      "condition": "descriptive_few",
+      "group": "quality",
+      "category": "quality",
+      "request": {
+        "state": "Solved examples using fictional models; these are not evidence about the current candidates.\nExample 1: Require 80% task-suite success. Cedar: 90%, cost $2; Maple: 90%, cost $6. Decision: Cedar, because both meet quality and Cedar costs less.\nExample 2: Require measured task-suite success. Birch: unknown; Elm: unknown. Decision: insufficient, because neither has quality evidence.\n\nCurrent case:\n{\"task\":{\"title\":\"Repair a parser edge case. Require at least 85% success on the supplied task suite.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":87,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":84,\"unit\":\"percent\",\"tested_effort\":\"low\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "claude-fable-5-1; high effort; suite success 87%; input/output tariff unknown.",
+          "candidate_2": "claude-opus-5; low effort; suite success 84%; input/output tariff unknown.",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-fable-5-1@high@vendor-cli",
+      "choice_identity": {
+        "candidate_1": "claude-fable-5-1@high@vendor-cli",
+        "candidate_2": "claude-opus-5@low@vendor-cli"
+      },
+      "order": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "descriptive_zero-quality-0",
+      "condition": "descriptive_zero",
+      "group": "quality",
+      "category": "quality",
+      "request": {
+        "state": "Current case:\n{\"task\":{\"title\":\"Repair a parser edge case. Require at least 85% success on the supplied task suite.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":87,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":84,\"unit\":\"percent\",\"tested_effort\":\"low\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "claude-fable-5-1; high effort; suite success 87%; input/output tariff unknown.",
+          "candidate_2": "claude-opus-5; low effort; suite success 84%; input/output tariff unknown.",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-fable-5-1@high@vendor-cli",
+      "choice_identity": {
+        "candidate_1": "claude-fable-5-1@high@vendor-cli",
+        "candidate_2": "claude-opus-5@low@vendor-cli"
+      },
+      "order": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "generic_few-cost-1",
+      "condition": "generic_few",
+      "group": "cost",
+      "category": "cost",
+      "request": {
+        "state": "Solved examples using fictional models; these are not evidence about the current candidates.\nExample 1: Require 80% task-suite success. Cedar: 90%, cost $2; Maple: 90%, cost $6. Decision: Cedar, because both meet quality and Cedar costs less.\nExample 2: Require measured task-suite success. Birch: unknown; Elm: unknown. Decision: insufficient, because neither has quality evidence.\n\nCurrent case:\n{\"task\":{\"title\":\"Process repetitive repository updates. Both meet the 90% success requirement. Choose the lower input/output tariff.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":92,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"7\",\"output_tokens\":\"21\"},\"scope\":\"Synthetic HTTP tariff; not CLI billing.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":92,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"3\",\"output_tokens\":\"9\"},\"scope\":\"Synthetic HTTP tariff; not CLI billing.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-sonnet-5@high@openai-chat",
+      "choice_identity": {
+        "candidate_1": "claude-fable-5-1@high@openai-chat",
+        "candidate_2": "claude-sonnet-5@high@openai-chat"
+      },
+      "order": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "generic_zero-cost-1",
+      "condition": "generic_zero",
+      "group": "cost",
+      "category": "cost",
+      "request": {
+        "state": "Current case:\n{\"task\":{\"title\":\"Process repetitive repository updates. Both meet the 90% success requirement. Choose the lower input/output tariff.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":92,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"7\",\"output_tokens\":\"21\"},\"scope\":\"Synthetic HTTP tariff; not CLI billing.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":92,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"3\",\"output_tokens\":\"9\"},\"scope\":\"Synthetic HTTP tariff; not CLI billing.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-sonnet-5@high@openai-chat",
+      "choice_identity": {
+        "candidate_1": "claude-fable-5-1@high@openai-chat",
+        "candidate_2": "claude-sonnet-5@high@openai-chat"
+      },
+      "order": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "descriptive_zero-abstention-0",
+      "condition": "descriptive_zero",
+      "group": "abstention",
+      "category": "abstention",
+      "request": {
+        "state": "Current case:\n{\"task\":{\"title\":\"Select a route for a new dependency migration only with measured task-suite quality. If no such evidence exists, abstain.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "claude-fable-5-1; high effort; suite success unknown; input/output tariff unknown.",
+          "candidate_2": "claude-sonnet-5; high effort; suite success unknown; input/output tariff unknown.",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "insufficient",
+      "choice_identity": {
+        "candidate_1": "claude-fable-5-1@high@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli"
+      },
+      "order": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "descriptive_few-abstention-1",
+      "condition": "descriptive_few",
+      "group": "abstention",
+      "category": "abstention",
+      "request": {
+        "state": "Solved examples using fictional models; these are not evidence about the current candidates.\nExample 1: Require 80% task-suite success. Cedar: 90%, cost $2; Maple: 90%, cost $6. Decision: Cedar, because both meet quality and Cedar costs less.\nExample 2: Require measured task-suite success. Birch: unknown; Elm: unknown. Decision: insufficient, because neither has quality evidence.\n\nCurrent case:\n{\"task\":{\"title\":\"Select a route for a new dependency migration only with measured task-suite quality. If no such evidence exists, abstain.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "claude-sonnet-5; high effort; suite success unknown; input/output tariff unknown.",
+          "candidate_2": "claude-fable-5-1; high effort; suite success unknown; input/output tariff unknown.",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "insufficient",
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-fable-5-1@high@vendor-cli"
+      },
+      "order": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "generic_zero-quality-1",
+      "condition": "generic_zero",
+      "group": "quality",
+      "category": "quality",
+      "request": {
+        "state": "Current case:\n{\"task\":{\"title\":\"Repair a parser edge case. Require at least 85% success on the supplied task suite.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":84,\"unit\":\"percent\",\"tested_effort\":\"low\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":87,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-fable-5-1@high@vendor-cli",
+      "choice_identity": {
+        "candidate_1": "claude-opus-5@low@vendor-cli",
+        "candidate_2": "claude-fable-5-1@high@vendor-cli"
+      },
+      "order": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "descriptive_few-cost-1",
+      "condition": "descriptive_few",
+      "group": "cost",
+      "category": "cost",
+      "request": {
+        "state": "Solved examples using fictional models; these are not evidence about the current candidates.\nExample 1: Require 80% task-suite success. Cedar: 90%, cost $2; Maple: 90%, cost $6. Decision: Cedar, because both meet quality and Cedar costs less.\nExample 2: Require measured task-suite success. Birch: unknown; Elm: unknown. Decision: insufficient, because neither has quality evidence.\n\nCurrent case:\n{\"task\":{\"title\":\"Process repetitive repository updates. Both meet the 90% success requirement. Choose the lower input/output tariff.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":92,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"7\",\"output_tokens\":\"21\"},\"scope\":\"Synthetic HTTP tariff; not CLI billing.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":92,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"3\",\"output_tokens\":\"9\"},\"scope\":\"Synthetic HTTP tariff; not CLI billing.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "claude-fable-5-1; high effort; suite success 92%; input/output tariff 7/21 USD/MTok.",
+          "candidate_2": "claude-sonnet-5; high effort; suite success 92%; input/output tariff 3/9 USD/MTok.",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-sonnet-5@high@openai-chat",
+      "choice_identity": {
+        "candidate_1": "claude-fable-5-1@high@openai-chat",
+        "candidate_2": "claude-sonnet-5@high@openai-chat"
+      },
+      "order": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "generic_few-quality-0",
+      "condition": "generic_few",
+      "group": "quality",
+      "category": "quality",
+      "request": {
+        "state": "Solved examples using fictional models; these are not evidence about the current candidates.\nExample 1: Require 80% task-suite success. Cedar: 90%, cost $2; Maple: 90%, cost $6. Decision: Cedar, because both meet quality and Cedar costs less.\nExample 2: Require measured task-suite success. Birch: unknown; Elm: unknown. Decision: insufficient, because neither has quality evidence.\n\nCurrent case:\n{\"task\":{\"title\":\"Repair a parser edge case. Require at least 85% success on the supplied task suite.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":87,\"unit\":\"percent\",\"tested_effort\":\"high\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"task-suite-pass-rate\",\"value\":84,\"unit\":\"percent\",\"tested_effort\":\"low\",\"scope\":\"Synthetic fixture: identical 200-task suite and harness.\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "expected_identity": "claude-fable-5-1@high@vendor-cli",
+      "choice_identity": {
+        "candidate_1": "claude-fable-5-1@high@vendor-cli",
+        "candidate_2": "claude-opus-5@low@vendor-cli"
+      },
+      "order": [
+        0,
+        1
+      ]
+    }
+  ]
+}

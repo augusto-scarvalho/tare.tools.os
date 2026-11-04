@@ -1,0 +1,15 @@
+[submodule "satellites/tare.tools.kernel"]
+	path = satellites/tare.tools.kernel
+	url = https://github.com/augusto-scarvalho/tare.tools.kernel.git
+[submodule "satellites/tare.tools.specgraph"]
+	path = satellites/tare.tools.specgraph
+	url = https://github.com/augusto-scarvalho/tare.tools.specgraph.git
+[submodule "satellites/tare.tools.backlog-graph"]
+	path = satellites/tare.tools.backlog-graph
+	url = https://github.com/augusto-scarvalho/tare.tools.backlog-graph.git
+[submodule "satellites/tare.tools.library"]
+	path = satellites/tare.tools.library
+	url = https://github.com/augusto-scarvalho/tare.tools.library.git
+[submodule "satellites/tare.tools.agent-runtime"]
+	path = satellites/tare.tools.agent-runtime
+	url = https://github.com/augusto-scarvalho/tare.tools.agent-runtime.git

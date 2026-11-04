@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "CASE-2026-08-24-CANONICAL-HOOK-INSTRUMENTATION",
+  "recorded_at": "2026-08-25",
+  "authority": "OWNER_SUCCESSOR_DIRECTION_TO_ATTEMPT_ANTIGRAVITY_ADAPTER",
+  "status": "HELD_UNSUPPORTED_VENDOR_SURFACE",
+  "runtime": "google_antigravity_cli",
+  "installed_cli": "agy 1.1.19",
+  "policy": "prompt_budget",
+  "canonical_lifecycle": "user_prompt_submit",
+  "required_capability": "blocking_pre_model_prompt_payload",
+  "documented_events": [
+    "PreToolUse",
+    "PostToolUse",
+    "PreInvocation",
+    "PostInvocation",
+    "Stop"
+  ],
+  "pre_invocation_prompt_field": false,
+  "adapter_implemented": false,
+  "reason": "Antigravity CLI exposes no UserPromptSubmit or equivalent blocking pre-prompt event, and its documented PreInvocation payload contains invocation counters plus metadata but not the user prompt.",
+  "transcript_fallback": "REJECTED_UNSTABLE_AND_BYTE_MUTATION_RISK",
+  "transcript_fallback_reason": "Reading or reparsing the persistent transcript would couple policy enforcement to an unstable vendor log, occur too late to prove pre-model blocking, and violate the immutable-conversation boundary.",
+  "future_compatible_surface": {
+    "event": "PreToolUse",
+    "disposition": "AVAILABLE_FOR_A_DIFFERENT_EXPLICITLY_AUTHORIZED_POLICY"
+  },
+  "official_sources": [
+    "https://antigravity.google/docs/hooks",
+    "https://github.com/google-antigravity/antigravity-cli/issues/528"
+  ],
+  "explicit_non_actions": [
+    "no transcript parsing",
+    "no prompt reconstruction",
+    "no undocumented event claim",
+    "no generic hook framework",
+    "no global Antigravity configuration write",
+    "no production adapter"
+  ],
+  "production_rollout": false,
+  "next_gate": "A vendor release must expose a documented blocking pre-model prompt payload before prompt_budget can gain an Antigravity adapter. A separately authorized PreToolUse policy may use the existing Antigravity surface without waiting for that feature."
+}

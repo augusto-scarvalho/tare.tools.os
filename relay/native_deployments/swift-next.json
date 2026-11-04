@@ -1,0 +1,20 @@
+{
+  "id": "fleet-swift-next",
+  "runner": "native-http",
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_reasoning_levels": ["low", "medium", "xhigh"],
+  "native_profile": {
+    "protocol": "openai-chat",
+    "model": "swift-next",
+    "expected_response_model": "swift-1.5-iq3_xxs",
+    "context_window": 131072,
+    "output_tokens": 6272,
+    "source": "local-labs swift-next card (Strata b742ff9, Swift-1.5 Qwen3.8-Flash-Next GSQ-RCO IQ3_XXS, 128K int8 KV); cohort 6/6 on 2026-09-28 (runs/requalification/SWIFT-FLASH-NEXT-STRATA-2026-09-28)",
+    "endpoint": "http://local-gateway:8080/v1",
+    "parameters_json": "{\"temperature\": 1.0, \"top_p\": 0.95, \"presence_penalty\": 0.0, \"seed\": 0, \"chat_template_kwargs\": {\"enable_thinking\": true, \"reasoning_effort\": \"low\"}, \"reasoning_budget_tokens\": 2048, \"reasoning_format\": \"deepseek\", \"cache_prompt\": true, \"top_k\": 20, \"min_p\": 0.0, \"repeat_penalty\": 1.0}"
+  },
+  "native_usage_contract": {
+    "layout": "chat-inclusive",
+    "source": "Strata per-request OpenAI usage; fields absent remain unknown"
+  }
+}

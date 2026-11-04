@@ -1,0 +1,31 @@
+{
+  "id": "openrouter-kimi-k3-1-pro",
+  "runner": "native-http",
+  "model": "moonshotai/kimi-k3.1-pro",
+  "native_credential_env": "OPENROUTER_API_KEY",
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_profile": {
+    "protocol": "openai-chat",
+    "model": "moonshotai/kimi-k3.1-pro",
+    "endpoint": "https://openrouter.ai/api/v1",
+    "context_window": 1048576,
+    "output_tokens": 16384,
+    "parameters_json": "{\"reasoning\":{\"effort\":\"high\"},\"provider\":{\"only\":[\"moonshotai/mxfp4\"],\"order\":[\"moonshotai/mxfp4\"],\"require_parameters\":true,\"allow_fallbacks\":false,\"data_collection\":\"deny\",\"quantizations\":[\"mxfp4\"]},\"transforms\":[]}",
+    "source": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality. https://openrouter.ai/moonshotai/kimi-k3.1-pro/providers"
+  },
+  "native_usage_contract": {
+    "layout": "openrouter-inclusive",
+    "source": "https://openrouter.ai/docs/guides/best-practices/prompt-caching; raw inclusive input and cache counters; absent fields remain unknown."
+  },
+  "native_openrouter": {
+    "label": "Kimi K3.1 Pro",
+    "publisher": "Moonshot AI",
+    "precision_provenance": "unknown",
+    "precision_note": "Endpoint precision is a serving label, not evidence of training dtype, QAT, extra quantization or quality. Native FP4/FP8 is admissible.",
+    "source": "https://openrouter.ai/moonshotai/kimi-k3.1-pro/providers",
+    "observed_at": "2026-11-01"
+  },
+  "native_reasoning_levels": [
+    "high"
+  ]
+}

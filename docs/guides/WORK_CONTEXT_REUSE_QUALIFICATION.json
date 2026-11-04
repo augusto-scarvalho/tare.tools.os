@@ -1,0 +1,168 @@
+{
+  "schema": "tare.tools/work-context-reuse-qualification/1",
+  "date": "2026-10-20",
+  "scope": "Explicit reviewed project exploration reused in fresh native sessions, Works and sequences; not a representative savings benchmark.",
+  "implementation": "0.1.90",
+  "owner": "tare.tools.os",
+  "authority": "NONE",
+  "reusable_context_source_sha256": "041e7bca953425f458e899585826992fe1e33572fe41dfe565896cdf7e97e3b3",
+  "live_public_tui": {
+    "coding_generation_intents": 7,
+    "exploration_generation_intents": 3,
+    "consumer_generation_intents": 2,
+    "summaries": 0,
+    "all_proposed": true,
+    "reviewed_findings_attached": true,
+    "model": "gpt-6.1-sol",
+    "effort": "medium",
+    "connection": "Existing native Codex Responses subscription; API-key fallback forbidden",
+    "context_and_key_stable": true,
+    "cache_probes": [
+      {
+        "phase": "first",
+        "status": "PROPOSED",
+        "model_calls": 1,
+        "input_tokens": {
+          "known_sum": 2448,
+          "unknown_calls": 0
+        },
+        "output_tokens": {
+          "known_sum": 159,
+          "unknown_calls": 0
+        },
+        "cache_read_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 0
+        },
+        "cache_write_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 0
+        },
+        "prefix_sha256": "2b3b3665088c1bc46db7b892a6b9500cad5e194533317963d95dc13855bee633",
+        "prefix_bytes": 2259,
+        "eligible_reports": 1,
+        "key_sha256": "c60269f5dc46eda21b2acb11ec8bd485e9bf248443f9bad45d1c543bafd43e10"
+      },
+      {
+        "phase": "second",
+        "status": "PROPOSED",
+        "model_calls": 1,
+        "input_tokens": {
+          "known_sum": 2454,
+          "unknown_calls": 0
+        },
+        "output_tokens": {
+          "known_sum": 140,
+          "unknown_calls": 0
+        },
+        "cache_read_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 0
+        },
+        "cache_write_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 0
+        },
+        "prefix_sha256": "2b3b3665088c1bc46db7b892a6b9500cad5e194533317963d95dc13855bee633",
+        "prefix_bytes": 2259,
+        "eligible_reports": 1,
+        "key_sha256": "c60269f5dc46eda21b2acb11ec8bd485e9bf248443f9bad45d1c543bafd43e10"
+      }
+    ],
+    "completed_session_replay": {
+      "status": "PASS",
+      "route": "public TUI Review -> Resume",
+      "new_model_intents": 0,
+      "journal_sha256": "3f5f5d0ebce0aa3271a2b9cccd40b503341a891f25bb426a80cfb52745579a6f",
+      "frozen_identity_context_and_profile_preserved": true
+    }
+  },
+  "provider_cache": {
+    "result": "NO_HIT_OBSERVED",
+    "measured_cache_read_tokens": 0,
+    "monetary_savings": "UNKNOWN",
+    "quota_savings": "UNKNOWN",
+    "explicit_boundary_probe": {
+      "result": "REJECTED_HTTP_400",
+      "requests": 1,
+      "completed_responses": 0,
+      "provider_usage": "UNKNOWN",
+      "rejected_field": "UNKNOWN",
+      "automatic_retry_or_fallback": false,
+      "candidate_integrated_or_enabled": false,
+      "scope": "Native adapter protocol compatibility, not public TUI delivery"
+    }
+  },
+  "offline": {
+    "distinct_passing_cases": 383,
+    "real_composition": [
+      "Current source and immutable historical snapshot validation",
+      "Sequential Work eligibility changed from two reports to one after the first landing",
+      "Two parallel prepared proposals kept their original context while later Work planning rechecked sources",
+      "Native Responses effective profile/cache key, request prefix and exact saved resume",
+      "TUI/CLI limit propagation and independent existing auditor routing"
+    ],
+    "older_reader": {
+      "status": "PASS",
+      "prior_os_version": "0.1.89",
+      "new_formats_refused": {
+        "native_config": "explicit_native_agent_configuration_required",
+        "sequence": "SEQUENCE_CONTROL_ROOT_CHANGED",
+        "parallel": "Batch identity changed.",
+        "prepared": "PREPARED_CONTRACT_INVALID",
+        "host": "NATIVE_WORK_RECOVERY_IDENTITY_CHANGED"
+      },
+      "scope": "Schema fixtures, not full resumed execution proof",
+      "model_intents": 0
+    }
+  },
+  "limits": [
+    "No causal, representative cost or delivery quality improvement was measured.",
+    "Provider cache hits and subscription quota discounts are not guaranteed by a stable key or common text.",
+    "The API breakpoint request was not qualified on the subscription route; no such option ships.",
+    "Reviewed advisory context never establishes observed reads, verifier results, admission or source absence."
+  ],
+  "retention": {
+    "private_raw_ceiling_bytes": 67108864,
+    "terminal_trace_ceiling_bytes": 12582912,
+    "private_cleanup_eligible_after": "2026-11-20",
+    "destination": "Maintain this compact report and offline regressions in OS; no automatic inference or new data service."
+  },
+  "ci_repair": {
+    "owner": "tare.tools.kernel",
+    "version": "0.9.48",
+    "commit": "f277d4308160f0d1ecf48c4b1b54be1d083faf90",
+    "pr": "https://github.com/augusto-scarvalho/tare.tools.kernel/pull/52",
+    "original_os_run": 39498467741,
+    "original_windows_job": 118889555181,
+    "failed_test": "test_native_messages.py::test_queue_concurrent_writers_retry_and_session_custody",
+    "failure": "PermissionError during pre-lock initialization of an empty Windows custody file",
+    "fix": "Acquire the existing byte range beyond EOF without writing before acquisition",
+    "deterministic_before_fix": "FAIL: PermissionError through an independent handle holding an empty file",
+    "deterministic_after_fix": "PASS: named busy-custody refusal; journal acquisition works after release",
+    "targeted_checks": {
+      "kernel_passed": 45,
+      "os_messages_and_context_passed": 19,
+      "overlap": "Context cases overlap the original cohort; counts are not added as independent evidence",
+      "exact_queue_race_replays_passed": 30,
+      "model_calls": 0,
+      "committed_pin_and_compliance_passed": 8
+    },
+    "publication_gate": "Require complete green checks for both owner PRs and main revisions; preserve the failed Windows record"
+  },
+  "ci_lifecycle_repair": {
+    "original_os_run": 39506039281,
+    "original_linux_job": 118915084570,
+    "job_result": "CANCELLED: exceeded maximum execution time of 30 minutes",
+    "quick_checks_passed": 227,
+    "regression_passed": 4178,
+    "regression_skipped": 8,
+    "regression_seconds": 1325.2,
+    "upload_first_attempt": "ECONNRESET",
+    "bounded_upload_retry": "SUCCESS",
+    "retained_artifact_id": 12304244699,
+    "change": "Linux whole-job lifecycle budget from 30 to 40 minutes",
+    "same_validation": "Keep every test, per-test deadline, upload-attempt timeout and retry count",
+    "authority": "A passed test set inside a cancelled job is not a green integration check; qualify the new head"
+  }
+}

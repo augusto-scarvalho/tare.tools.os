@@ -1,0 +1,46 @@
+{
+ "fixture": [
+  "Olá! Como posso ajudar?"
+ ],
+ "steps": [
+  {
+   "wait": 6,
+   "note": "let startup finish"
+  },
+  {
+   "press": "f2",
+   "until": "Execution options",
+   "quiet": 1.5,
+   "note": "the panel keeps laying out after it appears; an early click was lost in 3 of 8 fresh starts"
+  },
+  {
+   "click": "Execution options"
+  },
+  {
+   "click": "Path to HTTP/profile JSON"
+  },
+  {
+   "paste": "$FIXTURE_PROFILE"
+  },
+  {
+   "click": "Back · F2"
+  },
+  {
+   "click": "Ask anything"
+  },
+  {
+   "paste": "oi amiguinho"
+  },
+  {
+   "press": "ctrl+enter"
+  },
+  {
+   "until": "Como posso ajudar?",
+   "timeout": 30
+  },
+  {
+   "quit": true
+  }
+ ],
+ "note": "pty backend: choose the fixture profile through Settings, then send with Ctrl+Enter."
+}

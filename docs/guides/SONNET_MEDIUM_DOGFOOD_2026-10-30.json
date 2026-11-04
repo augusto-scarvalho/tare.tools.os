@@ -1,0 +1,57 @@
+{
+  "schema": "tare.tools/bounded-dogfood-observation/1",
+  "date": "2026-10-30",
+  "backlog_item": "flow-19-canary-de-routing-orientado-por",
+  "goal": "Record genuine deterministic route-selection propensities, including fallback, without claiming counterfactual performance or OPE support.",
+  "result": "PAUSED_UNQUALIFIED",
+  "backlog_item_completed": false,
+  "candidate_changes": [],
+  "candidate_audited": false,
+  "model_quality_comparison": "Not established; this is a different task from the earlier Haiku trial and neither produced an accepted paired delivery.",
+  "interface": "Public TUI through ConPTY keyboard and mouse; compact semantic observations only.",
+  "execution_scope": {
+    "flags": ["--prefer_subscription", "--subscription_only"],
+    "jev_auxiliary": "Allowed by the operator's existing policy; not an inference-worker API fallback.",
+    "original_total_calls": 30,
+    "original_active_seconds": 900,
+    "amended_total_calls": 60,
+    "amended_active_seconds": 1800,
+    "amendment": "Explicit public resume-coordinator flags after transport and role-setting failures; previous use stayed charged, original journal and saved plan were retained.",
+    "native_model_calls_observed": 32
+  },
+  "actors": [
+    {"role": "coordinator", "model": "claude-sonnet-5-5", "effort": "medium", "calls": 15, "final_status": "CANCELLED"},
+    {"role": "planner", "model": "claude-opus-5-5", "effort": "high", "calls": 5, "final_status": "PROPOSED", "plan_reused": true},
+    {"role": "implementer", "model": "claude-sonnet-5-5", "effort": "high", "calls": 5, "final_status": "CANCELLED", "reason": "Unrequested route default; excluded from the medium trial."},
+    {"role": "implementer", "model": "claude-sonnet-5-5", "effort": "medium", "calls": 7, "final_status": "RECONCILIATION_REQUIRED", "reason": "UNFINISHED_INVOCATION"}
+  ],
+  "medium_worker": {
+    "elapsed_ms": 385704,
+    "completed_replies": 6,
+    "uncertain_requests": 1,
+    "uncertain_request_timeout_ms": 300141,
+    "transport_error": "CLI_INCOMPLETE_EXCHANGE",
+    "client_version": "2.1.314",
+    "local_cleanup_verified": true,
+    "remote_stop": "unknown",
+    "provider_or_cli_cause": "Not established; the timeout alone does not prove a capacity or model-quality failure.",
+    "known_token_sums": {"input": 108034, "output": 10821, "cache_write": 108022, "cache_read": 0},
+    "unknown_usage_calls": 1,
+    "monetary_cost": "Unknown; CLI API-equivalent figures are not a subscription invoice.",
+    "cache_conclusion": "No cache reads observed in the six accounted replies. Reusing saved history alone did not establish provider-cache reuse. Do not repeat this as a cheap or cache-preserving delivery path without further qualification."
+  },
+  "root_fixes": [
+    {"owner": "Kernel", "commit": "057d2b61b83821bcb6f658dede854dc8182e05d2", "change": "Use the existing toolless codec for Sonnet 5.5. The formatter attempted native demand/implement tools after planning; strict custody rejection remains intact.", "focused_tests_passed": 278},
+    {"owner": "OS", "change": "Explicit implementer reasoning requested by the user must be passed as implement.effort; the coordinator's selected effort does not configure the worker route default.", "focused_tests_passed": 105},
+    {"owner": "Private dogfood observer", "change": "Treat RECONCILIATION_REQUIRED as a fail-fast stop, alongside failure, exhaustion and cancellation."}
+  ],
+  "qualification_limits": [
+    "No FLOW-19 implementation was applied or independently audited.",
+    "No X5 ordinary-delivery pilot was opened or qualified by this attempt.",
+    "A read-only planner result is not a completed delivery.",
+    "One uncertain request has unknown remote usage, not zero.",
+    "The source-fix tests are separate from the failed delivery's checks.",
+    "Do not mark the broad FLOW-19 cohort qualification complete."
+  ],
+  "evidence_custody": "Private case sonnet-flow19-20261030 retains the original native journals, outcomes, usage and bounded terminal tail. The committed JSON is the small durable conclusion; no full transcripts or expanded test repositories belong in Git."
+}

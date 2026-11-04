@@ -1,0 +1,92 @@
+{
+  "build_tools": {
+    "packaging": "25.0",
+    "pip": "25.1.1",
+    "setuptools": "80.9.0",
+    "wheel": "0.45.1"
+  },
+  "python": "3.12",
+  "schema": "tare.tools/native-release-inputs/1",
+  "source_date_epoch": 1791733931,
+  "sources": [
+    {
+      "commit": "d4c5ea9c9dfc29a2d0cbd8cc2ec684a692e520f3",
+      "id": "runtime",
+      "include": [
+        "pyproject.toml",
+        "README.md",
+        "LICENSE*",
+        "src/**"
+      ],
+      "package": "tare-tools-agent-runtime",
+      "version": "0.14.0"
+    },
+    {
+      "commit": "97f2ece5438c33226c2d4b8cb1761cfaa0fd236f",
+      "id": "kernel",
+      "include": [
+        "pyproject.toml",
+        "README.md",
+        "LICENSE*",
+        "assurance_plane/**",
+        "compute_plane/**",
+        "control_plane/**",
+        "data_plane/**",
+        "experience_plane/**"
+      ],
+      "package": "tare-kernel",
+      "version": "0.9.21"
+    },
+    {
+      "commit": "d738c2bf5cb785d4fd1c20e98a21b9af8aebb94a",
+      "id": "specgraph",
+      "include": [
+        "pyproject.toml",
+        "README.md",
+        "LICENSE*",
+        "src/**"
+      ],
+      "package": "tare-tools-specgraph",
+      "version": "0.7.3"
+    },
+    {
+      "commit": "905bf295320eb4ced2f34dbc66c3611b15a965ad",
+      "id": "backlog",
+      "include": [
+        "pyproject.toml",
+        "README.md",
+        "LICENSE*",
+        "src/**"
+      ],
+      "package": "tare-tools-backlog-graph",
+      "version": "1.2.0"
+    },
+    {
+      "commit": "c9816f65d6d9406a29801e75943d80869773e021",
+      "id": "os",
+      "include": [
+        "pyproject.toml",
+        "README.md",
+        "LICENSE*",
+        "tare_ops.py",
+        "relay/*.py",
+        "relay/round_table_roster.json",
+        "relay/role_deployments.json",
+        "relay/retired_aider_deployments.json",
+        "relay/native_deployments/*.json",
+        "relay/templates/*.md",
+        "schemas/*.json",
+        "scripts/round_table/*.py",
+        "scripts/round_table/*.html",
+        "scripts/ops/build_native_release.py",
+        "schemas/*.py",
+        "relay/model_evidence.json",
+        "relay/behavioral_evidence.json",
+        "scripts/ops/pack_native_release.py",
+        "relay/prompt_capsules.json"
+      ],
+      "package": "tare-tools-os",
+      "version": "0.1.63"
+    }
+  ]
+}

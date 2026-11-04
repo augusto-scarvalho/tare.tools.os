@@ -1,0 +1,30 @@
+{
+  "id": "bedrock-opus",
+  "model": "claude-opus-4.6",
+  "runner": "native-http",
+  "native_credential_env": "AWS_BEARER_TOKEN_BEDROCK",
+  "native_profile": {
+    "protocol": "bedrock-converse",
+    "model": "us.anthropic.claude-opus-4-6-v1",
+    "count_model": "anthropic.claude-opus-4-6-v1",
+    "count_model_source": "Kernel docs/NATIVE_CANARY_20260910.md: CountTokens route qualified with Opus",
+    "context_window": 1000000,
+    "output_tokens": 16384,
+    "source": "Kernel docs/NATIVE_CANARY_20260910.md; adaptive high, qualified route; window not stress tested",
+    "endpoint": "https://bedrock-runtime.us-east-1.amazonaws.com",
+    "parameters_json": "{\"additionalModelRequestFields\": {\"thinking\": {\"type\": \"adaptive\"}, \"output_config\": {\"effort\": \"high\"}}}",
+    "cache_system": true,
+    "cache_support_source": "Kernel docs/NATIVE_CANARY_20260910.md: 5958-token system prefix cold/warm qualified"
+  },
+  "native_usage_contract": {
+    "layout": "converse-exclusive",
+    "source": "AWS Converse per-response input/output/cache counters; native M2 canary"
+  },
+  "native_image_media_types": [
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp"
+  ],
+  "native_image_support_source": "docs/guides/NATIVE_ATTACHMENTS.md: AWS model card and Converse ImageBlock; transport tested with fixtures, live vision qualification pending"
+}

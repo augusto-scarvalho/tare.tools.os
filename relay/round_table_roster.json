@@ -1,0 +1,1002 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "chair_count": 3,
+    "unique_bias_domains_across_chairs": true,
+    "mediator_must_not_match_chair_bias_domain": true,
+    "effort_does_not_create_independence": true,
+    "cross_vendor_preferred": true,
+    "work_author_conflict": "explicit_case_bias_domain_exclusion",
+    "external_model_attestation": {
+      "chair_vote": "allow_with_explicit_receipt_status",
+      "llm_mediator": "allow_only_with_operator_opt_in",
+      "full_attestation_claim": "forbidden_without_runtime_evidence",
+      "runtime_mismatch": "fail_closed"
+    },
+    "scribe_bias_rule": "different_from_mediator",
+    "scribe_authority": "narrative_projection_only",
+    "red_team_trigger": {
+      "classifier": "deterministic_casefold_substring",
+      "signals": [
+        "cannot comply",
+        "can't comply",
+        "cannot assist",
+        "unable to provide",
+        "i must refuse",
+        "as an ai",
+        "cannot evaluate",
+        "unable to evaluate",
+        "insufficient context to evaluate",
+        "not enough information to evaluate",
+        "não posso",
+        "nao posso",
+        "me recuso",
+        "não consigo avaliar",
+        "nao consigo avaliar",
+        "não tenho contexto suficiente",
+        "nao tenho contexto suficiente",
+        "informações insuficientes para avaliar",
+        "informacoes insuficientes para avaliar"
+      ]
+    }
+  },
+  "models": {
+    "gpt-6-astra": {
+      "display_name": "GPT-6 Astra",
+      "vendor": "OpenAI",
+      "bias_domain": "openai/gpt",
+      "runtime": {
+        "codex": "gpt-6-astra",
+        "native": "gpt-6-astra",
+        "native-http": "gpt-6-astra"
+      }
+    },
+    "fable-5.1": {
+      "display_name": "Fable 5.1",
+      "vendor": "Anthropic",
+      "bias_domain": "anthropic/fable",
+      "runtime": {
+        "claude": "claude-fable-5-1",
+        "native": "claude-fable-5-1",
+        "native-http": "claude-fable-5-1"
+      }
+    },
+    "gemini-4-argon": {
+      "display_name": "Gemini 4 Argon HTTP",
+      "vendor": "Google",
+      "bias_domain": "google/gemini",
+      "runtime": {
+        "native": "gemini-4-argon",
+        "native-http": "gemini-4-argon"
+      }
+    },
+    "gemini-4-argon-high": {
+      "display_name": "Gemini 4 Argon High",
+      "vendor": "Google",
+      "bias_domain": "google/gemini",
+      "runtime": {
+        "google-cli": "gemini-4-argon-high",
+        "native": "gemini-4-argon-high",
+        "native-http": "gemini-4-argon-high"
+      }
+    },
+    "gemini-4-argon-medium": {
+      "display_name": "Gemini 4 Argon Medium",
+      "vendor": "Google",
+      "bias_domain": "google/gemini",
+      "runtime": {
+        "google-cli": "gemini-4-argon-medium",
+        "native": "gemini-4-argon-medium",
+        "native-http": "gemini-4-argon-medium"
+      }
+    },
+    "gemini-4-argon-low": {
+      "display_name": "Gemini 4 Argon Low",
+      "vendor": "Google",
+      "bias_domain": "google/gemini",
+      "runtime": {
+        "google-cli": "gemini-4-argon-low",
+        "native": "gemini-4-argon-low",
+        "native-http": "gemini-4-argon-low"
+      }
+    },
+    "fable-5": {
+      "display_name": "Fable 5",
+      "vendor": "Anthropic",
+      "bias_domain": "anthropic/fable",
+      "bedrock": {
+        "model_id": "us.anthropic.claude-fable-5",
+        "region": "us-east-1",
+        "access": "denied",
+        "checked": "2026-09-07",
+        "source": "OS probe 2026-09-07, converse maxTokens=8, .reconciliation/bedrock-probe-20260907/PROBE.json",
+        "fit": "unavailable on this account",
+        "reason": "Generation 5: requires an AWS commercial allowlist",
+        "roles": []
+      },
+      "runtime": {
+        "claude": "claude-fable-5",
+        "aider": "anthropic/claude-fable-5",
+        "aider-bedrock": "bedrock/global.anthropic.claude-fable-5",
+        "aider-openrouter": "openrouter/anthropic/claude-fable-5"
+      }
+    },
+    "gpt-5.6-sol": {
+      "display_name": "GPT-5.6 Sol",
+      "vendor": "OpenAI",
+      "bias_domain": "openai/gpt",
+      "bedrock": {
+        "model_id": "global.openai.gpt-5.6-sol",
+        "region": "us-east-1",
+        "access": "denied",
+        "checked": "2026-09-07",
+        "source": "OS probe 2026-09-07, converse maxTokens=8, .reconciliation/bedrock-probe-20260907/PROBE.json",
+        "fit": "unavailable on this account",
+        "reason": "Commercial OpenAI model on Bedrock pending approval",
+        "roles": []
+      },
+      "runtime": {
+        "codex": "gpt-5.6-sol",
+        "aider-bedrock": "bedrock/global.openai.gpt-5.6-sol",
+        "aider-openrouter": "openrouter/openai/gpt-5.6-sol",
+        "native": "gpt-5.6-sol",
+        "native-http": "gpt-5.6-sol"
+      }
+    },
+    "grok-4.6": {
+      "display_name": "Grok 4.6",
+      "vendor": "xAI",
+      "bias_domain": "xai/grok",
+      "bedrock": {
+        "model_id": "global.xai.grok-4.6",
+        "region": "us-east-1",
+        "access": "denied",
+        "checked": "2026-09-07",
+        "source": "OS probe 2026-09-07, converse maxTokens=8, .reconciliation/bedrock-probe-20260907/PROBE.json",
+        "fit": "unavailable on this account",
+        "reason": "Restricted frontier tier",
+        "roles": []
+      },
+      "runtime": {
+        "aider-bedrock": "bedrock/global.xai.grok-4.6",
+        "aider-openrouter": "openrouter/x-ai/grok-4.6"
+      }
+    },
+    "gemini-3.7": {
+      "display_name": "Gemini 3.7",
+      "vendor": "Google",
+      "bias_domain": "google/gemini",
+      "runtime": {
+        "google-cli": "gemini-3.7-flash-high",
+        "aider-openrouter": "openrouter/google/gemini-3.7-flash"
+      }
+    },
+    "qwen-3.8-27b": {
+      "display_name": "Qwen 3.8 27B",
+      "vendor": "Qwen",
+      "bias_domain": "qwen/qwen-family",
+      "runtime": {
+        "aider": "openai/qwen38-27b",
+        "native": "qwen38-gsq",
+        "native-http": "qwen38-gsq"
+      }
+    },
+    "glm-5.3": {
+      "display_name": "GLM 5.3",
+      "vendor": "Z.ai",
+      "bias_domain": "zai/glm-family",
+      "runtime": {
+        "aider-openrouter": "openrouter/z-ai/glm-5.3",
+        "claude-gateway": "openrouter/z-ai/glm-5.3"
+      }
+    },
+    "fable-tc": {
+      "display_name": "Fable TC",
+      "vendor": "Local",
+      "bias_domain": "qwen/qwen-family",
+      "provenance": {
+        "owner_attestation": "repository_owner",
+        "lineage": "operator-authored merge based on open-weight Qwen 3.6",
+        "independent_from": [
+          "fable-5"
+        ],
+        "statement": "Fable TC has no lineage or weight relationship with Anthropic Fable; conservatively it shares the Qwen family bias domain because it is based on Qwen 3.6 open weights."
+      },
+      "runtime": {
+        "aider": "openai/fable-tc",
+        "native": "fable-tc",
+        "native-http": "fable-tc"
+      }
+    },
+    "gpt-5.6-terra": {
+      "display_name": "GPT-5.6 Terra",
+      "vendor": "OpenAI",
+      "bias_domain": "openai/gpt",
+      "runtime": {
+        "codex": "gpt-5.6-terra",
+        "native": "gpt-5.6-terra",
+        "native-http": "gpt-5.6-terra"
+      }
+    },
+    "claude-opus-4.8": {
+      "display_name": "Claude Opus 4.8",
+      "vendor": "Anthropic",
+      "bias_domain": "anthropic/opus",
+      "runtime": {
+        "claude": "claude-opus-4-8",
+        "native": "claude-opus-4-8",
+        "native-http": "claude-opus-4-8"
+      }
+    },
+    "gemini-3.7-medium": {
+      "display_name": "Gemini 3.7 Medium",
+      "vendor": "Google",
+      "bias_domain": "google/gemini",
+      "runtime": {
+        "google-cli": "gemini-3.7-flash-medium"
+      }
+    },
+    "kimi-k3": {
+      "display_name": "Kimi K3",
+      "vendor": "Kimi",
+      "bias_domain": "kimi/kimi-k3",
+      "runtime": {
+        "kimi-cli": "kimi-code/k3-256k",
+        "aider-openrouter": "openrouter/moonshotai/kimi-k3"
+      }
+    },
+    "minimax-m3": {
+      "display_name": "MiniMax M3",
+      "vendor": "MiniMax",
+      "bias_domain": "minimax/m3",
+      "runtime": {
+        "aider": "nvidia_nim/minimaxai/minimax-m3"
+      }
+    },
+    "gemini-3-flash-preview": {
+      "display_name": "Gemini 3 Flash Preview",
+      "vendor": "Google",
+      "bias_domain": "google/gemini",
+      "runtime": {
+        "aider": "openai/gemini-3-flash-preview"
+      }
+    },
+    "gemini-2.5-flash": {
+      "display_name": "Gemini 2.5 Flash",
+      "vendor": "Google",
+      "bias_domain": "google/gemini",
+      "runtime": {
+        "aider": "openai/gemini-2.5-flash"
+      }
+    },
+    "claude-sonnet-4.6": {
+      "display_name": "Claude Sonnet 4.6",
+      "vendor": "Anthropic",
+      "bias_domain": "anthropic/sonnet",
+      "bedrock": {
+        "model_id": "us.anthropic.claude-sonnet-4-6",
+        "region": "us-east-1",
+        "access": "verified",
+        "checked": "2026-09-07",
+        "source": "OS probe 2026-09-07, converse maxTokens=8, .reconciliation/bedrock-probe-20260907/PROBE.json",
+        "fit": "code implementer and auditor; Fable substitute for coding",
+        "roles": [
+          "reserve:explorer"
+        ]
+      },
+      "runtime": {
+        "aider-bedrock": "bedrock/us.anthropic.claude-sonnet-4-6",
+        "aider-openrouter": "openrouter/anthropic/claude-sonnet-4.6",
+        "native": "us.anthropic.claude-sonnet-4-6",
+        "native-http": "us.anthropic.claude-sonnet-4-6"
+      }
+    },
+    "claude-opus-4.6": {
+      "display_name": "Claude Opus 4.6",
+      "vendor": "Anthropic",
+      "bias_domain": "anthropic/opus",
+      "bedrock": {
+        "model_id": "us.anthropic.claude-opus-4-6-v1",
+        "region": "us-east-1",
+        "access": "verified",
+        "checked": "2026-09-07",
+        "source": "OS probe 2026-09-07, converse maxTokens=8, .reconciliation/bedrock-probe-20260907/PROBE.json",
+        "fit": "critical reasoning, planning and architecture",
+        "roles": [
+          "reserve:explorer",
+          "reserve:chair-anthropic-when-cli-quota-exhausted"
+        ]
+      },
+      "runtime": {
+        "aider-bedrock": "bedrock/us.anthropic.claude-opus-4-6-v1",
+        "native": "us.anthropic.claude-opus-4-6-v1",
+        "native-http": "us.anthropic.claude-opus-4-6-v1"
+      }
+    },
+    "claude-haiku-4.5": {
+      "display_name": "Claude Haiku 4.5",
+      "vendor": "Anthropic",
+      "bias_domain": "anthropic/haiku",
+      "bedrock": {
+        "model_id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "region": "us-east-1",
+        "access": "verified",
+        "checked": "2026-09-07",
+        "source": "OS probe 2026-09-07, converse maxTokens=8, .reconciliation/bedrock-probe-20260907/PROBE.json",
+        "fit": "scribe, triage and short subtasks",
+        "roles": []
+      },
+      "runtime": {
+        "aider-bedrock": "bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0"
+      }
+    },
+    "deepseek-r1": {
+      "display_name": "DeepSeek-R1",
+      "vendor": "DeepSeek",
+      "bias_domain": "deepseek/deepseek",
+      "bedrock": {
+        "model_id": "us.deepseek.r1-v1:0",
+        "region": "us-east-1",
+        "access": "verified",
+        "checked": "2026-09-07",
+        "source": "OS probe 2026-09-07, converse maxTokens=8, .reconciliation/bedrock-probe-20260907/PROBE.json",
+        "fit": "mathematical and logical reasoning; long output before calling a tool",
+        "roles": []
+      },
+      "runtime": {
+        "aider-bedrock": "bedrock/us.deepseek.r1-v1:0"
+      }
+    },
+    "deepseek-v3.2": {
+      "display_name": "DeepSeek-V3.2",
+      "vendor": "DeepSeek",
+      "bias_domain": "deepseek/deepseek",
+      "bedrock": {
+        "model_id": "deepseek.v3.2",
+        "region": "us-east-1",
+        "access": "verified",
+        "checked": "2026-09-07",
+        "source": "OS probe 2026-09-07, converse maxTokens=8, .reconciliation/bedrock-probe-20260907/PROBE.json",
+        "fit": "high volume at low cost; map and reduce beyond the local window",
+        "roles": [
+          "reserve:research-map-reduce-beyond-local-window"
+        ]
+      },
+      "runtime": {
+        "aider-bedrock": "bedrock/deepseek.v3.2"
+      }
+    },
+    "devstral-2-123b": {
+      "display_name": "Devstral 2 123B",
+      "vendor": "Mistral AI",
+      "bias_domain": "mistral/mistral",
+      "bedrock": {
+        "model_id": "mistral.devstral-2-123b",
+        "region": "us-east-1",
+        "access": "verified",
+        "checked": "2026-09-07",
+        "source": "OS probe 2026-09-07, converse maxTokens=8, .reconciliation/bedrock-probe-20260907/PROBE.json",
+        "fit": "open-weights coding; governed alternative to Sonnet",
+        "roles": []
+      },
+      "runtime": {
+        "aider-bedrock": "bedrock/mistral.devstral-2-123b"
+      }
+    },
+    "mistral-large-3": {
+      "display_name": "Mistral Large 3",
+      "vendor": "Mistral AI",
+      "bias_domain": "mistral/mistral",
+      "bedrock": {
+        "model_id": "mistral.mistral-large-3-675b-instruct",
+        "region": "us-east-1",
+        "access": "verified",
+        "checked": "2026-09-07",
+        "source": "OS probe 2026-09-07, converse maxTokens=8, .reconciliation/bedrock-probe-20260907/PROBE.json",
+        "fit": "analysis and multimodal; Mistral-domain chair",
+        "roles": []
+      },
+      "runtime": {
+        "aider-bedrock": "bedrock/mistral.mistral-large-3-675b-instruct"
+      }
+    },
+    "llama-4-maverick": {
+      "display_name": "Llama 4 Maverick 17B",
+      "vendor": "Meta",
+      "bias_domain": "meta/llama",
+      "bedrock": {
+        "model_id": "us.meta.llama4-maverick-17b-instruct-v1:0",
+        "region": "us-east-1",
+        "access": "verified",
+        "checked": "2026-09-07",
+        "source": "OS probe 2026-09-07, converse maxTokens=8, .reconciliation/bedrock-probe-20260907/PROBE.json",
+        "fit": "cheap multimodal: screens and diagrams",
+        "roles": []
+      },
+      "runtime": {
+        "aider-bedrock": "bedrock/us.meta.llama4-maverick-17b-instruct-v1:0"
+      }
+    },
+    "nova-pro": {
+      "display_name": "Amazon Nova Pro",
+      "vendor": "Amazon",
+      "bias_domain": "amazon/nova",
+      "bedrock": {
+        "model_id": "amazon.nova-pro-v1:0",
+        "region": "us-east-1",
+        "access": "verified",
+        "checked": "2026-09-07",
+        "source": "OS probe 2026-09-07, converse maxTokens=8, .reconciliation/bedrock-probe-20260907/PROBE.json",
+        "fit": "ingests up to 300k tokens; large-corpus reduction",
+        "roles": [
+          "reserve:research-reduce-300k"
+        ]
+      },
+      "runtime": {
+        "aider-bedrock": "bedrock/amazon.nova-pro-v1:0"
+      }
+    },
+    "gpt-oss-120b": {
+      "display_name": "GPT-OSS 120B",
+      "vendor": "OpenAI",
+      "bias_domain": "openai/gpt",
+      "bedrock": {
+        "model_id": "openai.gpt-oss-120b-1:0",
+        "region": "us-east-1",
+        "access": "verified",
+        "checked": "2026-09-07",
+        "source": "OS probe 2026-09-07, converse maxTokens=8, .reconciliation/bedrock-probe-20260907/PROBE.json",
+        "fit": "OpenAI route outside the Codex plan; open weights",
+        "roles": []
+      },
+      "runtime": {
+        "aider-bedrock": "bedrock/openai.gpt-oss-120b-1:0"
+      }
+    },
+    "glm-5": {
+      "display_name": "GLM 5",
+      "vendor": "Z.ai",
+      "bias_domain": "zai/glm-family",
+      "bedrock": {
+        "model_id": "zai.glm-5",
+        "region": "us-east-1",
+        "access": "verified",
+        "checked": "2026-09-07",
+        "source": "OS probe 2026-09-07, converse maxTokens=8, .reconciliation/bedrock-probe-20260907/PROBE.json",
+        "fit": "Bedrock route for the GLM domain when OpenRouter fails",
+        "roles": [
+          "reserve:explorer"
+        ]
+      },
+      "runtime": {
+        "aider-bedrock": "bedrock/zai.glm-5",
+        "native": "zai.glm-5",
+        "native-http": "zai.glm-5"
+      }
+    },
+    "kimi-k2.5": {
+      "display_name": "Kimi K2.5",
+      "vendor": "Kimi",
+      "bias_domain": "kimi/kimi-k3",
+      "bedrock": {
+        "model_id": "moonshotai.kimi-k2.5",
+        "region": "us-east-1",
+        "access": "verified",
+        "checked": "2026-09-07",
+        "source": "OS probe 2026-09-07, converse maxTokens=8, .reconciliation/bedrock-probe-20260907/PROBE.json",
+        "fit": "Bedrock fallback for the Kimi domain; SWE-bench Verified 70.8 in 2026-02",
+        "roles": []
+      },
+      "runtime": {
+        "aider-bedrock": "bedrock/moonshotai.kimi-k2.5",
+        "aider-openrouter": "openrouter/moonshotai/kimi-k2.5"
+      }
+    },
+    "hauhaucs-qwen38": {
+      "display_name": "HauhauCS (Qwen3.8)",
+      "vendor": "Qwen",
+      "bias_domain": "qwen/qwen-family",
+      "runtime": {
+        "native": "hauhaucs",
+        "native-http": "hauhaucs"
+      }
+    },
+    "qwen36-moe": {
+      "display_name": "Qwen3.6 MoE",
+      "vendor": "Qwen",
+      "bias_domain": "qwen/qwen-family",
+      "runtime": {
+        "native": "qwen36-moe",
+        "native-http": "qwen36-moe"
+      }
+    },
+    "gemini-3.8-flash-high": {
+      "display_name": "Gemini 3.8 Flash High",
+      "vendor": "Google",
+      "bias_domain": "google/gemini",
+      "runtime": {
+        "google-cli": "gemini-3.8-flash-high",
+        "native": "gemini-3.8-flash-high",
+        "native-http": "gemini-3.8-flash-high"
+      }
+    },
+    "claude-opus-5.5": {
+      "display_name": "Claude Opus 5.5",
+      "vendor": "Anthropic",
+      "bias_domain": "anthropic/opus",
+      "runtime": {
+        "claude": "claude-opus-5-5",
+        "native": "claude-opus-5-5",
+        "native-http": "claude-opus-5-5"
+      }
+    },
+    "claude-opus-5": {
+      "display_name": "Claude Opus 5",
+      "vendor": "Anthropic",
+      "bias_domain": "anthropic/opus",
+      "runtime": {
+        "claude": "claude-opus-5",
+        "native": "claude-opus-5",
+        "native-http": "claude-opus-5"
+      }
+    },
+    "claude-sonnet-5": {
+      "display_name": "Claude Sonnet 5",
+      "vendor": "Anthropic",
+      "bias_domain": "anthropic/sonnet",
+      "runtime": {
+        "native": "claude-sonnet-5",
+        "native-http": "claude-sonnet-5"
+      }
+    },
+    "claude-haiku-5.5": {
+      "display_name": "Claude Haiku 5.5",
+      "vendor": "Anthropic",
+      "bias_domain": "anthropic/haiku",
+      "runtime": {
+        "claude": "claude-haiku-5-5",
+        "native": "claude-haiku-5-5",
+        "native-http": "claude-haiku-5-5"
+      }
+    },
+    "claude-sonnet-5.5": {
+      "display_name": "Claude Sonnet 5.5",
+      "vendor": "Anthropic",
+      "bias_domain": "anthropic/sonnet",
+      "runtime": {
+        "claude": "claude-sonnet-5-5",
+        "native": "claude-sonnet-5-5",
+        "native-http": "claude-sonnet-5-5"
+      }
+    },
+    "gpt-5.5": {
+      "display_name": "GPT-5.5",
+      "vendor": "OpenAI",
+      "bias_domain": "openai/gpt",
+      "runtime": {
+        "native": "gpt-5.5",
+        "native-http": "gpt-5.5"
+      }
+    },
+    "gpt-5.6-luna": {
+      "display_name": "GPT-5.6 Luna",
+      "vendor": "OpenAI",
+      "bias_domain": "openai/gpt",
+      "runtime": {
+        "native": "gpt-5.6-luna",
+        "native-http": "gpt-5.6-luna"
+      }
+    },
+    "deepseek/deepseek-v4.1-flash": {
+      "display_name": "deepseek/deepseek-v4.1-flash",
+      "vendor": "DeepSeek",
+      "bias_domain": "deepseek/deepseek",
+      "runtime": {
+        "native": "deepseek/deepseek-v4.1-flash",
+        "native-http": "deepseek/deepseek-v4.1-flash"
+      }
+    },
+    "z-ai/glm-5.3": {
+      "display_name": "z-ai/glm-5.3",
+      "vendor": "Z.ai",
+      "bias_domain": "zai/glm-family",
+      "runtime": {
+        "native": "z-ai/glm-5.3",
+        "native-http": "z-ai/glm-5.3"
+      }
+    },
+    "xiaomi/mimo-v2.6-pro": {
+      "display_name": "MiMo V2.6 Pro",
+      "vendor": "Xiaomi",
+      "bias_domain": "xiaomi/mimo-family",
+      "runtime": {
+        "native": "xiaomi/mimo-v2.6-pro",
+        "native-http": "xiaomi/mimo-v2.6-pro"
+      }
+    },
+    "gpt-6-sol": {
+      "display_name": "GPT-6 Sol",
+      "vendor": "OpenAI",
+      "bias_domain": "openai/gpt",
+      "runtime": {
+        "codex": "gpt-6-sol",
+        "native": "gpt-6-sol",
+        "native-http": "gpt-6-sol"
+      }
+    },
+    "gpt-6.1-sol": {
+      "display_name": "GPT-6.1 Sol",
+      "vendor": "OpenAI",
+      "bias_domain": "openai/gpt",
+      "runtime": {
+        "codex": "gpt-6.1-sol",
+        "native": "gpt-6.1-sol",
+        "native-http": "gpt-6.1-sol"
+      }
+    },
+    "gpt-6-luna": {
+      "display_name": "GPT-6 Luna",
+      "vendor": "OpenAI",
+      "bias_domain": "openai/gpt",
+      "runtime": {
+        "codex": "gpt-6-luna",
+        "native": "gpt-6-luna",
+        "native-http": "gpt-6-luna"
+      }
+    },
+    "moonshotai/kimi-k3.1-pro": {
+      "display_name": "Kimi K3.1 Pro",
+      "vendor": "Moonshot AI",
+      "bias_domain": "moonshot/kimi-family",
+      "runtime": {
+        "native": "moonshotai/kimi-k3.1-pro",
+        "native-http": "moonshotai/kimi-k3.1-pro"
+      }
+    },
+    "deepseek/deepseek-v4.1-flash-1017": {
+      "display_name": "DeepSeek V4.1 Flash 1017",
+      "vendor": "DeepSeek",
+      "bias_domain": "deepseek/v4-family",
+      "runtime": {
+        "native": "deepseek/deepseek-v4.1-flash-1017",
+        "native-http": "deepseek/deepseek-v4.1-flash-1017"
+      }
+    },
+    "z-ai/glm-5.3-flash": {
+      "display_name": "GLM 5.3 Flash",
+      "vendor": "Z.ai",
+      "bias_domain": "zai/glm-family",
+      "runtime": {
+        "native": "z-ai/glm-5.3-flash",
+        "native-http": "z-ai/glm-5.3-flash"
+      }
+    },
+    "mistralai/mistral-large-4-0": {
+      "display_name": "Mistral Large 4",
+      "vendor": "Mistral",
+      "bias_domain": "mistral/mistral-family",
+      "runtime": {
+        "native": "mistralai/mistral-large-4-0",
+        "native-http": "mistralai/mistral-large-4-0"
+      }
+    },
+    "meta/muse-wonder": {
+      "display_name": "Muse Wonder",
+      "vendor": "Meta",
+      "bias_domain": "meta/muse-family",
+      "runtime": {
+        "native": "meta/muse-wonder",
+        "native-http": "meta/muse-wonder"
+      }
+    },
+    "stepfun/step-5-preview": {
+      "display_name": "Step 5 Preview",
+      "vendor": "StepFun",
+      "bias_domain": "stepfun/step-family",
+      "runtime": {
+        "native": "stepfun/step-5-preview",
+        "native-http": "stepfun/step-5-preview"
+      }
+    },
+    "meta/muse-spark-1.3-contributor": {
+      "display_name": "Muse Spark 1.3 Contributor",
+      "vendor": "Meta",
+      "bias_domain": "meta/muse-family",
+      "runtime": {
+        "native": "meta/muse-spark-1.3-contributor",
+        "native-http": "meta/muse-spark-1.3-contributor"
+      }
+    },
+    "x-ai/grok-4.7": {
+      "display_name": "Grok 4.7",
+      "vendor": "SpaceXAI",
+      "bias_domain": "xai/grok-family",
+      "runtime": {
+        "native": "x-ai/grok-4.7",
+        "native-http": "x-ai/grok-4.7"
+      }
+    },
+    "inclusionai/ling-3.1-flash": {
+      "display_name": "Ling 3.1 Flash",
+      "vendor": "inclusionAI",
+      "bias_domain": "inclusionai/ling-family",
+      "runtime": {
+        "native": "inclusionai/ling-3.1-flash",
+        "native-http": "inclusionai/ling-3.1-flash"
+      }
+    },
+    "qwen/qwen3.8-omni-flash": {
+      "display_name": "Qwen3.8 Omni Flash",
+      "vendor": "Alibaba",
+      "bias_domain": "alibaba/qwen-family",
+      "runtime": {
+        "native": "qwen/qwen3.8-omni-flash",
+        "native-http": "qwen/qwen3.8-omni-flash"
+      }
+    }
+  },
+  "chairs": {
+    "fixed": [
+      {
+        "id": "chair-anthropic-cli",
+        "model": "fable-5",
+        "provider": "Anthropic",
+        "transport": "CLI",
+        "runner": "claude",
+        "quota_domain": "anthropic-cli-plan",
+        "endpoint_domain": "anthropic-cli",
+        "effort": "high",
+        "priority": 1,
+        "slot": "anthropic",
+        "name": "Anthropic Chair",
+        "role": "Adversarial Invariant & Boundary Auditor"
+      },
+      {
+        "id": "chair-openai-cli",
+        "model": "gpt-5.6-sol",
+        "provider": "OpenAI",
+        "transport": "CLI",
+        "runner": "codex",
+        "quota_domain": "openai-codex-plan",
+        "endpoint_domain": "openai-codex-cli",
+        "effort": "high",
+        "priority": 2,
+        "slot": "openai",
+        "name": "OpenAI Chair",
+        "role": "Formal Architecture & Concurrency Auditor"
+      },
+      {
+        "id": "chair-google-cli",
+        "model": "gemini-3.7",
+        "provider": "Google",
+        "transport": "CLI",
+        "runner": "google-cli",
+        "quota_domain": "google-cli-plan",
+        "endpoint_domain": "google-cli",
+        "effort": "high",
+        "priority": 3,
+        "slot": "google",
+        "name": "Google Chair",
+        "role": "System & Logic Consistency Auditor"
+      }
+    ],
+    "fallbacks": [
+      {
+        "id": "chair-kimi-cli",
+        "model": "kimi-k3",
+        "provider": "Kimi",
+        "transport": "CLI",
+        "runner": "kimi-cli",
+        "quota_domain": "kimi-cli-plan",
+        "endpoint_domain": "kimi-cli",
+        "effort": null,
+        "priority": 9,
+        "kind": "quota_fallback"
+      },
+      {
+        "id": "chair-qwen-local",
+        "model": "qwen-3.8-27b",
+        "provider": "Local",
+        "transport": "API",
+        "runner": "native-http",
+        "quota_domain": "local-node-aaaaa",
+        "endpoint_domain": "local-llm-8080",
+        "effort": null,
+        "priority": 12,
+        "kind": "free",
+        "native_counter_protocol": "utf8-envelope-estimate-v1",
+        "native_profile": {
+          "protocol": "openai-chat",
+          "model": "qwen38-gsq",
+          "expected_response_model": "qwen38-gsq",
+          "context_window": 131072,
+          "output_tokens": 16384,
+          "source": "local-labs qwen38-gsq card (NInfer-3090 0.11 f118551, Qwen3.8 27B GSQ-RCO IQ3_S, 128K rk8v4 KV, MTP 3, thinking budget 2048); 12/12 in two paired runs on 2026-09-28 (runs/requalification/NINFER-011-COHORT-2026-09-28); output 16384 like swift27b on the same server, since 6272 cut off whole-file edits",
+          "endpoint": "http://local-gateway:8080/v1",
+          "parameters_json": "{\"temperature\": 1.0, \"top_p\": 0.95, \"presence_penalty\": 0.0, \"seed\": 0, \"chat_template_kwargs\": {\"enable_thinking\": true, \"reasoning_effort\": \"low\"}, \"reasoning_format\": \"deepseek\", \"cache_prompt\": true, \"top_k\": 20, \"min_p\": 0.0, \"repeat_penalty\": 1.0}"
+        },
+        "native_usage_contract": {
+          "layout": "chat-inclusive",
+          "source": "NInfer per-request OpenAI usage; fields absent remain unknown"
+        }
+      },
+      {
+        "id": "chair-fable-tc-local",
+        "model": "fable-tc",
+        "provider": "Local",
+        "transport": "API",
+        "runner": "native-http",
+        "quota_domain": "local-node-aaaaa",
+        "endpoint_domain": "local-llm-8080",
+        "effort": null,
+        "priority": 13,
+        "kind": "red_team",
+        "trigger": "refusal_or_evasion",
+        "native_counter_protocol": "slop-fleet-v1",
+        "native_profile": {
+          "protocol": "openai-chat",
+          "model": "fable-tc",
+          "expected_response_model": "fable-tc",
+          "context_window": 8192,
+          "output_tokens": 1024,
+          "source": "Native local fleet instruct qualification 2026-09-10; bounded text-only mechanism canary; live public profile qualified 2026-09-10; docs/operations/NATIVE_FLEET_COUNT_2026-09-10.md",
+          "endpoint": "http://local-gateway:8080/v1",
+          "template_sha256": "e84f32a23fdda27689f868aa4a1a5621f41133e51a48d7f3efcbea2839574259",
+          "parameters_json": "{\"chat_template_kwargs\": {\"enable_thinking\": false}, \"cache_prompt\": false, \"temperature\": 0.0, \"seed\": 0}"
+        },
+        "native_usage_contract": {
+          "layout": "chat-inclusive",
+          "source": "slop.cpp per-request OpenAI usage; fields absent remain unknown"
+        }
+      }
+    ]
+  },
+  "mediators": [
+    {
+      "id": "mediator-google-cli",
+      "model": "gemini-3.7",
+      "provider": "Google",
+      "transport": "CLI",
+      "runner": "google-cli",
+      "quota_domain": "google-cli-plan",
+      "endpoint_domain": "google-cli",
+      "effort": "high",
+      "priority": 1,
+      "kind": "primary"
+    },
+    {
+      "id": "mediator-openai-cli",
+      "model": "gpt-5.6-sol",
+      "provider": "OpenAI",
+      "transport": "CLI",
+      "runner": "codex",
+      "quota_domain": "openai-codex-plan",
+      "endpoint_domain": "openai-codex-cli",
+      "effort": "high",
+      "priority": 2,
+      "kind": "fallback"
+    },
+    {
+      "id": "mediator-qwen-local",
+      "model": "qwen-3.8-27b",
+      "provider": "Local",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "local-node-aaaaa",
+      "endpoint_domain": "local-llm-8080",
+      "effort": null,
+      "timeout_seconds": 900,
+      "priority": 3,
+      "kind": "fallback_free",
+      "native_counter_protocol": "utf8-envelope-estimate-v1",
+      "native_profile": {
+        "protocol": "openai-chat",
+        "model": "qwen38-gsq",
+        "expected_response_model": "qwen38-gsq",
+        "context_window": 131072,
+        "output_tokens": 16384,
+        "source": "local-labs qwen38-gsq card (NInfer-3090 0.11 f118551, Qwen3.8 27B GSQ-RCO IQ3_S, 128K rk8v4 KV, MTP 3, thinking budget 2048); 12/12 in two paired runs on 2026-09-28 (runs/requalification/NINFER-011-COHORT-2026-09-28); output 16384 like swift27b on the same server, since 6272 cut off whole-file edits",
+        "endpoint": "http://local-gateway:8080/v1",
+        "parameters_json": "{\"temperature\": 1.0, \"top_p\": 0.95, \"presence_penalty\": 0.0, \"seed\": 0, \"chat_template_kwargs\": {\"enable_thinking\": true, \"reasoning_effort\": \"low\"}, \"reasoning_format\": \"deepseek\", \"cache_prompt\": true, \"top_k\": 20, \"min_p\": 0.0, \"repeat_penalty\": 1.0}"
+      },
+      "native_usage_contract": {
+        "layout": "chat-inclusive",
+        "source": "NInfer per-request OpenAI usage; fields absent remain unknown"
+      }
+    },
+    {
+      "id": "mediator-fable-tc-local",
+      "model": "fable-tc",
+      "provider": "Local",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "local-node-aaaaa",
+      "endpoint_domain": "local-llm-8080",
+      "effort": null,
+      "priority": 5,
+      "kind": "fallback_red_team",
+      "trigger": "refusal_or_evasion",
+      "native_counter_protocol": "slop-fleet-v1",
+      "native_profile": {
+        "protocol": "openai-chat",
+        "model": "fable-tc",
+        "expected_response_model": "fable-tc",
+        "context_window": 8192,
+        "output_tokens": 1024,
+        "source": "Native local fleet instruct qualification 2026-09-10; bounded text-only mechanism canary; live public profile qualified 2026-09-10; docs/operations/NATIVE_FLEET_COUNT_2026-09-10.md",
+        "endpoint": "http://local-gateway:8080/v1",
+        "template_sha256": "e84f32a23fdda27689f868aa4a1a5621f41133e51a48d7f3efcbea2839574259",
+        "parameters_json": "{\"chat_template_kwargs\": {\"enable_thinking\": false}, \"cache_prompt\": false, \"temperature\": 0.0, \"seed\": 0}"
+      },
+      "native_usage_contract": {
+        "layout": "chat-inclusive",
+        "source": "slop.cpp per-request OpenAI usage; fields absent remain unknown"
+      }
+    }
+  ],
+  "scribes": [
+    {
+      "id": "scribe-qwen-local",
+      "model": "qwen-3.8-27b",
+      "provider": "Local",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "local-node-aaaaa",
+      "endpoint_domain": "local-llm-8080",
+      "effort": null,
+      "priority": 1,
+      "kind": "free",
+      "native_counter_protocol": "utf8-envelope-estimate-v1",
+      "native_profile": {
+        "protocol": "openai-chat",
+        "model": "qwen38-gsq",
+        "expected_response_model": "qwen38-gsq",
+        "context_window": 131072,
+        "output_tokens": 16384,
+        "source": "local-labs qwen38-gsq card (NInfer-3090 0.11 f118551, Qwen3.8 27B GSQ-RCO IQ3_S, 128K rk8v4 KV, MTP 3, thinking budget 2048); 12/12 in two paired runs on 2026-09-28 (runs/requalification/NINFER-011-COHORT-2026-09-28); output 16384 like swift27b on the same server, since 6272 cut off whole-file edits",
+        "endpoint": "http://local-gateway:8080/v1",
+        "parameters_json": "{\"temperature\": 1.0, \"top_p\": 0.95, \"presence_penalty\": 0.0, \"seed\": 0, \"chat_template_kwargs\": {\"enable_thinking\": true, \"reasoning_effort\": \"low\"}, \"reasoning_format\": \"deepseek\", \"cache_prompt\": true, \"top_k\": 20, \"min_p\": 0.0, \"repeat_penalty\": 1.0}"
+      },
+      "native_usage_contract": {
+        "layout": "chat-inclusive",
+        "source": "NInfer per-request OpenAI usage; fields absent remain unknown"
+      }
+    },
+    {
+      "id": "scribe-anthropic-cli",
+      "model": "claude-opus-5.5",
+      "provider": "Anthropic",
+      "transport": "CLI",
+      "runner": "claude",
+      "quota_domain": "anthropic-cli-plan",
+      "endpoint_domain": "anthropic-cli",
+      "effort": "high",
+      "priority": 2,
+      "kind": "anthropic"
+    },
+    {
+      "id": "scribe-openai-cli",
+      "model": "gpt-5.6-terra",
+      "provider": "OpenAI",
+      "transport": "CLI",
+      "runner": "codex",
+      "quota_domain": "openai-codex-plan",
+      "endpoint_domain": "openai-codex-cli",
+      "effort": "high",
+      "priority": 3,
+      "kind": "openai"
+    },
+    {
+      "id": "scribe-google-cli",
+      "model": "gemini-3.7-medium",
+      "provider": "Google",
+      "transport": "CLI",
+      "runner": "google-cli",
+      "quota_domain": "google-cli-plan",
+      "endpoint_domain": "google-cli",
+      "effort": "medium",
+      "priority": 4,
+      "kind": "google"
+    }
+  ]
+}

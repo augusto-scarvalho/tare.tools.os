@@ -1,0 +1,89 @@
+{
+  "schema": "tare.tools/native-release-inputs/1",
+  "python": "3.12",
+  "source_date_epoch": 1789128444,
+  "build_tools": {
+    "pip": "25.1.1",
+    "setuptools": "80.9.0",
+    "wheel": "0.45.1",
+    "packaging": "25.0"
+  },
+  "sources": [
+    {
+      "id": "runtime",
+      "package": "tare-tools-agent-runtime",
+      "version": "0.14.0",
+      "commit": "3c43280e0f261d92af53b4b8e999f914f965399b",
+      "include": [
+        "pyproject.toml",
+        "README.md",
+        "LICENSE*",
+        "src/**"
+      ]
+    },
+    {
+      "id": "kernel",
+      "package": "tare-kernel",
+      "version": "0.9.15",
+      "commit": "af2a69ca737d719d698b3affb64542b545327ee0",
+      "include": [
+        "pyproject.toml",
+        "README.md",
+        "LICENSE*",
+        "assurance_plane/**",
+        "compute_plane/**",
+        "control_plane/**",
+        "data_plane/**",
+        "experience_plane/**"
+      ]
+    },
+    {
+      "id": "specgraph",
+      "package": "tare-tools-specgraph",
+      "version": "0.7.1",
+      "commit": "52fd9e58efc2472166c06204b7e079862e3be0c3",
+      "include": [
+        "pyproject.toml",
+        "README.md",
+        "LICENSE*",
+        "src/**"
+      ]
+    },
+    {
+      "id": "backlog",
+      "package": "tare-tools-backlog-graph",
+      "version": "1.2.0",
+      "commit": "5f00399bed6921bc132aecc93f62fc03940145e5",
+      "include": [
+        "pyproject.toml",
+        "README.md",
+        "LICENSE*",
+        "src/**"
+      ]
+    },
+    {
+      "id": "os",
+      "package": "tare-tools-os",
+      "version": "0.1.46",
+      "commit": "c1bfe4e0b1dcc8c10d2deb8d917c36e2f8b6243d",
+      "include": [
+        "pyproject.toml",
+        "README.md",
+        "LICENSE*",
+        "tare_ops.py",
+        "relay/*.py",
+        "relay/round_table_roster.json",
+        "relay/role_deployments.json",
+        "relay/retired_aider_deployments.json",
+        "relay/native_deployments/*.json",
+        "schemas/*.json",
+        "scripts/round_table/*.py",
+        "scripts/round_table/*.html",
+        "scripts/ops/build_native_release.py",
+        "schemas/*.py",
+        "relay/model_evidence.json",
+        "scripts/ops/pack_native_release.py"
+      ]
+    }
+  ]
+}

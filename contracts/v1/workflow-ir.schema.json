@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Tare bounded Work workflow IR v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "revision", "nodes"],
+  "properties": {
+    "schema": {"const": "tare.tools/workflow-ir/1"},
+    "revision": {"type": "integer", "minimum": 1},
+    "nodes": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "operator_ref", "depends_on"],
+        "properties": {
+          "id": {"type": "string", "pattern": "\\S"},
+          "operator_ref": {"const": "work.execute/v1"},
+          "depends_on": {
+            "type": "array", "maxItems": 128, "uniqueItems": true,
+            "items": {"type": "string", "pattern": "\\S"}
+          }
+        }
+      }
+    }
+  }
+}

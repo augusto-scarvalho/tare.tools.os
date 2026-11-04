@@ -1,0 +1,1533 @@
+{
+  "schema": "tare.tools/flow20-ab8-result/1",
+  "observed_at": "2026-10-18",
+  "authority": "NONE",
+  "base": "b5df96c228bd72546711295ef41f35f4fff7e9cb",
+  "protocol_sha256": "f85344556558c62630063fb4d962d570316abef22c1910fcf4009605c6118d5e",
+  "model": "gpt-6.1-sol",
+  "connection": "native Codex Responses, existing subscription only; no separately billed API or fallback",
+  "effort": "medium",
+  "model_parameters": {
+    "parallel_tool_calls": true,
+    "reasoning": {
+      "effort": "medium"
+    }
+  },
+  "B_addition": "Faça a menor alteração que satisfaça a obrigação observável, reutilizando os caminhos e primitivas existentes. Evite novos módulos, abstrações, dependências ou APIs quando a correção couber no código atual; preserve o comportamento fora da obrigação.",
+  "sample": "Eight distinct historical OS regressions restored one at a time on the same current Git base, two independent worktrees/sessions per task, one execution per treatment; four AB and four BA pairs. These are controlled replay tasks, not eight new ordinary Works or vendor qualification.",
+  "decision_rule": "A large-effect screening result may justify this instruction only for the sampled task class: at least two fewer material corrective outcomes out of eight, no loss of accepted repairs or safety, and no >20% increase in observed total generation intents/tokens. Missing cost coverage forbids a money-saving claim. Otherwise keep the baseline; negative or inconclusive is terminal and creates no new gate. No significance or generalization claim from eight selected tasks.",
+  "decision": "KEEP_BASELINE_NO_DEMONSTRATED_ADVANTAGE",
+  "budget": {
+    "max_campaign_model_calls": 128,
+    "max_model_calls_per_trial": 8,
+    "max_seconds_per_trial": 180,
+    "max_model_retries": 0,
+    "execution_deviation": {
+      "recorded_at": 1792328189.9163826,
+      "original_max_campaign_seconds": 3600,
+      "max_campaign_seconds": 4800,
+      "reason": "Public navigation, private-driver repairs and independent offline audits consumed the shared wall-clock allowance. Add twenty minutes to finish the originally authorized sixteen cells; no additional trial, model, retry or call allowance. Announced to the operator before the final four trials complete.",
+      "unchanged_max_model_calls": 128,
+      "unchanged_per_trial_calls": 8,
+      "unchanged_per_trial_seconds": 180,
+      "unchanged_decision_rule": true,
+      "completed_pairs_at_recording": 6
+    }
+  },
+  "totals": {
+    "A": {
+      "trials": 8,
+      "generation_intents": 48,
+      "proposed": 8,
+      "incomplete": 0,
+      "accepted": 8,
+      "material_corrective_required": 0,
+      "unjustified_scope": 0,
+      "source_audits": 8,
+      "pre_edit_failed_checks": 8,
+      "post_edit_failed_checks": 0,
+      "wall_ms": 476375.0,
+      "tokens": {
+        "input_tokens": {
+          "known_sum": 411792,
+          "unknown_calls": 0
+        },
+        "output_tokens": {
+          "known_sum": 9145,
+          "unknown_calls": 0
+        },
+        "total_tokens": {
+          "known_sum": 420937,
+          "unknown_calls": 0
+        },
+        "cache_read_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 0
+        },
+        "cache_write_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 0
+        }
+      },
+      "retry_intents": 0,
+      "monetary_cost": null,
+      "subscription_quota": null,
+      "physical_model_attempts": null
+    },
+    "B": {
+      "trials": 8,
+      "generation_intents": 50,
+      "proposed": 7,
+      "incomplete": 1,
+      "accepted": 7,
+      "material_corrective_required": 0,
+      "unjustified_scope": 0,
+      "source_audits": 8,
+      "pre_edit_failed_checks": 8,
+      "post_edit_failed_checks": 1,
+      "wall_ms": 478340.0,
+      "tokens": {
+        "input_tokens": {
+          "known_sum": 434941,
+          "unknown_calls": 0
+        },
+        "output_tokens": {
+          "known_sum": 7933,
+          "unknown_calls": 0
+        },
+        "total_tokens": {
+          "known_sum": 442874,
+          "unknown_calls": 0
+        },
+        "cache_read_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 0
+        },
+        "cache_write_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 0
+        }
+      },
+      "retry_intents": 0,
+      "monetary_cost": null,
+      "subscription_quota": null,
+      "physical_model_attempts": null
+    }
+  },
+  "comparison_calls": 98,
+  "all_model_intents_including_pilots": 106,
+  "excluded_pilot": {
+    "reason": "An archived explicit profile disabled grouped tools, unlike current GPT-6.1 native defaults. The legacy-profile pilot (8 calls) is retained and excluded from the AB8 effect comparison. No trial B was dispatched under that profile.",
+    "calls": 8,
+    "usage": {
+      "generation_intents": 8,
+      "summary_intents": 0,
+      "retry_intents": 0,
+      "not_started": 0,
+      "tokens": {
+        "input_tokens": {
+          "known_sum": 64265,
+          "unknown_calls": 0
+        },
+        "uncached_input_tokens": {
+          "known_sum": 58505,
+          "unknown_calls": 0
+        },
+        "cache_read_tokens": {
+          "known_sum": 5760,
+          "unknown_calls": 0
+        },
+        "cache_write_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 0
+        },
+        "output_tokens": {
+          "known_sum": 750,
+          "unknown_calls": 0
+        },
+        "reasoning_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 0
+        },
+        "total_tokens": {
+          "known_sum": 65015,
+          "unknown_calls": 0
+        }
+      },
+      "known_cost_by_currency": {},
+      "unpriced_or_partial_calls": 8,
+      "subscription_quota": "unknown"
+    }
+  },
+  "independent_audit_executions": 16,
+  "distinct_immutable_audit_tests": 164,
+  "cases": [
+    {
+      "id": "01-argv",
+      "fix": "1246c7e59a1e4e0dab7ab863d0b626584f29207d",
+      "production": [
+        "relay/agent.py",
+        "relay/native_agent.py",
+        "relay/native_installation.py"
+      ],
+      "tests": [
+        "tests/test_verifier_passthrough.py"
+      ],
+      "test_functions": [
+        "test_nested_verifier_argv_crosses_public_entries_unchanged"
+      ],
+      "order": [
+        "A",
+        "B"
+      ],
+      "verification_nodes": [
+        "tests/test_verifier_passthrough.py::test_nested_verifier_argv_crosses_public_entries_unchanged"
+      ]
+    },
+    {
+      "id": "02-paths",
+      "fix": "095a506a50ef6c9d2abbd1e34c587eb2cd7d288e",
+      "production": [
+        "relay/native_console.py",
+        "relay/native_plan.py"
+      ],
+      "tests": [
+        "tests/test_native_plan.py"
+      ],
+      "test_functions": [
+        "test_plan_review_keeps_literal_windows_graph_path_and_rows"
+      ],
+      "order": [
+        "B",
+        "A"
+      ],
+      "verification_nodes": [
+        "tests/test_native_plan.py::test_plan_review_keeps_literal_windows_graph_path_and_rows",
+        "tests/test_native_plan.py::test_exact_patch_preserves_existing_graph_and_retry_does_not_duplicate",
+        "tests/test_native_plan.py::test_changed_inputs_or_unaccepted_review_never_mutate_graph"
+      ]
+    },
+    {
+      "id": "03-roles",
+      "fix": "ea993c9600a1571c6503b881f4691fb3ea6da2ff",
+      "production": [
+        "relay/console_permissions.py",
+        "relay/native_console.py"
+      ],
+      "tests": [
+        "tests/test_console_permissions.py"
+      ],
+      "test_functions": [
+        "test_role_change_updates_terminal_before_queued_select_messages"
+      ],
+      "order": [
+        "A",
+        "B"
+      ],
+      "verification_nodes": [
+        "tests/test_console_permissions.py::test_role_change_updates_terminal_before_queued_select_messages",
+        "tests/test_console_permissions.py::test_new_terminal_session_rejects_read_only_role_before_allocating_session",
+        "tests/test_console_permissions.py::test_terminal_control_tracks_read_only_permissions_and_role_changes"
+      ]
+    },
+    {
+      "id": "04-paint",
+      "fix": "0134257705e59da7040ac5152336c971b63d782b",
+      "production": [
+        "relay/console_output.py"
+      ],
+      "tests": [
+        "tests/test_console_results.py"
+      ],
+      "test_functions": [
+        "test_reply_is_visible_before_deferred_layout_notifications"
+      ],
+      "order": [
+        "B",
+        "A"
+      ],
+      "verification_nodes": [
+        "tests/test_console_results.py::test_reply_is_visible_before_deferred_layout_notifications",
+        "tests/test_console_results.py::test_result_summary_cannot_promote_model_claims_or_stale_checks"
+      ]
+    },
+    {
+      "id": "05-review",
+      "fix": "92f6fde6a3d8389aba55467565c15bf477853e7c",
+      "production": [
+        "relay/order_console.py"
+      ],
+      "tests": [
+        "tests/test_work_order.py"
+      ],
+      "test_functions": [
+        "test_stale_console_confirmation_requires_a_new_preview"
+      ],
+      "order": [
+        "A",
+        "B"
+      ],
+      "verification_nodes": [
+        "tests/test_work_order.py::test_stale_console_confirmation_requires_a_new_preview",
+        "tests/test_work_order.py::test_batch_reorder_preserves_completed_nodes_and_existing_edge_evidence",
+        "tests/test_work_order.py::test_review_names_graph_revision_proposal_and_blockers"
+      ]
+    },
+    {
+      "id": "06-pause",
+      "fix": "b6c7260c6e96029651a9e55f295256d6382b1e82",
+      "production": [
+        "relay/native_console.py"
+      ],
+      "tests": [
+        "tests/test_console_work_control.py"
+      ],
+      "test_functions": [
+        "test_idle_pause_never_enqueues_a_request_without_a_local_runner"
+      ],
+      "order": [
+        "B",
+        "A"
+      ],
+      "verification_nodes": [
+        "tests/test_console_work_control.py::test_idle_pause_never_enqueues_a_request_without_a_local_runner",
+        "tests/test_console_work_control.py::test_busy_pause_uses_active_selection_and_deduplicates_clicks",
+        "tests/test_console_work_control.py::test_explicit_resume_cas_before_execution"
+      ]
+    },
+    {
+      "id": "07-refresh",
+      "fix": "1b55f3d28ceb237e1cfcac2f6358edbeff6e60fd",
+      "production": [
+        "relay/native_console.py"
+      ],
+      "tests": [
+        "tests/test_console_work_control.py"
+      ],
+      "test_functions": [
+        "test_execution_receipt_replaces_the_previous_resume_control_message"
+      ],
+      "order": [
+        "A",
+        "B"
+      ],
+      "verification_nodes": [
+        "tests/test_console_work_control.py::test_execution_receipt_replaces_the_previous_resume_control_message",
+        "tests/test_console_work_control.py::test_busy_pause_uses_active_selection_and_deduplicates_clicks",
+        "tests/test_console_work_control.py::test_explicit_resume_cas_before_execution"
+      ]
+    },
+    {
+      "id": "08-identity",
+      "fix": "7fb193341bfd26c52b70b87a5dc3c21d76e24438",
+      "production": [
+        "relay/native_backlog.py"
+      ],
+      "tests": [
+        "tests/test_native_backlog.py"
+      ],
+      "test_functions": [
+        "test_tool_read_exposes_only_referenced_context_with_shared_byte_limit",
+        "test_selected_source_records_remain_readable_when_the_bound_graph_exceeds_the_file_reader_limit"
+      ],
+      "order": [
+        "B",
+        "A"
+      ],
+      "verification_nodes": [
+        "tests/test_native_backlog.py::test_tool_read_exposes_only_referenced_context_with_shared_byte_limit",
+        "tests/test_native_backlog.py::test_selected_source_records_remain_readable_when_the_bound_graph_exceeds_the_file_reader_limit",
+        "tests/test_native_backlog.py::test_direct_progress_then_delivery_and_resume_without_shell",
+        "tests/test_native_backlog.py::test_graph_binding_does_not_grant_edit_authority"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "case": "01-argv",
+      "condition": "A",
+      "native_status": "PROPOSED",
+      "reason": "DELIVERY_PROPOSED",
+      "model_calls": 5,
+      "audit_passed": true,
+      "current_successful_check": true,
+      "pre_edit_failed_checks": 1,
+      "post_edit_failed_checks": 0,
+      "changed_files": [
+        "relay/agent.py",
+        "relay/native_agent.py",
+        "relay/native_installation.py"
+      ],
+      "patch_bytes": 3612,
+      "patch_sha256": "62ddbc350bc244799345ec4fad61a4aa9e58d44fce5413200d3dfa01cda1f4a3",
+      "test_hashes_unchanged": true,
+      "source_audit": {
+        "functional_obligation_passed": true,
+        "unjustified_scope": false,
+        "material_corrective_required": false,
+        "accepted": true,
+        "reason": "All six public-entry cases pass. The three authorized parser changes protect the verifier suffix and OS binding; help text documents that same contract. Native proposal has a successful configured check after the final edit. No new dependency, public surface, test edit or unrelated behavior. The pre-edit failing reproducer is not corrective work."
+      },
+      "usage": {
+        "generation_intents": 5,
+        "summary_intents": 0,
+        "retry_intents": 0,
+        "not_started": 0,
+        "tokens": {
+          "input_tokens": {
+            "known_sum": 46837,
+            "unknown_calls": 0
+          },
+          "uncached_input_tokens": {
+            "known_sum": 46837,
+            "unknown_calls": 0
+          },
+          "cache_read_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "cache_write_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "output_tokens": {
+            "known_sum": 1557,
+            "unknown_calls": 0
+          },
+          "reasoning_tokens": {
+            "known_sum": 230,
+            "unknown_calls": 0
+          },
+          "total_tokens": {
+            "known_sum": 48394,
+            "unknown_calls": 0
+          }
+        },
+        "known_cost_by_currency": {},
+        "unpriced_or_partial_calls": 5,
+        "subscription_quota": "unknown"
+      },
+      "wall_ms": 50816.0,
+      "prompt_sha256": "45372339ec7a58f8be81540d874d50552a1992c5b5bd8caf2f63e824e5e1568d",
+      "test_hashes": {
+        "tests/test_verifier_passthrough.py": "73ad1d4fa37ea039ebdafdb77b65a1f51a80b1ef5d88cb0c303697c8a0c396c4"
+      },
+      "seed_hashes": {
+        "relay/agent.py": "49b1db92014e0757736219bd9754d8fce9b89863018ab2999e41adeec978b776",
+        "relay/native_agent.py": "17608e69a83b0bb3f7ca6c6140f26234ce4a485473acf0c245ef1d7d4b7938cb",
+        "relay/native_installation.py": "9fc128b42c6e7f6e0b199d49ca752e32bc3f1af667becac00266c4a79f17e188"
+      },
+      "instructions_sha256": "9ecd89e41b1a21292476c5e17da22f38d1cfc661619842a3f00d9280c2484f3b"
+    },
+    {
+      "case": "01-argv",
+      "condition": "B",
+      "native_status": "PROPOSED",
+      "reason": "DELIVERY_PROPOSED",
+      "model_calls": 5,
+      "audit_passed": true,
+      "current_successful_check": true,
+      "pre_edit_failed_checks": 1,
+      "post_edit_failed_checks": 0,
+      "changed_files": [
+        "relay/agent.py",
+        "relay/native_agent.py",
+        "relay/native_installation.py"
+      ],
+      "patch_bytes": 3580,
+      "patch_sha256": "3ffcdb5abbe6d64b5cd9bdaae5f445050a0537384ad4173f24290cab30302d47",
+      "test_hashes_unchanged": true,
+      "source_audit": {
+        "functional_obligation_passed": true,
+        "unjustified_scope": false,
+        "material_corrective_required": false,
+        "accepted": true,
+        "reason": "All six public-entry cases pass. The three authorized parser changes protect the verifier suffix and OS binding; help text documents that same contract. Native proposal has a successful configured check after the final edit. No new dependency, public surface, test edit or unrelated behavior. The pre-edit failing reproducer is not corrective work."
+      },
+      "usage": {
+        "generation_intents": 5,
+        "summary_intents": 0,
+        "retry_intents": 0,
+        "not_started": 0,
+        "tokens": {
+          "input_tokens": {
+            "known_sum": 46551,
+            "unknown_calls": 0
+          },
+          "uncached_input_tokens": {
+            "known_sum": 46551,
+            "unknown_calls": 0
+          },
+          "cache_read_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "cache_write_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "output_tokens": {
+            "known_sum": 1353,
+            "unknown_calls": 0
+          },
+          "reasoning_tokens": {
+            "known_sum": 72,
+            "unknown_calls": 0
+          },
+          "total_tokens": {
+            "known_sum": 47904,
+            "unknown_calls": 0
+          }
+        },
+        "known_cost_by_currency": {},
+        "unpriced_or_partial_calls": 5,
+        "subscription_quota": "unknown"
+      },
+      "wall_ms": 54563.0,
+      "prompt_sha256": "eb29d7d29a1594a9dd347b7c29488c17cac1b37c040553860261c1f7ec3241f8",
+      "test_hashes": {
+        "tests/test_verifier_passthrough.py": "73ad1d4fa37ea039ebdafdb77b65a1f51a80b1ef5d88cb0c303697c8a0c396c4"
+      },
+      "seed_hashes": {
+        "relay/agent.py": "49b1db92014e0757736219bd9754d8fce9b89863018ab2999e41adeec978b776",
+        "relay/native_agent.py": "17608e69a83b0bb3f7ca6c6140f26234ce4a485473acf0c245ef1d7d4b7938cb",
+        "relay/native_installation.py": "9fc128b42c6e7f6e0b199d49ca752e32bc3f1af667becac00266c4a79f17e188"
+      },
+      "instructions_sha256": "9ecd89e41b1a21292476c5e17da22f38d1cfc661619842a3f00d9280c2484f3b"
+    },
+    {
+      "case": "02-paths",
+      "condition": "A",
+      "native_status": "PROPOSED",
+      "reason": "DELIVERY_PROPOSED",
+      "model_calls": 8,
+      "audit_passed": true,
+      "current_successful_check": true,
+      "pre_edit_failed_checks": 1,
+      "post_edit_failed_checks": 0,
+      "changed_files": [
+        "relay/native_console.py"
+      ],
+      "patch_bytes": 1545,
+      "patch_sha256": "e629df5bd9026d01f5cde945061bbe7b23d511652b3daefc10ca3bf6907a45f8",
+      "test_hashes_unchanged": true,
+      "source_audit": {
+        "functional_obligation_passed": true,
+        "unjustified_scope": false,
+        "material_corrective_required": false,
+        "accepted": true,
+        "current_successful_check": true,
+        "reason": "Selectable literal PLAN review preserves the existing evidence activity. Full-module checks and native delivery pass; no edits outside show_plan/import of its existing widget."
+      },
+      "usage": {
+        "generation_intents": 8,
+        "summary_intents": 0,
+        "retry_intents": 0,
+        "not_started": 0,
+        "tokens": {
+          "input_tokens": {
+            "known_sum": 73799,
+            "unknown_calls": 0
+          },
+          "uncached_input_tokens": {
+            "known_sum": 73799,
+            "unknown_calls": 0
+          },
+          "cache_read_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "cache_write_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "output_tokens": {
+            "known_sum": 1086,
+            "unknown_calls": 0
+          },
+          "reasoning_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "total_tokens": {
+            "known_sum": 74885,
+            "unknown_calls": 0
+          }
+        },
+        "known_cost_by_currency": {},
+        "unpriced_or_partial_calls": 8,
+        "subscription_quota": "unknown"
+      },
+      "wall_ms": 58590.0,
+      "prompt_sha256": "68f10246b10b1faf90fb116036fb78d1c55dec42a14468a0e03ce9fb57b9450a",
+      "test_hashes": {
+        "tests/test_native_plan.py": "d643309aa769ed505d3ad8c3e418144dbe2327067d829a3e9e8610a408b597be"
+      },
+      "seed_hashes": {
+        "relay/native_console.py": "56cc0a2d2aec4c8d06fba27566345b34e714eb4b8a548fefe197245ad175e7fc",
+        "relay/native_plan.py": "1242c88320caa1591a247fa22c10deceaba22d41468c4083ea3b7889170629e7"
+      },
+      "instructions_sha256": "9ecd89e41b1a21292476c5e17da22f38d1cfc661619842a3f00d9280c2484f3b"
+    },
+    {
+      "case": "02-paths",
+      "condition": "B",
+      "native_status": "EXHAUSTED",
+      "reason": "MODEL_CALL_BUDGET",
+      "model_calls": 8,
+      "audit_passed": true,
+      "current_successful_check": true,
+      "pre_edit_failed_checks": 1,
+      "post_edit_failed_checks": 1,
+      "changed_files": [
+        "relay/native_console.py"
+      ],
+      "patch_bytes": 1003,
+      "patch_sha256": "6086c2b88cb96b1696a3138cc726a2beb6372e50c00413522bf34ad30fd484c7",
+      "test_hashes_unchanged": true,
+      "source_audit": {
+        "functional_obligation_passed": true,
+        "unjustified_scope": false,
+        "material_corrective_required": false,
+        "accepted": false,
+        "incomplete_delivery": true,
+        "reason": "The literal selectable PLAN review is implemented through existing SelectableMessage and plain rendering in the authorized show_plan path. All full-module tests pass, with no test/dependency/public API changes. The native run exhausted its call budget after successful verification and did not close delivery; this is an incomplete proposal, not a code-defect claim or an accepted repair."
+      },
+      "usage": {
+        "generation_intents": 8,
+        "summary_intents": 0,
+        "retry_intents": 0,
+        "not_started": 0,
+        "tokens": {
+          "input_tokens": {
+            "known_sum": 76669,
+            "unknown_calls": 0
+          },
+          "uncached_input_tokens": {
+            "known_sum": 76669,
+            "unknown_calls": 0
+          },
+          "cache_read_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "cache_write_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "output_tokens": {
+            "known_sum": 966,
+            "unknown_calls": 0
+          },
+          "reasoning_tokens": {
+            "known_sum": 24,
+            "unknown_calls": 0
+          },
+          "total_tokens": {
+            "known_sum": 77635,
+            "unknown_calls": 0
+          }
+        },
+        "known_cost_by_currency": {},
+        "unpriced_or_partial_calls": 8,
+        "subscription_quota": "unknown"
+      },
+      "wall_ms": 77457.0,
+      "prompt_sha256": "5c36d1b3cb0b644d9eae4a1263bb70b28ae2a5c178efffc19ddc5d98189cdef6",
+      "test_hashes": {
+        "tests/test_native_plan.py": "d643309aa769ed505d3ad8c3e418144dbe2327067d829a3e9e8610a408b597be"
+      },
+      "seed_hashes": {
+        "relay/native_console.py": "56cc0a2d2aec4c8d06fba27566345b34e714eb4b8a548fefe197245ad175e7fc",
+        "relay/native_plan.py": "1242c88320caa1591a247fa22c10deceaba22d41468c4083ea3b7889170629e7"
+      },
+      "instructions_sha256": "9ecd89e41b1a21292476c5e17da22f38d1cfc661619842a3f00d9280c2484f3b"
+    },
+    {
+      "case": "03-roles",
+      "condition": "A",
+      "native_status": "PROPOSED",
+      "reason": "DELIVERY_PROPOSED",
+      "model_calls": 6,
+      "audit_passed": true,
+      "current_successful_check": true,
+      "pre_edit_failed_checks": 1,
+      "post_edit_failed_checks": 0,
+      "changed_files": [
+        "relay/console_permissions.py",
+        "relay/native_console.py"
+      ],
+      "patch_bytes": 3517,
+      "patch_sha256": "41bc1515c2415e17001c2c50fa9ab30448be4e0abfb329b252d393f3dd849c89",
+      "test_hashes_unchanged": true,
+      "source_audit": {
+        "functional_obligation_passed": true,
+        "unjustified_scope": false,
+        "material_corrective_required": false,
+        "accepted": true,
+        "current_successful_check": true,
+        "reason": "The additional local Select subclass observes role values synchronously and preserves busy/permission behavior. Full current tests pass. Its private Textual override is an observed maintenance difference, not by itself a material defect or an unrelated-scope finding."
+      },
+      "usage": {
+        "generation_intents": 6,
+        "summary_intents": 0,
+        "retry_intents": 0,
+        "not_started": 0,
+        "tokens": {
+          "input_tokens": {
+            "known_sum": 63096,
+            "unknown_calls": 0
+          },
+          "uncached_input_tokens": {
+            "known_sum": 63096,
+            "unknown_calls": 0
+          },
+          "cache_read_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "cache_write_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "output_tokens": {
+            "known_sum": 1353,
+            "unknown_calls": 0
+          },
+          "reasoning_tokens": {
+            "known_sum": 115,
+            "unknown_calls": 0
+          },
+          "total_tokens": {
+            "known_sum": 64449,
+            "unknown_calls": 0
+          }
+        },
+        "known_cost_by_currency": {},
+        "unpriced_or_partial_calls": 6,
+        "subscription_quota": "unknown"
+      },
+      "wall_ms": 70147.0,
+      "prompt_sha256": "0f46524c414d800fd20ea862bbe20034be8351a638afb50a851365b0adc6da95",
+      "test_hashes": {
+        "tests/test_console_permissions.py": "6f4ca4b6c4218440369acc7e4752e11e5ea4375231901bb7e6da51202be6f9d3"
+      },
+      "seed_hashes": {
+        "relay/console_permissions.py": "8c7f0e3e7b5c19de4e8d02d3f221fca951aeb933acfa68a73755b30a940e3319",
+        "relay/native_console.py": "3f7d0c46e26e1cf7b659af1e95b8088ab277c703e4c0e17cd93149fba839d4d2"
+      },
+      "instructions_sha256": "9ecd89e41b1a21292476c5e17da22f38d1cfc661619842a3f00d9280c2484f3b"
+    },
+    {
+      "case": "03-roles",
+      "condition": "B",
+      "native_status": "PROPOSED",
+      "reason": "DELIVERY_PROPOSED",
+      "model_calls": 7,
+      "audit_passed": true,
+      "current_successful_check": true,
+      "pre_edit_failed_checks": 1,
+      "post_edit_failed_checks": 0,
+      "changed_files": [
+        "relay/console_permissions.py",
+        "relay/native_console.py"
+      ],
+      "patch_bytes": 1866,
+      "patch_sha256": "c3907e80afb7fafec64fbeb14af0821ccd17bdbbc551b6aee44f16939d9c2101",
+      "test_hashes_unchanged": true,
+      "source_audit": {
+        "functional_obligation_passed": true,
+        "unjustified_scope": false,
+        "material_corrective_required": false,
+        "accepted": true,
+        "current_successful_check": true,
+        "reason": "Uses Textual watch and the existing permission synchronizer for the required role/busy transitions. All full-module tests pass; no new subclass or unrelated edits."
+      },
+      "usage": {
+        "generation_intents": 7,
+        "summary_intents": 0,
+        "retry_intents": 0,
+        "not_started": 0,
+        "tokens": {
+          "input_tokens": {
+            "known_sum": 77004,
+            "unknown_calls": 0
+          },
+          "uncached_input_tokens": {
+            "known_sum": 77004,
+            "unknown_calls": 0
+          },
+          "cache_read_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "cache_write_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "output_tokens": {
+            "known_sum": 1119,
+            "unknown_calls": 0
+          },
+          "reasoning_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "total_tokens": {
+            "known_sum": 78123,
+            "unknown_calls": 0
+          }
+        },
+        "known_cost_by_currency": {},
+        "unpriced_or_partial_calls": 7,
+        "subscription_quota": "unknown"
+      },
+      "wall_ms": 48981.0,
+      "prompt_sha256": "0943c64e4e21f8b841ddf839f06ceb47cfd86d31e29ad18633936e27f3573a5e",
+      "test_hashes": {
+        "tests/test_console_permissions.py": "6f4ca4b6c4218440369acc7e4752e11e5ea4375231901bb7e6da51202be6f9d3"
+      },
+      "seed_hashes": {
+        "relay/console_permissions.py": "8c7f0e3e7b5c19de4e8d02d3f221fca951aeb933acfa68a73755b30a940e3319",
+        "relay/native_console.py": "3f7d0c46e26e1cf7b659af1e95b8088ab277c703e4c0e17cd93149fba839d4d2"
+      },
+      "instructions_sha256": "9ecd89e41b1a21292476c5e17da22f38d1cfc661619842a3f00d9280c2484f3b"
+    },
+    {
+      "case": "04-paint",
+      "condition": "A",
+      "native_status": "PROPOSED",
+      "reason": "DELIVERY_PROPOSED",
+      "model_calls": 5,
+      "audit_passed": true,
+      "current_successful_check": true,
+      "pre_edit_failed_checks": 1,
+      "post_edit_failed_checks": 0,
+      "changed_files": [
+        "relay/console_output.py"
+      ],
+      "patch_bytes": 1772,
+      "patch_sha256": "197177c8efcdf80afa7af1be25726277e4e1660e91ea96018fddef699e888c18",
+      "test_hashes_unchanged": true,
+      "source_audit": {
+        "functional_obligation_passed": true,
+        "unjustified_scope": false,
+        "material_corrective_required": false,
+        "accepted": true,
+        "reason": "Paints immediately on mount with a bounded ancestor-width fallback, and reconciles actual width during render and Resize. The full immutable result-rendering suite passes. The extra render override is a maintenance difference serving the obligation, not a material defect by itself."
+      },
+      "usage": {
+        "generation_intents": 5,
+        "summary_intents": 0,
+        "retry_intents": 0,
+        "not_started": 0,
+        "tokens": {
+          "input_tokens": {
+            "known_sum": 43419,
+            "unknown_calls": 0
+          },
+          "uncached_input_tokens": {
+            "known_sum": 43419,
+            "unknown_calls": 0
+          },
+          "cache_read_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "cache_write_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "output_tokens": {
+            "known_sum": 1205,
+            "unknown_calls": 0
+          },
+          "reasoning_tokens": {
+            "known_sum": 217,
+            "unknown_calls": 0
+          },
+          "total_tokens": {
+            "known_sum": 44624,
+            "unknown_calls": 0
+          }
+        },
+        "known_cost_by_currency": {},
+        "unpriced_or_partial_calls": 5,
+        "subscription_quota": "unknown"
+      },
+      "wall_ms": 51169.0,
+      "prompt_sha256": "dc1d200df8c727e692b49c076dfdc7dda56436269311e25daa3c0007d0bda65f",
+      "test_hashes": {
+        "tests/test_console_results.py": "cd23d29f3ba52e6cce21373509f03a48ebe60afef673562475ed297cf8df2b3f"
+      },
+      "seed_hashes": {
+        "relay/console_output.py": "580a2ec606ee73e0313d09fdb35404a416ff33d814ba3eac56e8b1c3b7b6e87b"
+      },
+      "instructions_sha256": "9ecd89e41b1a21292476c5e17da22f38d1cfc661619842a3f00d9280c2484f3b"
+    },
+    {
+      "case": "04-paint",
+      "condition": "B",
+      "native_status": "PROPOSED",
+      "reason": "DELIVERY_PROPOSED",
+      "model_calls": 6,
+      "audit_passed": true,
+      "current_successful_check": true,
+      "pre_edit_failed_checks": 1,
+      "post_edit_failed_checks": 0,
+      "changed_files": [
+        "relay/console_output.py"
+      ],
+      "patch_bytes": 1112,
+      "patch_sha256": "0e78c8fb03fb86d5664e90c3e8ceabd000ec814d5f3c6988f1e673679899f085",
+      "test_hashes_unchanged": true,
+      "source_audit": {
+        "functional_obligation_passed": true,
+        "unjustified_scope": false,
+        "material_corrective_required": false,
+        "accepted": true,
+        "reason": "Paints immediately on mount using the existing console width until Resize supplies the widget width. The full immutable suite checks initial nested content, literal selection and later reflow. No unrelated scope or new API."
+      },
+      "usage": {
+        "generation_intents": 6,
+        "summary_intents": 0,
+        "retry_intents": 0,
+        "not_started": 0,
+        "tokens": {
+          "input_tokens": {
+            "known_sum": 50747,
+            "unknown_calls": 0
+          },
+          "uncached_input_tokens": {
+            "known_sum": 50747,
+            "unknown_calls": 0
+          },
+          "cache_read_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "cache_write_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "output_tokens": {
+            "known_sum": 908,
+            "unknown_calls": 0
+          },
+          "reasoning_tokens": {
+            "known_sum": 46,
+            "unknown_calls": 0
+          },
+          "total_tokens": {
+            "known_sum": 51655,
+            "unknown_calls": 0
+          }
+        },
+        "known_cost_by_currency": {},
+        "unpriced_or_partial_calls": 6,
+        "subscription_quota": "unknown"
+      },
+      "wall_ms": 49725.0,
+      "prompt_sha256": "60b5e0c533c51c677f0ec927f270e43baf418500efdc71733d6ae166e8f4e028",
+      "test_hashes": {
+        "tests/test_console_results.py": "cd23d29f3ba52e6cce21373509f03a48ebe60afef673562475ed297cf8df2b3f"
+      },
+      "seed_hashes": {
+        "relay/console_output.py": "580a2ec606ee73e0313d09fdb35404a416ff33d814ba3eac56e8b1c3b7b6e87b"
+      },
+      "instructions_sha256": "9ecd89e41b1a21292476c5e17da22f38d1cfc661619842a3f00d9280c2484f3b"
+    },
+    {
+      "case": "05-review",
+      "condition": "A",
+      "native_status": "PROPOSED",
+      "reason": "DELIVERY_PROPOSED",
+      "model_calls": 6,
+      "audit_passed": true,
+      "current_successful_check": true,
+      "pre_edit_failed_checks": 1,
+      "post_edit_failed_checks": 0,
+      "changed_files": [
+        "relay/order_console.py"
+      ],
+      "patch_bytes": 679,
+      "patch_sha256": "914c03b239db9a2b91093a1913a48577c0a950f22434a22e7ec89425cc83b02e",
+      "test_hashes_unchanged": true,
+      "source_audit": {
+        "functional_obligation_passed": true,
+        "unjustified_scope": false,
+        "material_corrective_required": false,
+        "accepted": true,
+        "reason": "Consumes confirmable preview in finally on both success and failure; success already clears the draft, while failure preserves it for a new preview. Full immutable work-order tests pass, including refusal and fresh preview."
+      },
+      "usage": {
+        "generation_intents": 6,
+        "summary_intents": 0,
+        "retry_intents": 0,
+        "not_started": 0,
+        "tokens": {
+          "input_tokens": {
+            "known_sum": 37351,
+            "unknown_calls": 0
+          },
+          "uncached_input_tokens": {
+            "known_sum": 37351,
+            "unknown_calls": 0
+          },
+          "cache_read_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "cache_write_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "output_tokens": {
+            "known_sum": 885,
+            "unknown_calls": 0
+          },
+          "reasoning_tokens": {
+            "known_sum": 75,
+            "unknown_calls": 0
+          },
+          "total_tokens": {
+            "known_sum": 38236,
+            "unknown_calls": 0
+          }
+        },
+        "known_cost_by_currency": {},
+        "unpriced_or_partial_calls": 6,
+        "subscription_quota": "unknown"
+      },
+      "wall_ms": 51298.0,
+      "prompt_sha256": "91fc63b153abf3c31cd86191960a46d49afd38da7af759ed7aafdef371049217",
+      "test_hashes": {
+        "tests/test_work_order.py": "25d4793bc91fe76eae8571b0533707515735e055306b633c3c09b44162457eb5"
+      },
+      "seed_hashes": {
+        "relay/order_console.py": "2f305937748f315cee2e6046a22c80e5e5a9130c556f026addb426e2b718d5f5"
+      },
+      "instructions_sha256": "9ecd89e41b1a21292476c5e17da22f38d1cfc661619842a3f00d9280c2484f3b"
+    },
+    {
+      "case": "05-review",
+      "condition": "B",
+      "native_status": "PROPOSED",
+      "reason": "DELIVERY_PROPOSED",
+      "model_calls": 6,
+      "audit_passed": true,
+      "current_successful_check": true,
+      "pre_edit_failed_checks": 1,
+      "post_edit_failed_checks": 0,
+      "changed_files": [
+        "relay/order_console.py"
+      ],
+      "patch_bytes": 951,
+      "patch_sha256": "e0e1b1fb34550c9a0794f67b6ccc287f72e3412d07dfd1a34817b7b154c5051b",
+      "test_hashes_unchanged": true,
+      "source_audit": {
+        "functional_obligation_passed": true,
+        "unjustified_scope": false,
+        "material_corrective_required": false,
+        "accepted": true,
+        "reason": "Clears the confirmable preview and timer specifically on refusal, preserving the draft and the existing successful apply behavior. Full immutable work-order tests pass, including refusal and fresh preview."
+      },
+      "usage": {
+        "generation_intents": 6,
+        "summary_intents": 0,
+        "retry_intents": 0,
+        "not_started": 0,
+        "tokens": {
+          "input_tokens": {
+            "known_sum": 38647,
+            "unknown_calls": 0
+          },
+          "uncached_input_tokens": {
+            "known_sum": 38647,
+            "unknown_calls": 0
+          },
+          "cache_read_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "cache_write_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "output_tokens": {
+            "known_sum": 733,
+            "unknown_calls": 0
+          },
+          "reasoning_tokens": {
+            "known_sum": 20,
+            "unknown_calls": 0
+          },
+          "total_tokens": {
+            "known_sum": 39380,
+            "unknown_calls": 0
+          }
+        },
+        "known_cost_by_currency": {},
+        "unpriced_or_partial_calls": 6,
+        "subscription_quota": "unknown"
+      },
+      "wall_ms": 41132.0,
+      "prompt_sha256": "d532f924507e3629ca67187a3c897e786ac9e9901acece5cafe59921e4c6f094",
+      "test_hashes": {
+        "tests/test_work_order.py": "25d4793bc91fe76eae8571b0533707515735e055306b633c3c09b44162457eb5"
+      },
+      "seed_hashes": {
+        "relay/order_console.py": "2f305937748f315cee2e6046a22c80e5e5a9130c556f026addb426e2b718d5f5"
+      },
+      "instructions_sha256": "9ecd89e41b1a21292476c5e17da22f38d1cfc661619842a3f00d9280c2484f3b"
+    },
+    {
+      "case": "06-pause",
+      "condition": "A",
+      "native_status": "PROPOSED",
+      "reason": "DELIVERY_PROPOSED",
+      "model_calls": 6,
+      "audit_passed": true,
+      "current_successful_check": true,
+      "pre_edit_failed_checks": 1,
+      "post_edit_failed_checks": 0,
+      "changed_files": [
+        "relay/native_console.py"
+      ],
+      "patch_bytes": 1707,
+      "patch_sha256": "b9677ea01a7df035ff4fb6ee39bd1e65e83a3df1ab0c55b4e6de91400245cc6e",
+      "test_hashes_unchanged": true,
+      "source_audit": {
+        "functional_obligation_passed": true,
+        "unjustified_scope": false,
+        "material_corrective_required": false,
+        "accepted": true,
+        "reason": "Disables Pause without a busy local console and returns before enqueueing an idle pause request. Inspection remains available and active-run pause is unchanged. All 19 immutable Work-control tests pass, including busy pause deduplication and saved resume."
+      },
+      "usage": {
+        "generation_intents": 6,
+        "summary_intents": 0,
+        "retry_intents": 0,
+        "not_started": 0,
+        "tokens": {
+          "input_tokens": {
+            "known_sum": 49362,
+            "unknown_calls": 0
+          },
+          "uncached_input_tokens": {
+            "known_sum": 49362,
+            "unknown_calls": 0
+          },
+          "cache_read_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "cache_write_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "output_tokens": {
+            "known_sum": 997,
+            "unknown_calls": 0
+          },
+          "reasoning_tokens": {
+            "known_sum": 29,
+            "unknown_calls": 0
+          },
+          "total_tokens": {
+            "known_sum": 50359,
+            "unknown_calls": 0
+          }
+        },
+        "known_cost_by_currency": {},
+        "unpriced_or_partial_calls": 6,
+        "subscription_quota": "unknown"
+      },
+      "wall_ms": 62906.0,
+      "prompt_sha256": "74a54f120f55d5106f1e31129686340741b89aebfe90155b9fbf1a591f160380",
+      "test_hashes": {
+        "tests/test_console_work_control.py": "c7e28356f07ee21c9e7fd7c64d82d925ac3d8501ea8916a2594eb464394c946c"
+      },
+      "seed_hashes": {
+        "relay/native_console.py": "ba1d79f700336ecd71eaf8159a7377f599503dc9f5fa3028cc09ffc6a4a47fb0"
+      },
+      "instructions_sha256": "9ecd89e41b1a21292476c5e17da22f38d1cfc661619842a3f00d9280c2484f3b"
+    },
+    {
+      "case": "06-pause",
+      "condition": "B",
+      "native_status": "PROPOSED",
+      "reason": "DELIVERY_PROPOSED",
+      "model_calls": 6,
+      "audit_passed": true,
+      "current_successful_check": true,
+      "pre_edit_failed_checks": 1,
+      "post_edit_failed_checks": 0,
+      "changed_files": [
+        "relay/native_console.py"
+      ],
+      "patch_bytes": 1631,
+      "patch_sha256": "c14560c99e3fe6d15a982dcae2ab9d2c194c0cb4eb4e16ab0c2ed82d879b1b93",
+      "test_hashes_unchanged": true,
+      "source_audit": {
+        "functional_obligation_passed": true,
+        "unjustified_scope": false,
+        "material_corrective_required": false,
+        "accepted": true,
+        "reason": "Disables Pause without a busy local console and returns before enqueueing an idle pause request. Inspection remains available and active-run pause is unchanged. All 19 immutable Work-control tests pass, including busy pause deduplication and saved resume."
+      },
+      "usage": {
+        "generation_intents": 6,
+        "summary_intents": 0,
+        "retry_intents": 0,
+        "not_started": 0,
+        "tokens": {
+          "input_tokens": {
+            "known_sum": 41103,
+            "unknown_calls": 0
+          },
+          "uncached_input_tokens": {
+            "known_sum": 41103,
+            "unknown_calls": 0
+          },
+          "cache_read_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "cache_write_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "output_tokens": {
+            "known_sum": 1013,
+            "unknown_calls": 0
+          },
+          "reasoning_tokens": {
+            "known_sum": 71,
+            "unknown_calls": 0
+          },
+          "total_tokens": {
+            "known_sum": 42116,
+            "unknown_calls": 0
+          }
+        },
+        "known_cost_by_currency": {},
+        "unpriced_or_partial_calls": 6,
+        "subscription_quota": "unknown"
+      },
+      "wall_ms": 71659.0,
+      "prompt_sha256": "a527e30599e2dd99fb6fcc26b9e0ea3a7243de97353571113d736f6e1a9b9d31",
+      "test_hashes": {
+        "tests/test_console_work_control.py": "c7e28356f07ee21c9e7fd7c64d82d925ac3d8501ea8916a2594eb464394c946c"
+      },
+      "seed_hashes": {
+        "relay/native_console.py": "ba1d79f700336ecd71eaf8159a7377f599503dc9f5fa3028cc09ffc6a4a47fb0"
+      },
+      "instructions_sha256": "9ecd89e41b1a21292476c5e17da22f38d1cfc661619842a3f00d9280c2484f3b"
+    },
+    {
+      "case": "07-refresh",
+      "condition": "A",
+      "native_status": "PROPOSED",
+      "reason": "DELIVERY_PROPOSED",
+      "model_calls": 7,
+      "audit_passed": true,
+      "current_successful_check": true,
+      "pre_edit_failed_checks": 1,
+      "post_edit_failed_checks": 0,
+      "changed_files": [
+        "relay/native_console.py"
+      ],
+      "patch_bytes": 1199,
+      "patch_sha256": "49a5c7b90f7f3ae642c32cca35e0811a9428570c6831ecc269e0c706ee5b7d3f",
+      "test_hashes_unchanged": true,
+      "source_audit": {
+        "functional_obligation_passed": true,
+        "unjustified_scope": false,
+        "material_corrective_required": false,
+        "accepted": true,
+        "reason": "Replaces the saved Work control view and displayed message from the returned execution receipt before rendering the result. Missing control clears the old view. The complete immutable module passes, including PAUSED, FAILED and SETTLED receipt cases and active-selection controls."
+      },
+      "usage": {
+        "generation_intents": 7,
+        "summary_intents": 0,
+        "retry_intents": 0,
+        "not_started": 0,
+        "tokens": {
+          "input_tokens": {
+            "known_sum": 55995,
+            "unknown_calls": 0
+          },
+          "uncached_input_tokens": {
+            "known_sum": 55995,
+            "unknown_calls": 0
+          },
+          "cache_read_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "cache_write_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "output_tokens": {
+            "known_sum": 1062,
+            "unknown_calls": 0
+          },
+          "reasoning_tokens": {
+            "known_sum": 37,
+            "unknown_calls": 0
+          },
+          "total_tokens": {
+            "known_sum": 57057,
+            "unknown_calls": 0
+          }
+        },
+        "known_cost_by_currency": {},
+        "unpriced_or_partial_calls": 7,
+        "subscription_quota": "unknown"
+      },
+      "wall_ms": 82123.0,
+      "prompt_sha256": "65cf8d80b26ac6d2fb5f79c893744c898e442e2a17bad8cb3b0cc57ec199c5a9",
+      "test_hashes": {
+        "tests/test_console_work_control.py": "c7e28356f07ee21c9e7fd7c64d82d925ac3d8501ea8916a2594eb464394c946c"
+      },
+      "seed_hashes": {
+        "relay/native_console.py": "e0ebdf66cde089d133f5b27871488d4d1f32fdd0fea365d0366ed7a0aaeda9c9"
+      },
+      "instructions_sha256": "9ecd89e41b1a21292476c5e17da22f38d1cfc661619842a3f00d9280c2484f3b"
+    },
+    {
+      "case": "07-refresh",
+      "condition": "B",
+      "native_status": "PROPOSED",
+      "reason": "DELIVERY_PROPOSED",
+      "model_calls": 7,
+      "audit_passed": true,
+      "current_successful_check": true,
+      "pre_edit_failed_checks": 1,
+      "post_edit_failed_checks": 0,
+      "changed_files": [
+        "relay/native_console.py"
+      ],
+      "patch_bytes": 1120,
+      "patch_sha256": "bdb74cb4fd2c08a897f6df6b2105acdf071c8089538cb7ebd86639db73e0eb4c",
+      "test_hashes_unchanged": true,
+      "source_audit": {
+        "functional_obligation_passed": true,
+        "unjustified_scope": false,
+        "material_corrective_required": false,
+        "accepted": true,
+        "reason": "Replaces the saved Work control view and displayed message from the returned execution receipt before rendering the result. Missing control clears the old view. The complete immutable module passes, including PAUSED, FAILED and SETTLED receipt cases and active-selection controls."
+      },
+      "usage": {
+        "generation_intents": 7,
+        "summary_intents": 0,
+        "retry_intents": 0,
+        "not_started": 0,
+        "tokens": {
+          "input_tokens": {
+            "known_sum": 63119,
+            "unknown_calls": 0
+          },
+          "uncached_input_tokens": {
+            "known_sum": 63119,
+            "unknown_calls": 0
+          },
+          "cache_read_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "cache_write_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "output_tokens": {
+            "known_sum": 977,
+            "unknown_calls": 0
+          },
+          "reasoning_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "total_tokens": {
+            "known_sum": 64096,
+            "unknown_calls": 0
+          }
+        },
+        "known_cost_by_currency": {},
+        "unpriced_or_partial_calls": 7,
+        "subscription_quota": "unknown"
+      },
+      "wall_ms": 95316.0,
+      "prompt_sha256": "34c5b4cfc33e86b052724daca06dc9db893faa82c21c5ce5dad3483f6559e7bc",
+      "test_hashes": {
+        "tests/test_console_work_control.py": "c7e28356f07ee21c9e7fd7c64d82d925ac3d8501ea8916a2594eb464394c946c"
+      },
+      "seed_hashes": {
+        "relay/native_console.py": "e0ebdf66cde089d133f5b27871488d4d1f32fdd0fea365d0366ed7a0aaeda9c9"
+      },
+      "instructions_sha256": "9ecd89e41b1a21292476c5e17da22f38d1cfc661619842a3f00d9280c2484f3b"
+    },
+    {
+      "case": "08-identity",
+      "condition": "A",
+      "native_status": "PROPOSED",
+      "reason": "DELIVERY_PROPOSED",
+      "model_calls": 5,
+      "audit_passed": true,
+      "current_successful_check": true,
+      "pre_edit_failed_checks": 1,
+      "post_edit_failed_checks": 0,
+      "changed_files": [
+        "relay/native_backlog.py"
+      ],
+      "patch_bytes": 1365,
+      "patch_sha256": "c26e8b5be29a898140cd57c3423dcf121073f1626f7fe1bbeafa757d5a8150b5",
+      "test_hashes_unchanged": true,
+      "source_audit": {
+        "functional_obligation_passed": true,
+        "unjustified_scope": false,
+        "material_corrective_required": false,
+        "accepted": true,
+        "reason": "Restores canonical_system, canonical_id and canonical_revision from the selected node without replacing the graph revision or broadening source selection. Full bounded-reader module passes all 60 cases, including canonical identity and large-graph/byte-limit controls. The only production change is the requested output fields."
+      },
+      "usage": {
+        "generation_intents": 5,
+        "summary_intents": 0,
+        "retry_intents": 0,
+        "not_started": 0,
+        "tokens": {
+          "input_tokens": {
+            "known_sum": 41933,
+            "unknown_calls": 0
+          },
+          "uncached_input_tokens": {
+            "known_sum": 41933,
+            "unknown_calls": 0
+          },
+          "cache_read_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "cache_write_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "output_tokens": {
+            "known_sum": 1000,
+            "unknown_calls": 0
+          },
+          "reasoning_tokens": {
+            "known_sum": 21,
+            "unknown_calls": 0
+          },
+          "total_tokens": {
+            "known_sum": 42933,
+            "unknown_calls": 0
+          }
+        },
+        "known_cost_by_currency": {},
+        "unpriced_or_partial_calls": 5,
+        "subscription_quota": "unknown"
+      },
+      "wall_ms": 49326.0,
+      "prompt_sha256": "b856e18fbcdb25988238f64a7770ec367274c5ae093eeebdce1e1691a2f028da",
+      "test_hashes": {
+        "tests/test_native_backlog.py": "34715de0fa181f6a0d554f1f5cd27a8b6cf4e8f06e82877a8f36668dabdb054b"
+      },
+      "seed_hashes": {
+        "relay/native_backlog.py": "dc26ad9e8a0f7c056399b56af63f5a9051be8d64314896a92e95397e00fd8534"
+      },
+      "instructions_sha256": "9ecd89e41b1a21292476c5e17da22f38d1cfc661619842a3f00d9280c2484f3b"
+    },
+    {
+      "case": "08-identity",
+      "condition": "B",
+      "native_status": "PROPOSED",
+      "reason": "DELIVERY_PROPOSED",
+      "model_calls": 5,
+      "audit_passed": true,
+      "current_successful_check": true,
+      "pre_edit_failed_checks": 1,
+      "post_edit_failed_checks": 0,
+      "changed_files": [
+        "relay/native_backlog.py"
+      ],
+      "patch_bytes": 1061,
+      "patch_sha256": "8af72886283cfcf69b4804577304a2b78e4ce46c77a23417a3f787d28b36c272",
+      "test_hashes_unchanged": true,
+      "source_audit": {
+        "functional_obligation_passed": true,
+        "unjustified_scope": false,
+        "material_corrective_required": false,
+        "accepted": true,
+        "reason": "Restores canonical_system, canonical_id and canonical_revision from the selected node without replacing the graph revision or broadening source selection. Full bounded-reader module passes all 60 cases, including canonical identity and large-graph/byte-limit controls. The only production change is the requested output fields."
+      },
+      "usage": {
+        "generation_intents": 5,
+        "summary_intents": 0,
+        "retry_intents": 0,
+        "not_started": 0,
+        "tokens": {
+          "input_tokens": {
+            "known_sum": 41101,
+            "unknown_calls": 0
+          },
+          "uncached_input_tokens": {
+            "known_sum": 41101,
+            "unknown_calls": 0
+          },
+          "cache_read_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "cache_write_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "output_tokens": {
+            "known_sum": 864,
+            "unknown_calls": 0
+          },
+          "reasoning_tokens": {
+            "known_sum": 0,
+            "unknown_calls": 0
+          },
+          "total_tokens": {
+            "known_sum": 41965,
+            "unknown_calls": 0
+          }
+        },
+        "known_cost_by_currency": {},
+        "unpriced_or_partial_calls": 5,
+        "subscription_quota": "unknown"
+      },
+      "wall_ms": 39507.0,
+      "prompt_sha256": "1c8ba770a6a20fdc96b2298e2f3c4f9d7640e267456f421a7f8e625de46282b7",
+      "test_hashes": {
+        "tests/test_native_backlog.py": "34715de0fa181f6a0d554f1f5cd27a8b6cf4e8f06e82877a8f36668dabdb054b"
+      },
+      "seed_hashes": {
+        "relay/native_backlog.py": "dc26ad9e8a0f7c056399b56af63f5a9051be8d64314896a92e95397e00fd8534"
+      },
+      "instructions_sha256": "9ecd89e41b1a21292476c5e17da22f38d1cfc661619842a3f00d9280c2484f3b"
+    }
+  ],
+  "limitations": [
+    "Selected historical repairs, not eight ordinary completed Works.",
+    "One execution per condition, one model and one maintainer source audit; no statistical or vendor inference.",
+    "Money, physical attempts and remaining subscription quota unknown.",
+    "Production-path offline tests validate obligations; they do not simulate provider capacity.",
+    "Conditional acceptance and internal correction are separate from terminal material defects."
+  ],
+  "custody": {
+    "owner_guide": "docs/guides/FLOW20_GUIDANCE.md",
+    "local_archive": "C:/projects/_archives/flow20-guidance-20261018",
+    "raw_ceiling_bytes": 67108864,
+    "terminal_ceiling_bytes": 12582912,
+    "raw_cleanup_eligible_after": "2026-11-17",
+    "cleanup_requires": "Merged green integration and no recovery need.",
+    "retain": "Frozen packet, compact results and audits, seed/candidate patches and hashes; owner guide and this compact record."
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "id": "openrouter-step-5-preview",
+  "runner": "native-http",
+  "model": "stepfun/step-5-preview",
+  "native_credential_env": "OPENROUTER_API_KEY",
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_profile": {
+    "protocol": "openai-chat",
+    "model": "stepfun/step-5-preview",
+    "endpoint": "https://openrouter.ai/api/v1",
+    "context_window": 1000000,
+    "output_tokens": 16384,
+    "parameters_json": "{\"reasoning\":{\"effort\":\"high\"},\"provider\":{\"only\":[\"gmicloud/fp8\"],\"order\":[\"gmicloud/fp8\"],\"require_parameters\":true,\"allow_fallbacks\":false,\"data_collection\":\"deny\",\"quantizations\":[\"fp8\"]},\"transforms\":[]}",
+    "source": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality. https://openrouter.ai/stepfun/step-5-preview/providers"
+  },
+  "native_usage_contract": {
+    "layout": "openrouter-inclusive",
+    "source": "https://openrouter.ai/docs/guides/best-practices/prompt-caching; raw inclusive input and cache counters; absent fields remain unknown."
+  },
+  "native_openrouter": {
+    "label": "Step 5 Preview",
+    "publisher": "StepFun",
+    "precision_provenance": "unknown",
+    "precision_note": "Endpoint precision is a serving label, not evidence of training dtype, QAT, extra quantization or quality. Native FP4/FP8 is admissible.",
+    "source": "https://openrouter.ai/stepfun/step-5-preview/providers",
+    "observed_at": "2026-11-01"
+  },
+  "native_reasoning_levels": [
+    "high"
+  ]
+}

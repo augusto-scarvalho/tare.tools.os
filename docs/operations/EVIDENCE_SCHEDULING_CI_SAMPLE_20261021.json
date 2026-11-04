@@ -1,0 +1,72 @@
+{
+  "schema": "tare.tools/evidence-scheduling-replay/1",
+  "basis": "observed_durations",
+  "capacities": {
+    "linux-wsl2": 1,
+    "windows-host": 1
+  },
+  "tasks": [
+    {
+      "id": "linux-wsl2",
+      "depends_on": [],
+      "pool": "linux-wsl2",
+      "duration_ms": 1317000,
+      "source_ref": "https://github.com/augusto-scarvalho/tare.tools.os/actions/runs/39630158317/job/119325943007"
+    },
+    {
+      "id": "windows-host",
+      "depends_on": [],
+      "pool": "windows-host",
+      "duration_ms": 2530000,
+      "source_ref": "https://github.com/augusto-scarvalho/tare.tools.os/actions/runs/39630158317/job/119325943270"
+    }
+  ],
+  "required": [
+    "linux-wsl2",
+    "windows-host"
+  ],
+  "provenance": {
+    "run_url": "https://github.com/augusto-scarvalho/tare.tools.os/actions/runs/39630158317",
+    "head_sha": "1f2591e65732d8737a77430043b060d0b205b012",
+    "jobs_response_sha256": "37b8809d8298b00b5ecb33c9b32169222da0b33533d6e58daf113ab4d6d15827",
+    "retrieved_at": "2026-10-21T17:01:27.902453+00:00",
+    "duration_definition": "completed_at minus started_at, including setup; not inference time",
+    "assumptions": [
+      "Closed admitted batch with two initially ready validation jobs and one slot per platform pool.",
+      "Both runners share physical node aaaaa; duration invariance under a different order is unproven.",
+      "Input durations are observed; replay is counterfactual, not a measured policy A/B or complete Work cohort.",
+      "All required gates succeeded; failure-driven avoided work is not measured."
+    ],
+    "jobs": [
+      {
+        "id": 119325943007,
+        "name": "Test Suite & Falsifiers (linux-wsl2)",
+        "conclusion": "success",
+        "started_at": "2026-10-21T15:56:01Z",
+        "completed_at": "2026-10-21T16:17:58Z",
+        "html_url": "https://github.com/augusto-scarvalho/tare.tools.os/actions/runs/39630158317/job/119325943007",
+        "labels": [
+          "self-hosted",
+          "Linux",
+          "wsl2",
+          "aaaaa"
+        ],
+        "runner_name": "aaaaa-os-linux-2"
+      },
+      {
+        "id": 119325943270,
+        "name": "Test Suite & Falsifiers (windows-host)",
+        "conclusion": "success",
+        "started_at": "2026-10-21T15:56:01Z",
+        "completed_at": "2026-10-21T16:38:11Z",
+        "html_url": "https://github.com/augusto-scarvalho/tare.tools.os/actions/runs/39630158317/job/119325943270",
+        "labels": [
+          "self-hosted",
+          "Windows",
+          "aaaaa"
+        ],
+        "runner_name": "aaaaa-desktop-2"
+      }
+    ]
+  }
+}

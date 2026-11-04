@@ -1,0 +1,20 @@
+{
+  "id": "fleet-fable-tc",
+  "runner": "native-http",
+  "native_counter_protocol": "slop-fleet-v1",
+  "native_profile": {
+    "protocol": "openai-chat",
+    "model": "fable-tc",
+    "expected_response_model": "fable-tc",
+    "context_window": 8192,
+    "output_tokens": 1024,
+    "source": "Native local fleet instruct qualification 2026-09-10; bounded text-only mechanism canary; live public profile qualified 2026-09-10; docs/operations/NATIVE_FLEET_COUNT_2026-09-10.md",
+    "endpoint": "http://local-gateway:8080/v1",
+    "template_sha256": "e84f32a23fdda27689f868aa4a1a5621f41133e51a48d7f3efcbea2839574259",
+    "parameters_json": "{\"chat_template_kwargs\": {\"enable_thinking\": false}, \"cache_prompt\": false, \"temperature\": 0.0, \"seed\": 0}"
+  },
+  "native_usage_contract": {
+    "layout": "chat-inclusive",
+    "source": "slop.cpp per-request OpenAI usage; fields absent remain unknown"
+  }
+}

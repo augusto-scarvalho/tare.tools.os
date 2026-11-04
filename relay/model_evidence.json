@@ -1,0 +1,484 @@
+{
+  "schema": "tare.tools/model-evidence/1",
+  "updated_at": "2026-10-12",
+  "scope": "Dated references. No role admission, qualification, tariff binding or quota authority.",
+  "models": [
+    {
+      "model": "claude-sonnet-4.6",
+      "wire_models": [
+        "us.anthropic.claude-sonnet-4-6",
+        "claude-sonnet-4-6"
+      ],
+      "quality": [
+        {
+          "kind": "public-benchmark",
+          "source": "https://www-cdn.anthropic.com/78073f739564e986ff3e28522761a7a0b4484f84.pdf#page=14",
+          "observed_at": "2026-09-21",
+          "published_at": "2026-02-17",
+          "task_class": "repository-coding",
+          "metric": "SWE-bench Verified",
+          "value": 79.6,
+          "unit": "percent",
+          "tested_effort": "max",
+          "scope": "Vendor-reported benchmark, not Tare task success.",
+          "protocol_notes": "Adaptive thinking. Table and prose disagree on trial count (25 versus 10); no trial count inferred."
+        },
+        {
+          "source": "tare.tools.os@8af7839d70d39405ce2406ee4164e063afdb29ab:docs/operations/NATIVE_BEDROCK_ROUTES_2026-09-10.md",
+          "source_sha256": "967a84537877382b88b281f678be4896748018a54aba523f4bee4618a0bb1c1c",
+          "kind": "native-canary",
+          "observed_at": "2026-09-10",
+          "task_class": "bounded-edit",
+          "metric": "native-functional-canary",
+          "value": {
+            "checks_passed": 6,
+            "checks_total": 6,
+            "delivery": "PROPOSED",
+            "generation_calls": 5,
+            "seconds": 33.7
+          },
+          "sample_count": 1,
+          "tested_effort": "high",
+          "tested_protocol": "bedrock-converse",
+          "scope": "One tag-normalization canary; not general quality or comparative speed.",
+          "runtime_scope": "Historical 2026-09-10 native stack; current profile and runtime not requalified."
+        }
+      ],
+      "price_references": [
+        {
+          "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+          "observed_at": "2026-09-21",
+          "currency": "USD",
+          "per_million_tokens": {
+            "uncached_input_tokens": "3",
+            "output_tokens": "15",
+            "cache_read_tokens": "0.30",
+            "cache_write_tokens": "3.75"
+          },
+          "scope": "Anthropic API standard reference; not Bedrock tariff, CLI quota or invoice. Cache write TTL 5m."
+        }
+      ],
+      "model_aliases": [
+        "claude-sonnet-4-6"
+      ]
+    },
+    {
+      "model": "claude-opus-4.6",
+      "wire_models": [
+        "us.anthropic.claude-opus-4-6-v1",
+        "claude-opus-4-6"
+      ],
+      "quality": [
+        {
+          "kind": "public-benchmark",
+          "source": "https://www-cdn.anthropic.com/78073f739564e986ff3e28522761a7a0b4484f84.pdf#page=14",
+          "observed_at": "2026-09-21",
+          "published_at": "2026-02-17",
+          "task_class": "repository-coding",
+          "metric": "SWE-bench Verified",
+          "value": 80.8,
+          "unit": "percent",
+          "tested_effort": "max",
+          "scope": "Vendor-reported benchmark, not Tare task success.",
+          "protocol_notes": "Adaptive thinking. Table and prose disagree on trial count (25 versus 10); no trial count inferred."
+        },
+        {
+          "source": "tare.tools.kernel@2e13a1e3cfac0d5bdf4effe6cdee3c040b454557:docs/NATIVE_CANARY_20260910.md",
+          "source_sha256": "0520fdf94298eec1b7f7da68ad75f3fa8946baf4231d727c2a7bdd5cf10c85e5",
+          "kind": "native-canary",
+          "observed_at": "2026-09-10",
+          "task_class": "bounded-edit",
+          "metric": "native-functional-canary",
+          "value": {
+            "checks_passed": 6,
+            "checks_total": 6,
+            "delivery": "PROPOSED",
+            "generation_calls": 4,
+            "seconds": 17.59
+          },
+          "sample_count": 1,
+          "tested_effort": "high",
+          "tested_protocol": "bedrock-converse",
+          "scope": "One clamp-repair canary; not general quality or comparative speed.",
+          "runtime_scope": "Historical 2026-09-10 native stack; current profile and runtime not requalified."
+        }
+      ],
+      "price_references": [
+        {
+          "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+          "observed_at": "2026-09-21",
+          "currency": "USD",
+          "per_million_tokens": {
+            "uncached_input_tokens": "5",
+            "output_tokens": "25",
+            "cache_read_tokens": "0.50",
+            "cache_write_tokens": "6.25"
+          },
+          "scope": "Anthropic API standard reference; not Bedrock tariff, CLI quota or invoice. Cache write TTL 5m."
+        }
+      ],
+      "model_aliases": [
+        "claude-opus-4-6"
+      ]
+    },
+    {
+      "model": "glm-5",
+      "wire_models": [
+        "zai.glm-5"
+      ],
+      "quality": [
+        {
+          "source": "tare.tools.os@8af7839d70d39405ce2406ee4164e063afdb29ab:docs/operations/NATIVE_BEDROCK_ROUTES_2026-09-10.md",
+          "source_sha256": "967a84537877382b88b281f678be4896748018a54aba523f4bee4618a0bb1c1c",
+          "kind": "native-canary",
+          "observed_at": "2026-09-10",
+          "task_class": "bounded-edit",
+          "metric": "native-functional-canary",
+          "value": {
+            "checks_passed": 6,
+            "checks_total": 6,
+            "delivery": "EXHAUSTED_WITHOUT_PROTOCOL_DELIVERY",
+            "generation_calls": 6,
+            "seconds": 21.7
+          },
+          "sample_count": 1,
+          "tested_effort": "high",
+          "tested_protocol": "bedrock-converse",
+          "scope": "One tag-normalization canary; not general quality or comparative speed.",
+          "runtime_scope": "Historical 2026-09-10 native stack; current profile and runtime not requalified."
+        }
+      ],
+      "price_references": []
+    },
+    {
+      "model": "qwen-3.8-27b",
+      "wire_models": [
+        "qwen38"
+      ],
+      "quality": [
+        {
+          "source": "tare.tools.kernel@2e13a1e3cfac0d5bdf4effe6cdee3c040b454557:docs/NATIVE_CANARY_20260910.md",
+          "source_sha256": "0520fdf94298eec1b7f7da68ad75f3fa8946baf4231d727c2a7bdd5cf10c85e5",
+          "kind": "native-canary",
+          "observed_at": "2026-09-10",
+          "task_class": "bounded-edit",
+          "metric": "native-functional-canary",
+          "value": {
+            "checks_passed": 6,
+            "checks_total": 6,
+            "delivery": "PROPOSED",
+            "generation_calls": 4,
+            "seconds": 21.86
+          },
+          "sample_count": 1,
+          "tested_effort": "low",
+          "tested_protocol": "openai-chat",
+          "scope": "One clamp-repair canary; not general quality or comparative speed.",
+          "runtime_scope": "Historical 2026-09-10 native stack; current profile and runtime not requalified."
+        }
+      ],
+      "price_references": []
+    },
+    {
+      "model": "qwen-3.8-27b-gsq",
+      "model_aliases": [
+        "qwen-3.8-27b"
+      ],
+      "wire_models": [
+        "qwen38-gsq"
+      ],
+      "quality": [
+        {
+          "source": "tare.tools.local-labs@3d6bd4a:runs/requalification/NINFER-011-COHORT-2026-09-28/RESULT.md",
+          "source_sha256": "dc2205bd8b1e084c239c22bd5c42e792f1b97f64dc5af3ecde38bf02af0fccd9",
+          "kind": "tare-cohort",
+          "observed_at": "2026-09-28",
+          "task_class": "repository-regression-fix",
+          "metric": "specgraph-regression-cohort",
+          "value": {
+            "cases_fixed": 50,
+            "cases_total": 52
+          },
+          "sample_count": 52,
+          "tested_effort": "low",
+          "tested_protocol": "openai-chat",
+          "scope": "26 mined SpecGraph regressions in two arms (plain and guided instruction); not general quality or speed.",
+          "runtime_scope": "NInfer-3090 0.11 f118551, GSQ-RCO IQ3_S, 128K rk8v4 KV, MTP 3, thinking budget 2048; 2026-09-28 tare stack."
+        }
+      ],
+      "price_references": []
+    },
+    {
+      "model": "claude-sonnet-5",
+      "model_aliases": [],
+      "wire_models": [
+        "claude-sonnet-5"
+      ],
+      "quality": [
+        {
+          "kind": "public-benchmark",
+          "source": "https://www.anthropic.com/news/claude-sonnet-5",
+          "observed_at": "2026-09-21",
+          "published_at": "2026-06-30",
+          "task_class": "repository-coding",
+          "metric": "SWE-bench Pro",
+          "value": 63.2,
+          "unit": "percent",
+          "scope": "Published benchmark; not Tare/CLI qualification.",
+          "protocol_notes": "Compare only identical benchmark versions and setups. Unspecified effort is unknown. Vendor safeguards/fallbacks may affect results.",
+          "source_asset": "https://www-cdn.anthropic.com/images/4zrzovbb/website/9941d610909f28a504e16dd5af823df172ec6035-2600x1234.png"
+        },
+        {
+          "kind": "public-benchmark",
+          "source": "https://www.anthropic.com/news/claude-sonnet-5",
+          "observed_at": "2026-09-21",
+          "published_at": "2026-06-30",
+          "task_class": "repository-coding",
+          "metric": "Terminal-Bench 2.1",
+          "value": 80.4,
+          "unit": "percent",
+          "scope": "Published benchmark; not Tare/CLI qualification.",
+          "protocol_notes": "Compare only identical benchmark versions and setups. Unspecified effort is unknown. Vendor safeguards/fallbacks may affect results.",
+          "source_asset": "https://www-cdn.anthropic.com/images/4zrzovbb/website/9941d610909f28a504e16dd5af823df172ec6035-2600x1234.png"
+        }
+      ],
+      "price_references": []
+    },
+    {
+      "model": "claude-opus-4.8",
+      "model_aliases": [
+        "claude-opus-4-8"
+      ],
+      "wire_models": [
+        "claude-opus-4-8"
+      ],
+      "quality": [
+        {
+          "kind": "public-benchmark",
+          "source": "https://www.anthropic.com/news/claude-sonnet-5",
+          "observed_at": "2026-09-21",
+          "published_at": "2026-06-30",
+          "task_class": "repository-coding",
+          "metric": "SWE-bench Pro",
+          "value": 69.2,
+          "unit": "percent",
+          "scope": "Published benchmark; not Tare/CLI qualification.",
+          "protocol_notes": "Compare only identical benchmark versions and setups. Unspecified effort is unknown. Vendor safeguards/fallbacks may affect results.",
+          "source_asset": "https://www-cdn.anthropic.com/images/4zrzovbb/website/9941d610909f28a504e16dd5af823df172ec6035-2600x1234.png"
+        },
+        {
+          "kind": "public-benchmark",
+          "source": "https://www.anthropic.com/news/claude-sonnet-5",
+          "observed_at": "2026-09-21",
+          "published_at": "2026-06-30",
+          "task_class": "repository-coding",
+          "metric": "Terminal-Bench 2.1",
+          "value": 82.7,
+          "unit": "percent",
+          "scope": "Published benchmark; not Tare/CLI qualification.",
+          "protocol_notes": "Compare only identical benchmark versions and setups. Unspecified effort is unknown. Vendor safeguards/fallbacks may affect results.",
+          "source_asset": "https://www-cdn.anthropic.com/images/4zrzovbb/website/9941d610909f28a504e16dd5af823df172ec6035-2600x1234.png"
+        }
+      ],
+      "price_references": []
+    },
+    {
+      "model": "claude-opus-5",
+      "model_aliases": [],
+      "wire_models": [
+        "claude-opus-5"
+      ],
+      "quality": [
+        {
+          "kind": "public-benchmark",
+          "source": "https://www.anthropic.com/claude-fable-and-mythos-5-1?frmapp=yes",
+          "observed_at": "2026-09-21",
+          "published_at": "2026-09-01",
+          "task_class": "repository-coding",
+          "metric": "CursorBench 3.2.0",
+          "value": 70.0,
+          "unit": "percent",
+          "scope": "Published benchmark; not Tare/CLI qualification.",
+          "protocol_notes": "Compare only identical benchmark versions and setups. Unspecified effort is unknown. Vendor safeguards/fallbacks may affect results.",
+          "tested_effort": "max"
+        },
+        {
+          "kind": "public-benchmark",
+          "source": "https://www.anthropic.com/claude-fable-and-mythos-5-1?frmapp=yes",
+          "observed_at": "2026-09-21",
+          "published_at": "2026-09-01",
+          "task_class": "repository-coding",
+          "metric": "Terminal-Bench 4.0",
+          "value": 52.3,
+          "unit": "percent",
+          "scope": "Published benchmark; not Tare/CLI qualification.",
+          "protocol_notes": "Compare only identical benchmark versions and setups. Unspecified effort is unknown. Vendor safeguards/fallbacks may affect results."
+        }
+      ],
+      "price_references": []
+    },
+    {
+      "model": "fable-5.1",
+      "model_aliases": [
+        "claude-fable-5-1"
+      ],
+      "wire_models": [
+        "claude-fable-5-1"
+      ],
+      "quality": [
+        {
+          "kind": "public-benchmark",
+          "source": "https://www.anthropic.com/claude-fable-and-mythos-5-1?frmapp=yes",
+          "observed_at": "2026-09-21",
+          "published_at": "2026-09-01",
+          "task_class": "repository-coding",
+          "metric": "CursorBench 3.2.0",
+          "value": 73.4,
+          "unit": "percent",
+          "scope": "Published benchmark; not Tare/CLI qualification.",
+          "protocol_notes": "Compare only identical benchmark versions and setups. Unspecified effort is unknown. Vendor safeguards/fallbacks may affect results.",
+          "tested_effort": "max"
+        },
+        {
+          "kind": "public-benchmark",
+          "source": "https://www.anthropic.com/claude-fable-and-mythos-5-1?frmapp=yes",
+          "observed_at": "2026-09-21",
+          "published_at": "2026-09-01",
+          "task_class": "repository-coding",
+          "metric": "Terminal-Bench 4.0",
+          "value": 55.8,
+          "unit": "percent",
+          "scope": "Published benchmark; not Tare/CLI qualification.",
+          "protocol_notes": "Compare only identical benchmark versions and setups. Unspecified effort is unknown. Vendor safeguards/fallbacks may affect results."
+        }
+      ],
+      "price_references": []
+    },
+    {
+      "model": "xiaomi/mimo-v2.6-pro",
+      "wire_models": [
+        "xiaomi/mimo-v2.6-pro"
+      ],
+      "quality": [],
+      "price_references": [
+        {
+          "source": "https://openrouter.ai/api/v1/models/xiaomi/mimo-v2.6-pro/endpoints",
+          "observed_at": "2026-09-21",
+          "currency": "USD",
+          "per_million_tokens": {
+            "uncached_input_tokens": "0.435",
+            "output_tokens": "0.87",
+            "cache_read_tokens": "0.0036",
+            "cache_write_tokens": null
+          },
+          "scope": "Xiaomi endpoint catalog reference. Prices and providers may change; not a bound tariff, guaranteed cache hit, invoice, or quality comparison."
+        }
+      ]
+    },
+    {
+      "model": "claude-sonnet-5.5",
+      "model_aliases": [
+        "claude-sonnet-5-5"
+      ],
+      "wire_models": [
+        "claude-sonnet-5-5"
+      ],
+      "quality": [
+        {
+          "kind": "public-benchmark",
+          "source": "https://www.anthropic.com/claude-sonnet-5-5",
+          "observed_at": "2026-09-28",
+          "task_class": "repository-coding",
+          "metric": "CursorBench 4.0",
+          "value": 55.5,
+          "unit": "percent",
+          "scope": "Published benchmark; not Tare/CLI qualification.",
+          "protocol_notes": "Compare only identical benchmark versions and setups. Unspecified effort is unknown. Vendor safeguards/fallbacks may affect results."
+        },
+        {
+          "kind": "public-benchmark",
+          "source": "https://www.anthropic.com/claude-sonnet-5-5",
+          "observed_at": "2026-09-28",
+          "task_class": "repository-coding",
+          "metric": "Terminal-Bench 4.0",
+          "value": 70.6,
+          "unit": "percent",
+          "scope": "Published benchmark; not Tare/CLI qualification.",
+          "protocol_notes": "Compare only identical benchmark versions and setups. Unspecified effort is unknown. Vendor safeguards/fallbacks may affect results."
+        }
+      ],
+      "price_references": []
+    },
+    {
+      "model": "claude-opus-5.5",
+      "model_aliases": [
+        "claude-opus-5-5"
+      ],
+      "wire_models": [
+        "claude-opus-5-5"
+      ],
+      "quality": [
+        {
+          "kind": "public-benchmark",
+          "source": "https://www.anthropic.com/claude-sonnet-5-5",
+          "observed_at": "2026-09-28",
+          "task_class": "repository-coding",
+          "metric": "CursorBench 4.0",
+          "value": 57.8,
+          "unit": "percent",
+          "scope": "Published benchmark; not Tare/CLI qualification.",
+          "protocol_notes": "Compare only identical benchmark versions and setups. Unspecified effort is unknown. Vendor safeguards/fallbacks may affect results."
+        },
+        {
+          "kind": "public-benchmark",
+          "source": "https://www.anthropic.com/claude-sonnet-5-5",
+          "observed_at": "2026-09-28",
+          "task_class": "repository-coding",
+          "metric": "Terminal-Bench 4.0",
+          "value": 66.4,
+          "unit": "percent",
+          "scope": "Published benchmark; not Tare/CLI qualification.",
+          "protocol_notes": "Compare only identical benchmark versions and setups. Unspecified effort is unknown. Vendor safeguards/fallbacks may affect results.",
+          "tested_effort": "xhigh"
+        }
+      ],
+      "price_references": []
+    },
+    {
+      "model": "claude-haiku-5.5",
+      "model_aliases": [
+        "claude-haiku-5-5"
+      ],
+      "wire_models": [
+        "claude-haiku-5-5"
+      ],
+      "quality": [],
+      "price_references": [
+        {
+          "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+          "observed_at": "2026-10-12",
+          "currency": "USD",
+          "per_million_tokens": {
+            "uncached_input_tokens": "0.10",
+            "output_tokens": "0.50",
+            "cache_read_tokens": "0.01",
+            "cache_write_tokens": "0.125"
+          },
+          "scope": "At most 100000 input tokens, including cache reads and writes. Anthropic API reference; not CLI quota or invoice. Cache write TTL 5m."
+        },
+        {
+          "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+          "observed_at": "2026-10-12",
+          "currency": "USD",
+          "per_million_tokens": {
+            "uncached_input_tokens": "0.50",
+            "output_tokens": "2.50",
+            "cache_read_tokens": "0.05",
+            "cache_write_tokens": "0.625"
+          },
+          "scope": "Over 100000 input tokens, including cache reads and writes. Anthropic API reference; not CLI quota or invoice. Cache write TTL 5m."
+        }
+      ]
+    }
+  ]
+}

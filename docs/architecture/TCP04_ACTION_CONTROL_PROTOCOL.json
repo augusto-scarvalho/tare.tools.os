@@ -1,0 +1,235 @@
+{
+  "schema": "tare.tools/action-control-design/1",
+  "status": "PROPOSED",
+  "work_id": "tcp04",
+  "runtime_activation": "NONE",
+  "architecture": "TCP04_ACTION_CONTROL_ARCHITECTURE.md",
+  "ownership": {
+    "policy_authority_context": "OS",
+    "action_classifier": "OS over existing Kernel assessment or Runtime ModelPort",
+    "auto_review": "OS with interchangeable reviewer backends",
+    "effect_mediation_confinement_receipts": "Kernel",
+    "loop_control_budget": "Agent Runtime",
+    "work_graph": "Backlog Graph",
+    "experimental_evaluation": "Local Labs"
+  },
+  "classifier": {
+    "implementation": "tare_owned",
+    "native_claude_classifier_required": false,
+    "port": "ActionClassifierPort",
+    "verdicts": [
+      "ROUTINE_ELIGIBLE",
+      "REVIEW_REQUIRED",
+      "DENY_RECOMMENDED",
+      "INSUFFICIENT_EVIDENCE"
+    ],
+    "authority": "NONE",
+    "can_override_deterministic_denial": false,
+    "can_skip_required_review": false
+  },
+  "auto_review": {
+    "implementation": "tare_owned_orchestration",
+    "port": "ActionReviewerPort",
+    "verdicts": [
+      "APPROVE_RECOMMENDED",
+      "DENY_RECOMMENDED",
+      "CLARIFICATION_REQUIRED",
+      "NO_VERDICT"
+    ],
+    "authority": "NONE",
+    "modes": [
+      "tare",
+      "codex_native",
+      "both_required"
+    ],
+    "preferred_native_candidate": "codex_native",
+    "deny_triggers_fallback": false,
+    "both_required_downgrades_on_failure": false,
+    "fallback_on_unavailability_requires_prior_host_configuration": true,
+    "backends": {
+      "tare": {
+        "realization": "existing ModelPort with restricted reviewer role",
+        "state": "IMPLEMENTED_BOUNDED_SHADOW",
+        "module": "relay/action_model_assessment.py",
+        "automatic_activation": false
+      },
+      "codex_native": {
+        "state": "REVIEWED_EXECUTION_QUALIFIED_WINDOWS_OPT_IN",
+        "standalone_reviewer_rpc_established": false,
+        "observed_public_protocol": {
+          "cli_version": "0.162.1",
+          "notification_methods": [
+            "item/autoApprovalReview/started",
+            "item/autoApprovalReview/completed",
+            "autoApprovalReview/strictReviewRequired"
+          ],
+          "payload_stability": "UNSTABLE",
+          "live_behavior_exercised": true,
+          "code_review_start_is_native_auto_review_rpc": false,
+          "existing_stateless_model_adapter_changes": false
+        },
+        "implemented_route": "gated_MCP_bridge_after_host_permit_and_durable_claim",
+        "reviewed_execution_port": "compute_plane.codex_auto_review.CodexNativeCommandReview.run",
+        "host_composition": "CommandActionMediator(reviewed_execution=gate)",
+        "standalone_assessment_state": "UNAVAILABLE",
+        "automatic_activation": false,
+        "qualification_scope": "Owned Windows command, exact native approval, host MXC execution and replay; portable offline negative controls",
+        "forwarding_generation_quota": "ordinary Codex quota",
+        "native_reviewer_model_billing_and_remote_stop": "UNKNOWN_WHERE_NOT_EMITTED",
+        "native_feature_cost_and_delegated_session_cost_accounted_separately": true,
+        "ordinary_model_review_is_not_native_auto_review": true
+      }
+    }
+  },
+  "assessment_statuses": [
+    "OBSERVED",
+    "ABSTAINED",
+    "UNAVAILABLE",
+    "TIMEOUT",
+    "MALFORMED",
+    "CANCELLED"
+  ],
+  "snapshot_bindings": [
+    "work_id",
+    "session_id",
+    "effect_id",
+    "binding_id",
+    "fence_seq",
+    "operation",
+    "action_bytes",
+    "repository",
+    "cwd",
+    "stdin_or_payload",
+    "environment_identity",
+    "target_scope",
+    "source_snapshot",
+    "policy_snapshot",
+    "grant_snapshot",
+    "execution_profile",
+    "deadline"
+  ],
+  "assessment_observation_bindings": [
+    "stage",
+    "backend_identity",
+    "backend_version",
+    "request_sha256",
+    "action_sha256",
+    "context_sha256",
+    "policy_sha256",
+    "status",
+    "verdict",
+    "reason_codes",
+    "observed_usage_or_unknown",
+    "observed_cost_or_unknown",
+    "elapsed_ms",
+    "result_origin",
+    "authority"
+  ],
+  "pre_effect_revalidation": [
+    "action",
+    "context",
+    "source",
+    "policy",
+    "grant",
+    "fence",
+    "deadline",
+    "budget",
+    "cancellation",
+    "profile"
+  ],
+  "initial_profile": {
+    "subject": "disposable workspace command or host-named verifier by argv",
+    "scratch_and_workspace_separate_from_operator_wip": true,
+    "secrets": false,
+    "egress": false,
+    "publication": false,
+    "administration": false,
+    "installation": false,
+    "free_form_pty": false,
+    "host_fallback_when_confinement_unavailable": false,
+    "windows_via_linux_is_not_windows_native_confinement": true
+  },
+  "authenticity": {
+    "producer_identity_selected_by_host": true,
+    "all_exported_artifacts_manifested": true,
+    "receipt_bound_to_action_work_fence_profile": true,
+    "signing_key_available_to_executor": false,
+    "digest_alone_authenticates_producer": false,
+    "consumer_verifies_admitted_issuer_and_exact_bytes": true,
+    "notary_currently_observed": false
+  },
+  "research_basis": {
+    "program": "tare-tools-action-control-program-v0.1-2026-10-07",
+    "archive_sha256": "09a294bc8ca006791d32cb72ed21edf060fe839f0c64084a61784802659aafbb",
+    "author_checksums_verified": 18,
+    "archive_code_executed": false,
+    "research_backlog_imported": false
+  },
+  "packets": [
+    {
+      "order": 0,
+      "scope": "architecture and exact source reconciliation",
+      "state": "THIS_DELIVERY"
+    },
+    {
+      "order": 1,
+      "scope": "exact mediation and own classifier/reviewer ports with finite fake cases",
+      "state": "PROPOSED"
+    },
+    {
+      "order": 2,
+      "scope": "first confinement backend and authenticated producer receipts",
+      "state": "PROPOSED"
+    },
+    {
+      "order": 3,
+      "scope": "own classifier and own reviewer shadow evaluation with bounded existing models",
+      "state": "PROPOSED"
+    },
+    {
+      "order": 4,
+      "scope": "public Codex native reviewer integration and accounting",
+      "state": "PROPOSED"
+    },
+    {
+      "order": 5,
+      "scope": "qualified profile canary and optional reviewer composition",
+      "state": "PROPOSED"
+    }
+  ],
+  "work_exit_criteria": [
+    {
+      "criterion": "Strict path confinement preventing writes outside designated scratch/workspace areas",
+      "state": "IMPLEMENTATION_AND_PLATFORM_EVIDENCE_REQUIRED"
+    },
+    {
+      "criterion": "Producer authenticity verification for all generated artifacts",
+      "state": "IMPLEMENTATION_AND_TAMPER_EVIDENCE_REQUIRED"
+    },
+    {
+      "criterion": "Unlocks TCP-05 trusted CI",
+      "state": "PREVIOUS_TWO_CRITERIA_REQUIRED"
+    }
+  ],
+  "local_tui": {
+    "state": "QUALIFIED_WINDOWS_OPT_IN",
+    "module": "relay/command_protection.py",
+    "review_modes": [
+      "tare",
+      "codex",
+      "both"
+    ],
+    "isolation_backends": [
+      "mxc",
+      "codex"
+    ],
+    "default_activation": false,
+    "default_max_review_calls": 6,
+    "max_review_calls": 24,
+    "noninteractive_commands_only": true,
+    "saved_policy_immutable_on_resume": true,
+    "uses_existing_effect_claim_and_supervisor": true,
+    "known_usage_or_unknown": true,
+    "distributed_and_other_platform_work": "DEFERRED_OPERATOR_BACKLOG_TAIL"
+  }
+}

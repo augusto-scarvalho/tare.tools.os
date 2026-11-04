@@ -1,0 +1,893 @@
+{
+  "schema_version": 1,
+  "purpose": "Operator role admission. Frontier plan/audit prefers another vendor, subscription quota before metered API, Sol before Astra and Opus before Fable within the same allowance class; Google uses Argon. This is preference policy, not measured quality or a public model ranking.",
+  "deployments": [
+    {
+      "id": "local-qwen",
+      "model": "qwen-3.8-27b",
+      "provider": "Local",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "local-node-aaaaa",
+      "endpoint_domain": "local-llm-8080",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "note": "Qualified native HTTP profile; no Aider session or implicit model fallback.",
+      "cost_tier": "free",
+      "native_counter_protocol": "utf8-envelope-estimate-v1",
+      "native_profile": {
+        "protocol": "openai-chat",
+        "model": "qwen38-gsq",
+        "expected_response_model": "qwen38-gsq",
+        "context_window": 131072,
+        "output_tokens": 16384,
+        "source": "local-labs qwen38-gsq card (NInfer-3090 0.11 f118551, Qwen3.8 27B GSQ-RCO IQ3_S, 128K rk8v4 KV, MTP 3, thinking budget 2048); 12/12 in two paired runs on 2026-09-28 (runs/requalification/NINFER-011-COHORT-2026-09-28); output 16384 like swift27b on the same server, since 6272 cut off whole-file edits",
+        "endpoint": "http://local-gateway:8080/v1",
+        "parameters_json": "{\"temperature\": 1.0, \"top_p\": 0.95, \"presence_penalty\": 0.0, \"seed\": 0, \"chat_template_kwargs\": {\"enable_thinking\": true, \"reasoning_effort\": \"low\"}, \"reasoning_format\": \"deepseek\", \"cache_prompt\": true, \"top_k\": 20, \"min_p\": 0.0, \"repeat_penalty\": 1.0}"
+      },
+      "native_usage_contract": {
+        "layout": "chat-inclusive",
+        "source": "NInfer per-request OpenAI usage; fields absent remain unknown"
+      },
+      "native_catalog": "local-qwen"
+    },
+    {
+      "id": "claude-cli",
+      "model": "claude-opus-5.5",
+      "provider": "Anthropic",
+      "transport": "CLI",
+      "runner": "native-http",
+      "quota_domain": "anthropic-cli-plan",
+      "endpoint_domain": "anthropic-cli",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer",
+        "planner",
+        "plan-auditor",
+        "auditor"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "claude-cli",
+      "review_priority": 0,
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
+    },
+    {
+      "id": "claude-sonnet-5-5-cli",
+      "model": "claude-sonnet-5.5",
+      "provider": "Anthropic",
+      "transport": "CLI",
+      "runner": "native-http",
+      "quota_domain": "anthropic-cli-plan",
+      "endpoint_domain": "anthropic-cli",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "claude-sonnet-5-5-cli",
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
+    },
+    {
+      "id": "claude-haiku-5-5-cli",
+      "model": "claude-haiku-5.5",
+      "provider": "Anthropic",
+      "transport": "CLI",
+      "runner": "native-http",
+      "quota_domain": "anthropic-cli-plan",
+      "endpoint_domain": "anthropic-cli",
+      "effort": null,
+      "roles": [
+        "explorer"
+      ],
+      "kind": "reserve",
+      "cost_tier": "flat",
+      "native_catalog": "claude-haiku-5-5-cli",
+      "note": "Candidate explorer: installed profile defaults to low. High-effort implementation is an explicit trial, not automatic implementer admission. CLI quota and incremental billing are unknown."
+    },
+    {
+      "id": "claude-fable-5-1-cli",
+      "model": "fable-5.1",
+      "provider": "Anthropic",
+      "transport": "CLI",
+      "runner": "native-http",
+      "quota_domain": "anthropic-cli-plan",
+      "endpoint_domain": "anthropic-cli",
+      "effort": null,
+      "roles": [
+        "planner",
+        "plan-auditor",
+        "auditor",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "claude-fable-5-1-cli",
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified.",
+      "review_priority": 1
+    },
+    {
+      "id": "claude-opus-5-5-cli",
+      "model": "claude-opus-5.5",
+      "provider": "Anthropic",
+      "transport": "CLI",
+      "runner": "native-http",
+      "quota_domain": "anthropic-cli-plan",
+      "endpoint_domain": "anthropic-cli",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer",
+        "planner",
+        "plan-auditor",
+        "auditor"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "claude-opus-5-5-cli",
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified.",
+      "review_priority": 0
+    },
+    {
+      "id": "agy-cli",
+      "model": "gemini-3.8-flash-high",
+      "provider": "Google",
+      "transport": "CLI",
+      "runner": "native-http",
+      "quota_domain": "google-cli-plan",
+      "endpoint_domain": "google-cli",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "agy-cli",
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
+    },
+    {
+      "id": "codex-cli",
+      "model": "gpt-6-astra",
+      "provider": "OpenAI",
+      "transport": "CLI",
+      "runner": "native-http",
+      "quota_domain": "openai-codex-plan",
+      "endpoint_domain": "openai-cli",
+      "effort": null,
+      "roles": [
+        "planner",
+        "plan-auditor",
+        "auditor",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "codex-cli",
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified.",
+      "review_priority": 1
+    },
+    {
+      "id": "codex-cli-gpt-5-5",
+      "model": "gpt-5.5",
+      "provider": "OpenAI",
+      "transport": "CLI",
+      "runner": "native-http",
+      "quota_domain": "openai-codex-plan",
+      "endpoint_domain": "openai-cli",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "codex-cli-gpt-5-5",
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
+    },
+    {
+      "id": "codex-cli-gpt-5-6-luna",
+      "model": "gpt-5.6-luna",
+      "provider": "OpenAI",
+      "transport": "CLI",
+      "runner": "native-http",
+      "quota_domain": "openai-codex-plan",
+      "endpoint_domain": "openai-cli",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "codex-cli-gpt-5-6-luna",
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
+    },
+    {
+      "id": "codex-cli-gpt-5-6-sol",
+      "model": "gpt-5.6-sol",
+      "provider": "OpenAI",
+      "transport": "CLI",
+      "runner": "native-http",
+      "quota_domain": "openai-codex-plan",
+      "endpoint_domain": "openai-cli",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "codex-cli-gpt-5-6-sol",
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
+    },
+    {
+      "id": "codex-cli-gpt-5-6-terra",
+      "model": "gpt-5.6-terra",
+      "provider": "OpenAI",
+      "transport": "CLI",
+      "runner": "native-http",
+      "quota_domain": "openai-codex-plan",
+      "endpoint_domain": "openai-cli",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "codex-cli-gpt-5-6-terra",
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
+    },
+    {
+      "id": "codex-native",
+      "model": "gpt-6-astra",
+      "provider": "OpenAI",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openai-codex-plan",
+      "endpoint_domain": "openai-api",
+      "effort": null,
+      "roles": [
+        "planner",
+        "plan-auditor",
+        "auditor",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "codex-native",
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified.",
+      "review_priority": 1
+    },
+    {
+      "id": "codex-native-gpt-5-5",
+      "model": "gpt-5.5",
+      "provider": "OpenAI",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openai-codex-plan",
+      "endpoint_domain": "openai-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "codex-native-gpt-5-5",
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
+    },
+    {
+      "id": "codex-native-gpt-5-6-luna",
+      "model": "gpt-5.6-luna",
+      "provider": "OpenAI",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openai-codex-plan",
+      "endpoint_domain": "openai-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "codex-native-gpt-5-6-luna",
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
+    },
+    {
+      "id": "codex-native-gpt-5-6-sol",
+      "model": "gpt-5.6-sol",
+      "provider": "OpenAI",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openai-codex-plan",
+      "endpoint_domain": "openai-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "codex-native-gpt-5-6-sol",
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
+    },
+    {
+      "id": "codex-native-gpt-5-6-terra",
+      "model": "gpt-5.6-terra",
+      "provider": "OpenAI",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openai-codex-plan",
+      "endpoint_domain": "openai-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "codex-native-gpt-5-6-terra",
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
+    },
+    {
+      "id": "kimi-cli",
+      "model": "kimi-k3",
+      "provider": "Kimi",
+      "transport": "CLI",
+      "runner": "kimi-cli",
+      "quota_domain": "kimi-cli-plan",
+      "endpoint_domain": "kimi-cli",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "reserve",
+      "cost_tier": "flat",
+      "note": "Subscription plan; reserve when the three main CLIs are exhausted or all conflicted."
+    },
+    {
+      "id": "bedrock-opus-explorer",
+      "model": "claude-opus-4.6",
+      "provider": "Amazon Bedrock",
+      "transport": "API",
+      "runner": "native-http",
+      "region": "us-east-1",
+      "quota_domain": "aws-bedrock-credits",
+      "endpoint_domain": "aws-bedrock-runtime-us-east-1",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "reserve",
+      "note": "Qualified native implementation reserve. Current parameters come from the named catalogue profile; no frontier planning or audit admission.",
+      "cost_tier": "free-credit",
+      "native_credential_env": "AWS_BEARER_TOKEN_BEDROCK",
+      "native_profile": {
+        "protocol": "bedrock-converse",
+        "model": "us.anthropic.claude-opus-4-6-v1",
+        "count_model": "anthropic.claude-opus-4-6-v1",
+        "count_model_source": "Kernel docs/NATIVE_CANARY_20260910.md: CountTokens route qualified with Opus",
+        "context_window": 1000000,
+        "output_tokens": 16384,
+        "source": "Kernel docs/NATIVE_CANARY_20260910.md; adaptive high, qualified route; window not stress tested",
+        "endpoint": "https://bedrock-runtime.us-east-1.amazonaws.com",
+        "parameters_json": "{\"additionalModelRequestFields\": {\"thinking\": {\"type\": \"adaptive\"}, \"output_config\": {\"effort\": \"high\"}}}",
+        "cache_system": true,
+        "cache_support_source": "Kernel docs/NATIVE_CANARY_20260910.md: 5958-token system prefix cold/warm qualified"
+      },
+      "native_usage_contract": {
+        "layout": "converse-exclusive",
+        "source": "AWS Converse per-response input/output/cache counters; native M2 canary"
+      },
+      "native_catalog": "bedrock-opus"
+    },
+    {
+      "id": "bedrock-sonnet-explorer",
+      "model": "claude-sonnet-4.6",
+      "provider": "Amazon Bedrock",
+      "transport": "API",
+      "runner": "native-http",
+      "region": "us-east-1",
+      "quota_domain": "aws-bedrock-credits",
+      "endpoint_domain": "aws-bedrock-runtime-us-east-1",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "reserve",
+      "note": "Qualified native implementation reserve. Current parameters come from the named catalogue profile; no frontier planning or audit admission.",
+      "cost_tier": "free-credit",
+      "native_credential_env": "AWS_BEARER_TOKEN_BEDROCK",
+      "native_profile": {
+        "protocol": "bedrock-converse",
+        "model": "us.anthropic.claude-sonnet-4-6",
+        "context_window": 1000000,
+        "output_tokens": 16384,
+        "endpoint": "https://bedrock-runtime.us-east-1.amazonaws.com",
+        "source": "docs/operations/NATIVE_BEDROCK_ROUTES_2026-09-10.md: AWS card and bounded live native canary; window not stress tested",
+        "count_model": "anthropic.claude-sonnet-4-6",
+        "count_model_source": "docs/operations/NATIVE_BEDROCK_ROUTES_2026-09-10.md: live Sonnet CountTokens",
+        "parameters_json": "{\"additionalModelRequestFields\": {\"thinking\": {\"type\": \"adaptive\"}, \"output_config\": {\"effort\": \"high\"}}}",
+        "cache_system": true,
+        "cache_support_source": "docs/operations/NATIVE_BEDROCK_ROUTES_2026-09-10.md: 2221-token system cache cold/write then warm/read"
+      },
+      "native_usage_contract": {
+        "layout": "converse-exclusive",
+        "source": "AWS Converse response usage"
+      },
+      "native_catalog": "bedrock-sonnet"
+    },
+    {
+      "id": "bedrock-glm-explorer",
+      "model": "glm-5",
+      "provider": "Amazon Bedrock",
+      "transport": "API",
+      "runner": "native-http",
+      "region": "us-east-1",
+      "quota_domain": "aws-bedrock-credits",
+      "endpoint_domain": "aws-bedrock-runtime-us-east-1",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "reserve",
+      "note": "Qualified native implementation reserve. Current parameters come from the named catalogue profile; no frontier planning or audit admission.",
+      "cost_tier": "free-credit",
+      "native_credential_env": "AWS_BEARER_TOKEN_BEDROCK",
+      "native_profile": {
+        "protocol": "bedrock-converse",
+        "model": "zai.glm-5",
+        "context_window": 200000,
+        "output_tokens": 4096,
+        "endpoint": "https://bedrock-runtime.us-east-1.amazonaws.com",
+        "source": "docs/operations/NATIVE_BEDROCK_ROUTES_2026-09-10.md: AWS card and bounded live native canary; window not stress tested; UTF-8 envelope estimate selected explicitly because CountTokens is unsupported; reasoning_config high qualified",
+        "parameters_json": "{\"additionalModelRequestFields\": {\"reasoning_config\": \"high\"}}"
+      },
+      "native_usage_contract": {
+        "layout": "converse-exclusive",
+        "source": "AWS Converse response usage"
+      },
+      "native_counter_protocol": "utf8-envelope-estimate-v1",
+      "native_catalog": "bedrock-glm"
+    },
+    {
+      "id": "openrouter-deepseek-v4-1-flash",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "provider": "OpenRouter",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openrouter-api",
+      "endpoint_domain": "openrouter-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "reserve",
+      "cost_tier": "metered",
+      "native_catalog": "openrouter-deepseek-v4-1-flash",
+      "note": "Exact registered HTTP profile. Admission requires credentials; current price, quota and quality remain separately evidenced."
+    },
+    {
+      "id": "openrouter-glm-5-3",
+      "model": "z-ai/glm-5.3",
+      "provider": "OpenRouter",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openrouter-api",
+      "endpoint_domain": "openrouter-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer",
+        "researcher"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "native_catalog": "openrouter-glm-5-3",
+      "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality."
+    },
+    {
+      "id": "agy-gemini-4-argon-cli",
+      "model": "gemini-4-argon-high",
+      "provider": "Google",
+      "transport": "CLI",
+      "runner": "native-http",
+      "quota_domain": "google-cli-plan",
+      "endpoint_domain": "google-cli",
+      "effort": null,
+      "roles": [
+        "planner",
+        "plan-auditor",
+        "auditor",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "agy-gemini-4-argon-cli",
+      "note": "Operator-designated frontier peer of Astra and Fable; exact AGY model IDs observed 2026-10-17. Resolve the installed profile; quota, billing and comparative quality remain separately evidenced.",
+      "review_priority": 0
+    },
+    {
+      "id": "codex-native-gpt-6-1-sol",
+      "model": "gpt-6.1-sol",
+      "provider": "OpenAI",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "codex-cli-plan",
+      "endpoint_domain": "codex-native",
+      "effort": null,
+      "roles": [
+        "planner",
+        "plan-auditor",
+        "auditor"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "review_priority": 0,
+      "native_catalog": "codex-native-gpt-6-1-sol",
+      "note": "Operator-admitted frontier. Prefer this native connection's stable cache identity over a new Codex CLI process. Uses the same subscription allowance."
+    },
+    {
+      "id": "codex-cli-gpt-6-1-sol",
+      "model": "gpt-6.1-sol",
+      "provider": "OpenAI",
+      "transport": "CLI",
+      "runner": "native-http",
+      "quota_domain": "codex-cli-plan",
+      "endpoint_domain": "codex-cli",
+      "effort": null,
+      "roles": [
+        "planner",
+        "plan-auditor",
+        "auditor"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "review_priority": 0,
+      "native_catalog": "codex-cli-gpt-6-1-sol",
+      "note": "Operator-admitted frontier CLI backup; Sol 6.1 precedes Astra within the same allowance class."
+    },
+    {
+      "id": "openai-api",
+      "model": "gpt-6.1-sol",
+      "provider": "OpenAI",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openai-api-credit",
+      "endpoint_domain": "openai-api",
+      "effort": null,
+      "roles": [
+        "planner",
+        "plan-auditor",
+        "auditor",
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "review_priority": 0,
+      "native_catalog": "openai-api",
+      "note": "Operator-admitted frontier. Prefer a different vendor, then configured allowance class and review preference. API credit is separate from CLI quota; no measured quality or savings claim. Pro execution modes are not automatic reviewer choices. Available for implementation/exploration in a restricted TUI launch; the ordinary execution ladder is unchanged."
+    },
+    {
+      "id": "openai-api-gpt-6-astra",
+      "model": "gpt-6-astra",
+      "provider": "OpenAI",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openai-api-credit",
+      "endpoint_domain": "openai-api",
+      "effort": null,
+      "roles": [
+        "planner",
+        "plan-auditor",
+        "auditor",
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "review_priority": 1,
+      "native_catalog": "openai-api-gpt-6-astra",
+      "note": "Operator-admitted frontier. Prefer a different vendor, then configured allowance class and review preference. API credit is separate from CLI quota; no measured quality or savings claim. Pro execution modes are not automatic reviewer choices. Available for implementation/exploration in a restricted TUI launch; the ordinary execution ladder is unchanged."
+    },
+    {
+      "id": "claude-api-opus-5-5",
+      "model": "claude-opus-5.5",
+      "provider": "Anthropic",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "anthropic-api-credit",
+      "endpoint_domain": "anthropic-api",
+      "effort": null,
+      "roles": [
+        "planner",
+        "plan-auditor",
+        "auditor",
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "review_priority": 0,
+      "native_catalog": "claude-api-opus-5-5",
+      "note": "Operator-admitted frontier. Prefer a different vendor, then configured allowance class and review preference. API credit is separate from CLI quota; no measured quality or savings claim. Pro execution modes are not automatic reviewer choices. Available for implementation/exploration in a restricted TUI launch; the ordinary execution ladder is unchanged."
+    },
+    {
+      "id": "claude-api-fable-5-1",
+      "model": "fable-5.1",
+      "provider": "Anthropic",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "anthropic-api-credit",
+      "endpoint_domain": "anthropic-api",
+      "effort": null,
+      "roles": [
+        "planner",
+        "plan-auditor",
+        "auditor",
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "review_priority": 1,
+      "native_catalog": "claude-api-fable-5-1",
+      "note": "Operator-admitted frontier. Prefer a different vendor, then configured allowance class and review preference. API credit is separate from CLI quota; no measured quality or savings claim. Pro execution modes are not automatic reviewer choices. Available for implementation/exploration in a restricted TUI launch; the ordinary execution ladder is unchanged."
+    },
+    {
+      "id": "gemini-api",
+      "model": "gemini-4-argon",
+      "provider": "Google",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "google-api-credit",
+      "endpoint_domain": "google-api",
+      "effort": null,
+      "roles": [
+        "planner",
+        "plan-auditor",
+        "auditor",
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "review_priority": 0,
+      "native_catalog": "gemini-api",
+      "note": "Operator-admitted frontier. Prefer a different vendor, then configured allowance class and review preference. API credit is separate from CLI quota; no measured quality or savings claim. Pro execution modes are not automatic reviewer choices. Available for implementation/exploration in a restricted TUI launch; the ordinary execution ladder is unchanged."
+    },
+    {
+      "id": "openrouter-kimi-k3-1-pro",
+      "model": "moonshotai/kimi-k3.1-pro",
+      "provider": "OpenRouter",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openrouter-api",
+      "endpoint_domain": "openrouter-api",
+      "effort": null,
+      "roles": [
+        "planner",
+        "plan-auditor",
+        "auditor"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "native_catalog": "openrouter-kimi-k3-1-pro",
+      "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality.",
+      "review_priority": 2
+    },
+    {
+      "id": "openrouter-deepseek-v4-1-flash-1017",
+      "model": "deepseek/deepseek-v4.1-flash-1017",
+      "provider": "OpenRouter",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openrouter-api",
+      "endpoint_domain": "openrouter-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer",
+        "researcher"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "native_catalog": "openrouter-deepseek-v4-1-flash-1017",
+      "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality."
+    },
+    {
+      "id": "openrouter-mimo-v2-6-pro",
+      "model": "xiaomi/mimo-v2.6-pro",
+      "provider": "OpenRouter",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openrouter-api",
+      "endpoint_domain": "openrouter-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer",
+        "researcher"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "native_catalog": "openrouter-mimo-v2-6-pro",
+      "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality."
+    },
+    {
+      "id": "openrouter-glm-5-3-flash",
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "OpenRouter",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openrouter-api",
+      "endpoint_domain": "openrouter-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer",
+        "researcher"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "native_catalog": "openrouter-glm-5-3-flash",
+      "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality."
+    },
+    {
+      "id": "openrouter-mistral-large-4",
+      "model": "mistralai/mistral-large-4-0",
+      "provider": "OpenRouter",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openrouter-api",
+      "endpoint_domain": "openrouter-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer",
+        "researcher"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "native_catalog": "openrouter-mistral-large-4",
+      "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality."
+    },
+    {
+      "id": "openrouter-muse-wonder",
+      "model": "meta/muse-wonder",
+      "provider": "OpenRouter",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openrouter-api",
+      "endpoint_domain": "openrouter-api",
+      "effort": null,
+      "roles": [
+        "planner",
+        "plan-auditor",
+        "auditor"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "native_catalog": "openrouter-muse-wonder",
+      "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality.",
+      "review_priority": 2
+    },
+    {
+      "id": "openrouter-step-5-preview",
+      "model": "stepfun/step-5-preview",
+      "provider": "OpenRouter",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openrouter-api",
+      "endpoint_domain": "openrouter-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer",
+        "researcher"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "native_catalog": "openrouter-step-5-preview",
+      "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality."
+    },
+    {
+      "id": "openrouter-muse-spark-1-3-contributor",
+      "model": "meta/muse-spark-1.3-contributor",
+      "provider": "OpenRouter",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openrouter-api",
+      "endpoint_domain": "openrouter-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer",
+        "researcher"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "native_catalog": "openrouter-muse-spark-1-3-contributor",
+      "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality. Requires the explicit Contributor data-use choice."
+    },
+    {
+      "id": "openrouter-grok-4-7",
+      "model": "x-ai/grok-4.7",
+      "provider": "OpenRouter",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openrouter-api",
+      "endpoint_domain": "openrouter-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer",
+        "researcher"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "native_catalog": "openrouter-grok-4-7",
+      "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality."
+    },
+    {
+      "id": "openrouter-ling-3-1-flash",
+      "model": "inclusionai/ling-3.1-flash",
+      "provider": "OpenRouter",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openrouter-api",
+      "endpoint_domain": "openrouter-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer",
+        "researcher"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "native_catalog": "openrouter-ling-3-1-flash",
+      "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality."
+    },
+    {
+      "id": "openrouter-qwen3-8-omni-flash",
+      "model": "qwen/qwen3.8-omni-flash",
+      "provider": "OpenRouter",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openrouter-api",
+      "endpoint_domain": "openrouter-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer",
+        "researcher"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "native_catalog": "openrouter-qwen3-8-omni-flash",
+      "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality."
+    }
+  ],
+  "cost_tiers": {
+    "free": "Local inference; no token bill, but GPU capacity, energy and opportunity costs remain.",
+    "flat": "Subscription route; remaining quota and incremental billing are unknown unless evidenced.",
+    "free-credit": "AWS credit, reserve only",
+    "metered": "pay per token"
+  }
+}

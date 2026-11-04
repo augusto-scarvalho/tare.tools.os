@@ -1,0 +1,89 @@
+{
+  "build_tools": {
+    "packaging": "25.0",
+    "pip": "25.1.1",
+    "setuptools": "80.9.0",
+    "wheel": "0.45.1"
+  },
+  "python": "3.12",
+  "schema": "tare.tools/native-release-inputs/1",
+  "source_date_epoch": 1790434417,
+  "sources": [
+    {
+      "commit": "e06cfba2103824bbe2aec6eec10d53f15f50b568",
+      "id": "runtime",
+      "include": [
+        "pyproject.toml",
+        "README.md",
+        "LICENSE*",
+        "src/**"
+      ],
+      "package": "tare-tools-agent-runtime",
+      "version": "0.14.0"
+    },
+    {
+      "commit": "17910a3cd1679a13a78c7d323fe2e4a521f0e754",
+      "id": "kernel",
+      "include": [
+        "pyproject.toml",
+        "README.md",
+        "LICENSE*",
+        "assurance_plane/**",
+        "compute_plane/**",
+        "control_plane/**",
+        "data_plane/**",
+        "experience_plane/**"
+      ],
+      "package": "tare-kernel",
+      "version": "0.9.21"
+    },
+    {
+      "commit": "4e836635e7732f92de2428cdc0ba649e12522a8a",
+      "id": "specgraph",
+      "include": [
+        "pyproject.toml",
+        "README.md",
+        "LICENSE*",
+        "src/**"
+      ],
+      "package": "tare-tools-specgraph",
+      "version": "0.7.3"
+    },
+    {
+      "commit": "5f00399bed6921bc132aecc93f62fc03940145e5",
+      "id": "backlog",
+      "include": [
+        "pyproject.toml",
+        "README.md",
+        "LICENSE*",
+        "src/**"
+      ],
+      "package": "tare-tools-backlog-graph",
+      "version": "1.2.0"
+    },
+    {
+      "commit": "48730acff19e16d91817711773e560904843ae17",
+      "id": "os",
+      "include": [
+        "pyproject.toml",
+        "README.md",
+        "LICENSE*",
+        "tare_ops.py",
+        "relay/*.py",
+        "relay/round_table_roster.json",
+        "relay/role_deployments.json",
+        "relay/retired_aider_deployments.json",
+        "relay/native_deployments/*.json",
+        "schemas/*.json",
+        "scripts/round_table/*.py",
+        "scripts/round_table/*.html",
+        "scripts/ops/build_native_release.py",
+        "schemas/*.py",
+        "relay/model_evidence.json",
+        "scripts/ops/pack_native_release.py"
+      ],
+      "package": "tare-tools-os",
+      "version": "0.1.61"
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=77"]  # SPDX license expressions
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tare-tools-os"
+version = "0.1.134"
+description = "tare.tools native execution and Work composition"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = [
+    "tare-kernel[attachments]>=0.9.88,<0.10",
+    "tare-tools-agent-runtime>=0.14.7,<0.15",
+    "tare-tools-specgraph>=0.7.9,<0.8",
+    "tare-tools-backlog-graph>=1.3.1,<2",
+    "keyring>=25,<26",
+    "packaging>=24",
+    "jsonschema>=4.18,<5",
+    "trafilatura>=2,<3",
+    "textual>=8.2.8,<9",
+    "pyte>=0.8.2,<0.9",
+    "psutil>=7,<8",
+]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.29.1,<2"]
+
+[project.scripts]
+tare-ops = "relay.native_installation:main"
+tare = "relay.native_installation:main"
+
+[tool.setuptools]
+py-modules = ["tare_ops"]
+packages = ["relay", "scripts.round_table", "tare_os_schemas"]
+package-dir = {tare_os_schemas = "schemas"}
+
+[tool.setuptools.package-data]
+"scripts.round_table" = ["*.html"]
+tare_os_schemas = ["*.json"]
+relay = ["round_table_roster.json", "role_deployments.json", "retired_aider_deployments.json", "model_evidence.json", "behavioral_evidence.json", "prompt_capsules.json", "native_deployments/*.json", "templates/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = [
+    "satellites",
+    "relay/history",
+    "scratch",
+    ".git",
+    "side_projects"
+]
+python_files = ["test_*.py"]
+timeout = 30
+timeout_method = "thread"
+markers = ["live: the test reaches a real network host; the suite is offline otherwise"]

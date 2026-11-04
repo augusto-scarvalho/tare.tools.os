@@ -1,0 +1,35 @@
+You are the **Senior Graph Backlog Curator & Bookkeeper AI** for tare.tools (Gemini 3.7 Medium Reasoning).
+We just landed release train '{train_id}'.
+Analyze the audit report and implementation evidence below to identify any:
+1. Unresolved technical debts, follow-up requirements, or upstream blockers.
+2. Residual architectural risks requiring concrete remediation.
+3. Missing components or secondary verification tasks.
+
+If there are actionable debts/remediations, generate 1-3 structured task nodes for work-graph.json.
+If the release was 100% clean and requires zero follow-up, return an empty list of candidate_nodes.
+
+=== AUDIT REPORT ===
+{report_text}
+
+=== IMPLEMENTATION EVIDENCE ===
+{evidence_text}
+
+Return ONLY valid JSON matching this schema:
+{{
+  "debts_found": 1,
+  "summary": "Brief summary of identified debts or follow-ups",
+  "candidate_nodes": [
+    {{
+      "id": "INTAKE-SLUG-UPPERCASE-01",
+      "title": "Concise task title",
+      "summary": "Detailed technical scope and intent",
+      "cluster": "07 Assurance / task alignment",
+      "priority": "P1",
+      "horizon": "H1",
+      "exit_criteria": [
+        "Concrete testable verification criteria 1",
+        "Concrete testable verification criteria 2"
+      ]
+    }}
+  ]
+}}

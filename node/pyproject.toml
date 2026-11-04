@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tare-tools-node"
+version = "0.3.0"
+description = "tare.tools node service: model gateway, shared GPU lease and gpu command, ComfyUI hook"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+dependencies = []
+
+[project.scripts]
+tare-node-gateway = "tare_node.qualified_model_gateway:main"
+gpu = "tare_node.gpu:main"
+gpu-run = "tare_node.gpu_lease_run:main"
+tare-node-comfy = "tare_node.coordinated_comfy:main"
+tare-node-install = "tare_node.install:main"
+tare-node-update = "tare_node.update:main"
+
+[tool.setuptools]
+packages = ["tare_node"]
+
+[tool.setuptools.package-data]
+tare_node = ["config/*.json", "config/*.jinja", "gpu_training_guard.sh"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

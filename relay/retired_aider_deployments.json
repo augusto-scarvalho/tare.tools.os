@@ -1,0 +1,266 @@
+{
+  "schema": "tare.tools/retired-deployments/1",
+  "retired_at": "2026-09-10",
+  "authority": "NONE",
+  "entries": [
+    {
+      "consumer": "fallbacks",
+      "deployment": {
+        "id": "chair-anthropic-api",
+        "model": "fable-5",
+        "provider": "Anthropic API",
+        "transport": "API",
+        "runner": "aider",
+        "quota_domain": "anthropic-api-key",
+        "endpoint_domain": "anthropic-api",
+        "effort": "high",
+        "priority": 2,
+        "kind": "transport",
+        "replaces": "chair-anthropic-cli",
+        "model_fallback": null
+      },
+      "reason": "Legacy Aider transport retired. No qualified native profile/counter for this exact route. Vendor CLI routes remain selected; explicit native profiles may be added without restoring Aider."
+    },
+    {
+      "consumer": "fallbacks",
+      "deployment": {
+        "id": "chair-anthropic-openrouter",
+        "model": "fable-5",
+        "provider": "OpenRouter",
+        "transport": "API",
+        "runner": "aider-openrouter",
+        "quota_domain": "openrouter-credits",
+        "endpoint_domain": "openrouter-api",
+        "effort": "high",
+        "priority": 3,
+        "kind": "transport",
+        "replaces": "chair-anthropic-cli",
+        "model_fallback": null
+      },
+      "reason": "Legacy Aider transport retired. No qualified native profile/counter for this exact route. Vendor CLI routes remain selected; explicit native profiles may be added without restoring Aider."
+    },
+    {
+      "consumer": "fallbacks",
+      "deployment": {
+        "id": "chair-openai-openrouter",
+        "model": "gpt-5.6-sol",
+        "provider": "OpenRouter",
+        "transport": "API",
+        "runner": "aider-openrouter",
+        "quota_domain": "openrouter-credits",
+        "endpoint_domain": "openrouter-api",
+        "effort": "high",
+        "priority": 5,
+        "kind": "transport",
+        "replaces": "chair-openai-cli",
+        "model_fallback": null
+      },
+      "reason": "Legacy Aider transport retired. No qualified native profile/counter for this exact route. Vendor CLI routes remain selected; explicit native profiles may be added without restoring Aider."
+    },
+    {
+      "consumer": "fallbacks",
+      "deployment": {
+        "id": "chair-google-openrouter",
+        "model": "gemini-3.7",
+        "provider": "OpenRouter",
+        "transport": "API",
+        "runner": "aider-openrouter",
+        "quota_domain": "openrouter-credits",
+        "endpoint_domain": "openrouter-api",
+        "effort": "high",
+        "priority": 6,
+        "kind": "transport",
+        "replaces": "chair-google-cli",
+        "model_fallback": null
+      },
+      "reason": "Legacy Aider transport retired. No qualified native profile/counter for this exact route. Vendor CLI routes remain selected; explicit native profiles may be added without restoring Aider."
+    },
+    {
+      "consumer": "fallbacks",
+      "deployment": {
+        "id": "chair-xai-openrouter",
+        "model": "grok-4.6",
+        "provider": "OpenRouter",
+        "transport": "API",
+        "runner": "aider-openrouter",
+        "quota_domain": "openrouter-credits",
+        "endpoint_domain": "openrouter-api",
+        "effort": null,
+        "priority": 8,
+        "kind": "quota_fallback"
+      },
+      "reason": "Legacy Aider transport retired. No qualified native profile/counter for this exact route. Vendor CLI routes remain selected; explicit native profiles may be added without restoring Aider."
+    },
+    {
+      "consumer": "fallbacks",
+      "deployment": {
+        "id": "chair-kimi-openrouter",
+        "model": "kimi-k3",
+        "provider": "OpenRouter",
+        "transport": "API",
+        "runner": "aider-openrouter",
+        "quota_domain": "openrouter-credits",
+        "endpoint_domain": "openrouter-api",
+        "effort": null,
+        "priority": 10,
+        "kind": "quota_fallback"
+      },
+      "reason": "Legacy Aider transport retired. No qualified native profile/counter for this exact route. Vendor CLI routes remain selected; explicit native profiles may be added without restoring Aider."
+    },
+    {
+      "consumer": "fallbacks",
+      "deployment": {
+        "id": "chair-glm-openrouter",
+        "model": "glm-5.3",
+        "provider": "OpenRouter",
+        "transport": "API",
+        "runner": "aider-openrouter",
+        "quota_domain": "openrouter-credits",
+        "endpoint_domain": "openrouter-api",
+        "effort": "high",
+        "priority": 11,
+        "kind": "quota_fallback"
+      },
+      "reason": "Legacy Aider transport retired. No qualified native profile/counter for this exact route. Vendor CLI routes remain selected; explicit native profiles may be added without restoring Aider."
+    },
+    {
+      "consumer": "mediators",
+      "deployment": {
+        "id": "mediator-glm-openrouter",
+        "model": "glm-5.3",
+        "provider": "OpenRouter",
+        "transport": "API",
+        "runner": "aider-openrouter",
+        "quota_domain": "openrouter-credits",
+        "endpoint_domain": "openrouter-api",
+        "effort": "high",
+        "priority": 4,
+        "kind": "fallback_paid"
+      },
+      "reason": "Legacy Aider transport retired. No qualified native profile/counter for this exact route. Vendor CLI routes remain selected; explicit native profiles may be added without restoring Aider."
+    },
+    {
+      "consumer": "scribes",
+      "deployment": {
+        "id": "scribe-minimax-nvidia",
+        "model": "minimax-m3",
+        "provider": "NVIDIA NIM|BUILD",
+        "transport": "API",
+        "runner": "aider",
+        "quota_domain": "nvidia-api-key",
+        "endpoint_domain": "nvidia-nim-api",
+        "effort": null,
+        "priority": 5,
+        "kind": "fallback_free"
+      },
+      "reason": "Legacy Aider transport retired. No qualified native profile/counter for this exact route. Vendor CLI routes remain selected; explicit native profiles may be added without restoring Aider."
+    },
+    {
+      "consumer": "scribes",
+      "deployment": {
+        "id": "scribe-gemini-3-flash-api",
+        "model": "gemini-3-flash-preview",
+        "provider": "Google free tier API",
+        "transport": "API",
+        "runner": "aider",
+        "quota_domain": "google-free-tier-key",
+        "endpoint_domain": "google-free-api",
+        "effort": null,
+        "priority": 6,
+        "kind": "fallback_free"
+      },
+      "reason": "Legacy Aider transport retired. No qualified native profile/counter for this exact route. Vendor CLI routes remain selected; explicit native profiles may be added without restoring Aider."
+    },
+    {
+      "consumer": "scribes",
+      "deployment": {
+        "id": "scribe-gemini-2.5-flash-api",
+        "model": "gemini-2.5-flash",
+        "provider": "Google free tier API",
+        "transport": "API",
+        "runner": "aider",
+        "quota_domain": "google-free-tier-key",
+        "endpoint_domain": "google-free-api",
+        "effort": null,
+        "priority": 7,
+        "kind": "fallback_free"
+      },
+      "reason": "Legacy Aider transport retired. No qualified native profile/counter for this exact route. Vendor CLI routes remain selected; explicit native profiles may be added without restoring Aider."
+    },
+    {
+      "consumer": "role_deployments",
+      "deployment": {
+        "id": "openrouter-glm-auditor",
+        "model": "glm-5.3",
+        "provider": "OpenRouter",
+        "transport": "API",
+        "runner": "aider-openrouter",
+        "quota_domain": "openrouter-credits",
+        "endpoint_domain": "openrouter-api",
+        "effort": "high",
+        "roles": [
+          "auditor",
+          "plan-auditor"
+        ],
+        "kind": "primary",
+        "note": "Preferred paid auditor while the Fable subscription CLI is unavailable; never swap silently for paid Fable.",
+        "cost_tier": "metered"
+      },
+      "reason": "Aider route retired; exact native context/count profile remains unqualified. No silent model replacement."
+    },
+    {
+      "consumer": "role_deployments",
+      "deployment": {
+        "id": "bedrock-sonnet-explorer",
+        "model": "claude-sonnet-4.6",
+        "provider": "Amazon Bedrock",
+        "transport": "API",
+        "runner": "aider-bedrock",
+        "region": "us-east-1",
+        "quota_domain": "aws-bedrock-credits",
+        "endpoint_domain": "aws-bedrock-runtime-us-east-1",
+        "effort": "high",
+        "roles": [
+          "explorer"
+        ],
+        "kind": "reserve",
+        "note": "Free-credit reserve explorer; runs in parallel with the other reserves.",
+        "cost_tier": "free-credit"
+      },
+      "reason": "Aider route retired; exact native context/count profile remains unqualified. No silent model replacement.",
+      "successor": {
+        "runner": "native-http",
+        "deployment_id": "bedrock-sonnet-explorer",
+        "qualified_at": "2026-09-10",
+        "evidence": "docs/operations/NATIVE_BEDROCK_ROUTES_2026-09-10.md"
+      }
+    },
+    {
+      "consumer": "role_deployments",
+      "deployment": {
+        "id": "bedrock-glm-explorer",
+        "model": "glm-5",
+        "provider": "Amazon Bedrock",
+        "transport": "API",
+        "runner": "aider-bedrock",
+        "region": "us-east-1",
+        "quota_domain": "aws-bedrock-credits",
+        "endpoint_domain": "aws-bedrock-runtime-us-east-1",
+        "effort": "high",
+        "roles": [
+          "explorer"
+        ],
+        "kind": "reserve",
+        "note": "Free-credit reserve explorer; Bedrock route of the GLM domain.",
+        "cost_tier": "free-credit"
+      },
+      "reason": "Aider route retired; exact native context/count profile remains unqualified. No silent model replacement.",
+      "successor": {
+        "runner": "native-http",
+        "deployment_id": "bedrock-glm-explorer",
+        "qualified_at": "2026-09-10",
+        "evidence": "docs/operations/NATIVE_BEDROCK_ROUTES_2026-09-10.md"
+      }
+    }
+  ]
+}

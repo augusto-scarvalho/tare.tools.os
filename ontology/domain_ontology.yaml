@@ -1,0 +1,102 @@
+version: "1.1.0"
+governance: "ADR-045"
+last_updated: "2026-09-07"
+
+concepts:
+  - id: "TripartiteRoundTable"
+    name: "Tripartite Round Table"
+    domain: "Deliberation & Architectural Governance"
+    governing_adr: "ADR-056"
+    definition: "Governed architectural deliberation in which exactly three independently identified seats, separated by model lineage (bias_domain), evaluate an explicit proposal and preserve their real findings before human ratification or deterministic admission."
+    invariants:
+      - "Seat identity and each submitted position are preserved; consensus is never fabricated."
+      - "A fallback replaces one seat 1:1 and never adds quorum, weight or independence."
+      - "Self-referential governance changes cannot be approved by the mechanism they weaken."
+    relationships:
+      governs: ["ArchitecturalDeliberation", "DecisionProvenance"]
+      requires: ["IndependentSeatIdentity", "DecisionIntegrityLedger"]
+
+  - id: "DecisionIntegrityLedger"
+    name: "Decision Integrity Ledger"
+    domain: "Deliberation & Architectural Governance"
+    governing_adr: "ADR-055"
+    definition: "Create-only case record with a non-stealable fenced lock and a SHA-256 chained event ledger in which votes, tally, DECISION.md hash and ADR promotion are bound to each other so later edits fail closed on verify."
+    invariants:
+      - "DECISION_FINALIZED records proposal_sha256 and decision_sha256; verify recomputes the decision hash and requires exactly one compatible terminal event."
+      - "Hashes make tampering detectable within the observed history; they do not replace repository controls and human review."
+    relationships:
+      governs: ["CaseLedger", "AdrPromotion"]
+      requires: ["TripartiteRoundTable"]
+      mitigates: ["ForgedConsensus", "PostHocDecisionRewrite"]
+
+  - id: "HumanSovereignAdjudication"
+    name: "Human Sovereign Adjudication"
+    domain: "Deliberation & Architectural Governance"
+    governing_adr: "ADR-056"
+    definition: "Rule that the repository owner is the final authority: after an exhausted round budget the operator may adjudicate a split review with an explicit ruling, but the result is AUTHORIZED_BY_OPERATOR_EXCEPTION, keeps the original tally, and is never promotable to an ADR."
+    invariants:
+      - "APPROVED means the Round Table actually reached its approval result; an operator exception never relabels dissent."
+      - "adjudicate rejects every self_referential case and requires disposition of each recorded blocker."
+    relationships:
+      governs: ["OperatorAdjudication", "ExceptionAuthority"]
+      requires: ["DecisionIntegrityLedger"]
+
+  - id: "IdempotentLandingSaga"
+    name: "Idempotent Landing Saga"
+    domain: "Release Trains & Crash Recovery"
+    governing_adr: "ADR-045"
+    definition: "Landing protocol for a candidate commit driven by a write-ahead journal and a finite state machine, so a crashed or repeated landing is recovered by a reachability probe on the target ref and canonical Git trailers instead of by re-running effects."
+    invariants:
+      - "Every landing phase is journaled before its effect; recovery reads the journal and the target ref, never the operator's memory."
+      - "Landing the same candidate twice is a no-op; landing a stale candidate is rejected by compare-and-swap on the target ref."
+    relationships:
+      governs: ["TrainLifecycle", "CandidateAdmission", "LandingRecovery"]
+      requires: ["CASPersistence", "ExecutionReceiptAttestation"]
+
+  - id: "SatelliteFederation"
+    name: "Satellite Federation"
+    domain: "Repository Federation & Anti-Drift"
+    governing_adr: "ADR-049"
+    definition: "Composition of the OS from pinned satellite repositories (kernel, specgraph, backlog-graph, library) consumed only through adapters, with an AST linter that forbids static or dynamic imports between satellites."
+    invariants:
+      - "A satellite is pinned by commit in the OS; the OS never edits satellite sources in place."
+      - "Infrastructure-specific behaviour lives in OS adapters, never in the upstream library."
+    relationships:
+      governs: ["SubmodulePinning", "AdapterBoundary"]
+      mitigates: ["AgentDrift", "CrossSatelliteCoupling"]
+
+  - id: "TripleAxisIntelligence"
+    name: "Triple Axis of Agentic Engineering"
+    domain: "Knowledge Substrate & Bookkeeping"
+    governing_adr: "ADR-051"
+    definition: "Separation of agent memory into three owned substrates: research and papers in the Library, actionable work in the Backlog Graph, and project structure and specifications in SpecGraph, maintained by a bookkeeping engine instead of ad-hoc notes."
+    invariants:
+      - "An agent writes a finding into the substrate that owns it; the same fact is not duplicated across axes."
+      - "Ontology, vectors and AST are complementary views of the same corpus, not competing sources of truth."
+    relationships:
+      governs: ["ResearchAxis", "BacklogAxis", "SpecificationAxis"]
+      requires: ["SatelliteFederation"]
+
+  - id: "ProportionalDeliveryEvidence"
+    name: "Proportional Delivery Evidence"
+    domain: "Delivery Quality & Admission"
+    governing_adr: "ADR-058"
+    definition: "Vendor-neutral policy that scales required evidence (executable falsifiers, coverage, mutation analysis, platform tests, receipts) with bounded change risk, and keeps local validation, CI, admission, publication and observation as distinct claims."
+    invariants:
+      - "Changed behaviour requires an executable falsifier; a coverage percentage is never equated with correctness."
+      - "Surviving mutants are classified; ERROR and TIMEOUT never count as killed."
+    relationships:
+      governs: ["AdmissionGate", "MutationCanary"]
+      requires: ["ExecutionReceiptAttestation"]
+
+  - id: "CliFirstToolTaxonomy"
+    name: "CLI First Tool Taxonomy"
+    domain: "Tooling Paradigm & Context Frugality"
+    governing_adr: "ADR-063"
+    definition: "Three-layer tooling rule in which every ecosystem tool is primarily a CLI with structured output, sandboxed clients reach it through a lean two-endpoint MCP gateway, and any tool schema injected into an agent context must cost O(1) tokens."
+    invariants:
+      - "Static linear injection of tool schemas into the system prompt is forbidden."
+      - "The MCP gateway executes argv vectors with shell=False inside the confined workspace and returns a structured envelope."
+    relationships:
+      governs: ["LeanMcpGateway", "ContextBudget"]
+      mitigates: ["ContextBloat", "ShellInjection"]

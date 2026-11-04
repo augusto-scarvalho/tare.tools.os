@@ -1,0 +1,152 @@
+{
+  "schema": "tare.tools/ordinary-qualification/1",
+  "date": "2026-10-29",
+  "source_base_commit": "cfeaaccdc58af63eea0f56627921ab14a42cac8c",
+  "case": "50e56981c3994d86bb79db4e0fb74867",
+  "scope": "One real repository implementation; descriptive and bounded, not a representative cohort.",
+  "same_instruction": true,
+  "same_write_scope": true,
+  "arms": {
+    "reference": {
+      "role": "implementer",
+      "model": "gpt-6.1-sol",
+      "endpoint": "cli://codex",
+      "requested_effort": "high",
+      "max_model_calls": 30,
+      "max_seconds": 900,
+      "status": "PROPOSED",
+      "reason": "DELIVERY_PROPOSED",
+      "model_call_intents": 12,
+      "wall_seconds": 517.733,
+      "monetary_charge": null,
+      "reported_tokens": {
+        "cache_read_tokens": {
+          "known_sum": 71424,
+          "unknown_calls": 0
+        },
+        "cache_write_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 0
+        },
+        "input_tokens": {
+          "known_sum": 525740,
+          "unknown_calls": 0
+        },
+        "output_tokens": {
+          "known_sum": 11562,
+          "unknown_calls": 0
+        },
+        "reasoning_tokens": {
+          "known_sum": 3036,
+          "unknown_calls": 0
+        },
+        "total_tokens": {
+          "known_sum": 537302,
+          "unknown_calls": 0
+        },
+        "uncached_input_tokens": {
+          "known_sum": 454316,
+          "unknown_calls": 0
+        }
+      },
+      "observed_model_and_cli_seconds": 249.268,
+      "unpriced_or_partial_calls": 12
+    },
+    "challenger": {
+      "role": "implementer",
+      "model": "claude-haiku-5-5",
+      "endpoint": "cli://claude",
+      "requested_effort": "xhigh",
+      "max_model_calls": 30,
+      "max_seconds": 900,
+      "status": "EXHAUSTED",
+      "reason": "DEADLINE",
+      "model_call_intents": 9,
+      "wall_seconds": 900.073,
+      "monetary_charge": null,
+      "reported_tokens": {
+        "cache_read_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 9
+        },
+        "cache_write_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 9
+        },
+        "input_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 9
+        },
+        "output_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 9
+        },
+        "reasoning_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 9
+        },
+        "total_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 9
+        },
+        "uncached_input_tokens": {
+          "known_sum": 0,
+          "unknown_calls": 9
+        }
+      },
+      "observed_model_and_cli_seconds": 757.356,
+      "unpriced_or_partial_calls": 9
+    }
+  },
+  "challenger_check": {
+    "status": "passed",
+    "tests": 69,
+    "test_seconds": 134.28,
+    "process_seconds": 135.311,
+    "completion": "Missing second registered verifier and final proposal at deadline."
+  },
+  "paired_reviews_dispatched": false,
+  "qualification": "INCOMPLETE",
+  "model_preference_changed": false,
+  "prior_attempts": {
+    "daemon_interruption_retained": true,
+    "reservations_retained": true,
+    "cancelled_production_audit_calls": 5,
+    "later_production_audit_calls": 6,
+    "later_audit_verdict": "REVISE",
+    "later_audit_cause": "Configured AGY auditor was overridden by temporary CLI routing."
+  },
+  "x5": {
+    "configured_tests": 2,
+    "valid_observations": 1,
+    "decision": "keep-full",
+    "confirmed_omissions": null,
+    "net_savings": null,
+    "after_delivery_observation": null,
+    "baseline_wall_seconds": 13.89,
+    "initial_failed_capture_wall_seconds": 3.86,
+    "initial_capture_failure_cause": null,
+    "after_missing_reason": "Original coordinated delivery remained unapplied.",
+    "retention": "Existing pilot budget: 5 checks, 7 days, 4 MiB; explicitly reviewed keep-full."
+  },
+  "root_corrections": [
+    "Early managed-wrapper incompatibility guard",
+    "Avoid synthesized duplicate pytest runner",
+    "Explicit cancelled-audit recovery with verified local cleanup",
+    "Honor eligible configured auditor within launch restrictions",
+    "Validated structured output for new direct auditor sessions"
+  ],
+  "expanded_candidate_tests": {
+    "exit_code": 0,
+    "wall_seconds": 129.25,
+    "scratch_removed": true
+  },
+  "limits": [
+    "No paired quality verdict or vendor winner.",
+    "No monetary, cache-correctness or end-to-end savings claim.",
+    "The two-test pilot is not the full candidate suite.",
+    "Failed and interrupted attempts remain charged or unknown.",
+    "FLOW-19 representative qualification and X5 selection adequacy remain open."
+  ],
+  "evidence_archive": "x5-ordinary-flow19-20261029"
+}

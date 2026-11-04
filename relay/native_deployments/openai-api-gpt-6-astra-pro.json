@@ -1,0 +1,27 @@
+{
+  "id": "openai-api-gpt-6-astra-pro",
+  "runner": "native-http",
+  "model": "gpt-6-astra",
+  "native_credential_env": "OPENAI_API_KEY",
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_reasoning_levels": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+  ],
+  "native_profile": {
+    "protocol": "openai-responses",
+    "model": "gpt-6-astra",
+    "endpoint": "https://api.openai.com/v1",
+    "context_window": 131072,
+    "output_tokens": 8192,
+    "parameters_json": "{\"reasoning\":{\"effort\":\"medium\",\"mode\":\"pro\"}}",
+    "source": "https://developers.openai.com/api/docs/models/gpt-6-astra; conservative Tare context/output caps, not provider maxima; Pro execution mode: https://developers.openai.com/api/docs/guides/reasoning#reasoning-mode"
+  },
+  "native_usage_contract": {
+    "layout": "responses-inclusive",
+    "source": "https://platform.openai.com/docs/api-reference/responses"
+  }
+}

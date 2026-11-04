@@ -1,0 +1,35 @@
+* text=auto
+relay/*.py text eol=lf
+docs/adr/ADR-058_PROPORTIONAL_DELIVERY_EVIDENCE_AND_BEHAVIOR_RELEVANT_COVERAGE.md text eol=lf
+relay/round_tables/analysis_packets/CASE-2026-08-26-ECOSYSTEM-DELIVERY-EVIDENCE-POLICY/** text eol=lf
+ontology/** -text
+
+# The node service runs on Linux (systemd units, shell, Python); only its PowerShell firewall script stays CRLF.
+node/** text eol=lf
+node/**/*.ps1 text eol=crlf
+
+# Historical recovery packets retain source bytes across platforms.
+docs/archive/integration-recovery-20260908/** -text
+
+# Preserve exact bytes of the measured scope and owner-qualified delivery receipts.
+docs/specs/SPEC-OS-SPECGRAPH-COVERAGE-001.md -text
+docs/adr/ADR-069_SPECGRAPH_OPERATIONAL_CODE_SCOPE.md -text
+docs/evidence/2026-09-08-specgraph-coverage/** -text
+docs/evidence/2026-09-08-specgraph-followthrough/** -text
+# The viewer retains the existing Backlog Graph exporter's generated whitespace.
+docs/evidence/2026-09-08-specgraph-followthrough/projection.html whitespace=-blank-at-eol
+docs/evidence/2026-09-08-specgraph-x1/** -text
+docs/evidence/2026-09-08-specgraph-x1/projection.html whitespace=-blank-at-eol
+docs/evidence/2026-09-08-response-contract/** -text
+docs/evidence/2026-09-08-response-contract/projection.html whitespace=-blank-at-eol
+docs/evidence/2026-09-08-native-edit/** -text
+docs/evidence/2026-09-08-native-edit/projection.html whitespace=-blank-at-eol
+docs/evidence/2026-09-08-new-task-pilot/** -text
+docs/evidence/2026-09-08-new-task-pilot/projection.html whitespace=-blank-at-eol
+
+# Keep the Windows console launcher executable after checkout.
+RUN_TUI.bat text eol=crlf
+
+# Every pull request adds its entry on top of the Unreleased list: two of them merge by keeping both
+# (tare ci shepherd merges main into a pull request locally, where this applies).
+CHANGELOG.md merge=union

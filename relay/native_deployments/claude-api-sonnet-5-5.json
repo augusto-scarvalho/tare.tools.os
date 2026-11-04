@@ -1,0 +1,21 @@
+{
+  "id": "claude-api-sonnet-5-5",
+  "runner": "native-http",
+  "model": "claude-sonnet-5-5",
+  "native_credential_env": "ANTHROPIC_API_KEY",
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_streaming": false,
+  "native_profile": {
+    "protocol": "anthropic-messages",
+    "model": "claude-sonnet-5-5",
+    "endpoint": "https://api.anthropic.com/v1",
+    "context_window": 131072,
+    "output_tokens": 8192,
+    "parameters_json": "{\"cache_control\":{\"type\":\"ephemeral\"}}",
+    "source": "https://platform.claude.com/docs/en/models/overview; conservative Tare context/output caps, not provider maxima; provider default adaptive thinking and effort"
+  },
+  "native_usage_contract": {
+    "layout": "anthropic-exclusive",
+    "source": "https://platform.claude.com/docs/en/api/messages"
+  }
+}

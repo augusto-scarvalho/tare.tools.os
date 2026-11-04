@@ -1,0 +1,112 @@
+{
+  "schema": "tare.tools/evidence-scheduling-study/1",
+  "observed_at": "2026-10-21T17:32:59.059357+00:00",
+  "source_path": "scripts/research/compare_evidence_scheduling.py",
+  "source_blob_sha256": "ad05cf81d8d802a7f5a5d501b3334765eac0492d9b2289741ecf3830836f851a",
+  "input_path": "docs/operations/EVIDENCE_SCHEDULING_CI_SAMPLE_20261021.json",
+  "input_blob_sha256": "4aa1cd4da4ba32f0fc9e77543364dc1f033c1c4b50b235ae84a1b5739e74c529",
+  "input_run_url": "https://github.com/augusto-scarvalho/tare.tools.os/actions/runs/39630158317",
+  "decision": "Retain current scheduling: this validation batch has no contended priority choice.",
+  "scope": "Retrospective all-success two-platform CI batch, not a representative Work cohort or a live policy A/B.",
+  "work_level_gain": "unknown",
+  "paid_usage_or_quality_gain": "unknown",
+  "report": {
+    "assumptions": [
+      "Counterfactual all-success closed batch; all roots admitted at t=0.",
+      "Nonpreemptive tasks; dependency completion releases work; fixed pool slots.",
+      "Identical work and fixed integer-millisecond service times for every policy.",
+      "All simultaneous completions are applied before selecting more work."
+    ],
+    "basis": "observed_durations",
+    "bounds": {
+      "max_duration_ms": 1000000000000,
+      "max_input_bytes": 262144,
+      "max_report_bytes": 2097152,
+      "max_tasks": 128,
+      "resolution": "exact whole milliseconds; no rounding"
+    },
+    "gaps": [],
+    "input_identity": {
+      "algorithm": "sha256",
+      "authenticates_observations": false,
+      "encoding": "sorted compact ASCII JSON",
+      "value": "52e7a1a3b941a3918331a223a32b897142d78093c4f2a06d9b28e570fddeb024"
+    },
+    "limits": [
+      "Observed durations are retrospective knowledge, not perfect live predictions.",
+      "Fixed total service is not paid-token or compute savings.",
+      "No inference about failures, arrivals, human decision time, cache/model quality or the entire Work population.",
+      "Basis, source references, provenance and hashes do not authenticate observations.",
+      "No commands executed, source references resolved, or production controls changed.",
+      "Zero contended choices: this cohort cannot discriminate scheduling priorities."
+    ],
+    "policies": {
+      "evidence_critical_path": {
+        "contended_selection_count": 0,
+        "contended_selection_opportunities": [],
+        "makespan_ms": 2530000,
+        "mean_completion_time_ms": 1923500.0,
+        "time_to_required_evidence_ms": 2530000,
+        "timeline": [
+          {
+            "end_ms": 1317000,
+            "id": "linux-wsl2",
+            "start_ms": 0
+          },
+          {
+            "end_ms": 2530000,
+            "id": "windows-host",
+            "start_ms": 0
+          }
+        ],
+        "total_service_ms": 3847000
+      },
+      "plan_order": {
+        "contended_selection_count": 0,
+        "contended_selection_opportunities": [],
+        "makespan_ms": 2530000,
+        "mean_completion_time_ms": 1923500.0,
+        "time_to_required_evidence_ms": 2530000,
+        "timeline": [
+          {
+            "end_ms": 1317000,
+            "id": "linux-wsl2",
+            "start_ms": 0
+          },
+          {
+            "end_ms": 2530000,
+            "id": "windows-host",
+            "start_ms": 0
+          }
+        ],
+        "total_service_ms": 3847000
+      },
+      "shortest_ready": {
+        "contended_selection_count": 0,
+        "contended_selection_opportunities": [],
+        "makespan_ms": 2530000,
+        "mean_completion_time_ms": 1923500.0,
+        "time_to_required_evidence_ms": 2530000,
+        "timeline": [
+          {
+            "end_ms": 1317000,
+            "id": "linux-wsl2",
+            "start_ms": 0
+          },
+          {
+            "end_ms": 2530000,
+            "id": "windows-host",
+            "start_ms": 0
+          }
+        ],
+        "total_service_ms": 3847000
+      }
+    },
+    "required": [
+      "linux-wsl2",
+      "windows-host"
+    ],
+    "schema": "tare.tools/evidence-scheduling-report/1",
+    "status": "COMPARED"
+  }
+}

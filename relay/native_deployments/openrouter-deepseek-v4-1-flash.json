@@ -1,0 +1,25 @@
+{
+  "id": "openrouter-deepseek-v4-1-flash",
+  "runner": "native-http",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "native_credential_env": "OPENROUTER_API_KEY",
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_reasoning_levels": [
+    "low",
+    "high",
+    "max"
+  ],
+  "native_profile": {
+    "protocol": "openai-chat",
+    "model": "deepseek/deepseek-v4.1-flash",
+    "endpoint": "https://openrouter.ai/api/v1",
+    "context_window": 1048576,
+    "output_tokens": 16384,
+    "parameters_json": "{\"reasoning\":{\"effort\":\"high\"},\"provider\":{\"require_parameters\":true,\"allow_fallbacks\":false},\"transforms\":[]}",
+    "source": "OpenRouter public model catalog, 2026-09-20: deepseek/deepseek-v4.1-flash; 1,048,576 context, low/high/max reasoning. Output capped by Tare at 16,384; full window not stress tested. See docs/operations/OPENROUTER_MODELS_2026-09-20.md."
+  },
+  "native_usage_contract": {
+    "layout": "openrouter-inclusive",
+    "source": "https://openrouter.ai/docs/guides/best-practices/prompt-caching; prompt_tokens includes cached_tokens and cache_write_tokens; verified read/edit/verify sessions 2026-09-20, docs/operations/OPENROUTER_MODELS_2026-09-20.md"
+  }
+}

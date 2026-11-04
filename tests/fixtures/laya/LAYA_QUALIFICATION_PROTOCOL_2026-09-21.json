@@ -1,0 +1,703 @@
+{
+  "schema": "tare.tools/laya-routing-qualification/1",
+  "created_at": "2026-09-21",
+  "source_commit": "6877920",
+  "source_facts_sha256": "e2efb826d9ce7ff970eb1fe4f38280e7329517351adc826dc6c5dcfa0f986f2f",
+  "max_calls": 28,
+  "wall_timeout_seconds": 600,
+  "mode": "cpu-only-resident-evaluation",
+  "no_vendor_generation": true,
+  "gates": {
+    "complete_valid_untruncated_responses": "28/28",
+    "real_order_invariance": "2/2 groups stable over all 6 permutations; all-insufficient allowed",
+    "quality": "4/4",
+    "cost": "4/4",
+    "effort": "4/4",
+    "abstention": "4/4"
+  },
+  "pass_scope": "Necessary behavioral screen only. Passing requires subsequent held-out real-task outcome and production worker latency qualification before automatic routing.",
+  "failure_scope": "Any gate failure => NOT_QUALIFIED; no tuning/retry against this corpus.",
+  "case_count": 28,
+  "cases": [
+    {
+      "id": "real_concurrency-4",
+      "group": "real_concurrency",
+      "category": "real-order-control",
+      "order": [
+        1,
+        2,
+        0
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Repair GPU lease concurrency\",\"exit_criteria\":[\"No overlapping GPU owners.\",\"Release only after child exit.\"]},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":70.0,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":73.4,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_3\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"SWE-bench Pro\",\"value\":63.2,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"UNKNOWN\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "candidate_3": "Select candidate candidate_3",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-opus-5@low@vendor-cli",
+        "candidate_2": "claude-fable-5-1@high@vendor-cli",
+        "candidate_3": "claude-sonnet-5@high@vendor-cli"
+      },
+      "expected_identity": null
+    },
+    {
+      "id": "cost_1-1",
+      "group": "cost_1",
+      "category": "cost",
+      "order": [
+        0,
+        1
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Both models meet 90 percent quality. Select the lower supplied input/output token tariff.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-pass-rate\",\"value\":95,\"unit\":\"percent\",\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"high\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"1\",\"output_tokens\":\"2\"},\"scope\":\"Synthetic fixture tariff, not a real CLI plan charge.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}},{\"key\":\"candidate_2\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"openai-chat\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-pass-rate\",\"value\":95,\"unit\":\"percent\",\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"low\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"10\",\"output_tokens\":\"20\"},\"scope\":\"Synthetic fixture tariff, not a real CLI plan charge.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@openai-chat",
+        "candidate_2": "claude-opus-5@low@openai-chat"
+      },
+      "expected_identity": "claude-sonnet-5@high@openai-chat"
+    },
+    {
+      "id": "quality_0-2",
+      "group": "quality_0",
+      "category": "quality",
+      "order": [
+        1,
+        0
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Choose a model achieving at least 90 percent on the supplied same-task suite.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-pass-rate\",\"value\":20,\"unit\":\"percent\",\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"low\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-pass-rate\",\"value\":95,\"unit\":\"percent\",\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"high\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-opus-5@low@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli"
+      },
+      "expected_identity": "claude-sonnet-5@high@vendor-cli"
+    },
+    {
+      "id": "real_label-2",
+      "group": "real_label",
+      "category": "real-order-control",
+      "order": [
+        0,
+        2,
+        1
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Correct one misspelled UI label\",\"exit_criteria\":[\"Change only the label; exact string check passes.\"]},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"SWE-bench Pro\",\"value\":63.2,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"UNKNOWN\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":73.4,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_3\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":70.0,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "candidate_3": "Select candidate candidate_3",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-fable-5-1@high@vendor-cli",
+        "candidate_3": "claude-opus-5@low@vendor-cli"
+      },
+      "expected_identity": null
+    },
+    {
+      "id": "unknown-2",
+      "group": "unknown",
+      "category": "abstention",
+      "order": [
+        1,
+        0
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Choose a model only with task quality evidence; otherwise abstain.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-opus-5@low@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli"
+      },
+      "expected_identity": "insufficient"
+    },
+    {
+      "id": "real_concurrency-1",
+      "group": "real_concurrency",
+      "category": "real-order-control",
+      "order": [
+        0,
+        1,
+        2
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Repair GPU lease concurrency\",\"exit_criteria\":[\"No overlapping GPU owners.\",\"Release only after child exit.\"]},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"SWE-bench Pro\",\"value\":63.2,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"UNKNOWN\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":70.0,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_3\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":73.4,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "candidate_3": "Select candidate candidate_3",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-opus-5@low@vendor-cli",
+        "candidate_3": "claude-fable-5-1@high@vendor-cli"
+      },
+      "expected_identity": null
+    },
+    {
+      "id": "real_label-5",
+      "group": "real_label",
+      "category": "real-order-control",
+      "order": [
+        2,
+        0,
+        1
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Correct one misspelled UI label\",\"exit_criteria\":[\"Change only the label; exact string check passes.\"]},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":73.4,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"SWE-bench Pro\",\"value\":63.2,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"UNKNOWN\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_3\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":70.0,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "candidate_3": "Select candidate candidate_3",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-fable-5-1@high@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli",
+        "candidate_3": "claude-opus-5@low@vendor-cli"
+      },
+      "expected_identity": null
+    },
+    {
+      "id": "effort_1-2",
+      "group": "effort_1",
+      "category": "effort",
+      "order": [
+        1,
+        0
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Require at least 90 percent success; among adequate efforts choose the faster one.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-outcomes\",\"value\":{\"passed\":190,\"total\":200,\"median_seconds\":100},\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"high\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-outcomes\",\"value\":{\"passed\":40,\"total\":200,\"median_seconds\":10},\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"low\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-sonnet-5@low@vendor-cli"
+      },
+      "expected_identity": "claude-sonnet-5@high@vendor-cli"
+    },
+    {
+      "id": "unknown-1",
+      "group": "unknown",
+      "category": "abstention",
+      "order": [
+        0,
+        1
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Choose a model only with task quality evidence; otherwise abstain.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"UNKNOWN\",\"records\":[],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-opus-5@low@vendor-cli"
+      },
+      "expected_identity": "insufficient"
+    },
+    {
+      "id": "real_label-1",
+      "group": "real_label",
+      "category": "real-order-control",
+      "order": [
+        0,
+        1,
+        2
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Correct one misspelled UI label\",\"exit_criteria\":[\"Change only the label; exact string check passes.\"]},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"SWE-bench Pro\",\"value\":63.2,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"UNKNOWN\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":70.0,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_3\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":73.4,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "candidate_3": "Select candidate candidate_3",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-opus-5@low@vendor-cli",
+        "candidate_3": "claude-fable-5-1@high@vendor-cli"
+      },
+      "expected_identity": null
+    },
+    {
+      "id": "real_concurrency-5",
+      "group": "real_concurrency",
+      "category": "real-order-control",
+      "order": [
+        2,
+        0,
+        1
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Repair GPU lease concurrency\",\"exit_criteria\":[\"No overlapping GPU owners.\",\"Release only after child exit.\"]},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":73.4,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"SWE-bench Pro\",\"value\":63.2,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"UNKNOWN\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_3\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":70.0,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "candidate_3": "Select candidate candidate_3",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-fable-5-1@high@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli",
+        "candidate_3": "claude-opus-5@low@vendor-cli"
+      },
+      "expected_identity": null
+    },
+    {
+      "id": "cost_1-2",
+      "group": "cost_1",
+      "category": "cost",
+      "order": [
+        1,
+        0
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Both models meet 90 percent quality. Select the lower supplied input/output token tariff.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"openai-chat\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-pass-rate\",\"value\":95,\"unit\":\"percent\",\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"low\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"10\",\"output_tokens\":\"20\"},\"scope\":\"Synthetic fixture tariff, not a real CLI plan charge.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-pass-rate\",\"value\":95,\"unit\":\"percent\",\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"high\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"1\",\"output_tokens\":\"2\"},\"scope\":\"Synthetic fixture tariff, not a real CLI plan charge.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-opus-5@low@openai-chat",
+        "candidate_2": "claude-sonnet-5@high@openai-chat"
+      },
+      "expected_identity": "claude-sonnet-5@high@openai-chat"
+    },
+    {
+      "id": "quality_0-1",
+      "group": "quality_0",
+      "category": "quality",
+      "order": [
+        0,
+        1
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Choose a model achieving at least 90 percent on the supplied same-task suite.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-pass-rate\",\"value\":95,\"unit\":\"percent\",\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"high\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-pass-rate\",\"value\":20,\"unit\":\"percent\",\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"low\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-opus-5@low@vendor-cli"
+      },
+      "expected_identity": "claude-sonnet-5@high@vendor-cli"
+    },
+    {
+      "id": "cost_0-1",
+      "group": "cost_0",
+      "category": "cost",
+      "order": [
+        0,
+        1
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Both models meet 90 percent quality. Select the lower supplied input/output token tariff.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-pass-rate\",\"value\":95,\"unit\":\"percent\",\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"high\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"10\",\"output_tokens\":\"20\"},\"scope\":\"Synthetic fixture tariff, not a real CLI plan charge.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}},{\"key\":\"candidate_2\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"openai-chat\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-pass-rate\",\"value\":95,\"unit\":\"percent\",\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"low\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"1\",\"output_tokens\":\"2\"},\"scope\":\"Synthetic fixture tariff, not a real CLI plan charge.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@openai-chat",
+        "candidate_2": "claude-opus-5@low@openai-chat"
+      },
+      "expected_identity": "claude-opus-5@low@openai-chat"
+    },
+    {
+      "id": "effort_0-2",
+      "group": "effort_0",
+      "category": "effort",
+      "order": [
+        1,
+        0
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Require at least 90 percent success; among adequate efforts choose the faster one.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-outcomes\",\"value\":{\"passed\":190,\"total\":200,\"median_seconds\":100},\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"high\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-outcomes\",\"value\":{\"passed\":190,\"total\":200,\"median_seconds\":10},\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"low\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-sonnet-5@low@vendor-cli"
+      },
+      "expected_identity": "claude-sonnet-5@low@vendor-cli"
+    },
+    {
+      "id": "quality_1-1",
+      "group": "quality_1",
+      "category": "quality",
+      "order": [
+        0,
+        1
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Choose a model achieving at least 90 percent on the supplied same-task suite.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-pass-rate\",\"value\":20,\"unit\":\"percent\",\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"high\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-pass-rate\",\"value\":95,\"unit\":\"percent\",\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"low\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-opus-5@low@vendor-cli"
+      },
+      "expected_identity": "claude-opus-5@low@vendor-cli"
+    },
+    {
+      "id": "real_concurrency-3",
+      "group": "real_concurrency",
+      "category": "real-order-control",
+      "order": [
+        1,
+        0,
+        2
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Repair GPU lease concurrency\",\"exit_criteria\":[\"No overlapping GPU owners.\",\"Release only after child exit.\"]},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":70.0,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"SWE-bench Pro\",\"value\":63.2,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"UNKNOWN\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_3\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":73.4,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "candidate_3": "Select candidate candidate_3",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-opus-5@low@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli",
+        "candidate_3": "claude-fable-5-1@high@vendor-cli"
+      },
+      "expected_identity": null
+    },
+    {
+      "id": "real_label-6",
+      "group": "real_label",
+      "category": "real-order-control",
+      "order": [
+        2,
+        1,
+        0
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Correct one misspelled UI label\",\"exit_criteria\":[\"Change only the label; exact string check passes.\"]},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":73.4,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":70.0,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_3\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"SWE-bench Pro\",\"value\":63.2,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"UNKNOWN\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "candidate_3": "Select candidate candidate_3",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-fable-5-1@high@vendor-cli",
+        "candidate_2": "claude-opus-5@low@vendor-cli",
+        "candidate_3": "claude-sonnet-5@high@vendor-cli"
+      },
+      "expected_identity": null
+    },
+    {
+      "id": "incomparable-1",
+      "group": "incomparable",
+      "category": "abstention",
+      "order": [
+        0,
+        1
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Choose only if evidence establishes at least 90 percent success on our exact lease-concurrency task suite. Public benchmarks on other task suites are insufficient.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"SWE-bench Pro\",\"value\":63.2,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"UNKNOWN\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":70.0,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-opus-5@low@vendor-cli"
+      },
+      "expected_identity": "insufficient"
+    },
+    {
+      "id": "cost_0-2",
+      "group": "cost_0",
+      "category": "cost",
+      "order": [
+        1,
+        0
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Both models meet 90 percent quality. Select the lower supplied input/output token tariff.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"openai-chat\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-pass-rate\",\"value\":95,\"unit\":\"percent\",\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"low\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"1\",\"output_tokens\":\"2\"},\"scope\":\"Synthetic fixture tariff, not a real CLI plan charge.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"openai-chat\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-pass-rate\",\"value\":95,\"unit\":\"percent\",\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"high\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"CONFIGURED_TARIFF\",\"currency\":\"USD\",\"per_million_tokens\":{\"uncached_input_tokens\":\"10\",\"output_tokens\":\"20\"},\"scope\":\"Synthetic fixture tariff, not a real CLI plan charge.\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"metered\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-opus-5@low@openai-chat",
+        "candidate_2": "claude-sonnet-5@high@openai-chat"
+      },
+      "expected_identity": "claude-opus-5@low@openai-chat"
+    },
+    {
+      "id": "real_concurrency-2",
+      "group": "real_concurrency",
+      "category": "real-order-control",
+      "order": [
+        0,
+        2,
+        1
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Repair GPU lease concurrency\",\"exit_criteria\":[\"No overlapping GPU owners.\",\"Release only after child exit.\"]},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"SWE-bench Pro\",\"value\":63.2,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"UNKNOWN\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":73.4,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_3\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":70.0,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "candidate_3": "Select candidate candidate_3",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@high@vendor-cli",
+        "candidate_2": "claude-fable-5-1@high@vendor-cli",
+        "candidate_3": "claude-opus-5@low@vendor-cli"
+      },
+      "expected_identity": null
+    },
+    {
+      "id": "real_label-3",
+      "group": "real_label",
+      "category": "real-order-control",
+      "order": [
+        1,
+        0,
+        2
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Correct one misspelled UI label\",\"exit_criteria\":[\"Change only the label; exact string check passes.\"]},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":70.0,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"SWE-bench Pro\",\"value\":63.2,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"UNKNOWN\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_3\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":73.4,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "candidate_3": "Select candidate candidate_3",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-opus-5@low@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli",
+        "candidate_3": "claude-fable-5-1@high@vendor-cli"
+      },
+      "expected_identity": null
+    },
+    {
+      "id": "incomparable-2",
+      "group": "incomparable",
+      "category": "abstention",
+      "order": [
+        1,
+        0
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Choose only if evidence establishes at least 90 percent success on our exact lease-concurrency task suite. Public benchmarks on other task suites are insufficient.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":70.0,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"SWE-bench Pro\",\"value\":63.2,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"UNKNOWN\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-opus-5@low@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli"
+      },
+      "expected_identity": "insufficient"
+    },
+    {
+      "id": "real_concurrency-6",
+      "group": "real_concurrency",
+      "category": "real-order-control",
+      "order": [
+        2,
+        1,
+        0
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Repair GPU lease concurrency\",\"exit_criteria\":[\"No overlapping GPU owners.\",\"Release only after child exit.\"]},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":73.4,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":70.0,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_3\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"SWE-bench Pro\",\"value\":63.2,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"UNKNOWN\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "candidate_3": "Select candidate candidate_3",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-fable-5-1@high@vendor-cli",
+        "candidate_2": "claude-opus-5@low@vendor-cli",
+        "candidate_3": "claude-sonnet-5@high@vendor-cli"
+      },
+      "expected_identity": null
+    },
+    {
+      "id": "real_label-4",
+      "group": "real_label",
+      "category": "real-order-control",
+      "order": [
+        1,
+        2,
+        0
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Correct one misspelled UI label\",\"exit_criteria\":[\"Change only the label; exact string check passes.\"]},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":70.0,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"fable-5.1\",\"wire_model\":\"claude-fable-5-1\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"CursorBench 3.2.0\",\"value\":73.4,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"tested_effort\":\"max\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"DIFFERS\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_3\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SOURCED_REFERENCE\",\"records\":[{\"kind\":\"public-benchmark\",\"metric\":\"SWE-bench Pro\",\"value\":63.2,\"unit\":\"percent\",\"scope\":\"Published benchmark; not Tare/CLI qualification.\",\"applicability\":{\"level\":\"MODEL_REFERENCE\",\"effort\":\"UNKNOWN\",\"runtime\":\"NOT_ESTABLISHED\",\"current_profile_qualified\":false},\"source_ref\":\"quality.records[0]\"}],\"omitted_records\":1},\"price\":{\"status\":\"UNKNOWN\",\"schedule_overrides_present\":false},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "candidate_3": "Select candidate candidate_3",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-opus-5@low@vendor-cli",
+        "candidate_2": "claude-fable-5-1@high@vendor-cli",
+        "candidate_3": "claude-sonnet-5@high@vendor-cli"
+      },
+      "expected_identity": null
+    },
+    {
+      "id": "effort_1-1",
+      "group": "effort_1",
+      "category": "effort",
+      "order": [
+        0,
+        1
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Require at least 90 percent success; among adequate efforts choose the faster one.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-outcomes\",\"value\":{\"passed\":40,\"total\":200,\"median_seconds\":10},\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"low\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-outcomes\",\"value\":{\"passed\":190,\"total\":200,\"median_seconds\":100},\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"high\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@low@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli"
+      },
+      "expected_identity": "claude-sonnet-5@high@vendor-cli"
+    },
+    {
+      "id": "quality_1-2",
+      "group": "quality_1",
+      "category": "quality",
+      "order": [
+        1,
+        0
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Choose a model achieving at least 90 percent on the supplied same-task suite.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-opus-5\",\"wire_model\":\"claude-opus-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-pass-rate\",\"value\":95,\"unit\":\"percent\",\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"low\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-pass-rate\",\"value\":20,\"unit\":\"percent\",\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"high\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-opus-5@low@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli"
+      },
+      "expected_identity": "claude-opus-5@low@vendor-cli"
+    },
+    {
+      "id": "effort_0-1",
+      "group": "effort_0",
+      "category": "effort",
+      "order": [
+        0,
+        1
+      ],
+      "request": {
+        "state": "{\"task\":{\"title\":\"Require at least 90 percent success; among adequate efforts choose the faster one.\"},\"role\":\"implementer\",\"candidates\":[{\"key\":\"candidate_1\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"low\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"low\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-outcomes\",\"value\":{\"passed\":190,\"total\":200,\"median_seconds\":10},\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"low\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}},{\"key\":\"candidate_2\",\"model\":\"claude-sonnet-5\",\"wire_model\":\"claude-sonnet-5\",\"protocol\":\"vendor-cli\",\"effort\":\"high\",\"facts\":{\"context_window\":200000,\"output_cap\":16384,\"configured_effort\":\"high\",\"quality\":{\"status\":\"SUPPLIED_EVIDENCE\",\"records\":[{\"kind\":\"local-evaluation\",\"metric\":\"same-task-suite-outcomes\",\"value\":{\"passed\":190,\"total\":200,\"median_seconds\":100},\"scope\":\"Synthetic evaluation fixture: same held-out 200-task suite, same harness.\",\"tested_effort\":\"high\",\"applicability\":{\"level\":\"EXACT_PROFILE\",\"effort\":\"MATCH\",\"current_profile_qualified\":false},\"source_ref\":\"synthetic-fixture\"}],\"omitted_records\":0},\"price\":{\"status\":\"UNKNOWN\"},\"quota\":{\"status\":\"UNKNOWN\"},\"resource\":{\"status\":\"NOT_CHECKED\",\"immediate\":null},\"configured_cost_tier\":\"flat\"}}]}",
+        "question": "Choose the next execution preference: adequate task quality first, then cost and time. Compare only matching benchmark versions/setups. Unknown is not free or qualified. If evidence is inadequate, choose insufficient.",
+        "options": {
+          "candidate_1": "Select candidate candidate_1",
+          "candidate_2": "Select candidate candidate_2",
+          "insufficient": "No remaining candidate is supported by enough evidence."
+        }
+      },
+      "choice_identity": {
+        "candidate_1": "claude-sonnet-5@low@vendor-cli",
+        "candidate_2": "claude-sonnet-5@high@vendor-cli"
+      },
+      "expected_identity": "claude-sonnet-5@low@vendor-cli"
+    }
+  ]
+}

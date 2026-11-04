@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tare.tools/work-recipe/1",
+  "title": "Static Work recipe (analysis only)",
+  "description": "Five logical phase groups adapted to one work.execute/v1 call. Effects do not confer authority. DAG reachability and unique IDs are checked by the pure compiler.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "revision", "nodes"],
+  "properties": {
+    "schema": {"const": "tare.tools/work-recipe/1"},
+    "revision": {"type": "integer", "minimum": 1},
+    "nodes": {
+      "type": "array", "minItems": 5, "maxItems": 5,
+      "items": {"$ref": "#/$defs/node"},
+      "allOf": [
+        {"contains": {"properties": {"operator_ref": {"const": "ground/v1"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"operator_ref": {"const": "implement/v1"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"operator_ref": {"const": "validate/v1"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"operator_ref": {"const": "audit/v1"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"operator_ref": {"const": "settle/v1"}}}, "minContains": 1, "maxContains": 1}
+      ]
+    }
+  },
+  "$defs": {
+    "name": {"type": "string", "pattern": "\\S"},
+    "names": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
+    "node": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "operator_ref", "depends_on", "inputs", "outputs", "capabilities", "effects", "obligations", "authority_required"],
+      "properties": {
+        "id": {"$ref": "#/$defs/name"},
+        "operator_ref": {"enum": ["ground/v1", "implement/v1", "validate/v1", "audit/v1", "settle/v1"]},
+        "depends_on": {"$ref": "#/$defs/names"},
+        "inputs": {"$ref": "#/$defs/names"},
+        "outputs": {"$ref": "#/$defs/names"},
+        "capabilities": {"$ref": "#/$defs/names"},
+        "effects": {"$ref": "#/$defs/names"},
+        "obligations": {"$ref": "#/$defs/names"},
+        "authority_required": {"$ref": "#/$defs/names"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"operator_ref": {"const": "ground/v1"}}},
+          "then": {"properties": {
+            "inputs": {"items": {"enum": ["work.contract"]}, "minItems": 1, "maxItems": 1},
+            "outputs": {"items": {"enum": ["descriptor.sealed", "plan.accepted"]}, "minItems": 2, "maxItems": 2},
+            "capabilities": {"items": {"enum": ["operator-context.read", "descriptor.seal", "plan.audit"]}, "minItems": 3, "maxItems": 3},
+            "effects": {"items": {"enum": ["operator-context.read", "work-evidence.write", "provider.invoke"]}, "minItems": 3, "maxItems": 3},
+            "obligations": {"items": {"enum": ["sealed-descriptor", "accepted-plan"]}, "minItems": 2, "maxItems": 2},
+            "authority_required": {"maxItems": 0}
+          }}
+        },
+        {
+          "if": {"properties": {"operator_ref": {"const": "implement/v1"}}},
+          "then": {"properties": {
+            "inputs": {"items": {"enum": ["descriptor.sealed", "plan.accepted"]}, "minItems": 2, "maxItems": 2},
+            "outputs": {"items": {"enum": ["implementation.change"]}, "minItems": 1, "maxItems": 1},
+            "capabilities": {"items": {"enum": ["workspace.provision", "implementation.produce"]}, "minItems": 2, "maxItems": 2},
+            "effects": {"items": {"enum": ["workspace.write", "provider.invoke", "work-evidence.write"]}, "minItems": 3, "maxItems": 3},
+            "obligations": {"items": {"enum": ["isolated-workspace", "descriptor-scope-respected"]}, "minItems": 2, "maxItems": 2},
+            "authority_required": {"maxItems": 0}
+          }}
+        },
+        {
+          "if": {"properties": {"operator_ref": {"const": "validate/v1"}}},
+          "then": {"properties": {
+            "inputs": {"items": {"enum": ["descriptor.sealed", "implementation.change"]}, "minItems": 2, "maxItems": 2},
+            "outputs": {"items": {"enum": ["verifiers.passing", "candidate.sealed"]}, "minItems": 2, "maxItems": 2},
+            "capabilities": {"items": {"enum": ["verifiers.run", "candidate.seal"]}, "minItems": 2, "maxItems": 2},
+            "effects": {"items": {"enum": ["verifiers.execute", "candidate.write", "work-evidence.write"]}, "minItems": 3, "maxItems": 3},
+            "obligations": {"items": {"enum": ["passing-verifiers", "sealed-candidate"]}, "minItems": 2, "maxItems": 2},
+            "authority_required": {"maxItems": 0}
+          }}
+        },
+        {
+          "if": {"properties": {"operator_ref": {"const": "audit/v1"}}},
+          "then": {"properties": {
+            "inputs": {"items": {"enum": ["descriptor.sealed", "verifiers.passing", "candidate.sealed"]}, "minItems": 3, "maxItems": 3},
+            "outputs": {"items": {"enum": ["audit.policy-satisfied"]}, "minItems": 1, "maxItems": 1},
+            "capabilities": {"items": {"enum": ["audit.evaluate"]}, "minItems": 1, "maxItems": 1},
+            "effects": {"items": {"enum": ["provider.invoke", "work-evidence.write"]}, "minItems": 2, "maxItems": 2},
+            "obligations": {"items": {"enum": ["existing-audit-policy-satisfied"]}, "minItems": 1, "maxItems": 1},
+            "authority_required": {"maxItems": 0}
+          }}
+        },
+        {
+          "if": {"properties": {"operator_ref": {"const": "settle/v1"}}},
+          "then": {"properties": {
+            "inputs": {"items": {"enum": ["candidate.sealed", "audit.policy-satisfied"]}, "minItems": 2, "maxItems": 2},
+            "outputs": {"items": {"enum": ["admission.receipt", "landing.receipt", "backlog.reconciled"]}, "minItems": 3, "maxItems": 3},
+            "capabilities": {"items": {"enum": ["admission.evaluate", "landing.perform", "backlog.reconcile"]}, "minItems": 3, "maxItems": 3},
+            "effects": {"items": {"enum": ["admission.record", "repository.land", "backlog.write", "work-evidence.write"]}, "minItems": 4, "maxItems": 4},
+            "obligations": {"items": {"enum": ["admission-required", "landing-receipt", "backlog-reconciliation"]}, "minItems": 3, "maxItems": 3},
+            "authority_required": {"items": {"enum": ["existing-admission"]}, "minItems": 1, "maxItems": 1}
+          }}
+        }
+      ]
+    }
+  }
+}
