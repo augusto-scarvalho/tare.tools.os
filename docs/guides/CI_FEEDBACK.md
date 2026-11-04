@@ -82,6 +82,13 @@ installation. `Tests (linux)` and `Tests (windows)` merge the shards (`ci_suite.
 is missing, unfinished or red, refresh the test map only when every shard finished its share, record the seconds,
 and save the map. A full Windows regression that took about 38 minutes on one runner takes about 6.5 per shard.
 
+Splitting by measured time changes which tests run together and in what order, and that exposes tests that passed
+only by luck of order or company (a module first imported under another test's patch, a timer that had not ticked
+on a slower runner). A manual run with the `isolation` input (`gh workflow run ci.yml --ref main -f
+isolation=true`) looks for them all at once: each shard runs every one of its test files alone, then all of them
+in a shuffled file order (`ci_suite.py isolate`; the seed is the run id, so `--seed` replays it), and reports the
+files and tests that failed. It neither reads nor writes the test map.
+
 The repository variables `CI_RUNNER_LINUX` and `CI_RUNNER_WINDOWS` (a JSON label or label list, for example
 `["self-hosted","Linux"]`) move a platform to your own runners. Pull requests from forks then skip the job, since
 they could run any code there.
