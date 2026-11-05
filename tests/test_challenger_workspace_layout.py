@@ -27,3 +27,17 @@ def test_legacy_comparison_roots_and_unknown_names_keep_their_boundary(tmp_path)
     (job/'run.json').write_text('{"execution_contract":{"variant_inbox":1}}')
     assert workspace.tree(job,'reference')==job/'reference'
     with pytest.raises(ValueError):workspace.tree(job,'../outside')
+
+
+def test_the_workspace_rides_out_a_windows_reader_denied_during_a_replace(tmp_path, monkeypatch):
+    from relay import challenger, challenger_workspace
+    job = tmp_path/'runs'/'job'; job.mkdir(parents=True); (job/'run.json').write_text('{}')
+    real, calls = challenger.read_json, []
+    def replacing(path, limit):  # the worker's atomic replace briefly denies a reader on Windows
+        calls.append(path)
+        if len(calls) == 1:
+            raise PermissionError('replace in progress')
+        return real(path, limit)
+    monkeypatch.setattr(challenger, 'read_json', replacing)
+    monkeypatch.setattr(challenger.time, 'sleep', lambda seconds: None)
+    assert challenger_workspace.tree(job, 'candidate') == job/'candidate' and len(calls) == 2
