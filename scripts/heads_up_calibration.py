@@ -3,6 +3,8 @@
 `replay` sends saved TUI and tare serve turns through the funnel with each one forwarded to the writer, so the log
 (<storage>/serve/heads-up.jsonl) holds the score beside the writer's verdict for every turn; a turn already replayed
 is skipped. It spends writer and judge calls: --limit bounds them.
+`notes` lists every note the TUI showed since a date, with its turn, for dogfood review: a label from a person
+who reads it, where /heads-up only says a note was sent to the agent.
 `report` reads the log: for each score, how many writer calls it saves and how many turns that got notes it would
 have dropped, the notes Jev dropped as already said, and those the user sent to the agent (/heads-up).
 `claude` uses labels: Claude Code's side agent left the notes the user accepted in the transcripts, so each such
@@ -27,6 +29,18 @@ def log_rows():
     path = storage_root()/'serve'/'heads-up.jsonl'
     rows = [json.loads(line) for line in path.read_text(encoding='utf-8').splitlines()] if path.exists() else []
     return [r for r in rows if r.get('funnel') == funnel()]
+
+
+def noted(root, since=''):
+    """Every note the TUI showed at or after `since` (an ISO time), oldest first, with its session."""
+    found = []
+    for path in root.glob('*/heads-up.json'):
+        try:
+            found += [{'session': path.parent.name, **n} for n in json.loads(path.read_text(encoding='utf-8')).get(
+                'noted') or [] if n['at'] >= since]
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return sorted(found, key=lambda n: n['at'])
 
 
 def replay(root, limit, writer=None):
@@ -343,6 +357,8 @@ def main(argv=None):
     reporting = commands.add_parser('report', help='threshold trade and writer routes from the log')
     for command in (replaying, reporting):
         command.add_argument('--writer', help='one route as the writer (replay), or only its pinned rows (report)')
+    listing = commands.add_parser('notes', help='the notes the TUI showed, with their turns, as JSON lines')
+    listing.add_argument('--since', default='', help='ISO time of the oldest note listed')
     history = commands.add_parser('claude', help="the funnel on Claude Code turns against its side agent's notes")
     history.add_argument('--projects', type=Path, default=Path.home()/'.claude'/'projects',
                          help='Claude Code transcripts folder')
@@ -355,6 +371,11 @@ def main(argv=None):
             cases = claude_cases(args.projects, args.quiet)
             return writers_report([r for w in args.writer for r in claude_writers(cases, w, args.quiet)])
         return fit(claude_cases(args.projects, 10**9))
+    if args.command == 'notes':
+        from relay.native_agent import session_root
+        for note in noted(session_root(), args.since):
+            print(json.dumps(note, ensure_ascii=False))
+        return 0
     if args.command == 'replay':
         os.environ.pop('TARE_HEADS_UP', None)  # replaying is asking for it
         print(f'{replay(args.sessions, args.limit, args.writer)} turns replayed.')

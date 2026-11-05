@@ -16,8 +16,9 @@ A funnel, cheapest stage first:
 
 Each decision is logged for calibration (<storage>/serve/heads-up.jsonl: scores, probabilities, routes, times and
 sizes, never the texts); the turns the cadence sends below the score measure what the score misses, and the TUI's
-/heads-up logs that the user sent a note to the agent (asked()), a label from use.
-scripts/heads_up_calibration.py replays history through the funnel and reports the trade. Every frontend calls
+/heads-up logs that the user sent a note to the agent (asked()), a label from use. The TUI also keeps each note it
+showed with its turn (the request's end, the reply's start) in the conversation's heads-up.json, for dogfood review.
+scripts/heads_up_calibration.py replays history through the funnel, reports the trade and lists the TUI's notes. Every frontend calls
 notes(); a failure here never fails the turn it reports on. TARE_HEADS_UP=off disables it.
 """
 from datetime import datetime, timezone
@@ -465,20 +466,25 @@ def notes(turn, *, seen=(), observed=None, pace=None):
 
 def shown(session):
     """A session's heads-up state: {'shown': every note its user saw, 'last': the latest turn's notes, 'turn': that
-    turn's reply digest, and the pace notes() keeps: 'since' and 'held'}."""
+    turn's reply digest, 'noted': each note with its time and turn, and the pace notes() keeps: 'since' and 'held'}."""
     try:
         value = json.loads((Path(session)/'heads-up.json').read_text(encoding='utf-8'))
         return {'shown': list(value['shown']), 'last': list(value['last']), 'turn': value.get('turn'),
-                'since': int(value.get('since', 0)), 'held': list(value.get('held') or [])}
+                'noted': list(value.get('noted') or []), 'since': int(value.get('since', 0)),
+                'held': list(value.get('held') or [])}
     except (OSError, ValueError, KeyError, TypeError):
-        return {'shown': [], 'last': [], 'turn': None, 'since': 0, 'held': []}
+        return {'shown': [], 'last': [], 'turn': None, 'noted': [], 'since': 0, 'held': []}
 
 
-def keep(session, new, reply='', pace=None):
-    """After every turn: its new notes, if any, become the last ones; the pace is kept either way."""
-    value = shown(session)
+def keep(session, new, turn=None, pace=None):
+    """After every turn: its new notes, if any, become the last ones, each also kept with the end of the turn's
+    request and the start of its reply for dogfood review; the pace is kept either way."""
+    value, turn = shown(session), turn or {}
     if new:
-        value.update(shown=value['shown'] + new, last=new, turn=_digest(reply))
+        at = datetime.now(timezone.utc).isoformat(timespec='seconds')
+        value.update(shown=value['shown'] + new, last=new, turn=_digest(turn.get('reply')), noted=value['noted'] + [
+            {'at': at, 'note': note, 'request': _tail(turn.get('request'), 900).strip(),
+             'reply': _clip(turn.get('reply'), 1600).strip()} for note in new])
     value.update(since=(pace or {}).get('since', 0), held=(pace or {}).get('held', []))
     path = Path(session)/'heads-up.json'
     temporary = path.with_name(path.name + f'.{os.getpid()}.tmp')
