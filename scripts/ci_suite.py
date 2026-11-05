@@ -672,20 +672,106 @@ def junit_seconds(xml):
     return seconds
 
 
+# Artifact folder name pattern: ci-<platform>-<shard>-<attempt>[-retry]
+# Example: ci-linux-3-2-retry  →  platform='linux', shard=3, attempt=2, retry=True
+ARTIFACT_NAME = re.compile(r'ci-(linux|windows)-([1-9][0-9]*)-([1-9][0-9]*)(-retry)?')
+
+
+def artifact_identity(folder):
+    """(platform, shard, attempt, retry) parsed from the artifact folder name, or None for legacy names.
+
+    Selection rule (used by `merge` to pick the newest evidence per shard):
+    * Higher `attempt` is newer (numeric comparison, so attempt 10 beats attempt 2).
+    * For the same attempt, `retry=True` (folder name ends in `-retry`) wins over `retry=False`:
+      the retry artifact is the second upload attempt of the same run and replaces a possibly
+      incomplete first upload.
+    * Ties on both `attempt` and `retry` are broken by the absolute path string (deterministic).
+    * Folders whose name does not match the pattern (local/legacy folders such as `out-1`) are
+      treated as attempt 0, retry False; they always lose to any recognised artifact.
+    """
+    match = ARTIFACT_NAME.fullmatch(folder.name)
+    if not match:
+        return None
+    return (match.group(1), int(match.group(2)), int(match.group(3)), bool(match.group(4)))
+
+
+def _selection_key(folder):
+    """Sort key for a candidate folder: highest (attempt, retry) wins; absolute path breaks ties.
+
+    Legacy folders (no recognised artifact name) are sorted below any numbered attempt.
+    """
+    identity = artifact_identity(folder)
+    if identity is None:
+        attempt, retry = 0, False
+    else:
+        _, _, attempt, retry = identity
+    return (attempt, retry, str(folder.resolve()))
+
+
+def _select_winning_folders(folders):
+    """Select one winning folder per shard number from a list of candidate folders.
+
+    Returns {shard_number: folder} where shard_number comes from the folder's shard.json
+    (for legacy folders) or from the artifact identity (for named artifacts, validated against
+    shard.json when present).  Folders whose shard.json is missing or unreadable are treated
+    as invalid for their shard: they cannot be silently replaced by an older green attempt.
+    """
+    # Group candidate folders by their shard number (from artifact name when available, else from shard.json).
+    # For each shard, pick the folder with the highest _selection_key.
+    # A folder with a missing or invalid shard.json still claims its shard slot (so it cannot be
+    # silently replaced): it will be reported as a problem during the aggregation phase.
+    by_shard = {}  # shard_number -> list of candidate folders
+    for folder in folders:
+        identity = artifact_identity(folder)
+        # Prefer shard number from the artifact name; fall back to shard.json for legacy folders.
+        shard_num = identity[1] if identity else None
+        if shard_num is None:
+            try:
+                shard_num = json.loads((folder/'shard.json').read_text(encoding='utf-8'))['shard']
+            except (OSError, ValueError, KeyError, TypeError):
+                continue  # cannot determine shard number; skip this folder
+        by_shard.setdefault(shard_num, []).append(folder)
+    winners = {}
+    for shard_num, candidates in by_shard.items():
+        # Highest (attempt, retry, path) wins.
+        winners[shard_num] = max(candidates, key=_selection_key)
+    return winners
+
+
 def merge(inputs, shards, output, map_path=None):
     """Fold the shards' outputs into one result: the test map (fresh only when every shard ran its whole share),
-    the measured seconds per test file and a summary. Nonzero when a shard is missing, unfinished or red."""
-    found, problems, value = {}, [], None
+    the measured seconds per test file and a summary. Nonzero when a shard is missing, unfinished or red.
+
+    When multiple artifact folders exist for the same shard (because a partial rerun left older
+    attempts in the download), the newest attempt is selected for each shard.  The selection rule is
+    documented on `artifact_identity`: higher attempt is newer; within the same attempt the `-retry`
+    artifact wins; ties are broken by absolute path string.  Only the winning folder for each shard
+    contributes to the plan, verdict, test maps and measured seconds.
+    """
+    problems, value = [], None
     # A folder of downloaded artifacts stands for the shard folders inside it.
     folders = [child for path in map(Path, inputs) for child in
                ([path] if (path/'shard.json').exists() or not path.is_dir() else sorted(path.iterdir()))]
-    for folder in folders:
+    winners = _select_winning_folders(folders)
+    # Build found: shard -> (folder, part).  A winner whose shard.json is unreadable still occupies
+    # the shard slot (preventing silent fallback to an older green attempt); its invalidity is
+    # reported as a problem rather than skipped.
+    found = {}
+    for shard_num, folder in winners.items():
         try:
             part = json.loads((folder/'shard.json').read_text(encoding='utf-8'))
-            value = value or json.loads((folder/'plan.json').read_text(encoding='utf-8'))
-        except (OSError, ValueError):
+            # Validate that the shard number in shard.json matches what we expect (from the artifact
+            # name or from the folder's own identity).  A mismatch means the folder is invalid.
+            if part['shard'] != shard_num:
+                raise ValueError(f'shard.json says shard {part["shard"]}, folder claims {shard_num}')
+            if value is None:
+                value = json.loads((folder/'plan.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError, KeyError) as exc:
+            # The newest attempt for this shard is incomplete or invalid: fail the whole merge.
+            problems.append(f'shard {shard_num}: newest evidence invalid or incomplete ({exc})')
+            found[shard_num] = (folder, {'shard': shard_num, 'quick': [], 'regression': []})
             continue
-        found[part['shard']] = (folder, part)
+        found[shard_num] = (folder, part)
     missing = sorted(set(range(1, shards+1))-set(found))
     if missing:
         problems.append('missing shard output: '+', '.join(map(str, missing)))

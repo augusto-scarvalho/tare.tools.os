@@ -233,10 +233,15 @@ jobs:
           key: tare-ci-map-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: tare-ci-map-${{ matrix.platform }}-
 
+      # Download all attempts of every shard for this platform, keeping each artifact as its own
+      # sub-folder.  When a shard rerun is partial (some shards already passed in an earlier attempt),
+      # the older green shards must stay available so merge can use their evidence alongside the
+      # newer attempts of the shards that were rerun.
       - name: Download the shards' evidence
         uses: actions/download-artifact@v4
         with:
-          pattern: ci-${{ matrix.platform }}-*-${{ github.run_attempt }}*
+          pattern: ci-${{ matrix.platform }}-*
+          merge-multiple: false
           path: ${{ runner.temp }}/shards
 
       - name: Merge the shards
