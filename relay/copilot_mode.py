@@ -243,7 +243,7 @@ def heads_up(turn, messages, text, say, keepalive):
     chat, done = turn['chat'], {}
     worker = threading.Thread(target=lambda: done.update(new=funnel.notes(  # the user's words, not VS Code's wrapper
         {**funnel.from_messages(messages, text), 'request': turn['request']}, seen=chat.get('heads_up', []),
-        observed={'source': 'copilot', 'route': turn['route']})), daemon=True)
+        pace=chat.setdefault('heads_up_pace', {}), observed={'source': 'copilot', 'route': turn['route']})), daemon=True)
     worker.start()
     while worker.is_alive():
         worker.join(15)

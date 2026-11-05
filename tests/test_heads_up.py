@@ -2,8 +2,6 @@ import hashlib
 import json
 from types import SimpleNamespace
 
-import pytest
-
 from relay import heads_up, turn_engine
 from relay.console_models import ConversationModels
 
@@ -66,62 +64,73 @@ def test_tare_states_the_facts_it_can_check_without_a_model(tmp_path):
     assert explored['summary'] == 'cited docs/a.md, run.gd'  # what explorers read is not a step of the turn
     implemented = heads_up.step('implement', {}, 'succeeded', {'verdict': 'INCONCLUSIVE', 'reason': 'check refused'})
     assert implemented['summary'] == 'verdict INCONCLUSIVE; reason check refused'  # the call succeeded, not the work
+    # What a step did reaches the writer, from what tare already recorded: no tools, no calls of its own.
+    edited = heads_up.step('edit', {'path': 'a.py', 'changes': [{'search': 'x = 1', 'replace': 'x = 2'}]}, 'succeeded', {})
+    assert edited['detail'] == '- x = 1\n+ x = 2' and heads_up._line(edited) == 'edit a.py -> succeeded :: - x = 1\n+ x = 2'
+    demanded = heads_up.step('demand', {'objective': 'Reject inverted bounds', 'criteria': ['ValueError if low > high']},
+                             'succeeded', {})
+    assert demanded['detail'] == 'objective: Reject inverted bounds; criterion: ValueError if low > high'
+    explored = heads_up.step('explore', {'investigations': [{'question': 'Where is the cost table?'}]}, 'succeeded',
+                             {'investigations': [{'report': {'summary': 'In balance.py, a constant per level.'}}]})
+    assert explored['detail'] == 'asked: Where is the cost table?; found: In balance.py, a constant per level.'
 
 
 NOTE = 'The suite now shares one process, so one test can change the next.'
 
 
-def test_the_code_score_decides_jev_watches_and_a_note_the_reply_already_says_goes(tmp_path, monkeypatch):
+def test_the_score_or_the_cadence_reaches_the_writer_and_jev_checks_the_note(tmp_path, monkeypatch):
     monkeypatch.delenv('TARE_HEADS_UP')
     monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
-    judged, written, already = [], [], {}
-    monkeypatch.setattr(turn_engine, 'judges', lambda request: judged.append(request) or {
-        'jev': {'choice': 'note', 'model': 'jev-1.14.0', 'probabilities': {'note': .99, 'none': .01}}})
-    monkeypatch.setattr(turn_engine, 'judge_many', lambda state, questions, timeout=10: already)
+    written, already = [], {'already_said': .1}
+    kind = {'consequence': .9, 'process_status': .1, 'record_gap': .1, 'changes_belief': .8}
+    monkeypatch.setattr(turn_engine, 'judge_many', lambda state, questions, timeout=10: {
+        'yes': dict(already if 'already_said' in questions else kind)})
     monkeypatch.setattr(heads_up, 'write', lambda text, seen: written.append((json.loads(text), seen)) or (
         [NOTE], [{'route': 'sonnet', 'ok': True, 'ms': 5}]))
     explained = {'request': 'Explain the parser', 'reply': 'It is a recursive descent parser. ' * 150, 'steps': [
         heads_up.step('read', {'path': 'src/p.py'}, 'succeeded', {})]}
     worked = heads_up.from_journal([(session(tmp_path), 'inv')])
     assert heads_up.score(explained, []) < heads_up.FORWARD_AT <= heads_up.score(worked, heads_up.facts(worked))
-    assert heads_up.notes(explained, sample=0) == [] and written == []  # Jev's 0.99 forwards nothing: the score decides
-    assert heads_up.notes(worked, seen=['old note'], sample=0) == [NOTE]
-    assert written[-1][1] == ['old note'] and written[-1][0]['facts_checked_by_tare'][0].startswith('The last run of')
+    tested = {**explained, 'request': 'Run the tests', 'steps': [heads_up.step('terminal_read', {}, 'failed', {
+        'exit_code': 1, 'command': PYTEST, 'output': '1 failed'})]}
+    assert heads_up.score(tested, heads_up.facts(tested)) < heads_up.FORWARD_AT
+    pace = {}  # quiet turns reach the writer every EVERY-th turn since it last ran, with the steps of the turns between
+    assert [heads_up.notes(t, pace=pace) for t in (tested, explained, explained, explained)] == [[], [], [], [NOTE]]
+    assert pace == {'since': 0, 'held': []} and len(written) == 1
+    window = written[0][0]['recorded_steps']
+    assert window[0] == 'earlier turn Run the tests -> started' and window[1].startswith('terminal_read ' + PYTEST)
+    assert window[1].endswith(':: 1 failed') and window[-2:] == ['this turn Explain the parser -> started',
+                                                                 'read src/p.py -> succeeded']
+    assert heads_up.notes(worked, seen=['old note'], pace=pace) == [NOTE]  # a busy turn: the score
+    assert written[-1][1] == ['old note'] and 'facts_checked_by_tare' not in written[-1][0]  # process facts: never
     assert written[-1][0]['earlier_in_conversation'][0]['assistant'] == 'Measured on the stub model only.'
-    brief = json.loads(judged[-1]['state'])  # Jev, watching, gets the brief: what it needs, not the conversation
-    assert 'earlier_in_conversation' not in brief and brief['files_changed'] == ['src/p.py', 'src/q.py']
-    assert brief['tests_run'][-1].startswith('verify check -> failed') and len(brief['tests_run']) == 3
-    already['yes'] = {'already_said': .9}  # the reply already says it: the note goes
-    assert heads_up.notes(worked, sample=0) == []
-    already['yes'] = {'already_said': .4}
-    assert heads_up.notes(worked, sample=0) == [NOTE]
-    assert heads_up.notes(explained, sample=1) == [NOTE] and len(written) == 4  # a sampled turn reaches the writer
+    already['already_said'] = .9  # the reply already says it: the note goes
+    assert heads_up.notes(worked) == []
+    already['already_said'] = .1
+    kind.update(consequence=.1, process_status=.9)  # process status: the gate would drop it, and only logs so far
+    assert heads_up.notes(worked) == [NOTE]
+    monkeypatch.setattr(heads_up, 'GATE_SHADOW', False)
+    assert heads_up.notes(worked) == [] and len(written) == 5
     rows = [json.loads(line) for line in (tmp_path/'storage'/'serve'/'heads-up.jsonl').read_text(
         encoding='utf-8').splitlines()]
-    assert [r['forwarded'] for r in rows] == [None, 'score', 'score', 'score', 'sample']
-    assert rows[0]['p_note'] == .99 and rows[1]['writers'][0]['route'] == 'sonnet' and rows[1]['counts']['edits'] == 4
-    assert rows[2]['redundant'] == .9 and rows[2]['notes'] == 0 and rows[3]['notes'] == 1
+    assert [r['forwarded'] for r in rows] == [None, None, None, 'cadence', 'score', 'score', 'score', 'score']
+    assert [r['since'] for r in rows[:5]] == [1, 2, 3, 4, 1] and [r['held'] for r in rows[:4]] == [0, 2, 4, 6]
+    assert rows[4]['writers'][0]['route'] == 'sonnet' and rows[4]['counts']['edits'] == 4
+    assert rows[5]['redundant'] == .9 and rows[5]['notes'] == 0 and rows[5]['gate'] is None
+    assert rows[6]['gate'] == {'gap': False, **kind, 'score': -.1} and rows[6]['notes'] == 1 and rows[7]['notes'] == 0
     assert 'parser' not in json.dumps(rows) and 'one process' not in json.dumps(rows)  # never the texts
+    assert heads_up.gate('The recorded steps do not show the tests passing.')['gap']  # caught without a model
     heads_up.set_enabled(False)
-    assert heads_up.notes(worked, sample=1) == [] and len(written) == 4
+    assert heads_up.notes(worked) == [] and len(written) == 5
 
 
-def test_a_long_turn_fits_the_judge_bound_and_the_writer_keeps_the_newest_context(tmp_path, monkeypatch):
-    monkeypatch.delenv('TARE_HEADS_UP')
-    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path))
+def test_the_writer_keeps_the_newest_context_of_a_long_turn():
     steps = [heads_up.step('edit', {'path': f'src/"quoted"\nfile{i}.py'}, 'succeeded', {}) for i in range(400)]
     steps += [heads_up.step('terminal_read', {}, 'failed', {'exit_code': 1, 'command': f'pytest "{i}"' * 30,
                                                            'output': '"x"\n' * 900}) for i in range(10)]
     turn = {'request': 'pedido ' * 3000, 'reply': 'résumé "x"\n' * 5000, 'steps': steps,
             'earlier': [{'user': f'antes "{i}"\n' * 400, 'assistant': 'resposta "x"\n' * 600} for i in range(6)]}
-    asked = []
-    monkeypatch.setattr(turn_engine, 'judges', lambda request: asked.append(request) or {})
-    monkeypatch.setattr(heads_up, 'write', lambda text, seen: ([], []))
-    heads_up.notes(turn, sample=0)
-    assert len(json.dumps(asked[0], ensure_ascii=False).encode('utf-8')) <= 8192
-    choice = pytest.importorskip('compute_plane.choice_assessment')
-    choice.validate_request(asked[0])
-    state = json.loads(heads_up.record(turn, heads_up.facts(turn), 8000))  # what the writer reads
+    state = json.loads(heads_up.record(turn, 8000))  # what the writer reads
     assert len(json.dumps(state, ensure_ascii=False).encode('utf-8')) <= 8000 * 1.1
     assert state['recorded_steps'][0] == '... earlier steps left out' and 'pytest "9"' in state['recorded_steps'][-1]
     # The newest earlier exchange is kept, and it keeps the end of the user's message.
@@ -150,18 +159,20 @@ def test_the_writer_takes_the_first_available_route_and_hands_over_once(monkeypa
 def test_calibration_reports_what_each_threshold_saves_and_drops(capsys):
     from scripts.heads_up_calibration import report
     writer = [{'route': 'sonnet', 'ok': True, 'ms': 2000}]
-    report([{'score': .05, 'forwarded': 'sample', 'notes': 0, 'writers': writer, 'p_note': .2, 'reply_sha256': 'a'},
-            {'score': .1, 'forwarded': 'sample', 'notes': 1, 'writers': writer, 'p_note': .9, 'reply_sha256': 'b'},
-            {'score': .3, 'forwarded': 'score', 'notes': 1, 'writers': writer, 'p_note': .7, 'reply_sha256': 'c'},
-            {'score': .5, 'forwarded': 'score', 'notes': 0, 'writers': writer, 'p_note': .4, 'reply_sha256': 'd',
+    report([{'score': .05, 'forwarded': 'cadence', 'notes': 0, 'writers': writer, 'reply_sha256': 'a'},
+            {'score': .1, 'forwarded': 'cadence', 'notes': 1, 'writers': writer, 'reply_sha256': 'b',
+             'gate': {'gap': True}},  # the gate would drop it
+            {'score': .3, 'forwarded': 'score', 'notes': 1, 'writers': writer, 'reply_sha256': 'c',
+             'gate': {'gap': False, 'score': .9}},
+            {'score': .5, 'forwarded': 'score', 'notes': 0, 'writers': writer, 'reply_sha256': 'd',
              'redundant': .95},  # written, then dropped as already said
             {'score': .02, 'forwarded': None, 'notes': 0, 'writers': [], 'reply_sha256': 'e'},  # never written
             {'event': 'asked', 'reply_sha256': 'c'}])  # the user sent c's note to the agent
     lines = capsys.readouterr().out.splitlines()
-    assert lines[0] == ('5 logged turns; the writer answered 4 (2 sampled below the threshold); 2 got a note, 1 sent '
+    assert lines[0] == ('5 logged turns; the writer answered 4 (2 by cadence below the score); 2 got a note, 1 sent '
                         'to the agent with /heads-up; 1 dropped as already said.')
-    assert lines[2].split() == ['0.050', '0/4', '0/2'] and lines[4].split() == ['0.137', '2/4', '1/2']
-    assert lines[-2] == "Jev's shadow against the writer's notes: AUC 1.00"
+    assert lines[1] == 'The note gate would drop 1/2 notes, 0 of them sent with /heads-up.'
+    assert lines[3].split() == ['0.050', '0/4', '0/2'] and lines[6].split() == ['0.250', '2/4', '1/2']
     assert lines[-1] == 'sonnet: 4/4 answered, median 2.0 s'
 
 
@@ -211,8 +222,8 @@ def test_the_tui_shows_new_notes_once_and_keeps_them_for_the_composer(tmp_path, 
     monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
     source = session(tmp_path)
     told, said = [], []
-    monkeypatch.setattr(heads_up, 'notes', lambda turn, seen=(), observed=None: told.append(list(seen)) or [
-        'The verifier failed.'])
+    monkeypatch.setattr(heads_up, 'notes', lambda turn, seen=(), observed=None, pace=None: told.append(list(seen)) or (
+        pace.update(since=3)) or ['The verifier failed.'])
     console = SimpleNamespace(selection=lambda: SimpleNamespace(local_models=True),
                               call_from_thread=lambda fn, *a, **kw: fn(*a, **kw),
                               notify=lambda text, **kw: said.append(text),
@@ -220,7 +231,10 @@ def test_the_tui_shows_new_notes_once_and_keeps_them_for_the_composer(tmp_path, 
     ConversationModels._heads_up(console, str(source), ['inv'], 'Fix it')
     assert 'tare · heads-up: The verifier failed.' in said[0] and '/heads-up' in said[0]
     reply = hashlib.sha256(b'Done: all tests pass.').hexdigest()
-    assert heads_up.shown(source) == {'shown': ['The verifier failed.'], 'last': ['The verifier failed.'], 'turn': reply}
+    assert heads_up.shown(source) == {'shown': ['The verifier failed.'], 'last': ['The verifier failed.'], 'turn': reply,
+                                      'since': 3, 'held': []}  # the pace is the session's, kept across turns
+    heads_up.keep(source, [], 'a quiet turn', {'since': 4})  # a turn without notes keeps the last ones for /heads-up
+    assert heads_up.shown(source)['last'] == ['The verifier failed.'] and heads_up.shown(source)['turn'] == reply
     ConversationModels._heads_up(console, str(source), ['inv'], 'Fix it')
     assert told[-1] == ['The verifier failed.']  # the second turn's writer is told what was shown
     assert heads_up.ask(heads_up.shown(source)['last']).startswith("tare's heads-up after your last reply:\n- The")

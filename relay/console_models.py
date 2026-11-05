@@ -257,11 +257,10 @@ class ConversationModels:
             turn = heads_up.from_journal([(source, i) for i in ids])
             turn['request'] = request or turn['request']
             route = read_json(Path(source)/'native-agent.json', 1024*1024)['deployment'].get('id')
+            mine = heads_up.shown(source)
             with local_models(local):  # the conversation's choice: no local judge or writer when it said so
-                new = heads_up.notes(turn, seen=heads_up.shown(source)['shown'],
-                                     observed={'source': 'tui', 'route': route})
-            if new:
-                heads_up.keep(source, new, turn['reply'])
+                new = heads_up.notes(turn, seen=mine['shown'], pace=mine, observed={'source': 'tui', 'route': route})
+            heads_up.keep(source, new, turn['reply'], mine)
         except (OSError, ValueError, KeyError, TypeError, StopIteration) as exc:
             self.call_from_thread(self.notify, 'tare heads-up: ' + str(exc)[:200], severity='error')
             return

@@ -470,7 +470,7 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
             except (OSError, ValueError, KeyError, TypeError, StopIteration):
                 turn = None
             new = heads_up.notes({**turn, 'request': requests[-1]},  # the user's words; earlier turns: the journal's
-                                 seen=state.get('heads_up', []),
+                                 seen=state.get('heads_up', []), pace=state.setdefault('heads_up_pace', {}),
                                  observed={'source': 'serve', 'chat': key, 'turn': state['turns'],
                                            'route': state['sessions'][-1]['route']}) if turn else []
             if new:

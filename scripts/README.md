@@ -31,12 +31,12 @@ scripts/
 - `qualify_laya_routes.py`: runs a frozen, CPU-only route-choice screen; never changes routing policy.
 - `heads_up_calibration.py`: measures the heads-up funnel (`relay/heads_up.py`) on turns that already happened.
   `claude` uses Claude Code transcripts (`~/.claude/projects`) as labels: the turns after which the user accepted a
-  side-agent note, beside quiet turns of the same sessions. With `--variant`/`--brief` it scores judge questions and
-  briefs, with `--claims v2` the narrow Noul questions and code counts (AUC per feature and a cross-validated
-  logistic composite, the source of the filter's weights), and with `--writer ROUTE` a writer's notes beside the side
-  agent's. `replay --limit N [--writer ROUTE]` sends saved tare sessions through the funnel; `report` reads the log in
-  use: the threshold's trade, notes dropped as already said, those sent with `/heads-up`, Jev's shadow and writers.
-  Every mode except `report` spends judge or writer calls.
+  side-agent note, beside the other turns of the same sessions. Alone it spends nothing: the score's AUC, a refit's
+  scored on sessions it never saw, the writer calls and noted turns covered by each score and cadence, and the
+  refit's weights. With `--writer ROUTE` it runs that writer on the noted turns and `--quiet N` quiet ones, and Jev
+  tells whether its notes match the side agent's. `replay --limit N [--writer ROUTE]` sends saved tare sessions
+  through the funnel; `report` reads the log in use: the score's trade, notes dropped as already said, what the note
+  gate would drop, those sent with `/heads-up`, and the writers.
 - `preflight_native_verifier_linux.py`: Linux/WSL verifier preflight using the published Kernel and the
   existing argv seam.
 - `native_experiment_limits.json`: native execution and context-compaction limits for experiments (all limits
