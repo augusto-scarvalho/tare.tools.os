@@ -1,13 +1,14 @@
-"""Calibrate the heads-up filter (relay/heads_up.py) on turns that already happened.
+"""Calibrate the heads-up funnel (relay/heads_up.py) on turns that already happened.
 
-`replay` sends saved TUI and tare serve turns through the funnel with each one forwarded to the writer (sample 1),
-so the log (<storage>/serve/heads-up.jsonl) holds the judge's probability beside the writer's verdict for every
-turn; a turn already replayed is skipped. It spends judge and writer calls: --limit bounds them.
-`report` reads the log: for each threshold, how many writer calls the filter saves and how many turns that got
-notes it would have dropped (rows whose writer answered count; tare's facts always forward, so they never drop).
-`claude` calibrates the judge against labels: Claude Code's side agent ("You should know") left the notes the user
-accepted in the transcripts, so each such turn is one the filter should forward, and the other turns of those
-sessions are ones it may drop. Each judged turn's clipped record goes to the judge (hosted Jev when it answers).
+`replay` sends saved TUI and tare serve turns through the funnel with each one forwarded to the writer, so the log
+(<storage>/serve/heads-up.jsonl) holds the score beside the writer's verdict for every turn; a turn already replayed
+is skipped. It spends writer and judge calls: --limit bounds them.
+`report` reads the log: for each score, how many writer calls it saves and how many turns that got notes it would
+have dropped, the notes Jev dropped or its gate would drop, and those the user sent to the agent (/heads-up).
+`claude` uses labels: Claude Code's side agent left the notes the user accepted in the transcripts, so each such
+turn should get a note, and the other turns of those sessions may stay quiet. With no --writer it costs nothing:
+the score and the cadence on every turn, measured by session, and the weights a refit gives. With --writer it runs
+that writer on the noted turns and --quiet quiet ones, and hosted Jev tells whether a note matches the side agent's.
 """
 import argparse
 import json
@@ -60,7 +61,7 @@ def replay(root, limit, writer=None):
                 continue
             if not turn['reply']:
                 continue
-            new = heads_up.notes(turn, seen=seen, sample=1, observed={
+            new = heads_up.notes(turn, seen=seen, pace={'since': heads_up.EVERY}, observed={
                 'source': 'replay', 'session': key[0], 'invocation': key[1], **({'pinned': writer} if writer else {})})
             seen += new
             count += 1
@@ -87,8 +88,11 @@ def _claude_step(call, result):
     text = content if isinstance(content, str) else '\n'.join(
         b.get('text', '') for b in content or [] if isinstance(b, dict))
     status = 'failed' if result.get('is_error') else 'succeeded'
-    if name in ('Edit', 'Write', 'MultiEdit', 'NotebookEdit'):
-        return step('edit', {'path': args.get('file_path') or args.get('notebook_path')}, status, {'error': text[:200]})
+    if name in ('Edit', 'Write', 'MultiEdit', 'NotebookEdit'):  # with what changed, as tare's edits carry it
+        changes = [{'search': e.get('old_string', ''), 'replace': e.get('new_string', '')} for e in args.get('edits') or []] or [
+            {'search': args.get('old_string', ''), 'replace': args.get('new_string') or args.get('content') or args.get('new_source') or ''}]
+        return step('edit', {'path': args.get('file_path') or args.get('notebook_path'), 'changes': changes}, status,
+                    {'error': text[:200]})
     if name in ('Bash', 'PowerShell'):
         return step('terminal_read', {}, status, {'exit_code': int(status == 'failed'),
                                                   'command': args.get('command', ''), 'output': text})
@@ -146,225 +150,23 @@ def turns_of(rows):
     return turns
 
 
-# Judge questions tried against the side agent's labels: (question, options, the quiet option). None is the
-# module's own (relay/heads_up.py); the one that separates best becomes it.
-VARIANTS = {
-    'current': None,
-    'colleague': (
-        'Would a careful colleague who watched this turn stop the user to warn them about something the final reply '
-        'does not make clear?',
-        {'warn': 'Yes: the user is about to rely on something false, untested, narrower than it sounds, or costly, '
-                 'and the reply does not say so.',
-         'quiet': 'No: nothing worth interrupting for. Most turns are like this.'}, 'quiet'),
-    'belief': (
-        'After reading the final reply, will the user believe something about the work that the recorded steps or '
-        'the earlier conversation show is false, unverified or only partly true?',
-        {'misled': 'Yes: the reply leaves a wrong or overstated impression (done, tested, measured, general) that '
-                   'the record does not support.',
-         'accurate': 'No: what the user will believe matches the record.'}, 'accurate'),
-    'kinds': (
-        'What, if anything, should the user be warned about after this turn?',
-        {'overstated': 'A claim broader than its evidence: done, tested or measured only on a narrower case, a '
-                       'stand-in, another setup, or not at all.',
-         'side_effect': 'An effect the user may not expect: behavior changed for others, a lasting cost, a risk, or '
-                        'something else broken.',
-         'contradiction': 'The reply contradicts the recorded steps or something established earlier in the '
-                          'conversation.',
-         'nothing': 'Nothing: the reply matches the record and has no surprising effect. Most turns are like this.'},
-        'nothing'),
-}
-
-
-# What each judge brief adds to heads_up.brief(): earlier exchanges (user end, assistant start, in UTF-8 bytes),
-# earlier user messages alone, and a longer final reply. The one that separates best becomes heads_up.brief().
-BRIEFS = {
-    'lean': {},
-    'last_exchange': {'exchanges': 1, 'user': 600, 'assistant': 1200},
-    'two_exchanges': {'exchanges': 2, 'user': 400, 'assistant': 800},
-    'user_messages': {'users': 4},
-    'last_exchange_long_reply': {'exchanges': 1, 'user': 600, 'assistant': 1200, 'reply': 1.6},
-}
-
-
-def briefed(name):
-    """heads_up.brief with BRIEFS[name] added, earlier context first."""
-    from relay import heads_up
-    lean, extra = heads_up.brief, BRIEFS[name]
-
-    def brief(turn, found, reply=2500):
-        earlier, value = turn.get('earlier') or [], {}
-        if extra.get('users'):
-            value['earlier_user_messages'] = [heads_up._tail(e['user'], 300) for e in earlier[-extra['users']:]]
-        if extra.get('exchanges'):
-            value['earlier_exchanges'] = [{'user': heads_up._tail(e['user'], extra['user']),
-                                           'assistant': heads_up._clip(e['assistant'], extra['assistant'])}
-                                          for e in earlier[-extra['exchanges']:]]
-        return json.dumps({**value, **json.loads(lean(turn, found, int(reply * extra.get('reply', 1))))},
-                          ensure_ascii=False)
-    return brief
-
-
 def claude_cases(root, negatives, seed=0):
     """Every turn whose side-agent note the user accepted, and a sample of the other finished turns of the same
-    sessions (the side agent was on and said nothing): [(session, turn index, turn, note or None)]."""
+    sessions (the side agent was on and said nothing): [(session, turn index, turn, note or None)]. A turn a
+    continued session repeats counts once."""
+    import hashlib
     import random
-    cases = []
+    cases, seen = [], set()
     for path in sorted(root.glob('*/*.jsonl')):
         turns = claude_turns(path)
         if any(note for _, note in turns):
-            cases += [(path.stem, index, turn, note) for index, (turn, note) in enumerate(turns) if turn['reply']]
+            for index, (turn, note) in enumerate(turns):
+                key = hashlib.sha256((turn['request'] + '\0' + turn['reply']).encode('utf-8')).digest()
+                if turn['reply'] and key not in seen:
+                    seen.add(key)
+                    cases.append((path.stem, index, turn, note))
     others = [c for c in cases if not c[3]]
     return [c for c in cases if c[3]] + random.Random(seed).sample(others, min(negatives, len(others)))
-
-
-def claude_history(cases, variant='current', brief='lean'):
-    """The judge under one VARIANTS question and one BRIEFS brief on the cases; rows go to heads-up-claude.jsonl
-    without texts."""
-    from relay import heads_up
-    from relay.native_installation import storage_root
-    from relay.turn_engine import deciding, judges
-    saved = heads_up.QUESTION, heads_up.OPTIONS, heads_up.QUIET, heads_up.brief
-    if VARIANTS[variant]:
-        heads_up.QUESTION, heads_up.OPTIONS, heads_up.QUIET = VARIANTS[variant]
-    heads_up.brief = briefed(brief)
-    try:
-        rows = []
-        for session, index, turn, note in cases:
-            found = heads_up.facts(turn)
-            verdicts = judges(heads_up.assessment(turn, found))
-            answer = deciding(verdicts)
-            rows.append({'funnel': heads_up.funnel(), 'variant': variant, 'brief': brief, 'session': session, 'turn': index,
-                         'noted': bool(note), 'facts': len(found),
-                         'p_note': 1 - answer['probabilities'].get(heads_up.QUIET, 0) if answer else None,
-                         'failure': next((v['failure'] for v in verdicts.values() if 'failure' in v), None)})
-    finally:
-        heads_up.QUESTION, heads_up.OPTIONS, heads_up.QUIET, heads_up.brief = saved
-    path = storage_root()/'serve'/'heads-up-claude.jsonl'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open('a', encoding='utf-8') as log:
-        log.writelines(json.dumps(r) + '\n' for r in rows)
-    return rows
-
-
-# Narrow yes/no questions the judge answers about a turn's brief, in one request (turn_engine.judge_many): what the
-# reply claims and what the work touches, which code cannot read; code then weighs them with tare's facts.
-CLAIMS = {
-    'claims_tested': 'Does the final reply say that tests or checks passed, or that the work was verified?',
-    'claims_measured': 'Does the final reply report a measurement, benchmark, cost, count or other number as a result?',
-    'claims_done': 'Does the final reply say that something was changed, fixed or delivered?',
-    'narrow_evidence': 'Was the evidence for the reply gathered on a narrower case than what it claims: a sample, a '
-                       'stand-in, data the assistant made itself, or another model or setup?',
-    'affects_others': 'Does the work change behavior for other users, other projects or later runs, or leave a '
-                      'lasting cost such as history, storage or quota?',
-    'sets_default': 'Does the reply turn something on by default, or recommend a default or a decision, based on '
-                    'what was measured or tried?',
-    'contradicts': 'Does the final reply contradict the tests, failures or delegated verdicts listed in the record?',
-    'buried_caveat': 'Does the reply present the result as complete while a limitation is mentioned only in passing '
-                     'or not at all?',
-}
-
-
-def noul(instructions, true, false):
-    """A Noul with criteria (TypeSafe's advice: one literal condition, boundary cases in the criteria)."""
-    return {'type': 'noul', 'instructions': instructions, 'criteria': {'true': true, 'false': false}}
-
-
-def ask_nouls(state, questions):
-    """Hosted Jev's Noul answers over a structured (JSON object) state: ({name: probability of yes}, None) or
-    ({}, failure). The kernel's assess_many sends Nouls without criteria, so this calls the endpoint itself."""
-    from compute_plane.jev_choice_worker import BASE_URL, post
-    from relay.turn_engine import HOSTED_JEV_MODEL, jev_key
-    try:
-        response = post({'model': HOSTED_JEV_MODEL, 'state': state, 'questions': questions}, key=jev_key(),
-                        base_url=BASE_URL, timeout=25)
-        return {k: float(response['answers'][k]['noul']) for k in questions}, None
-    except (ValueError, KeyError, TypeError) as exc:
-        return {}, str(exc)[:120]
-
-
-# CLAIMS rewritten after TypeSafe's guide: one literal condition each, the field it judges named in backticks, the
-# boundary cases in the criteria, counting left to code. Asked over the brief plus the last earlier exchange.
-CLAIMS_V2 = {
-    'claims_verified': noul('`assistant_final_reply` says that tests, checks or a verification passed.',
-                            'It says tests pass, a check is green, or something was verified, confirmed or works.',
-                            'It only describes changes, plans or questions, or it reports failures.'),
-    'reports_number': noul('`assistant_final_reply` reports a measured number as a result.',
-                           'A count, time, cost, size, score, rate or percentage presented as a measured result.',
-                           'No measured number; only file names, line numbers, versions or steps.'),
-    'generalizes': noul('`assistant_final_reply` presents a result as general, beyond the cases actually tried.',
-                        'It says something works, is fixed or holds in general, or for everyone.',
-                        'It limits the result to the cases it tried, or makes no such claim.'),
-    'states_limit': noul('`assistant_final_reply` names a limitation, a caveat or something left undone.',
-                         'It says what was not checked, not done, only partly true, or still open.',
-                         'It names no limitation.'),
-    'recommends': noul('`assistant_final_reply` recommends a decision or a default to the user.',
-                       'It recommends an option, a default, turning something on, or a next decision.',
-                       'It only reports what happened or asks a question.'),
-    'lasting_effect': noul('The work in `files_changed` or `assistant_final_reply` affects others or lasts.',
-                           'It changes behavior for other users or projects, published history, defaults, storage '
-                           'or later runs.',
-                           'It stays local to this task, such as a scratch file or a draft.'),
-    'stand_in': noul('`assistant_final_reply` rests on a stand-in for the real case.',
-                     'A sample, a mock, data the assistant made itself, a fixture, or another model or setup than the '
-                     'one in use.',
-                     'It rests on the real case, or reports no result.'),
-    'contradicts_record': noul('`assistant_final_reply` calls something successful that `tests_run`, `failures` or '
-                               '`delegated` show as failed, refused or inconclusive.',
-                               'The reply reports success where the record shows a failure or no verdict.',
-                               'The reply matches the record, or the record shows nothing to compare.'),
-    'asks_measurement': noul('`user_request` asks to measure, compare, benchmark or estimate something.',
-                             'It asks for a measurement, comparison, benchmark, cost or estimate.',
-                             'It asks for a change, an explanation or something else.'),
-    'asks_decision': noul('`user_request` asks the assistant for a recommendation or a decision.',
-                          'It asks what to choose, whether to do something, or for an opinion.',
-                          'It asks for work to be done or a fact.'),
-    'proposes_plan': noul('`assistant_final_reply` mainly proposes a plan or design for the user to approve.',
-                          'Most of it is a proposal, options or a plan, not work already done.',
-                          'Most of it reports work done or answers a question.'),
-    'builds_on_earlier': noul('`assistant_final_reply` relies on a result or measurement from `earlier_exchanges`.',
-                              'It reuses a number, a conclusion or a setup established in an earlier exchange.',
-                              'It does not rely on earlier results, or there are no earlier exchanges.'),
-}
-
-
-def claude_claims(cases, claims=None):
-    """The claim questions on each case's brief (CLAIMS_V2 also see the last earlier exchange); rows (probabilities
-    and code features, no texts) go to heads-up-claude-claims.jsonl."""
-    from relay import heads_up
-    from relay.native_installation import storage_root
-    from relay.turn_engine import judge_many
-    claims = claims or CLAIMS
-    rows = []
-    for session, index, turn, note in cases:
-        found = heads_up.facts(turn)
-        if claims is CLAIMS_V2:  # a JSON object state, as TypeSafe advises, with real Nouls
-            yes, failure = ask_nouls(json.loads(briefed('last_exchange')(turn, found)), claims)
-        else:
-            value = judge_many(heads_up.brief(turn, found), claims, timeout=25)
-            yes, failure = value.get('yes') or {}, value.get('failure')
-        rows.append({'record': heads_up.RECORD, 'claims': 'v2' if claims is CLAIMS_V2 else 'v1', 'session': session,
-                     'turn': index, 'noted': bool(note), 'facts': len(found), 'code': heads_up.counts(turn, found),
-                     'yes': yes or None, 'failure': failure})
-    path = storage_root()/'serve'/'heads-up-claude-claims.jsonl'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open('a', encoding='utf-8') as log:
-        log.writelines(json.dumps(r) + '\n' for r in rows)
-    return rows
-
-
-def claims_report(rows):
-    ok = [r for r in rows if r.get('yes')]
-    noted, quiet = [r for r in ok if r['noted']], [r for r in ok if not r['noted']]
-    print(f'{len(rows)} turns, {len(ok)} answered: {len(noted)} noted, {len(quiet)} quiet. AUC per feature:')
-    names = list(ok[0]['yes']) if ok else []
-    scores = {name: (lambda r, name=name: r['yes'][name]) for name in names}
-    scores.update({name: (lambda r, name=name: (r.get('code') or {}).get(name, 0)) for name in
-                   (ok[0].get('code') or {} if ok else {})})
-    for name, score in scores.items():
-        print(f'  {name:18} {auc([score(r) for r in noted], [score(r) for r in quiet]):.2f}')
-    if ok:
-        combined = cross_validated([[score(r) for score in scores.values()] for r in ok], [r['noted'] for r in ok])
-        print(f'  logistic, all features, 5-fold cross-validated: AUC {combined:.2f}')
 
 
 def logistic(xs, ys, steps=3000, rate=.1, l2=.05):
@@ -394,12 +196,13 @@ def standardize(xs, reference=None):
     return [[(v - m) / s for v, m, s in zip(x, means, spreads)] for x in xs]
 
 
-def cross_validated(xs, ys, folds=5):
-    """The AUC of the logistic composite on rows it was not fitted on (folds interleaved, so each holds noted turns)."""
+def cross_validated(xs, ys, groups):
+    """The AUC of the logistic composite on rows it was not fitted on: each group (a session) is scored by a model
+    fitted on the others, since turns of one session look alike and would flatter a model that saw their neighbors."""
     scored = []
-    for fold in range(folds):
-        train = [i for i in range(len(xs)) if i % folds != fold]
-        test = [i for i in range(len(xs)) if i % folds == fold]
+    for group in dict.fromkeys(groups):
+        train = [i for i, g in enumerate(groups) if g != group]
+        test = [i for i, g in enumerate(groups) if g == group]
         reference = [xs[i] for i in train]
         w = logistic(standardize(reference), [ys[i] for i in train])
         for x, i in zip(standardize([xs[i] for i in test], reference), test):
@@ -428,8 +231,7 @@ def claude_writers(cases, writer, quiet):
         rows = []
         chosen = [c for c in cases if c[3]] + [c for c in cases if not c[3]][:quiet]
         for session, index, turn, note in chosen:
-            found = heads_up.facts(turn)
-            new, attempts = heads_up.write(heads_up.writer_record(turn, found), [])
+            new, attempts = heads_up.write(heads_up.writer_record(turn), [])
             row = {'writer': writer, 'session': session, 'turn': index, 'noted': bool(note), 'notes': len(new),
                    'ok': any(a['ok'] for a in attempts), 'ms': sum(a['ms'] for a in attempts)}
             if note and new:
@@ -460,39 +262,71 @@ def auc(positive, negative):
     return sum((p > n) + .5 * (p == n) for p in positive for n in negative) / (len(positive) * len(negative) or 1)
 
 
-def claude_report(rows):
-    judged = [r for r in rows if r['p_note'] is not None]
-    noted = [r for r in judged if r['noted']]
-    quiet = [r for r in judged if not r['noted']]
-    print(f'{len(rows)} turns, {len(judged)} judged: {len(noted)} with an accepted side-agent note, {len(quiet)} '
-          f'without; AUC {auc([r["p_note"] for r in noted], [r["p_note"] for r in quiet]):.2f}.')
-    print('threshold  noted turns forwarded  quiet turns forwarded (writer calls)')
-    for threshold in (.1, .2, .3, .4, .5, .6, .7, .8, .9):
-        forwarded = lambda group: sum(r['p_note'] >= threshold or r['facts'] > 0 for r in group)
-        print(f'{threshold:9.1f}  {forwarded(noted):>10}/{len(noted):<10}  {forwarded(quiet):>10}/{len(quiet)}')
+def cadence(rows, at, every):
+    """(writer calls per turn, share of noted turns some run covers) for rows (session, index, score, noted): the
+    writer runs at `at` or on every `every`-th turn since it last ran (None: never), and covers the noted turns of
+    the window of turns since its last run (the turn alone without a cadence)."""
+    calls, covered, noted = 0, 0, sum(r[3] for r in rows)
+    for session in dict.fromkeys(r[0] for r in rows):
+        since, pending = 0, []
+        for _, index, score, label in sorted((r for r in rows if r[0] == session), key=lambda r: r[1]):
+            since += 1
+            pending += [index] if label else []
+            if score >= at or (every and since >= every):
+                calls += 1
+                covered += sum(i > index - (since if every else 1) for i in pending)
+                since, pending = 0, []
+    return calls / len(rows), covered / (noted or 1)
+
+
+def fit(cases):
+    """Code only, no calls: the score and the cadence on the labeled turns, a refit's AUC by session, and the
+    FILTER that refit gives (for relay/heads_up.py)."""
+    from relay import heads_up
+    rows, xs = [], []
+    for session, index, turn, note in cases:
+        found = heads_up.facts(turn)
+        rows.append((session, index, heads_up.score(turn, found), bool(note)))
+        xs.append([heads_up.counts(turn, found)[name] for name in heads_up.FILTER])
+    ys, groups = [r[3] for r in rows], [r[0] for r in rows]
+    noted = [r[2] for r in rows if r[3]]
+    print(f'{len(rows)} turns, {len(noted)} noted. Score AUC {auc(noted, [r[2] for r in rows if not r[3]]):.2f}; '
+          f'a refit, scored on sessions it never saw: {cross_validated(xs, ys, groups):.2f}.')
+    print(f'score at  every  writer calls  noted turns covered   (now {heads_up.FORWARD_AT}, {heads_up.EVERY})')
+    for at in sorted({.137, .19, heads_up.FORWARD_AT, .3}):
+        for every in (None, 3, heads_up.EVERY, 6):
+            calls, covered = cadence(rows, at, every)
+            print(f'{at:8.3f}  {every or "-":>5}  {calls:12.0%}  {covered:19.0%}')
+    w = logistic(standardize(xs), ys)
+    columns = list(zip(*xs))
+    print('FILTER = {' + ', '.join(f"'{name}': ({statistics.fmean(c):.3f}, {statistics.pstdev(c) or 1:.3f}, {wi:.3f})"
+                                    for name, c, wi in zip(heads_up.FILTER, columns, w)) + '}')
+    print(f'FILTER_BIAS = {w[-1]:.3f}')
 
 
 def report(rows):
-    """The log in use: what the filter's threshold saves and drops among the turns the writer answered (sampled ones
-    sit below it), the notes Jev dropped as already said, those the user sent to the agent (/heads-up), Jev's shadow
-    and the writer routes."""
-    from relay.heads_up import FORWARD_AT, REDUNDANT_AT
+    """The log in use: what the score saves and drops among the turns the writer answered (the cadence's sit below
+    it), the notes Jev dropped as already said, what its gate would drop, those the user sent to the agent
+    (/heads-up), and the writer routes."""
+    from relay.heads_up import FORWARD_AT, GATE_AT, REDUNDANT_AT
     asked = {r.get('reply_sha256') for r in rows if r.get('event') == 'asked'}
     turns = [r for r in rows if not r.get('event') and r.get('score') is not None]
     ran = [r for r in turns if any(w.get('ok') for w in r.get('writers') or [])]
     noted = [r for r in ran if r['notes'] > 0]
     print(f"{len(turns)} logged turns; the writer answered {len(ran)} "
-          f"({sum(r['forwarded'] == 'sample' for r in ran)} sampled below the threshold); {len(noted)} got a note, "
+          f"({sum(r['forwarded'] == 'cadence' for r in ran)} by cadence below the score); {len(noted)} got a note, "
           f"{sum(r['reply_sha256'] in asked for r in noted)} sent to the agent with /heads-up; "
           f"{sum((r.get('redundant') or 0) >= REDUNDANT_AT for r in ran)} dropped as already said.")
+    gated = [r for r in noted if r.get('gate')]
+    stopped = [r for r in gated if r['gate']['gap'] or r['gate'].get('score', GATE_AT) < GATE_AT]
+    if gated:
+        print(f"The note gate would drop {len(stopped)}/{len(gated)} notes, "
+              f"{sum(r['reply_sha256'] in asked for r in stopped)} of them sent with /heads-up.")
     if ran:
         print(f'threshold  writer calls saved  noted turns dropped   (now {FORWARD_AT})')
-        for threshold in (.05, .1, FORWARD_AT, .2, .3, .4, .5):
+        for threshold in sorted({.05, .1, .2, FORWARD_AT, .3, .4, .5}):
             dropped = [r for r in ran if r['score'] < threshold]
             print(f'{threshold:9.3f}  {len(dropped):>8}/{len(ran):<9}  {sum(r["notes"] > 0 for r in dropped):>9}/{len(noted)}')
-        shadow = [r for r in ran if r.get('p_note') is not None]
-        print(f"Jev's shadow against the writer's notes: AUC "
-              f"{auc([r['p_note'] for r in shadow if r['notes']], [r['p_note'] for r in shadow if not r['notes']]):.2f}")
     routes = {}
     for row in rows:
         for attempt in row.get('writers') or []:
@@ -514,31 +348,18 @@ def main(argv=None):
     reporting = commands.add_parser('report', help='threshold trade and writer routes from the log')
     for command in (replaying, reporting):
         command.add_argument('--writer', help='one route as the writer (replay), or only its pinned rows (report)')
-    history = commands.add_parser('claude', help="judge Claude Code turns against its side agent's accepted notes")
+    history = commands.add_parser('claude', help="the funnel on Claude Code turns against its side agent's notes")
     history.add_argument('--projects', type=Path, default=Path.home()/'.claude'/'projects',
                          help='Claude Code transcripts folder')
-    history.add_argument('--negatives', type=int, default=200, help='quiet turns sampled (each spends a judge call)')
-    history.add_argument('--variant', action='append', choices=sorted(VARIANTS),
-                         help='judge question to try (repeat it; default: the current one)')
     history.add_argument('--writer', action='append',
-                         help='instead of the judge, run this writer on the noted turns and --quiet quiet ones')
+                         help='run this writer on the noted turns and --quiet quiet ones (spends writer calls)')
     history.add_argument('--quiet', type=int, default=50, help='quiet turns each --writer writes for')
-    history.add_argument('--claims', choices=('v1', 'v2'),
-                         help='measure narrow claim questions instead: v1 over the brief, v2 as TypeSafe advises')
-    history.add_argument('--brief', action='append', choices=list(BRIEFS),
-                         help='what the judge reads besides the lean brief (repeat it; default: lean)')
     args = parser.parse_args(argv)
     if args.command == 'claude':
-        cases = claude_cases(args.projects, args.negatives)
-        if args.claims:
-            return claims_report(claude_claims(cases, CLAIMS_V2 if args.claims == 'v2' else CLAIMS))
         if args.writer:
+            cases = claude_cases(args.projects, args.quiet)
             return writers_report([r for w in args.writer for r in claude_writers(cases, w, args.quiet)])
-        for variant in args.variant or ['current']:
-            for brief in args.brief or ['lean']:
-                print(f'== {variant} · {brief}')
-                claude_report(claude_history(cases, variant, brief))
-        return None
+        return fit(claude_cases(args.projects, 10**9))
     if args.command == 'replay':
         os.environ.pop('TARE_HEADS_UP', None)  # replaying is asking for it
         print(f'{replay(args.sessions, args.limit, args.writer)} turns replayed.')

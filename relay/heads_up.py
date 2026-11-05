@@ -3,16 +3,21 @@
 A funnel, cheapest stage first:
 1. Collect, no model: the turn's recorded steps, what code counts in them, and the facts tare checks itself (a test
    whose last run failed, files changed after the last test ran, an edit refused and never redone).
-2. Filter, no model: a logistic score over those counts (FILTER) sends a turn to the writer at FORWARD_AT or more.
-   Hosted Jev rates the turn beside it for calibration only: on labeled history its questions added nothing.
+2. Pace, no model: a logistic score over those counts (FILTER) sends a turn to the writer at FORWARD_AT or more, and
+   otherwise every EVERY-th turn since the writer last ran. A note is about the conversation more often than about
+   the turn it follows, and the writer reads the whole window since it last ran (the skipped turns' steps with the
+   earlier exchanges), so a pause loses little.
 3. Write: the first available route of the routing policy's `heads_up` role (/routes changes it) writes at most
    MAX_NOTES note, or none, about consequences: a measurement that may not hold, a cost to come, a changed default,
-   a rule that can catch too much, a silent failure.
-4. Check: hosted Jev drops a note the reply already says (a Noul, REDUNDANT_AT); without Jev the note stands.
+   a rule that can catch too much, a silent failure. It reads what the work did, from what tare already recorded
+   (each edit's text, a demand's objective and criteria, what explorers were asked and found, delegated reports,
+   commands' last output), so it needs no tools and no calls of its own.
+4. Check: hosted Jev drops a note the reply already says (a Noul, REDUNDANT_AT), and judges the note itself (GATE):
+   a consequence passes, process status or a gap in the record does not. Without Jev the note stands.
 
 Each decision is logged for calibration (<storage>/serve/heads-up.jsonl: scores, probabilities, routes, times and
-sizes, never the texts), SAMPLE of the filtered turns still reach the writer, so the log measures what the filter
-drops, and the TUI's /heads-up logs that the user sent a note to the agent (asked()), a label from use.
+sizes, never the texts); the turns the cadence sends below the score measure what the score misses, and the TUI's
+/heads-up logs that the user sent a note to the agent (asked()), a label from use.
 scripts/heads_up_calibration.py replays history through the funnel and reports the trade. Every frontend calls
 notes(); a failure here never fails the turn it reports on. TARE_HEADS_UP=off disables it.
 """
@@ -22,23 +27,58 @@ import json
 import math
 import os
 from pathlib import Path
-import random
 import re
 import time
 
 # The filter: a logistic score over what code counts in a turn (counts()), {count: (mean, spread, weight)}. Fitted
-# 2026-11-05 on 249 Claude Code turns, labeled by whether the user accepted a side-agent note after them
-# (scripts/heads_up_calibration.py claude --claims v2): AUC 0.68 cross-validated, where hosted Jev's questions, asked
-# as TypeSafe advises, added nothing (0.66). FORWARD_AT keeps 90% of the noted turns and drops 30% of the quiet ones.
-# ponytail: fitted on another agent's transcripts; refit on tare's own log (sampled turns, /heads-up) as it grows
+# 2026-11-05 on 249 Claude Code turns, labeled by whether the user accepted a side-agent note after them. On all
+# 1,408 turns of those sessions its AUC is 0.70, 0.61 for a refit scored on sessions it never saw: no count, and no
+# question hosted Jev answered about a turn, tells much about whether a note will follow (scripts/
+# heads_up_calibration.py claude). So the score only brings a busy turn forward; the cadence covers the rest.
+# On those turns: the writer runs on 32% of them, and 98% of the noted ones fall in a run's window of turns. Few
+# notes are lost by it: on 49 noted turns, Sonnet raised the side agent's concern on 2 reading the turn alone and on
+# at most 2 reading the 4-turn window (hosted Jev's match, one of them doubtful), so the writer, not the pace, is
+# what limits how many such notes are found.
+# ponytail: fitted on another agent's transcripts; refit on tare's own log (cadence turns, /heads-up) as it grows
 FILTER = {'facts': (.157, .405, .205), 'edits': (2.566, 5.373, .235), 'steps': (24.61, 42.822, .043),
           'tests': (3.426, 7.791, .181), 'failures': (.486, 1.155, .164), 'delegated': (.141, .411, .061),
           'request_kb': (.782, 3.329, -.129), 'reply_kb': (1.461, .999, -.392)}
 FILTER_BIAS = -1.517
-FORWARD_AT = .137
-SAMPLE = 0.1  # filtered turns that still reach the writer: the log's measure of what the filter drops
+FORWARD_AT = .25
+EVERY = 4  # below the score, the writer runs on every EVERY-th turn since it last ran
+HELD_STEPS = 100  # steps of the turns since then that the conversation keeps for it (pace['held'])
 ALREADY_SAID = 'Does `assistant_final_reply` already tell the user what `note` says?'
 REDUNDANT_AT = .7  # TypeSafe's starting threshold for a Noul's yes
+# The note gate: hosted Jev on the written note alone, where what it judges is in the state. On the notes users
+# accepted from Claude Code's side agent against Haiku's, Luna's and the local model's notes, the composite
+# (consequence - process_status - record_gap + changes_belief) separates them with an AUC of 0.93; at GATE_AT it
+# keeps 79% of the accepted notes and 10% of the others, and 10 of Sonnet's 26. It judges a note's kind, not its
+# truth, so it only logs (GATE_SHADOW) until the user's own labels confirm the cut.
+GATE = {
+    'consequence': '`note` tells the user a consequence of the work: a cost still to come, a measurement or comparison '
+                   'that may not hold, behavior that changed for the user or others, a rule that can catch more than '
+                   'intended, or a failure that would stay silent. Yes when: The note says what will or may happen '
+                   'because of the work, and why it matters. No when: The note reports status or process: what was '
+                   'run, what is pending, what was not checked.',
+    'process_status': '`note` mainly reports process status: something was not run, not finished, not confirmed, not '
+                      'shown in the recorded steps, or edited after a test. Yes when: Its point is that a step is '
+                      'missing, pending, unconfirmed or not in the record. No when: Its point is a property of the '
+                      'result itself, not of the process.',
+    'record_gap': '`note` argues from something not appearing in the recorded steps or the record. Yes when: It says a '
+                  'result, check or claim does not appear or is not shown in the steps or record. No when: It does not '
+                  'mention the recorded steps or what they show.',
+    'changes_belief': '`note` would change what a careful user believes about the work or decides to do next. Yes '
+                      'when: A reader who trusted the reply would now doubt a specific conclusion or expect a specific '
+                      'cost or effect. No when: It restates what the reply already implies or adds only a formality.',
+}
+GATE_AT = .5
+GATE_SHADOW = True
+# A note that argues from what the record does not show (the cheap writers' habit: 67-71% of their notes, 2% of the
+# accepted ones), caught without a model.
+RECORD_GAP = re.compile(r'passos? (?:registrad|gravad)|registro(?:s)? (?:não|nao|so|só|mostra|não mostra)|'
+                        r'recorded steps?|n[aã]o (?:aparece|consta|está|estão|foi|foram|há|mostra)|'
+                        r'not (?:shown|recorded|in the record|appear)|nenhum (?:passo|resultado)|'
+                        r'sem (?:confirmar|registro)|a resposta (?:diz|afirma|fala)|the reply (?:says|claims)', re.I)
 MAX_NOTES = 1  # one note, like the side agents users accepted notes from
 NOTE_CHARS = 500
 WRITER_BYTES = 48000  # the writer reads the conversation: a consequence often rests on what came before
@@ -46,45 +86,38 @@ WRITER_EARLIER = .45  # of that, the share for earlier exchanges
 WRITER_SECONDS = 180
 STEP_CHARS = 300
 DELEGATED = ('explore', 'implement', 'delegate_plan', 'demand', 'research')  # tools whose work runs elsewhere
-RECORD = 5  # what brief(), record() and facts() show; bump it when that changes, so calibration starts anew
+RECORD = 7  # what record() and facts() show; bump it when that changes, so calibration starts anew
 EARLIER_TURNS = 8  # earlier exchanges a turn carries as context, newest kept first when the record must shrink
+DETAIL_CHARS = 600  # what a step shows of what it did (_detail)
 
-QUESTION = ('After this coding assistant turn, is there something the user should know that the final reply '
-            'does not say, or says inaccurately?')
-OPTIONS = {
-    'note': 'Yes: the reply says it did, ran or checked something the recorded steps contradict or do not show, or '
-            'it leaves out a failure, an unfinished part or a side effect the steps show.',
-    'none': 'No: the reply is consistent with the recorded steps. Facts it states may come from context not shown '
-            '(project instructions, earlier turns, delegated explorers).',
-}
-QUIET = 'none'  # the option that means "nothing to tell": p_note is 1 minus its probability
-JUDGE_BYTES = 8192  # the choice assessment's request bound (compute_plane.choice_assessment)
-
-# What the side agent looks for. Taken from the kinds of note users of a side agent accepted (scripts/
-# heads_up_calibration.py claude): consequences of what was done or said, not process hygiene, which tare's facts
-# cover without a model.
+# What the side agent looks for. Taken from the notes users accepted from Claude Code's side agent (scripts/
+# heads_up_calibration.py claude): what follows from what the work changed or the conversation decided, often from
+# knowledge beyond the conversation (a license, a platform rule, git history, a quota), never process hygiene.
 SYSTEM = ("You watch a coding agent's conversation from the side, for its user. You get the conversation before "
-          "this turn (earlier_in_conversation), the user's request, the tool steps the host recorded (observations, "
-          "not claims), facts tare checked itself, and the agent's final reply. Decide whether there is one thing "
-          "the user should know before relying on what was just done or said, which the reply does not make clear. "
-          "Look for: a measurement, comparison or test whose setup differs from what will really run (another "
-          "model or configuration, a stand-in, a single run, numbers from different rounds), so its conclusion may "
-          "not hold; a cost the user will pay later (quota, tokens, money, disk, time, history that cannot be "
-          "removed); behavior that changes for the user or others (a new default, a removed check, a promise in "
-          "docs or UI that the code does not keep); a rule, filter or cleanup that can catch or delete more than "
-          "intended; a failure that would stay silent, with nothing to alert anyone; a claim in the reply that "
-          "the record contradicts. The agent also saw context that is not shown, so something missing from the "
-          "steps is never by itself a reason. Ignore process details that do not change what the user should "
-          "believe or do, and tare's facts, which the user sees separately; never give advice, suggestions or "
+          "this turn (earlier_in_conversation), the user's request, the steps the host recorded (what each edit "
+          "changed, what commands printed, what explorers were asked and found, what delegated work reported) and "
+          "the agent's final reply. Decide whether there is one thing the user should know before relying on what "
+          "was just done or said, which the reply does not make clear. Read what the work actually changes and "
+          "what the conversation decided, then ask what follows from it, using what you know about the tools, "
+          "platforms, licenses and costs involved. Look for: a measurement, comparison or test whose setup differs "
+          "from what will really run (another model or configuration, a stand-in, a single run, numbers from "
+          "different rounds, data the agent made itself), so its conclusion may not hold; a cost the user will pay "
+          "later (quota, tokens, money, disk, time, history that cannot be removed, files that will be deleted); "
+          "behavior that changes for the user or others (a new default, a removed check, a rule that now applies "
+          "more widely, a promise in docs or UI that the code does not keep); a rule, pattern, filter or cleanup "
+          "that can catch or delete more than intended; a failure that would stay silent, with nothing to alert "
+          "anyone; a license, platform or version rule the work runs into; a claim in the reply that the record "
+          "contradicts. Never write about the process itself: that something was not run, not tested, not "
+          "committed, not verified, is still running, or does not appear in the recorded steps. The steps are "
+          "partial and the agent saw more, so a gap in them is never a note. Never give advice, suggestions or "
           "style opinions, and never repeat a note already shown. Most turns need nothing: then answer exactly "
           "NONE. Otherwise answer one line starting with '- ': one or two plain sentences in the language of the "
           "user's messages, saying what holds and why it matters, without the transcript's jargon.")
 
 
 def funnel():
-    """The funnel's version in each log row: calibration compares only rows that ran the same texts and threshold
-    (a function, so a calibration variant that replaces QUESTION, OPTIONS or QUIET gets its own)."""
-    value = [QUESTION, OPTIONS, QUIET, SYSTEM, FILTER, FILTER_BIAS, FORWARD_AT, ALREADY_SAID, REDUNDANT_AT, RECORD]
+    """The funnel's version in each log row: calibration compares only rows that ran the same texts and pace."""
+    value = [SYSTEM, FILTER, FILTER_BIAS, FORWARD_AT, EVERY, ALREADY_SAID, REDUNDANT_AT, GATE, GATE_AT, RECORD]
     return hashlib.sha256(json.dumps(value).encode('utf-8')).hexdigest()[:12]
 
 ASK = ("tare's heads-up after your last reply:\n{notes}\nCheck whether each point holds, using the tools, "
@@ -155,6 +188,32 @@ def _last_line(text):
     return next((line.strip() for line in reversed(_text(text).splitlines()) if line.strip()), '')[:200]
 
 
+def _detail(tool, args, output):
+    """What a step did, beyond its status: an edit's old and new text, what an explorer was asked and found, a
+    demand's objective and criteria, a delegated report, a command's last output."""
+    changes = [c for c in args.get('changes') or [] if isinstance(c, dict)]
+    new = next((args[k] for k in ('newString', 'new_string', 'content', 'code', 'input') if isinstance(args.get(k), str)), None)
+    if changes or new is not None:
+        changes = changes or [{'search': args.get('oldString') or args.get('old_string') or '', 'replace': new}]
+        text = '\n'.join((f"- {_clip(c.get('search'), 200)}\n" if c.get('search') else '')
+                         + f"+ {_clip(c.get('replace'), 400)}" for c in changes)
+    elif tool == 'explore':
+        asked = [i.get('question') for i in args.get('investigations') or [] if isinstance(i, dict)]
+        found = [(i.get('report') or {}).get('summary') for i in output.get('investigations') or [] if isinstance(i, dict)]
+        text = '; '.join(['asked: ' + _clip(q, 200) for q in asked if q] + ['found: ' + str(f) for f in found if f])
+    elif tool == 'demand':
+        text = '; '.join([f"objective: {args.get('objective') or ''}"] + [f'criterion: {c}' for c in args.get('criteria') or []])
+    elif tool in DELEGATED + ('Agent', 'Task'):
+        asked = str(args.get('description') or args.get('prompt') or args.get('task') or '')
+        said = _text(output.get('output') or output.get('report') or '')
+        text = '; '.join(x for x in (asked and 'asked: ' + _clip(asked, 200), said and 'reported: ' + said) if x)
+    elif tool in ('terminal_read', 'verify'):
+        text = _tail(_text(output.get('output')).strip(), 400)
+    else:
+        text = ''
+    return _clip(text, DETAIL_CHARS)
+
+
 def step(tool, args, status, output):
     """One recorded tool call, reduced to what the funnel reads."""
     subject = next((str(args[k]) for k in ('path', 'name', 'query', 'pattern', 'command', 'url') if args.get(k)), '')
@@ -169,6 +228,9 @@ def step(tool, args, status, output):
         value['summary'] = '; '.join(said + (['cited ' + cited] if cited else []))[:240]
     elif tool in ('verify', 'terminal_read') or status == 'returned':
         value['summary'] = _last_line(output.get('output'))
+    detail = _detail(tool, args, output)
+    if detail:
+        value['detail'] = detail
     return value
 
 
@@ -276,7 +338,8 @@ def _line(s):
     parts = [s['tool'], s['subject'], '->', str(s['status'])]
     if 'exit_code' in s:
         parts.append(f"(exit {s['exit_code']})")
-    return _clip(' '.join(parts + [s.get('reason') or s.get('summary') or '']).strip(), STEP_CHARS)
+    line = _clip(' '.join(parts + [s.get('reason') or s.get('summary') or '']).strip(), STEP_CHARS)
+    return line + (' :: ' + s['detail'] if s.get('detail') else '')
 
 
 def _tail(text, limit):
@@ -284,11 +347,11 @@ def _tail(text, limit):
     return raw[len(raw) - int(limit):].decode('utf-8', 'ignore') if len(raw) > limit else text or ''
 
 
-def writer_record(turn, found):
-    return record(turn, found, WRITER_BYTES, WRITER_EARLIER)
+def writer_record(turn):
+    return record(turn, WRITER_BYTES, WRITER_EARLIER)
 
 
-def record(turn, found, budget, earlier_share=.25):
+def record(turn, budget, earlier_share=.25):
     """The turn as the writer reads it, within `budget` UTF-8 bytes: the newest steps and the newest earlier
     exchanges are kept. An earlier user message keeps its end, where a frontend's wrapper puts their words."""
     lines = [_line(s) for s in turn['steps']]
@@ -305,36 +368,11 @@ def record(turn, found, budget, earlier_share=.25):
             context.insert(0, exchange)
         value = json.dumps({'earlier_in_conversation': context,
                             'user_request': _clip(turn['request'], budget * .15 * share),
-                            'facts_checked_by_tare': found,
                             'recorded_steps': (['... earlier steps left out'] if len(shown) < len(lines) else []) + shown,
                             'assistant_final_reply': _clip(turn['reply'], budget * .35 * share)}, ensure_ascii=False)
         if len(json.dumps(value, ensure_ascii=False).encode('utf-8')) <= budget:  # as the judge request embeds it
             break
     return value
-
-
-def brief(turn, found, reply=2500):
-    """What the judge needs, not the whole record: the request's start, the reply (where the claims are), tare's
-    facts, the files changed, the tests and verifiers run, delegated work and the last failures, in a few KiB."""
-    steps = turn['steps']
-    return json.dumps({
-        'user_request': _clip(turn['request'], 600),
-        'facts_checked_by_tare': found,
-        'files_changed': sorted({s['subject'] for s in steps if s['tool'] == 'edit' and s['status'] == 'succeeded'})[:12],
-        'tests_run': [_clip(_line(s), 200) for s in steps if _check(s)[2]][-4:],
-        'delegated': [_clip(_line(s), 240) for s in steps if s['tool'] in DELEGATED][-3:],
-        'failures': [_clip(_line(s), 200) for s in steps if s['status'] in ('failed', 'refused')][-3:],
-        'assistant_final_reply': _clip(turn['reply'], reply)}, ensure_ascii=False)
-
-
-def assessment(turn, found):
-    """The judge's choice request for a turn: its brief, within the assessment bound (a reply dense with quotes
-    doubles when escaped, so it shortens until the request fits)."""
-    for reply in (2500, 1500, 800, 300):
-        request = {'state': brief(turn, found, reply), 'question': QUESTION, 'options': OPTIONS}
-        if len(json.dumps(request, ensure_ascii=False).encode('utf-8')) <= JUDGE_BYTES:
-            break
-    return request
 
 
 def parse(answer, seen):
@@ -397,29 +435,61 @@ def said_already(turn, note):
     return (judge_many(state, {'already_said': ALREADY_SAID}, timeout=10).get('yes') or {}).get('already_said')
 
 
+def gate(note):
+    """The note gate's view of a written note: {'gap': the RECORD_GAP regex matched} and, when hosted Jev answered,
+    its GATE probabilities and their composite 'score'."""
+    from .turn_engine import judge_many
+    value = {'gap': bool(RECORD_GAP.search(note))}
+    yes = judge_many(json.dumps({'note': note}, ensure_ascii=False), GATE, timeout=10).get('yes') or {}
+    if set(GATE) <= set(yes):
+        value.update({k: round(yes[k], 4) for k in GATE}, score=round(
+            yes['consequence'] - yes['process_status'] - yes['record_gap'] + yes['changes_belief'], 4))
+    return value
+
+
+def _mark(label, turn):
+    return {'tool': label, 'subject': _clip(turn['request'], 120), 'status': 'started'}
+
+
+def hold(held, turn):
+    """The steps kept for the writer after a turn it skipped: the turn's, marked with its request, newest kept."""
+    return (held + [_mark('earlier turn', turn)] + turn['steps'])[-HELD_STEPS:]
+
+
+def window(turn, held):
+    """The turn as the writer reads it after skipping some: the skipped turns' steps first, so their tests, edits
+    and failures reach it along with the earlier exchanges."""
+    return {**turn, 'steps': held + [_mark('this turn', turn)] + turn['steps']} if held else turn
+
+
 def _digest(text):
     return hashlib.sha256((text or '').encode('utf-8')).hexdigest()
 
 
-def notes(turn, *, seen=(), observed=None, sample=SAMPLE):
-    """At most MAX_NOTES new notes for a completed `turn` (from_journal or from_messages), never one in `seen`."""
+def notes(turn, *, seen=(), observed=None, pace=None):
+    """At most MAX_NOTES new notes for a completed `turn` (from_journal or from_messages), never one in `seen`.
+    `pace` is the conversation's dict that counts the turns since the writer last ran ('since') and keeps their
+    steps ('held')."""
     if not enabled():
         return []
-    from .turn_engine import deciding, judge_log, judges
+    from .turn_engine import judge_log
+    pace = {} if pace is None else pace
     started, row = time.monotonic(), {}
     try:
         found = facts(turn)
         p = score(turn, found)
-        why = 'score' if p >= FORWARD_AT else 'sample' if random.random() < sample else None
-        verdicts = judges(assessment(turn, found))  # calibration only: the filter decides
-        answer = deciding(verdicts)
-        new, attempts = write(writer_record(turn, found), list(seen)) if why else ([], [])
+        since, held = pace.get('since', 0) + 1, list(pace.get('held') or [])
+        why = 'score' if p >= FORWARD_AT else 'cadence' if since >= EVERY else None
+        pace.update(since=0 if why else since, held=[] if why else hold(held, turn))
+        new, attempts = write(writer_record(window(turn, held)), list(seen)) if why else ([], [])
         redundant = said_already(turn, new[0]) if new else None
         if redundant is not None and redundant >= REDUNDANT_AT:
             new = []
-        row = {'facts': len(found), 'score': round(p, 4), 'counts': counts(turn, found),
-               'p_note': 1 - answer['probabilities'].get(QUIET, 0) if answer else None, **verdicts,
-               'forwarded': why, 'writers': attempts, 'redundant': redundant, 'notes': len(new)}
+        judged = gate(new[0]) if new else None
+        if judged and not GATE_SHADOW and (judged['gap'] or judged.get('score', GATE_AT) < GATE_AT):
+            new = []
+        row = {'facts': len(found), 'score': round(p, 4), 'counts': counts(turn, found), 'since': since,
+               'held': len(held), 'forwarded': why, 'writers': attempts, 'redundant': redundant, 'gate': judged, 'notes': len(new)}
     except Exception as exc:  # ponytail: a heads-up never fails the turn it reports on; the reason is logged
         new, row = [], {'failure': f'{type(exc).__name__}: {str(exc)[:120]}'}
     judge_log('heads-up', {'ts': datetime.now(timezone.utc).isoformat(timespec='seconds'), 'funnel': funnel(),
@@ -431,20 +501,25 @@ def notes(turn, *, seen=(), observed=None, sample=SAMPLE):
 
 
 def shown(session):
-    """The notes a session's user saw: {'shown': all, 'last': the latest turn's, 'turn': that turn's reply digest}."""
+    """A session's heads-up state: {'shown': every note its user saw, 'last': the latest turn's notes, 'turn': that
+    turn's reply digest, and the pace notes() keeps: 'since' and 'held'}."""
     try:
         value = json.loads((Path(session)/'heads-up.json').read_text(encoding='utf-8'))
-        return {'shown': list(value['shown']), 'last': list(value['last']), 'turn': value.get('turn')}
+        return {'shown': list(value['shown']), 'last': list(value['last']), 'turn': value.get('turn'),
+                'since': int(value.get('since', 0)), 'held': list(value.get('held') or [])}
     except (OSError, ValueError, KeyError, TypeError):
-        return {'shown': [], 'last': [], 'turn': None}
+        return {'shown': [], 'last': [], 'turn': None, 'since': 0, 'held': []}
 
 
-def keep(session, new, reply=''):
+def keep(session, new, reply='', pace=None):
+    """After every turn: its new notes, if any, become the last ones; the pace is kept either way."""
     value = shown(session)
+    if new:
+        value.update(shown=value['shown'] + new, last=new, turn=_digest(reply))
+    value.update(since=(pace or {}).get('since', 0), held=(pace or {}).get('held', []))
     path = Path(session)/'heads-up.json'
     temporary = path.with_name(path.name + f'.{os.getpid()}.tmp')
-    temporary.write_text(json.dumps({'shown': value['shown'] + new, 'last': new, 'turn': _digest(reply)},
-                                    ensure_ascii=False), encoding='utf-8')
+    temporary.write_text(json.dumps(value, ensure_ascii=False), encoding='utf-8')
     os.replace(temporary, path)
 
 
