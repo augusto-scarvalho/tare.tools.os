@@ -44,6 +44,7 @@ project's own `AGENTS.md`; rules of one machine live in that machine's global in
   reaches, and the whole suite every night ([`docs/guides/CI_FEEDBACK.md`](docs/guides/CI_FEEDBACK.md)).
 - Experiment in a `git worktree`, never in a copy of the repository, and park it when done
   (`python scripts/ops/park_worktree.py <path>`, then `--apply`). Stop bulk work below 5 GB of free disk.
-- Run local focused checks with `python scripts/ops/run_focused_tests.py --output <new-evidence-folder> <test-files>`:
-  it keeps logs/JUnit and removes temporary test repositories on success or failure. Do not put pytest scratch
+- Run local focused checks with `python scripts/ops/run_focused_tests.py <test-files>`: it keeps logs/JUnit in a
+  new folder under `temporary-evidence/`, which Git ignores, and removes temporary test repositories on success or
+  failure. Those files are receipts of one run: never commit or edit them; rerun instead. Do not put pytest scratch
   trees in permanent evidence folders. Keep Git revisions, patches and new files instead of expanded checkouts.

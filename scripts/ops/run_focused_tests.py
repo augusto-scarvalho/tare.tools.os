@@ -1,4 +1,4 @@
-"""Run explicit test files; retain logs/JUnit, remove generated pytest workspaces."""
+"""Run explicit test files; retain logs/JUnit in a new folder Git ignores, remove generated pytest workspaces."""
 import argparse
 from contextlib import contextmanager
 import json
@@ -41,7 +41,7 @@ def workspace():
                 time.sleep(.2*(attempt+1))
 
 
-def run(tests, output):
+def run(tests, output=None):
     root = Path.cwd().resolve()
     for selector in tests:
         path = Path(selector.split('::', 1)[0]).resolve()
@@ -49,9 +49,14 @@ def run(tests, output):
             raise ValueError(f'Invalid test selector {selector!r}. Choose a Python test file or node ID inside this repository.')
     if not tests:
         raise ValueError('Select at least one test file; this runner never defaults to the whole suite.')
-    output = Path(output).resolve()
+    output = Path(output or root/'temporary-evidence'/f"focused-{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}").resolve()
+    # A receipt in the change would be committed with it, and then edited to match the next run instead of rerun.
+    if output.is_relative_to(root) and (root/'.git').exists() and subprocess.run(
+            ['git', 'check-ignore', '-q', str(output)], cwd=root).returncode:
+        raise ValueError(f'{output} is a folder Git would commit; keep test evidence out of the change '
+                         '(the default is a new folder under temporary-evidence/, which Git ignores).')
     output.mkdir(parents=True, exist_ok=False)
-    result = dict(tests=tests, exit_code=None, scratch_removed=False)
+    result = dict(tests=tests, output=str(output), exit_code=None, scratch_removed=False)
     started = time.monotonic()
     scratch = None
     try:
@@ -73,7 +78,8 @@ def run(tests, output):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output', type=Path, required=True, help='New folder for logs, JUnit and the exit receipt')
+    parser.add_argument('--output', type=Path, help='New folder for logs, JUnit and the exit receipt, never one Git '
+                        'would commit (default: a new one under temporary-evidence/)')
     parser.add_argument('tests', nargs='+', help='Explicit test files or pytest node IDs')
     args = parser.parse_args(argv)
     result = run(args.tests, args.output)

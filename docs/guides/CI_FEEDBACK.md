@@ -128,8 +128,9 @@ run on `main` is green (relay/native_product.py), which this keeps to minutes af
 ## Local use
 
 For focused local checks, use the worktree's Python environment with
-`python scripts/ops/run_focused_tests.py --output <new-evidence-folder> tests/test_example.py`.
-It saves the log, JUnit report and exit receipt, while removing temporary test
+`python scripts/ops/run_focused_tests.py tests/test_example.py`.
+It saves the log, JUnit report and exit receipt in a new folder under `temporary-evidence/`, which Git ignores
+(`--output` names another, never one Git would commit), while removing temporary test
 repositories on success, failure or interruption. It requires explicit test
 files or node IDs and never defaults to the whole suite. Keep evidence outside
 pytest's temporary directory; expanded fixture repositories are not evidence.
