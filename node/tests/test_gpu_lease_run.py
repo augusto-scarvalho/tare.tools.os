@@ -325,8 +325,10 @@ else:
                 "--stop-grace", "1.0",
                 "--", *child_cmd
             ]) as wrapper:
-                wait_until(child_pid_file.exists, timeout=5.0, msg="child pid written")
-                wait_until(grandchild_pid_file.exists, timeout=5.0, msg="grandchild pid written")
+                wait_until(lambda: child_pid_file.exists() and child_pid_file.stat().st_size, timeout=5.0,
+                           msg="child pid written")
+                wait_until(lambda: grandchild_pid_file.exists() and grandchild_pid_file.stat().st_size, timeout=5.0,
+                           msg="grandchild pid written")
 
                 child_pid = int(child_pid_file.read_text().strip())
                 grandchild_pid = int(grandchild_pid_file.read_text().strip())
@@ -521,7 +523,8 @@ else:
                 "--stop-grace", "1.0",
                 "--", *child_cmd
             ]) as wrapper:
-                wait_until(grandchild_pid_file.exists, timeout=5.0, msg="grandchild pid written")
+                wait_until(lambda: grandchild_pid_file.exists() and grandchild_pid_file.stat().st_size, timeout=5.0,
+                           msg="grandchild pid written")
                 grandchild_pid = int(grandchild_pid_file.read_text().strip())
                 code = wrapper.wait(timeout=5.0)
                 assert code == 0
@@ -560,7 +563,8 @@ while True:
                 "--stop-grace", "0.3",
                 "--", *child_cmd
             ]) as wrapper:
-                wait_until(child_pid_file.exists, timeout=5.0, msg="child pid written")
+                wait_until(lambda: child_pid_file.exists() and child_pid_file.stat().st_size, timeout=5.0,
+                           msg="child pid written")
                 child_pid = int(child_pid_file.read_text().strip())
                 assert not is_process_dead(child_pid)
 
