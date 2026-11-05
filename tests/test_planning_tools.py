@@ -553,3 +553,25 @@ def test_interrupted_planner_attempt_stays_unknown_and_is_not_repeated(planner, 
     assert receipt['executed_decision']['executed_deployment'] == 'worker'
     assert json.loads(tool.execute(request(), control).output_json)['status'] == 'INTERRUPTED'
     assert calls == [1] and planning_receipt(parent) == receipt
+
+
+def test_a_users_correction_of_an_applied_change_plans_in_a_round_of_its_own(planner):
+    from relay import conversation_tasks
+    parent,state,_=planner;state['conversation_flow']=True
+    control=execution();tool=wrap(parent,state,control)
+    owner=conversation_tasks.ConversationTools(tool,parent,state,'turn-1')
+    owner.understand({'intent':'deliver','relation':'new','objective':'Fix the value.','criteria':['Preserve callers.']})
+    saved=conversation_tasks.load(parent);task=conversation_tasks.current(saved)
+    task['delivery']={'verdict':'VERIFIED','applied':False};conversation_tasks.save(parent,saved)
+    owner.understand({'intent':'deliver','relation':'correct'})  # a refused candidate: same round, the cap holds
+    assert conversation_tasks.current(conversation_tasks.load(parent)).get('planning_revision',0)==0
+    saved=conversation_tasks.load(parent);task=conversation_tasks.current(saved)
+    task['delivery']={'verdict':'VERIFIED','applied':True};conversation_tasks.save(parent,saved)
+    NativeJournal(parent/'journal.jsonl').append({'kind':'user_message','message_id':'ci-failed',
+        'text':'CI failed on the applied change; fix it.'})
+    owner.invocation_id='turn-2'
+    owner.understand({'intent':'deliver','relation':'correct'})
+    corrected=conversation_tasks.current(conversation_tasks.load(parent))
+    assert corrected['planning_revision']==1 and corrected['delivery'] is None
+    owner.understand({'intent':'deliver','relation':'correct'})  # the same user request opens one round only
+    assert conversation_tasks.current(conversation_tasks.load(parent))['planning_revision']==1
