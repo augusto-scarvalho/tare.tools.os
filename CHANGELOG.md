@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- tare stops handing a unit back to the implementer after the independent audit refused its last 3 candidates, as it already did after 2 failed checks: the coordinator tells the user what the latest audit found and asks how to go on. Dogfooding the TUI, a finding the local implementer could not fix (a file its tools cannot delete) kept it and the auditor going for 7 rounds and 65 minutes.
 - The test that a message receipt keeps the conversation's scroll no longer fails on a slow runner: it scrolls home at once instead of after the next refresh, which a slow Windows runner reached only after reading the old position.
 - The TUI keeps each heads-up note it showed with its turn (the request's end, the reply's start) in the conversation's `heads-up.json`, and its log rows name the conversation, so notes met while dogfooding can be labeled by a person: `scripts/heads_up_calibration.py notes --since <ISO time>` lists them.
 - Heads-up notes lose Jev's note gate and no longer stop mid-word. The user labeled 18 notes by the consequence writer: they wanted 14, including all 4 written on turns where Claude Code's side agent had said nothing, and the gate ranked the 18 worse than chance (AUC 0.41), dropping 6 of the 14 wanted, all 3 its regex caught among them. A note over 500 characters is now cut after its last whole sentence.
