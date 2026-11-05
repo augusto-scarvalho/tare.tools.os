@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 import stat
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -52,6 +53,21 @@ def test_existing_evidence_and_unscoped_invocations_are_preserved(tmp_path, monk
         with pytest.raises(ValueError):
             runner.run(tests, tmp_path/'new')
     assert not (tmp_path/'new').exists()
+
+
+def test_evidence_never_lands_where_git_would_commit_it(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    subprocess.run(['git', 'init', '-q'], check=True)
+    (tmp_path/'.gitignore').write_text('temporary-evidence/\n')
+    (tmp_path/'test_fixture.py').write_text('# selected test\n')
+    with pytest.raises(ValueError, match='Git would commit'):
+        runner.run(['test_fixture.py'], tmp_path/'evidence')
+    assert not (tmp_path/'evidence').exists()
+    real = subprocess.run
+    monkeypatch.setattr(runner.subprocess, 'run', lambda command, **kwargs: real(command, **kwargs)
+                        if command[0] == 'git' else SimpleNamespace(returncode=0))
+    result = runner.run(['test_fixture.py'])  # the default: a new folder Git ignores
+    assert Path(result['output']).parent == (tmp_path/'temporary-evidence').resolve() and result['exit_code'] == 0
 
 
 def test_windows_late_handle_cleanup_retries_only_its_owned_workspace(monkeypatch):
