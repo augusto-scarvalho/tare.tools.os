@@ -1,4 +1,5 @@
 """A missing dependency classification must widen CI, never silently skip it."""
+import io
 import json
 import os
 from pathlib import Path
@@ -727,3 +728,274 @@ def test_isolate_finds_a_test_that_passes_only_after_another(root, monkeypatch):
         'tests/test_a.py', 'tests/test_b.py', 'tests/test_leaf.py']
     (root/'tests/test_b.py').write_text('def test_alone():\n    pass\n')
     assert ci.isolate(output, root/'tmp2', seed=7) == 0
+
+
+# ---------------------------------------------------------------------------
+# Artifact-identity helper: creates a realistic CI artifact folder under `parent`.
+# The folder is named ci-<platform>-<shard>-<attempt>[-retry] and contains
+# plan.json, shard.json and (for non-empty phases) receipt, map and JUnit files.
+# ---------------------------------------------------------------------------
+
+def make_artifact(parent, platform, shard, attempt, retry=False,
+                  quick=None, regression=None, exit_code=0, elapsed=1.0,
+                  map_ran=None, seconds=2.5, plan_head='abc'):
+    """Create a CI artifact folder under `parent`.
+
+    The folder name encodes the artifact identity: ci-<platform>-<shard>-<attempt>[-retry].
+    `quick` and `regression` are lists of test-file names (empty list means the phase was not run).
+    `map_ran` is a dict {test_file: [source_refs]} for the phase's test map.
+    """
+    suffix = '-retry' if retry else ''
+    name = f'ci-{platform}-{shard}-{attempt}{suffix}'
+    folder = parent / name
+    folder.mkdir(parents=True, exist_ok=True)
+    total_shards = 4 if platform == 'linux' else 6
+    (folder / 'plan.json').write_text(json.dumps({
+        'scope': 'full', 'head': plan_head, 'quick': quick or [], 'selected': []}))
+    (folder / 'shard.json').write_text(json.dumps({
+        'shard': shard, 'shards': total_shards,
+        'quick': quick or [], 'regression': regression or []}))
+    for phase, files in (('quick', quick), ('regression', regression)):
+        if files:
+            (folder / f'{phase}.json').write_text(json.dumps({
+                'phase': phase, 'elapsed_seconds': elapsed, 'exit_code': exit_code}))
+            (folder / f'{phase}-map.json').write_text(json.dumps({
+                name: (map_ran or {}).get(name, []) for name in files}))
+            (folder / f'{phase}.xml').write_text('<testsuite>' + ''.join(
+                f'<testcase classname="{name[:-3].replace("/", ".")}" name="t" time="{seconds}"/>'
+                for name in files) + '</testsuite>')
+    return folder
+
+
+def _shard_folders(parent, platform, n_shards):
+    """Create n_shards green artifact folders for attempt 1 under `parent`, one per shard."""
+    return [make_artifact(parent, platform, s, 1,
+                          quick=[f'tests/test_q{s}.py'] if s == 1 else [],
+                          regression=[f'tests/test_r{s}.py'])
+            for s in range(1, n_shards + 1)]
+
+
+def _merge_env(monkeypatch):
+    """Set up the environment for merge tests and ensure stdout writes UTF-8 bytes.
+
+    On Windows with a redirected stdout, sys.stdout.encoding is cp1252; the em-dash in the
+    merge table would be encoded as a non-UTF-8 byte. Force UTF-8 so the focused-test log
+    remains valid UTF-8.
+    """
+    import io
+    monkeypatch.delenv('GITHUB_STEP_SUMMARY', raising=False)
+    monkeypatch.setenv('GITHUB_EVENT_NAME', 'push')
+    monkeypatch.setenv('GITHUB_REF_NAME', 'main')
+    if sys.stdout.encoding and sys.stdout.encoding.lower() not in ('utf-8', 'utf8'):
+        monkeypatch.setattr(sys, 'stdout', io.TextIOWrapper(
+            sys.stdout.buffer, encoding='utf-8', line_buffering=True))
+
+
+@pytest.mark.parametrize('platform,n_shards', [('linux', 4), ('windows', 6)])
+def test_merge_partial_rerun_keeps_previous_green_shards(tmp_path, monkeypatch, platform, n_shards):
+    """Shards that already passed in attempt 1 are still used when attempt 2 reruns only some shards."""
+    _merge_env(monkeypatch)
+    # Attempt 1: all shards green
+    a1 = _shard_folders(tmp_path, platform, n_shards)
+    # Attempt 2: only shard 1 is rerun (green); shards 2..n remain from attempt 1
+    a2_shard1 = make_artifact(tmp_path, platform, 1, 2,
+                              quick=['tests/test_q1.py'], regression=['tests/test_r1.py'])
+    # The result job downloads all attempts; merge picks the newest per shard
+    input_dir = tmp_path / 'shards'
+    # copy all attempt folders into the shared download dir (mirrors download-artifact with merge-multiple: false)
+    for folder in a1 + [a2_shard1]:
+        import shutil
+        shutil.copytree(folder, input_dir / folder.name, dirs_exist_ok=True)
+    store = tmp_path / 'cache' / f'test-map-{platform}.json'
+    assert ci.merge([input_dir], n_shards, tmp_path / 'merged', store) == 0
+    # All shards contributed: the map has entries from both attempts
+    value = json.loads(store.read_text())
+    assert value['full_head'] == 'abc'
+    # Attempt 2's shard 1 is green and attempt 1's shards 2..n are green: map is fresh
+    assert 'full_at' in value
+
+
+def test_merge_attempt_order_is_numeric(tmp_path, monkeypatch):
+    """Attempt 10 is newer than attempt 2: the evidence from attempt 10 is used."""
+    _merge_env(monkeypatch)
+    platform = 'linux'
+    # shard 1: attempt 2 (green, JUnit time 5.0s) and attempt 10 (green, JUnit time 7.0s)
+    old = make_artifact(tmp_path, platform, 1, 2,
+                        quick=[], regression=['tests/test_r1.py'], seconds=5.0)
+    new = make_artifact(tmp_path, platform, 1, 10,
+                        quick=[], regression=['tests/test_r1.py'], seconds=7.0)
+    # shard 2: attempt 1 (green) - should be picked (only attempt available)
+    s2 = make_artifact(tmp_path, platform, 2, 1,
+                       quick=[], regression=['tests/test_r2.py'], seconds=3.0)
+    # Only shard 1 and 2 exist; merge with 2 shards
+    input_dir = tmp_path / 'shards'
+    import shutil
+    for folder in [old, new, s2]:
+        shutil.copytree(folder, input_dir / folder.name, dirs_exist_ok=True)
+    store = tmp_path / 'cache' / 'test-map-linux.json'
+    merged = tmp_path / 'merged'
+    assert ci.merge([input_dir], 2, merged, store) == 0
+    # Attempt 10's seconds (7.0) are recorded, not attempt 2's (5.0)
+    seconds = json.loads(ci.seconds_path(store).read_text())
+    assert seconds['tests/test_r1.py'] == 7.0
+    assert seconds['tests/test_r2.py'] == 3.0
+
+
+def test_merge_retry_wins_within_attempt(tmp_path, monkeypatch):
+    """Within the same attempt, the -retry artifact wins over the plain artifact."""
+    _merge_env(monkeypatch)
+    platform = 'linux'
+    # shard 1: attempt 1 plain (JUnit time 4.0s) and attempt 1 retry (JUnit time 6.0s)
+    plain = make_artifact(tmp_path, platform, 1, 1,
+                          quick=[], regression=['tests/test_r1.py'], seconds=4.0)
+    retried = make_artifact(tmp_path, platform, 1, 1, retry=True,
+                            quick=[], regression=['tests/test_r1.py'], seconds=6.0)
+    s2 = make_artifact(tmp_path, platform, 2, 1,
+                       quick=[], regression=['tests/test_r2.py'], seconds=3.0)
+    input_dir = tmp_path / 'shards'
+    import shutil
+    for folder in [plain, retried, s2]:
+        shutil.copytree(folder, input_dir / folder.name, dirs_exist_ok=True)
+    store = tmp_path / 'cache' / 'test-map-linux.json'
+    assert ci.merge([input_dir], 2, tmp_path / 'merged', store) == 0
+    seconds = json.loads(ci.seconds_path(store).read_text())
+    # Retry artifact (elapsed=6.0) wins over plain (elapsed=4.0)
+    assert seconds['tests/test_r1.py'] == 6.0
+
+
+def test_merge_newest_red_evidence_fails(tmp_path, monkeypatch):
+    """When the newest attempt for a shard is red, the merge returns 1 (no fallback to older green)."""
+    _merge_env(monkeypatch)
+    platform = 'linux'
+    # shard 1: attempt 1 green, attempt 2 red
+    green = make_artifact(tmp_path, platform, 1, 1,
+                          quick=[], regression=['tests/test_r1.py'], exit_code=0)
+    red = make_artifact(tmp_path, platform, 1, 2,
+                        quick=[], regression=['tests/test_r1.py'], exit_code=1)
+    s2 = make_artifact(tmp_path, platform, 2, 1,
+                       quick=[], regression=['tests/test_r2.py'])
+    input_dir = tmp_path / 'shards'
+    import shutil
+    for folder in [green, red, s2]:
+        shutil.copytree(folder, input_dir / folder.name, dirs_exist_ok=True)
+    store = tmp_path / 'cache' / 'test-map-linux.json'
+    assert ci.merge([input_dir], 2, tmp_path / 'merged', store) == 1
+
+
+def test_merge_missing_shard_fails(tmp_path, monkeypatch):
+    """When an expected shard has no artifact at all, the merge returns 1."""
+    _merge_env(monkeypatch)
+    platform = 'linux'
+    # Only shard 1 exists; shard 2 is missing
+    s1 = make_artifact(tmp_path, platform, 1, 1,
+                       quick=[], regression=['tests/test_r1.py'])
+    input_dir = tmp_path / 'shards'
+    import shutil
+    shutil.copytree(s1, input_dir / s1.name, dirs_exist_ok=True)
+    store = tmp_path / 'cache' / 'test-map-linux.json'
+    assert ci.merge([input_dir], 2, tmp_path / 'merged', store) == 1
+
+
+def test_merge_newest_unfinished_evidence_does_not_fall_back(tmp_path, monkeypatch):
+    """When the newest attempt's receipt file is missing (unfinished), the merge returns 1;
+    it does not fall back to the older green attempt."""
+    _merge_env(monkeypatch)
+    platform = 'linux'
+    # shard 1: attempt 1 green (has receipt), attempt 2 has no receipt file (unfinished)
+    green = make_artifact(tmp_path, platform, 1, 1,
+                          quick=[], regression=['tests/test_r1.py'])
+    unfinished = make_artifact(tmp_path, platform, 1, 2,
+                                quick=[], regression=['tests/test_r1.py'])
+    # Remove the receipt file to simulate an unfinished run
+    (unfinished / 'regression.json').unlink()
+    s2 = make_artifact(tmp_path, platform, 2, 1,
+                       quick=[], regression=['tests/test_r2.py'])
+    input_dir = tmp_path / 'shards'
+    import shutil
+    for folder in [green, unfinished, s2]:
+        shutil.copytree(folder, input_dir / folder.name, dirs_exist_ok=True)
+    store = tmp_path / 'cache' / 'test-map-linux.json'
+    assert ci.merge([input_dir], 2, tmp_path / 'merged', store) == 1
+
+
+def test_merge_newest_invalid_evidence_does_not_fall_back(tmp_path, monkeypatch):
+    """When the newest attempt's shard.json is missing (invalid), the merge returns 1;
+    it does not fall back to the older green attempt."""
+    _merge_env(monkeypatch)
+    platform = 'linux'
+    # shard 1: attempt 1 green, attempt 2 has no shard.json (invalid)
+    green = make_artifact(tmp_path, platform, 1, 1,
+                          quick=[], regression=['tests/test_r1.py'])
+    invalid = make_artifact(tmp_path, platform, 1, 2,
+                            quick=[], regression=['tests/test_r1.py'])
+    (invalid / 'shard.json').unlink()
+    s2 = make_artifact(tmp_path, platform, 2, 1,
+                       quick=[], regression=['tests/test_r2.py'])
+    input_dir = tmp_path / 'shards'
+    import shutil
+    for folder in [green, invalid, s2]:
+        shutil.copytree(folder, input_dir / folder.name, dirs_exist_ok=True)
+    store = tmp_path / 'cache' / 'test-map-linux.json'
+    assert ci.merge([input_dir], 2, tmp_path / 'merged', store) == 1
+
+
+def test_merge_aggregates_only_selected_maps_and_seconds(tmp_path, monkeypatch):
+    """Only the winning folder's maps and seconds are included in the merged output;
+    discarded older attempts do not contribute."""
+    _merge_env(monkeypatch)
+    platform = 'linux'
+    # shard 1: attempt 1 with distinct map content and seconds, attempt 2 with different content
+    old = make_artifact(tmp_path, platform, 1, 1,
+                        quick=[], regression=['tests/test_r1.py'],
+                        map_ran={'tests/test_r1.py': ['relay/old.py']}, seconds=1.0)
+    new = make_artifact(tmp_path, platform, 1, 2,
+                        quick=[], regression=['tests/test_r1.py'],
+                        map_ran={'tests/test_r1.py': ['relay/new.py']}, seconds=9.0)
+    s2 = make_artifact(tmp_path, platform, 2, 1,
+                       quick=[], regression=['tests/test_r2.py'])
+    input_dir = tmp_path / 'shards'
+    import shutil
+    for folder in [old, new, s2]:
+        shutil.copytree(folder, input_dir / folder.name, dirs_exist_ok=True)
+    store = tmp_path / 'cache' / 'test-map-linux.json'
+    assert ci.merge([input_dir], 2, tmp_path / 'merged', store) == 0
+    # The merged map must contain only the winner's (attempt 2) source reference
+    merged_map = json.loads((tmp_path / 'merged' / 'regression-map.json').read_text())
+    assert merged_map['tests/test_r1.py'] == ['relay/new.py']  # from attempt 2, not attempt 1
+    seconds = json.loads(ci.seconds_path(store).read_text())
+    assert seconds['tests/test_r1.py'] == 9.0  # from attempt 2
+
+
+def test_merge_cli_accepts_multi_attempt_download_directory(tmp_path, monkeypatch):
+    """merge accepts a single download directory (with multiple attempt sub-folders) as its input.
+    This mirrors how the CI result job calls merge with `--shards N --output ... <download_dir>`."""
+    _merge_env(monkeypatch)
+    platform = 'linux'
+    # Create the download directory with artifacts from two attempts
+    input_dir = tmp_path / 'shards'
+    input_dir.mkdir()
+    # Attempt 1: all shards green
+    for s in range(1, 5):
+        make_artifact(input_dir, platform, s, 1,
+                      quick=[] if s > 1 else ['tests/test_q.py'],
+                      regression=[f'tests/test_r{s}.py'])
+    # Attempt 2: only shard 1 rerun (green)
+    make_artifact(input_dir, platform, 1, 2,
+                  quick=['tests/test_q.py'], regression=['tests/test_r1.py'])
+    store = tmp_path / 'cache' / 'test-map-linux.json'
+    assert ci.merge([input_dir], 4, tmp_path / 'merged', store) == 0
+
+
+def test_result_downloads_all_attempts_without_flattening(tmp_path):
+    """The CI result job uses a broad pattern and merge-multiple: false, keeping artifact
+    sub-directories so merge can do numeric attempt selection."""
+    ci_yml = Path(__file__).resolve().parents[1] / '.github' / 'workflows' / 'ci.yml'
+    text = ci_yml.read_text(encoding='utf-8')
+    # Find the download-artifact step in the result job
+    # The pattern must be broad enough to include all attempts (not restricted to one run_attempt)
+    assert 'pattern: ci-${{ matrix.platform }}-*' in text
+    assert 'merge-multiple: false' in text
+    # The download path is the same directory merge reads
+    assert 'path: ${{ runner.temp }}/shards' in text
+    # The pattern must NOT be restricted to a single run_attempt
+    assert 'ci-${{ matrix.platform }}-*-${{ github.run_attempt }}*' not in text
