@@ -25,6 +25,9 @@ from .work_forms import LEDGER, MAX_UNITS, lint, literal
 VERIFY_SECONDS = 300            # default per-check cap; explicit --unlimited time removes it
 MAX_RUNGS = 3                   # routes tried for one unit, cheapest first
 MAX_FAILURES = 2                # NOT_VERIFIED runs of the same unit before tare refuses a third (R3)
+# NOT_REVIEWED runs in a row before tare refuses another: an audit finding the implementer cannot fix (a file its
+# tools cannot delete) otherwise loops; dogfooding the TUI, a local implementer and the auditor ran 7 rounds, 65 min.
+MAX_REFUSALS = 3                # at most the three runs the ledger keeps
 CHILD_LIMITS = {'max_model_calls': 30, 'max_seconds': 900}
 # ponytail: from the phase 3 comparison (2026-10-06), children that finished a unit used 12 and 16 calls, and one
 # given 7 ran out without changing anything; below this the session edits directly. Revisit with more units.
@@ -714,6 +717,11 @@ def check_failures(custody, unit, *, conversation=False, operator_retry=False):
     context = unit.get('verification_contract_digest') if conversation else None
     failures = sum(h['verdict'] == 'NOT_VERIFIED' and (
         not context or h.get('verification_contract_digest') == context) for h in history)
+    refused = len(history) >= MAX_REFUSALS and all(h['verdict'] == 'NOT_REVIEWED' for h in history[-MAX_REFUSALS:])
+    if refused and not (conversation and operator_retry):
+        raise ValueError(f"The independent audit refused the last {MAX_REFUSALS} candidates of unit {unit['key']}. "
+            'No implementer started. Tell the user what the latest audit found and ask how to go on: what the '
+            'implementer could not fix needs them. Changing notes, routes or task names does not reset this limit.')
     if failures >= MAX_FAILURES and not (conversation and operator_retry):
         if conversation:
             raise ValueError(f"Unit {unit['key']} failed its checks {MAX_FAILURES} times with the same host contract. "
