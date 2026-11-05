@@ -96,8 +96,8 @@ Release and installation:
 
 Development and CI:
 
-- `run_focused_tests.py`: runs explicit test files, keeps logs and JUnit, and removes generated pytest
-  workspaces.
+- `run_focused_tests.py`: runs explicit test files, keeps logs and JUnit in a new folder under
+  `temporary-evidence/` (never one Git would commit), and removes generated pytest workspaces.
 - `run_candidate_checks.py`: prepares only the admitted OS candidate files, then uses the focused runner.
 - `park_worktree.py`: keeps only what an experiment worktree adds to Git, then removes the worktree
   (`python scripts/ops/park_worktree.py <path>`, then `--apply`).
