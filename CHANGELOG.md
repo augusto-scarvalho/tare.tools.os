@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The test that a message receipt keeps the conversation's scroll no longer fails on a slow runner: it scrolls home at once instead of after the next refresh, which a slow Windows runner reached only after reading the old position.
 - The TUI keeps each heads-up note it showed with its turn (the request's end, the reply's start) in the conversation's `heads-up.json`, and its log rows name the conversation, so notes met while dogfooding can be labeled by a person: `scripts/heads_up_calibration.py notes --since <ISO time>` lists them.
 - Heads-up notes lose Jev's note gate and no longer stop mid-word. The user labeled 18 notes by the consequence writer: they wanted 14, including all 4 written on turns where Claude Code's side agent had said nothing, and the gate ranked the 18 worse than chance (AUC 0.41), dropping 6 of the 14 wanted, all 3 its regex caught among them. A note over 500 characters is now cut after its last whole sentence.
 - Heads-up notes call the writer about a third as often, after a review of the funnel against Claude Code's side-agent notes:

@@ -85,7 +85,7 @@ def test_receipt_update_preserves_scroll_and_expansion():
             row.collapsed=False
             for n in range(25):output.write('Answer '+str(n)+'\n\nMore detail.')
             await pilot.pause()
-            output.scroll_home(animate=False)
+            output.scroll_home(animate=False, immediate=True)  # not after a refresh a slow runner may not reach
             await pilot.pause()
             old=output.scroll_y
             same=output.message_delivery(item(state='RECEIVED'))
