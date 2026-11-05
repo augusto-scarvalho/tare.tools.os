@@ -73,6 +73,11 @@ def test_tare_states_the_facts_it_can_check_without_a_model(tmp_path):
     explored = heads_up.step('explore', {'investigations': [{'question': 'Where is the cost table?'}]}, 'succeeded',
                              {'investigations': [{'report': {'summary': 'In balance.py, a constant per level.'}}]})
     assert explored['detail'] == 'asked: Where is the cost table?; found: In balance.py, a constant per level.'
+    refused = heads_up.step('implement', {'note': 'Drop the evidence files.'}, 'succeeded', {
+        'verdict': 'NOT_REVIEWED', 'implementer_report': {'basis': 'claim', 'text': '89 passed.'},
+        'audit': {'verdict': 'REVISE', 'findings': [{'claim': 'It commits 3 evidence files.'}]}})
+    assert refused['detail'] == ('audit REVISE: It commits 3 evidence files.; asked: Drop the evidence files.; '
+                                 'reported: 89 passed.')  # what the audit found, which the user never sees
 
 
 NOTE = 'The suite now shares one process, so one test can change the next.'

@@ -59,33 +59,38 @@ WRITER_EARLIER = .45  # of that, the share for earlier exchanges
 WRITER_SECONDS = 180
 STEP_CHARS = 300
 DELEGATED = ('explore', 'implement', 'delegate_plan', 'demand', 'research')  # tools whose work runs elsewhere
-RECORD = 7  # what record() and facts() show; bump it when that changes, so calibration starts anew
+RECORD = 8  # what record() and facts() show; bump it when that changes, so calibration starts anew
 EARLIER_TURNS = 8  # earlier exchanges a turn carries as context, newest kept first when the record must shrink
 DETAIL_CHARS = 600  # what a step shows of what it did (_detail)
 
 # What the side agent looks for. Taken from the notes users accepted from Claude Code's side agent (scripts/
 # heads_up_calibration.py claude): what follows from what the work changed or the conversation decided, often from
 # knowledge beyond the conversation (a license, a platform rule, git history, a quota), never process hygiene.
-SYSTEM = ("You watch a coding agent's conversation from the side, for its user. You get the conversation before "
-          "this turn (earlier_in_conversation), the user's request, the steps the host recorded (what each edit "
-          "changed, what commands printed, what explorers were asked and found, what delegated work reported) and "
-          "the agent's final reply. Decide whether there is one thing the user should know before relying on what "
-          "was just done or said, which the reply does not make clear. Read what the work actually changes and "
-          "what the conversation decided, then ask what follows from it, using what you know about the tools, "
-          "platforms, licenses and costs involved. Look for: a measurement, comparison or test whose setup differs "
-          "from what will really run (another model or configuration, a stand-in, a single run, numbers from "
-          "different rounds, data the agent made itself), so its conclusion may not hold; a cost the user will pay "
-          "later (quota, tokens, money, disk, time, history that cannot be removed, files that will be deleted); "
-          "behavior that changes for the user or others (a new default, a removed check, a rule that now applies "
-          "more widely, a promise in docs or UI that the code does not keep); a rule, pattern, filter or cleanup "
-          "that can catch or delete more than intended; a failure that would stay silent, with nothing to alert "
-          "anyone; a license, platform or version rule the work runs into; a claim in the reply that the record "
-          "contradicts. Never write about the process itself: that something was not run, not tested, not "
-          "committed, not verified, is still running, or does not appear in the recorded steps. The steps are "
-          "partial and the agent saw more, so a gap in them is never a note. Never give advice, suggestions or "
-          "style opinions, and never repeat a note already shown. Most turns need nothing: then answer exactly "
-          "NONE. Otherwise answer one line starting with '- ': one or two plain sentences in the language of the "
-          "user's messages, saying what holds and why it matters, without the transcript's jargon.")
+SYSTEM = ("You watch a coding agent's conversation from the side, for its user, who sees only the agent's final "
+          "reply and the names of its steps: not logs, command output, diffs, delegated reports or what audits "
+          "found. You get the conversation before this turn (earlier_in_conversation), the user's request, the steps "
+          "the host recorded (what each edit changed, what commands printed, what explorers were asked and found, "
+          "what delegated work was asked, reported and what its audit found) and the agent's final reply. Decide "
+          "whether there is one thing the user should know before relying on what was just done or said, which the "
+          "reply does not make clear. Read what the work actually changes and what the conversation decided, then "
+          "ask what follows from it, using what you know about the tools, platforms, licenses and costs involved. "
+          "Look for: a claim in the reply that the record contradicts (an audit that refused, a test that failed, "
+          "numbers that do not add up); a choice the reply offers whose consequence it hides; a measurement, "
+          "comparison or test whose setup differs from what will really run (another model or configuration, a "
+          "stand-in, a single run, numbers from different rounds, data the agent made itself), so its conclusion "
+          "may not hold; a cost the user will pay later (quota, tokens, money, disk, time, history that cannot be "
+          "removed, files that will be deleted); behavior that changes for the user or others (a new default, a "
+          "removed check, a rule that now applies more widely, a promise in docs or UI that the code does not "
+          "keep); a rule, pattern, filter or cleanup that can catch or delete more than intended; a failure that "
+          "would stay silent, with nothing to alert anyone; a license, platform or version rule the work runs "
+          "into. Never write about the process alone: that something was not run, not tested, not committed, is "
+          "still running, or does not appear in the recorded steps, since the agent may have seen more than the "
+          "steps show. The one exception is a check the reply claims: when it says something was tested, verified "
+          "or passes and the steps show that check failed, never ran, or ran before later edits to what it checks, "
+          "say so, unless earlier steps were left out of the record. Never give advice, suggestions or style "
+          "opinions, and never repeat a note already shown. Most turns need nothing: then answer exactly NONE. "
+          "Otherwise answer one line starting with '- ': one or two plain sentences in the language of the user's "
+          "messages, saying what holds and why it matters, without the transcript's jargon.")
 
 
 def funnel():
@@ -177,9 +182,15 @@ def _detail(tool, args, output):
     elif tool == 'demand':
         text = '; '.join([f"objective: {args.get('objective') or ''}"] + [f'criterion: {c}' for c in args.get('criteria') or []])
     elif tool in DELEGATED + ('Agent', 'Task'):
-        asked = str(args.get('description') or args.get('prompt') or args.get('task') or '')
-        said = _text(output.get('output') or output.get('report') or '')
-        text = '; '.join(x for x in (asked and 'asked: ' + _clip(asked, 200), said and 'reported: ' + said) if x)
+        # implement's request is its note and its report the implementer's; what its audit found, the user never sees
+        asked = str(args.get('description') or args.get('prompt') or args.get('task') or args.get('note') or '')
+        report = output.get('output') or output.get('report') or output.get('implementer_report') or ''
+        said = _text(report.get('text') if isinstance(report, dict) and 'text' in report else report)
+        audit = output.get('audit') if isinstance(output.get('audit'), dict) else {}
+        found = ' | '.join(_clip(f.get('claim'), 260) for f in audit.get('findings') or []
+                           if isinstance(f, dict) and f.get('claim'))
+        text = '; '.join(x for x in (audit and f"audit {audit.get('verdict')}" + (': ' + found if found else ''),
+                                     asked and 'asked: ' + _clip(asked, 160), said and 'reported: ' + said) if x)
     elif tool in ('terminal_read', 'verify'):
         text = _tail(_text(output.get('output')).strip(), 400)
     else:
