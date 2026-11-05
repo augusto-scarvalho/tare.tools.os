@@ -3661,8 +3661,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded experiment scheduling, evidence comparison and operator controls; execution ports remain in Kernel and Runtime.",
-      "size_bytes": 9017,
-      "sha256": "0c7b7d474dee6a8f20506562e9232a1a623319a0f289a95c7cb58f9b33f1ca02"
+      "size_bytes": 8991,
+      "sha256": "04c10b465a5f7feef44d83ab017c643fe6d013d56ce0af6f12bc7656119a9590"
     },
     {
       "name": "console_challenger.py",
