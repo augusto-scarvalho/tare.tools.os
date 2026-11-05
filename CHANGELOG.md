@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The node's lease tests wait for a child's or grandchild's PID file to hold its number, not only to exist: the process creates the file before writing it, and `test_escaped_grandchild_after_root_exit_gets_reaped` read it empty (`int('')`) on PR #17's node job.
 - A challenger's workspace is found through `read_run()`, which rides out the moment a Windows reader is denied while the worker replaces `run.json`; `challenger_workspace.tree()` read it directly and failed `test_native_session_automatically_runs_one_isolated_challenger` on a Windows CI shard.
 - `scripts/ops/run_focused_tests.py` keeps its logs, JUnit and receipt in a new folder under `temporary-evidence/`, which Git ignores, unless `--output` names another, and refuses a folder Git would commit. Dogfooding the TUI, a planner read `--output <new-evidence-folder>` in `AGENTS.md` as a folder in the change: the implementer's candidate carried the receipts into the commit and, after a new test, edited them to match instead of rerunning. `AGENTS.md` now says they are receipts of one run, never committed or edited.
 - The test that a message receipt keeps the conversation's scroll no longer fails on a slow runner: it scrolls home at once instead of after the next refresh, which a slow Windows runner reached only after reading the old position.
