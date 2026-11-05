@@ -212,9 +212,9 @@ def test_the_tui_shows_new_notes_once_and_keeps_them_for_the_composer(tmp_path, 
     monkeypatch.delenv('TARE_HEADS_UP')
     monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
     source = session(tmp_path)
-    told, said = [], []
+    told, said, logged = [], [], []
     monkeypatch.setattr(heads_up, 'notes', lambda turn, seen=(), observed=None, pace=None: told.append(list(seen)) or (
-        pace.update(since=3)) or ['The verifier failed.'])
+        logged.append(observed)) or pace.update(since=3) or ['The verifier failed.'])
     console = SimpleNamespace(selection=lambda: SimpleNamespace(local_models=True),
                               call_from_thread=lambda fn, *a, **kw: fn(*a, **kw),
                               notify=lambda text, **kw: said.append(text),
@@ -222,9 +222,15 @@ def test_the_tui_shows_new_notes_once_and_keeps_them_for_the_composer(tmp_path, 
     ConversationModels._heads_up(console, str(source), ['inv'], 'Fix it')
     assert 'tare · heads-up: The verifier failed.' in said[0] and '/heads-up' in said[0]
     reply = hashlib.sha256(b'Done: all tests pass.').hexdigest()
-    assert heads_up.shown(source) == {'shown': ['The verifier failed.'], 'last': ['The verifier failed.'], 'turn': reply,
-                                      'since': 3, 'held': []}  # the pace is the session's, kept across turns
-    heads_up.keep(source, [], 'a quiet turn', {'since': 4})  # a turn without notes keeps the last ones for /heads-up
+    mine = heads_up.shown(source)
+    assert mine == {'shown': ['The verifier failed.'], 'last': ['The verifier failed.'], 'turn': reply,
+                    'noted': mine['noted'], 'since': 3, 'held': []}  # the pace is the session's, kept across turns
+    assert logged[0]['session'] == source.name  # the log row names its conversation
+    from scripts.heads_up_calibration import noted  # dogfood review: each note with its turn
+    assert [(n['session'], n['note'], n['request'], n['reply']) for n in noted(source.parent)] == [
+        (source.name, 'The verifier failed.', 'Fix it', 'Done: all tests pass.')]
+    assert noted(source.parent, '9999') == []
+    heads_up.keep(source, [], {'reply': 'a quiet turn'}, {'since': 4})  # a turn without notes keeps the last ones
     assert heads_up.shown(source)['last'] == ['The verifier failed.'] and heads_up.shown(source)['turn'] == reply
     ConversationModels._heads_up(console, str(source), ['inv'], 'Fix it')
     assert told[-1] == ['The verifier failed.']  # the second turn's writer is told what was shown

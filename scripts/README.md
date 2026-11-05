@@ -30,6 +30,7 @@ scripts/
 - `configure_vendor_models.py`: expands existing local vendor connections from explicit offline catalogues.
 - `qualify_laya_routes.py`: runs a frozen, CPU-only route-choice screen; never changes routing policy.
 - `heads_up_calibration.py`: measures the heads-up funnel (`relay/heads_up.py`) on turns that already happened.
+  `notes --since <ISO time>` lists the notes the TUI showed, each with its turn, for dogfood review.
   `claude` uses Claude Code transcripts (`~/.claude/projects`) as labels: the turns after which the user accepted a
   side-agent note, beside the other turns of the same sessions. Alone it spends nothing: the score's AUC, a refit's
   scored on sessions it never saw, the writer calls and noted turns covered by each score and cadence, and the

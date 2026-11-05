@@ -259,8 +259,8 @@ class ConversationModels:
             route = read_json(Path(source)/'native-agent.json', 1024*1024)['deployment'].get('id')
             mine = heads_up.shown(source)
             with local_models(local):  # the conversation's choice: no local judge or writer when it said so
-                new = heads_up.notes(turn, seen=mine['shown'], pace=mine, observed={'source': 'tui', 'route': route})
-            heads_up.keep(source, new, turn['reply'], mine)
+                new = heads_up.notes(turn, seen=mine['shown'], pace=mine, observed={'source': 'tui', 'route': route, 'session': Path(source).name})
+            heads_up.keep(source, new, turn, mine)
         except (OSError, ValueError, KeyError, TypeError, StopIteration) as exc:
             self.call_from_thread(self.notify, 'tare heads-up: ' + str(exc)[:200], severity='error')
             return
