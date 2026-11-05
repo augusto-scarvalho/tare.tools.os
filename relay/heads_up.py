@@ -12,8 +12,7 @@ A funnel, cheapest stage first:
    a rule that can catch too much, a silent failure. It reads what the work did, from what tare already recorded
    (each edit's text, a demand's objective and criteria, what explorers were asked and found, delegated reports,
    commands' last output), so it needs no tools and no calls of its own.
-4. Check: hosted Jev drops a note the reply already says (a Noul, REDUNDANT_AT), and judges the note itself (GATE):
-   a consequence passes, process status or a gap in the record does not. Without Jev the note stands.
+4. Check: hosted Jev drops a note the reply already says (a Noul, REDUNDANT_AT). Without Jev the note stands.
 
 Each decision is logged for calibration (<storage>/serve/heads-up.jsonl: scores, probabilities, routes, times and
 sizes, never the texts); the turns the cadence sends below the score measure what the score misses, and the TUI's
@@ -49,36 +48,9 @@ EVERY = 4  # below the score, the writer runs on every EVERY-th turn since it la
 HELD_STEPS = 100  # steps of the turns since then that the conversation keeps for it (pace['held'])
 ALREADY_SAID = 'Does `assistant_final_reply` already tell the user what `note` says?'
 REDUNDANT_AT = .7  # TypeSafe's starting threshold for a Noul's yes
-# The note gate: hosted Jev on the written note alone, where what it judges is in the state. On the notes users
-# accepted from Claude Code's side agent against Haiku's, Luna's and the local model's notes, the composite
-# (consequence - process_status - record_gap + changes_belief) separates them with an AUC of 0.93; at GATE_AT it
-# keeps 79% of the accepted notes and 10% of the others, and 10 of Sonnet's 26. It judges a note's kind, not its
-# truth, so it only logs (GATE_SHADOW) until the user's own labels confirm the cut.
-GATE = {
-    'consequence': '`note` tells the user a consequence of the work: a cost still to come, a measurement or comparison '
-                   'that may not hold, behavior that changed for the user or others, a rule that can catch more than '
-                   'intended, or a failure that would stay silent. Yes when: The note says what will or may happen '
-                   'because of the work, and why it matters. No when: The note reports status or process: what was '
-                   'run, what is pending, what was not checked.',
-    'process_status': '`note` mainly reports process status: something was not run, not finished, not confirmed, not '
-                      'shown in the recorded steps, or edited after a test. Yes when: Its point is that a step is '
-                      'missing, pending, unconfirmed or not in the record. No when: Its point is a property of the '
-                      'result itself, not of the process.',
-    'record_gap': '`note` argues from something not appearing in the recorded steps or the record. Yes when: It says a '
-                  'result, check or claim does not appear or is not shown in the steps or record. No when: It does not '
-                  'mention the recorded steps or what they show.',
-    'changes_belief': '`note` would change what a careful user believes about the work or decides to do next. Yes '
-                      'when: A reader who trusted the reply would now doubt a specific conclusion or expect a specific '
-                      'cost or effect. No when: It restates what the reply already implies or adds only a formality.',
-}
-GATE_AT = .5
-GATE_SHADOW = True
-# A note that argues from what the record does not show (the cheap writers' habit: 67-71% of their notes, 2% of the
-# accepted ones), caught without a model.
-RECORD_GAP = re.compile(r'passos? (?:registrad|gravad)|registro(?:s)? (?:não|nao|so|só|mostra|não mostra)|'
-                        r'recorded steps?|n[aã]o (?:aparece|consta|está|estão|foi|foram|há|mostra)|'
-                        r'not (?:shown|recorded|in the record|appear)|nenhum (?:passo|resultado)|'
-                        r'sem (?:confirmar|registro)|a resposta (?:diz|afirma|fala)|the reply (?:says|claims)', re.I)
+# Jev also judged the written note alone (consequence, process status, a gap in the record) and a regex caught notes
+# arguing from what the record does not show. On the user's labels of 18 notes by the consequence writer, that gate
+# ranked them worse than chance (AUC 0.41) and would have dropped 6 of the 14 they wanted, so it is gone.
 MAX_NOTES = 1  # one note, like the side agents users accepted notes from
 NOTE_CHARS = 500
 WRITER_BYTES = 48000  # the writer reads the conversation: a consequence often rests on what came before
@@ -117,7 +89,7 @@ SYSTEM = ("You watch a coding agent's conversation from the side, for its user. 
 
 def funnel():
     """The funnel's version in each log row: calibration compares only rows that ran the same texts and pace."""
-    value = [SYSTEM, FILTER, FILTER_BIAS, FORWARD_AT, EVERY, ALREADY_SAID, REDUNDANT_AT, GATE, GATE_AT, RECORD]
+    value = [SYSTEM, FILTER, FILTER_BIAS, FORWARD_AT, EVERY, ALREADY_SAID, REDUNDANT_AT, RECORD]
     return hashlib.sha256(json.dumps(value).encode('utf-8')).hexdigest()[:12]
 
 ASK = ("tare's heads-up after your last reply:\n{notes}\nCheck whether each point holds, using the tools, "
@@ -375,12 +347,18 @@ def record(turn, budget, earlier_share=.25):
     return value
 
 
+def _sentences(note):
+    """A note longer than NOTE_CHARS, cut after its last sentence that fits, so it never stops mid-word."""
+    whole = len(note) > NOTE_CHARS and re.match(r'(?s).*[.!?](?=\s)', note[:NOTE_CHARS + 1])
+    return whole.group() if whole else note[:NOTE_CHARS]
+
+
 def parse(answer, seen):
     """The writer's notes: none for NONE; at most MAX_NOTES '- ' lines, never one already shown."""
     if answer.strip().upper().startswith('NONE'):
         return []
     known = {s.casefold() for s in seen}
-    notes = [line.strip()[2:].strip()[:NOTE_CHARS] for line in answer.splitlines() if line.strip()[:2] in ('- ', '* ')]
+    notes = [_sentences(line.strip()[2:].strip()) for line in answer.splitlines() if line.strip()[:2] in ('- ', '* ')]
     return [n for n in dict.fromkeys(notes) if n and n.casefold() not in known][:MAX_NOTES]
 
 
@@ -435,18 +413,6 @@ def said_already(turn, note):
     return (judge_many(state, {'already_said': ALREADY_SAID}, timeout=10).get('yes') or {}).get('already_said')
 
 
-def gate(note):
-    """The note gate's view of a written note: {'gap': the RECORD_GAP regex matched} and, when hosted Jev answered,
-    its GATE probabilities and their composite 'score'."""
-    from .turn_engine import judge_many
-    value = {'gap': bool(RECORD_GAP.search(note))}
-    yes = judge_many(json.dumps({'note': note}, ensure_ascii=False), GATE, timeout=10).get('yes') or {}
-    if set(GATE) <= set(yes):
-        value.update({k: round(yes[k], 4) for k in GATE}, score=round(
-            yes['consequence'] - yes['process_status'] - yes['record_gap'] + yes['changes_belief'], 4))
-    return value
-
-
 def _mark(label, turn):
     return {'tool': label, 'subject': _clip(turn['request'], 120), 'status': 'started'}
 
@@ -485,11 +451,8 @@ def notes(turn, *, seen=(), observed=None, pace=None):
         redundant = said_already(turn, new[0]) if new else None
         if redundant is not None and redundant >= REDUNDANT_AT:
             new = []
-        judged = gate(new[0]) if new else None
-        if judged and not GATE_SHADOW and (judged['gap'] or judged.get('score', GATE_AT) < GATE_AT):
-            new = []
         row = {'facts': len(found), 'score': round(p, 4), 'counts': counts(turn, found), 'since': since,
-               'held': len(held), 'forwarded': why, 'writers': attempts, 'redundant': redundant, 'gate': judged, 'notes': len(new)}
+               'held': len(held), 'forwarded': why, 'writers': attempts, 'redundant': redundant, 'notes': len(new)}
     except Exception as exc:  # ponytail: a heads-up never fails the turn it reports on; the reason is logged
         new, row = [], {'failure': f'{type(exc).__name__}: {str(exc)[:120]}'}
     judge_log('heads-up', {'ts': datetime.now(timezone.utc).isoformat(timespec='seconds'), 'funnel': funnel(),

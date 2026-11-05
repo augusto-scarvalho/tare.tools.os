@@ -4,7 +4,7 @@
 (<storage>/serve/heads-up.jsonl) holds the score beside the writer's verdict for every turn; a turn already replayed
 is skipped. It spends writer and judge calls: --limit bounds them.
 `report` reads the log: for each score, how many writer calls it saves and how many turns that got notes it would
-have dropped, the notes Jev dropped or its gate would drop, and those the user sent to the agent (/heads-up).
+have dropped, the notes Jev dropped as already said, and those the user sent to the agent (/heads-up).
 `claude` uses labels: Claude Code's side agent left the notes the user accepted in the transcripts, so each such
 turn should get a note, and the other turns of those sessions may stay quiet. With no --writer it costs nothing:
 the score and the cadence on every turn, measured by session, and the weights a refit gives. With --writer it runs
@@ -306,9 +306,9 @@ def fit(cases):
 
 def report(rows):
     """The log in use: what the score saves and drops among the turns the writer answered (the cadence's sit below
-    it), the notes Jev dropped as already said, what its gate would drop, those the user sent to the agent
-    (/heads-up), and the writer routes."""
-    from relay.heads_up import FORWARD_AT, GATE_AT, REDUNDANT_AT
+    it), the notes Jev dropped as already said, those the user sent to the agent (/heads-up), and the writer
+    routes."""
+    from relay.heads_up import FORWARD_AT, REDUNDANT_AT
     asked = {r.get('reply_sha256') for r in rows if r.get('event') == 'asked'}
     turns = [r for r in rows if not r.get('event') and r.get('score') is not None]
     ran = [r for r in turns if any(w.get('ok') for w in r.get('writers') or [])]
@@ -317,11 +317,6 @@ def report(rows):
           f"({sum(r['forwarded'] == 'cadence' for r in ran)} by cadence below the score); {len(noted)} got a note, "
           f"{sum(r['reply_sha256'] in asked for r in noted)} sent to the agent with /heads-up; "
           f"{sum((r.get('redundant') or 0) >= REDUNDANT_AT for r in ran)} dropped as already said.")
-    gated = [r for r in noted if r.get('gate')]
-    stopped = [r for r in gated if r['gate']['gap'] or r['gate'].get('score', GATE_AT) < GATE_AT]
-    if gated:
-        print(f"The note gate would drop {len(stopped)}/{len(gated)} notes, "
-              f"{sum(r['reply_sha256'] in asked for r in stopped)} of them sent with /heads-up.")
     if ran:
         print(f'threshold  writer calls saved  noted turns dropped   (now {FORWARD_AT})')
         for threshold in sorted({.05, .1, .2, FORWARD_AT, .3, .4, .5}):

@@ -82,9 +82,7 @@ def test_the_score_or_the_cadence_reaches_the_writer_and_jev_checks_the_note(tmp
     monkeypatch.delenv('TARE_HEADS_UP')
     monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
     written, already = [], {'already_said': .1}
-    kind = {'consequence': .9, 'process_status': .1, 'record_gap': .1, 'changes_belief': .8}
-    monkeypatch.setattr(turn_engine, 'judge_many', lambda state, questions, timeout=10: {
-        'yes': dict(already if 'already_said' in questions else kind)})
+    monkeypatch.setattr(turn_engine, 'judge_many', lambda state, questions, timeout=10: {'yes': dict(already)})
     monkeypatch.setattr(heads_up, 'write', lambda text, seen: written.append((json.loads(text), seen)) or (
         [NOTE], [{'route': 'sonnet', 'ok': True, 'ms': 5}]))
     explained = {'request': 'Explain the parser', 'reply': 'It is a recursive descent parser. ' * 150, 'steps': [
@@ -106,22 +104,15 @@ def test_the_score_or_the_cadence_reaches_the_writer_and_jev_checks_the_note(tmp
     assert written[-1][0]['earlier_in_conversation'][0]['assistant'] == 'Measured on the stub model only.'
     already['already_said'] = .9  # the reply already says it: the note goes
     assert heads_up.notes(worked) == []
-    already['already_said'] = .1
-    kind.update(consequence=.1, process_status=.9)  # process status: the gate would drop it, and only logs so far
-    assert heads_up.notes(worked) == [NOTE]
-    monkeypatch.setattr(heads_up, 'GATE_SHADOW', False)
-    assert heads_up.notes(worked) == [] and len(written) == 5
     rows = [json.loads(line) for line in (tmp_path/'storage'/'serve'/'heads-up.jsonl').read_text(
         encoding='utf-8').splitlines()]
-    assert [r['forwarded'] for r in rows] == [None, None, None, 'cadence', 'score', 'score', 'score', 'score']
+    assert [r['forwarded'] for r in rows] == [None, None, None, 'cadence', 'score', 'score']
     assert [r['since'] for r in rows[:5]] == [1, 2, 3, 4, 1] and [r['held'] for r in rows[:4]] == [0, 2, 4, 6]
     assert rows[4]['writers'][0]['route'] == 'sonnet' and rows[4]['counts']['edits'] == 4
-    assert rows[5]['redundant'] == .9 and rows[5]['notes'] == 0 and rows[5]['gate'] is None
-    assert rows[6]['gate'] == {'gap': False, **kind, 'score': -.1} and rows[6]['notes'] == 1 and rows[7]['notes'] == 0
+    assert rows[5]['redundant'] == .9 and rows[5]['notes'] == 0
     assert 'parser' not in json.dumps(rows) and 'one process' not in json.dumps(rows)  # never the texts
-    assert heads_up.gate('The recorded steps do not show the tests passing.')['gap']  # caught without a model
     heads_up.set_enabled(False)
-    assert heads_up.notes(worked) == [] and len(written) == 5
+    assert heads_up.notes(worked) == [] and len(written) == 3
 
 
 def test_the_writer_keeps_the_newest_context_of_a_long_turn():
@@ -154,16 +145,17 @@ def test_the_writer_takes_the_first_available_route_and_hands_over_once(monkeypa
     assert notes == ['The verifier failed.']  # an already-shown note goes; one at most
     assert [a['route'] for a in attempts] == ['luna', 'haiku'] and attempts[0]['failure'] == 'CLI_USAGE_LIMIT'
     assert heads_up.parse('NONE', []) == [] and heads_up.parse('none.', []) == []
+    sentence = 'It may cost more. '  # a long note ends at its last whole sentence, not mid-word
+    assert heads_up.parse('- ' + sentence * 40, []) == [(sentence * (heads_up.NOTE_CHARS // len(sentence))).strip()]
+    assert heads_up.parse('- ' + 'x' * 600, []) == ['x' * heads_up.NOTE_CHARS]
 
 
 def test_calibration_reports_what_each_threshold_saves_and_drops(capsys):
     from scripts.heads_up_calibration import report
     writer = [{'route': 'sonnet', 'ok': True, 'ms': 2000}]
     report([{'score': .05, 'forwarded': 'cadence', 'notes': 0, 'writers': writer, 'reply_sha256': 'a'},
-            {'score': .1, 'forwarded': 'cadence', 'notes': 1, 'writers': writer, 'reply_sha256': 'b',
-             'gate': {'gap': True}},  # the gate would drop it
-            {'score': .3, 'forwarded': 'score', 'notes': 1, 'writers': writer, 'reply_sha256': 'c',
-             'gate': {'gap': False, 'score': .9}},
+            {'score': .1, 'forwarded': 'cadence', 'notes': 1, 'writers': writer, 'reply_sha256': 'b'},
+            {'score': .3, 'forwarded': 'score', 'notes': 1, 'writers': writer, 'reply_sha256': 'c'},
             {'score': .5, 'forwarded': 'score', 'notes': 0, 'writers': writer, 'reply_sha256': 'd',
              'redundant': .95},  # written, then dropped as already said
             {'score': .02, 'forwarded': None, 'notes': 0, 'writers': [], 'reply_sha256': 'e'},  # never written
@@ -171,8 +163,7 @@ def test_calibration_reports_what_each_threshold_saves_and_drops(capsys):
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == ('5 logged turns; the writer answered 4 (2 by cadence below the score); 2 got a note, 1 sent '
                         'to the agent with /heads-up; 1 dropped as already said.')
-    assert lines[1] == 'The note gate would drop 1/2 notes, 0 of them sent with /heads-up.'
-    assert lines[3].split() == ['0.050', '0/4', '0/2'] and lines[6].split() == ['0.250', '2/4', '1/2']
+    assert lines[2].split() == ['0.050', '0/4', '0/2'] and lines[5].split() == ['0.250', '2/4', '1/2']
     assert lines[-1] == 'sonnet: 4/4 answered, median 2.0 s'
 
 
