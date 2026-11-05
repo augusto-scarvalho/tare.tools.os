@@ -856,7 +856,14 @@ class ConversationTools:
             if relation == 'correct':
                 # A rejected candidate stays available for the implementer's
                 # correction. An already applied patch must not be applied twice.
-                if (task.get('delivery') or {}).get('applied'): task['delivery'] = None
+                if (task.get('delivery') or {}).get('applied'):
+                    task['delivery'] = None
+                    # The user's correction of an applied change is a new request: it plans in a round of its
+                    # own, since the three delegations guard one request against loops, not a demand's later
+                    # corrections (dogfooding, a CI fix outside the saved plan's scope found none left).
+                    if task.get('planning_revision_input') != self.input_id():
+                        task['planning_revision'] = task.get('planning_revision', 0)+1
+                        task['planning_revision_input'] = self.input_id()
                 task['stage'] = 'PLANNED' if task.get('plan') else 'DISCOVERY'
         if question:
             if task['stage'] != 'WAITING_INPUT': task['waiting_from'] = task['stage']
