@@ -44,6 +44,7 @@ COMMANDS = (('/new', '', 'Save this conversation and start a new one'),
             ('/model', '', 'Choose a model or continue this task with another provider'),
             ('/reasoning', '', 'Choose reasoning for a new conversation'),
             ('/diff', '', 'Review file changes and recorded checks'),
+            ('/heads-up', '', 'Put the last heads-up notes in the composer to ask the agent'),
             ('/artifacts', '', 'Review captured responses and draft linked comments'),
             ('/tasks', '', 'Inspect observed tasks and agent activity'),
             ('/team', '', 'See recorded roles, models, reasoning and connections'),
@@ -71,7 +72,7 @@ COMMANDS = (('/new', '', 'Save this conversation and start a new one'),
             ('/attach', '[PATH]', 'Preview and attach a file or image'),
             ('/help', '', 'Show command help'))
 CONVERSATION_COMMANDS = {'/new', '/model', '/reasoning', '/diff', '/sessions', '/project', '/permissions', '/backlog', '/terminal', '/resume', '/attach', '/delivery'}
-CONVERSATION_COMMANDS |= {'/artifacts', '/tasks', '/team', '/usage', '/tools', '/skills', '/challenger', '/storage', '/delegation', '/routes', '/fleet', '/setup', '/recheck', '/retry_delivery', '/repair_plan'}
+CONVERSATION_COMMANDS |= {'/artifacts', '/tasks', '/team', '/usage', '/tools', '/skills', '/challenger', '/storage', '/delegation', '/routes', '/fleet', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up'}
 COMMAND_SHORTCUTS = {'/diff': 'F3', '/sessions': 'F1', '/terminal': 'F4', '/project': 'F5'}
 
 
@@ -101,6 +102,7 @@ HELP = ('Conversation sends ordinary messages directly to the assistant, with wo
         '/new saves the current conversation and starts another; /model opens model preferences for a new conversation. '
         '/reasoning opens the supported reasoning levels for a new conversation. '
         '/diff opens changes; /sessions opens saved conversations; /terminal opens existing session processes. '
+        '/heads-up puts the last heads-up note in the composer as a question to the agent. '
         '/artifacts reviews captured responses with comments; /tasks shows observed execution activity. '
         '/team shows who executed each role, including the recorded model, reasoning and connection. '
         '/usage shows recorded conversation usage and configured limits without querying providers. '

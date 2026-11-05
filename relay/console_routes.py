@@ -10,7 +10,8 @@ from .console_panels import SupportPanel
 ROLE_LABELS = {'implementer': 'Implementer · conversations, sessions and the units they delegate',
                'planner': 'Planner', 'auditor': 'Your auditor routes · used when you choose your list',
                'researcher': 'Researcher · searches the internet; explorers investigate project files',
-               'vision': 'Vision · describes attached images for models that cannot see'}
+               'vision': 'Vision · describes attached images for models that cannot see',
+               'heads_up': 'Heads-up · writes a note after a turn that the counts tare keeps flag as worth a look'}
 AUDITOR_SELECTIONS = [('Automatic · another provider, frontier models', 'cross_vendor_frontier'),
                       ('Use my auditor routes', 'configured')]
 

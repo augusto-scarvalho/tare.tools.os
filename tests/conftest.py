@@ -33,6 +33,9 @@ def disable_installed_flow_assessor(monkeypatch, tmp_path_factory):
     # So is leaving the local GPU to others: one file per test, since a test that leaves it would skip local
     # routes in every later one (and the operator's choice must not reach a test).
     monkeypatch.setenv('TARE_GPU_STORE', str(state_dir('gpu')/'local-gpu.json'))
+    # Heads-up notes would add a judge and a writer call to every fixture turn; tests of them turn them on.
+    monkeypatch.setenv('TARE_HEADS_UP', 'off')
+    monkeypatch.setenv('TARE_HEADS_UP_STORE', str(state_dir('heads-up')/'heads-up.json'))
     monkeypatch.delenv('TARE_AVOID_LOCAL_GPU', raising=False)
     # Launch flags constrain real workers, not the fixture's authored route policy.
     monkeypatch.delenv('TARE_SESSION_SCOPE', raising=False)

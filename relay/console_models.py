@@ -235,11 +235,39 @@ class ConversationModels:
         return (self.selection().mode == 'assistant' and bool(self.assistant_session)
                 and Path(self.assistant_session).resolve() == Path(source).resolve())
 
-    def audit_say(self, text, source):
+    def audit_say(self, text, source, label='tare audit'):
         if self.audited_open(source):
             self.say(text)
         else:
-            self.notify('tare audit of another conversation: ' + text[:300], timeout=20)
+            self.notify(label + ' of another conversation: ' + text[:300], timeout=20)
+
+    def heads_up(self, source, ids, request):
+        """A finished turn's heads-up notes (relay/heads_up.py), off the UI thread like the audit."""
+        local = self.selection().local_models  # read here: the worker runs off the UI thread
+        self.run_worker(lambda: self._heads_up(source, ids, request, local),
+                        thread=True, group='heads-up', exclusive=True)
+
+    def _heads_up(self, source, ids, request, local=True):
+        from . import heads_up
+        from .native_agent import read_json
+        from .turn_engine import local_models
+        if not heads_up.enabled():
+            return
+        try:
+            turn = heads_up.from_journal([(source, i) for i in ids])
+            turn['request'] = request or turn['request']
+            route = read_json(Path(source)/'native-agent.json', 1024*1024)['deployment'].get('id')
+            with local_models(local):  # the conversation's choice: no local judge or writer when it said so
+                new = heads_up.notes(turn, seen=heads_up.shown(source)['shown'],
+                                     observed={'source': 'tui', 'route': route})
+            if new:
+                heads_up.keep(source, new, turn['reply'])
+        except (OSError, ValueError, KeyError, TypeError, StopIteration) as exc:
+            self.call_from_thread(self.notify, 'tare heads-up: ' + str(exc)[:200], severity='error')
+            return
+        if new:
+            self.call_from_thread(self.audit_say, heads_up.shown_text(new).strip() +
+                                  '\n_/heads-up puts them in the composer to ask the agent._', source, 'tare heads-up')
 
     def send_audit_fix(self, text, source):
         from textual.widgets import TextArea

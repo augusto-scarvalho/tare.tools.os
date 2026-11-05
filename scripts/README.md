@@ -29,6 +29,14 @@ scripts/
   `relay/*.py`: `python scripts/sync_disposition_manifest.py .`
 - `configure_vendor_models.py`: expands existing local vendor connections from explicit offline catalogues.
 - `qualify_laya_routes.py`: runs a frozen, CPU-only route-choice screen; never changes routing policy.
+- `heads_up_calibration.py`: measures the heads-up funnel (`relay/heads_up.py`) on turns that already happened.
+  `claude` uses Claude Code transcripts (`~/.claude/projects`) as labels: the turns after which the user accepted a
+  side-agent note, beside quiet turns of the same sessions. With `--variant`/`--brief` it scores judge questions and
+  briefs, with `--claims v2` the narrow Noul questions and code counts (AUC per feature and a cross-validated
+  logistic composite, the source of the filter's weights), and with `--writer ROUTE` a writer's notes beside the side
+  agent's. `replay --limit N [--writer ROUTE]` sends saved tare sessions through the funnel; `report` reads the log in
+  use: the threshold's trade, notes dropped as already said, those sent with `/heads-up`, Jev's shadow and writers.
+  Every mode except `report` spends judge or writer calls.
 - `preflight_native_verifier_linux.py`: Linux/WSL verifier preflight using the published Kernel and the
   existing argv seam.
 - `native_experiment_limits.json`: native execution and context-compaction limits for experiments (all limits

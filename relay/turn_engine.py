@@ -61,6 +61,11 @@ DEFAULT_POLICY = {
     'vision': ['codex-cli-gpt-6-luna', 'agy-cli', 'claude-sonnet-5-5-cli'],
     'researcher': ['codex-cli-gpt-6-luna', 'claude-haiku-5-5-cli', 'agy-cli',
                    *RESEARCH_ROUTES],
+    # Writes heads-up notes (relay/heads_up.py). Measured 2026-11-05 against 49 notes users accepted from a side agent
+    # and 50 turns it left quiet (scripts/heads_up_calibration.py claude --writer): Sonnet wrote consequence notes on
+    # 31% and 22% of them; Sol rarely speaks (6%, 2%) but is precise; Haiku, Luna and the local model mostly flag
+    # process details, as often on quiet turns as on noted ones, so Haiku only stands in when both are unavailable.
+    'heads_up': ['claude-sonnet-5-5-cli', 'codex-cli-gpt-6-1-sol', 'claude-haiku-5-5-cli'],
 }
 
 
@@ -105,7 +110,7 @@ def policy():
     return DEFAULT_POLICY
 
 
-ROUTE_ROLES = ('implementer', 'planner', 'auditor', 'researcher', 'vision')
+ROUTE_ROLES = ('implementer', 'planner', 'auditor', 'researcher', 'vision', 'heads_up')
 
 
 def save_policy(roles, *, auditor_selection=None):
