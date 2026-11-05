@@ -67,6 +67,10 @@ CAPABILITIES = {
         'tui': SHARED,  # its option
         'serve': SHARED,  # /local-gpu off|on in a chat
         'copilot': SHARED},  # /local-gpu off|on in a chat too; its routes follow the machine's choice
+    'heads-up notes after a finished turn (relay/heads_up.py: a filter over the counts tare keeps, a writer, Jev dropping repeats)': {
+        'tui': SHARED,  # /heads-up puts the last notes in the composer; the option turns them off for the machine
+        'serve': SHARED,  # said in the chat and kept as a note for the session's next turn
+        'copilot': SHARED},  # said in the stream; VS Code's history carries them to the model's next request
     'reading a folder outside the project after asking the user (relay/folder_access.py)': {
         'tui': SHARED,  # the tools live in the native session; the TUI asks and saves the grant per project
         'serve': SHARED,  # same grants file as the TUI (folder_access.project_store); the next message answers

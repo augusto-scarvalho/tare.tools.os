@@ -234,6 +234,27 @@ def audit(turn, root, deployment, say, keepalive, evidence=()):
     return None
 
 
+def heads_up(turn, messages, text, say, keepalive):
+    """The message's heads-up notes (relay/heads_up.py), said in the stream: VS Code keeps them in the history the
+    model reads next, so the user's "check that" reaches it. Kept alive like the audit while the funnel runs."""
+    from . import heads_up as funnel
+    if not funnel.enabled():
+        return
+    chat, done = turn['chat'], {}
+    worker = threading.Thread(target=lambda: done.update(new=funnel.notes(  # the user's words, not VS Code's wrapper
+        {**funnel.from_messages(messages, text), 'request': turn['request']}, seen=chat.get('heads_up', []),
+        observed={'source': 'copilot', 'route': turn['route']})), daemon=True)
+    worker.start()
+    while worker.is_alive():
+        worker.join(15)
+        if worker.is_alive():
+            keepalive()
+    new = done.get('new') or []
+    if new:
+        chat['heads_up'] = chat.get('heads_up', []) + new
+        say(funnel.shown_text(new))
+
+
 def stream(handler, local_models=None):
     """Open the client's event stream: write(raw) and chunk(delta, finish). `local_models`: the policy the
     request runs under, echoed as X-Tare-Local-Models."""
@@ -397,6 +418,9 @@ def _serve(handler, body, default_root):
                 messages = body['messages'] + [{'role': 'assistant', 'content': text + ''.join(said)},
                                                {'role': 'user', 'content': fix}]
                 text, calls, finish = call({**body, 'messages': messages})
+            else:  # the message is finished (a fix round ends in a later request, with its tool calls in history)
+                heads_up(turn, body['messages'], text, lambda note: chunk({'content': note}),
+                         lambda: write(b': keepalive\n\n'))
     except (OSError, ValueError) as exc:
         say(f'\n\n_tare-copilot: {type(exc).__name__}: {str(exc)[:300]}_\n')
         finish = 'stop'

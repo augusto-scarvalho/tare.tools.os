@@ -246,7 +246,7 @@ class ConversationNavigation:
     def dispatch_conversation_command(self, name, arguments):
         """Handle UI commands without passing them to the model or flow router."""
         workbench = {'/artifacts', '/tasks', '/team', '/usage', '/tools', '/skills'}
-        if name not in {'/new', '/model', '/reasoning', '/diff', '/sessions', '/terminal', '/project', '/permissions', '/backlog', '/delivery', '/challenger', '/storage', '/delegation', '/routes', '/fleet', '/setup', '/recheck', '/retry_delivery', '/repair_plan'} | workbench:
+        if name not in {'/new', '/model', '/reasoning', '/diff', '/sessions', '/terminal', '/project', '/permissions', '/backlog', '/delivery', '/challenger', '/storage', '/delegation', '/routes', '/fleet', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up'} | workbench:
             return False
         if arguments:
             self.set_status(name+' takes no arguments. Your draft has been kept.')
@@ -265,6 +265,16 @@ class ConversationNavigation:
             prompt.clear()
             self.execute(True, assistant=True, resume_only=True,
                          recheck_candidate=name=='/recheck',retry_delivery=name=='/retry_delivery',repair_plan=name=='/repair_plan')
+        elif name == '/heads-up':  # the agent hears the notes only when the operator sends them
+            from .heads_up import ask, asked, shown
+            last = shown(self.assistant_session)['last'] if self.assistant_session else []
+            if not last:
+                prompt.clear()
+                self.set_status('No heads-up note for the last reply of this conversation.')
+            else:
+                prompt.load_text(ask(last))
+                prompt.focus()
+                asked(self.assistant_session)  # the operator found it worth asking: a label for calibration
         elif name == '/delegation':
             prompt.clear()
             self.action_delegation()

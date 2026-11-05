@@ -406,6 +406,11 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                                id='avoid-local-gpu',
                                tooltip='While checked, every conversation on this machine (this TUI, tare serve and '
                                        'its VS Code chats) skips the shared local GPU. The choice is saved.')
+                from .heads_up import enabled as heads_up_enabled
+                yield Checkbox('Heads-up notes after each turn (whole machine)', heads_up_enabled(), id='heads-up',
+                               tooltip='After a finished turn, tare checks what the reply may have left unsaid: its '
+                                       'own counts of the turn decide whether a model writes a note at all. '
+                                       '/heads-up puts the last notes in the composer. The choice is saved.')
                 yield Static('Use Choose model → Continue task to change a saved conversation.', classes='settings-note', markup=False)
                 with Collapsible(title='Connection details', collapsed=True, id='connection-section'):
                     yield Static('', id='connection-details', classes='settings-note', markup=False)
@@ -1348,6 +1353,12 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             self.sync_budget_fields()
         if event.checkbox.id == 'avoid-local-gpu':
             self.leave_local_gpu(event.value)
+        if event.checkbox.id == 'heads-up':
+            from .heads_up import set_enabled
+            try:
+                set_enabled(event.value)
+            except OSError as exc:
+                self.notify('Could not save the heads-up choice: '+str(exc), severity='error')
         if event.checkbox.id == 'local-models' and not event.value:
             self.off_local_model()
 
@@ -2164,7 +2175,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                             result_summary(self.last_result), selection=recovery, required=False)
             from .turn_engine import STOPPED
             stopped = (self.last_result or {}).get('status') in STOPPED
-            changed, checks, opened = [], [], ''
+            changed, checks, opened, ids, request = [], [], '', [], ''
             # Only a finished turn is audited: an interrupted one (RECONCILIATION_REQUIRED) has half its change,
             # and a fix round cannot continue a session that has no completed proposal. A turn finished by /resume
             # is audited with the invocations that stopped before it, against the message that opened them.
@@ -2173,6 +2184,10 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 from .turn_engine import resumed_turn, turn_changes, turn_checks
                 # Read under the UI lock: the custody lock must not race the next turn.
                 ids, opened = await asyncio.to_thread(resumed_turn, Path(selection.session), self.active_invocation)
+                from .turn_engine import conversation_request
+                # The operator's earlier messages give a short reply ("sim") its meaning; the last one is this turn's.
+                said = [v[5:] for v in self.assistant_history if isinstance(v, str) and v.startswith('You: ')]
+                request = conversation_request([*said[:-1], selection.prompt.strip() or opened])
                 runs = [(Path(selection.session), {'invocation_id': i}) for i in ids]
                 changed = await asyncio.to_thread(turn_changes, runs, selection.root)
                 checks = await asyncio.to_thread(turn_checks, runs, selection.root)
@@ -2195,16 +2210,14 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 # acts only on tare auto sessions
                 self.call_later(self.auto_escalate, selection.session, (self.last_result or {}).get('status'))
             elif changed:
-                from .turn_engine import conversation_request
-                # The operator's earlier messages give a short reply ("sim") its meaning; the last one is this turn's.
-                said = [v[5:] for v in self.assistant_history if isinstance(v, str) and v.startswith('You: ')]
-                request = conversation_request([*said[:-1], selection.prompt.strip() or opened])
                 self.audit_changes(selection.session, changed, selection.root, request, checks)
             elif (selection.mode == 'session' and selection.session and not self.cancel_requested
                     and (self.last_result or {}).get('status') == 'PROPOSED'):
                 # tare auto only: a completed turn that changed nothing and only announced the work goes up a tier
                 self.judge_answer(selection.session, selection.prompt.strip() or opened,
                                   (self.last_result or {}).get('output'))
+            if ids:  # a finished turn: what the reply left unsaid, beside its audit (relay/heads_up.py)
+                self.heads_up(selection.session, ids, selection.prompt.strip() or opened)  # earlier: the journal's
             if self.close_after_run:
                 self.exit()
             elif succeeded and not self.cancel_requested and self.selection().mode != 'assistant':

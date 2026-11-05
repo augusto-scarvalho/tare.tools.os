@@ -433,6 +433,7 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
                 files = engine.tree_changes(root, before_tree, after_tree)
                 state['last_turn'] = {'before': before_tree, 'after': after_tree}
         checks = engine.turn_checks(runs, root)
+        fix_runs = []
         if files and (result or {}).get('status') == 'PROPOSED':  # an unfinished turn has no answer to audit or fix
             if not streamed['text'] and (result or {}).get('output'):
                 emit(result['output'])  # the answer comes before its audit
@@ -461,6 +462,26 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
                 record, _ = engine.audit_turn(fix_files, root, fix, implementer, emit, checks=engine.turn_checks(fix_runs, root))
                 if record:
                     state.setdefault('audits', []).append({**record, 'turn': state['turns'], 'fix': True})
+        from . import heads_up
+        if (result or {}).get('status') == 'PROPOSED' and heads_up.enabled():  # what the reply left unsaid
+            try:
+                turn = heads_up.from_journal([(s, r['invocation_id']) for s, r in runs + fix_runs
+                                              if r and r.get('invocation_id')])
+            except (OSError, ValueError, KeyError, TypeError, StopIteration):
+                turn = None
+            new = heads_up.notes({**turn, 'request': requests[-1]},  # the user's words; earlier turns: the journal's
+                                 seen=state.get('heads_up', []),
+                                 observed={'source': 'serve', 'chat': key, 'turn': state['turns'],
+                                           'route': state['sessions'][-1]['route']}) if turn else []
+            if new:
+                if not streamed['text'] and result.get('output'):
+                    emit(result['output'])  # the answer comes before its notes
+                    streamed['text'] = True
+                emit(heads_up.shown_text(new))
+                state['heads_up'] = state.get('heads_up', []) + new
+                # The session did not see them; its next turn does, so "check that" has a referent.
+                state.setdefault('notes', []).append('tare showed the user these heads-up notes after your reply:\n'
+                                                     + '\n'.join('- ' + n for n in new))
         first, last = state['sessions'][max(before - 1, 0)], state['sessions'][-1]
         if before:  # no duplicate paid shadow assessment for the initial routing decision
             engine.jev_shadow(requests[-1], {'source': 'serve', 'chat': key, 'turn': state['turns'], 'start_tier': first['tier'],
