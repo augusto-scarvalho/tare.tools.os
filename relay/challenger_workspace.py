@@ -6,7 +6,7 @@ from pathlib import Path, PurePosixPath
 
 from compute_plane.native_journal import custody_lock, regular, save_json
 from .native_agent import read_json
-from .challenger import git
+from .challenger import git, read_run
 
 MAX_BYTES = 20*1024*1024
 
@@ -17,12 +17,12 @@ def tree(job, name, row=None):
         raise ValueError('Unknown comparison workspace.')
     job = Path(job)
     if row is None:
-        row = read_json(job/'run.json', 1024*1024) if (job/'run.json').exists() else {}
+        row = read_run(job/'run.json') if (job/'run.json').exists() else {}
     if row.get('workspace_reuse'):
         previous = Path(row['workspace_reuse']).resolve()
         if previous.parent != job.resolve().parent or previous == job.resolve():
             raise ValueError('Reused workspace must belong to a prior experiment of this project.')
-        saved = read_json(regular(previous/'run.json'), 1024*1024)
+        saved = read_run(regular(previous/'run.json'))
         if saved.get('workspace_reuse'):
             raise ValueError('Workspace reuse must point to the original saved workspaces.')
         return tree(previous, name, saved)
@@ -111,7 +111,7 @@ def reuse(job):
     from contextlib import ExitStack
     from .native_agent import workspace_locks
     job = regular(job)
-    row = read_json(job/'run.json', 1024*1024)
+    row = read_run(job/'run.json')
     if row['status'] != 'COMPLETED' or row.get('challenger_verdict') != 'accepted':
         raise ValueError('Reuse requires the challenger checks and independent review to pass.')
     reference = read_json(job/'reference.json', 1024*1024)
