@@ -35,8 +35,8 @@ scripts/
   scored on sessions it never saw, the writer calls and noted turns covered by each score and cadence, and the
   refit's weights. With `--writer ROUTE` it runs that writer on the noted turns and `--quiet N` quiet ones, and Jev
   tells whether its notes match the side agent's. `replay --limit N [--writer ROUTE]` sends saved tare sessions
-  through the funnel; `report` reads the log in use: the score's trade, notes dropped as already said, what the note
-  gate would drop, those sent with `/heads-up`, and the writers.
+  through the funnel; `report` reads the log in use: the score's trade, notes dropped as already said, those sent with
+  `/heads-up`, and the writers.
 - `preflight_native_verifier_linux.py`: Linux/WSL verifier preflight using the published Kernel and the
   existing argv seam.
 - `native_experiment_limits.json`: native execution and context-compaction limits for experiments (all limits
