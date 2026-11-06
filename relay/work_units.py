@@ -942,8 +942,10 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                         raise ValueError('The project changed since the retained candidate: '+', '.join(changed[:16])+
                             '. Inspect and replan the affected scope; the candidate remains preserved.')
                 base,excluded,metadata=prepare_baseline(tree,unit,base,retained_patch=patch)
-                if requalified:
+                if requalified and metadata:
                     metadata['retained_baseline_requalification']=requalified
+                elif requalified:  # no generated baseline was prepared: the witness stays on the rung
+                    row['retained_baseline_requalification']=requalified
                 if metadata:row['host_baseline_metadata']=metadata
                 git(tree, 'apply', '--binary', *(['--allow-empty'] if excluded else []),
                     *('--exclude='+p for p in excluded), str(patch))

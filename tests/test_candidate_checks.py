@@ -247,3 +247,46 @@ def test_retained_candidate_requalifies_only_anchored_generated_drift_without_ne
         assert not result.get('applied')
         assert 'retained candidate' in result['reason']
         if fault!='patch':assert 'contracts/v1/harness_disposition_manifest.json' in result['reason']
+
+
+def test_a_candidate_that_never_edits_the_manifest_requalifies_when_only_the_project_copy_moved(tmp_path,monkeypatch):
+    from relay import work_units,native_agent
+    from relay.work_forms import record_plan
+    from test_native_agent import deployment
+    root=tmp_path/'project';root.mkdir();owner(root)
+    (root/'relay').mkdir();(root/'relay/b.py').write_bytes(b'b = 1\n');(root/'notes.txt').write_bytes(b'one\n')
+    manifest=root/candidate_checks.MANIFEST;manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({'modules':[{'name':'b.py','sha256':'1'*64}]})+'\n',encoding='utf8',newline='\n')
+    def git(*args):return subprocess.check_output(['git',*args],cwd=root)
+    git('init');git('add','.')
+    git('-c','user.name=Fixture','-c','user.email=fixture@localhost','-c','commit.gpgsign=false','commit','-m','Base')
+    custody=tmp_path/'session';custody.mkdir()
+    unit={'key':'change','repository':'repo','title':'Set notes to two',
+          'target_paths':['notes.txt',candidate_checks.MANIFEST],'test_paths':[],
+          'criteria':['notes say two'],'verifiers':['check']}
+    config={'repositories':{'repo':str(root)},'writable':{'repo':unit['target_paths']},
+            'conversation_flow':True,'verifiers':{'check':{'repository':'repo','argv':['fixture']}}}
+    record_plan(custody,config,{'units':[unit],'criteria':unit['criteria']})
+    state={'config':config,'conversation_flow':True,'deployment':deployment(),
+           'limits':{'max_model_calls':40},'deadline_utc':None}
+    calls,rechecking=[],[]
+    monkeypatch.setattr(work_units,'routes',lambda *a,**kw:iter([('fixture',deployment())]))
+    def worker(child,*args,**kwargs):
+        assert not rechecking,'A saved candidate must not start another implementer'
+        calls.append('worker');(Path(child['repositories']['repo'])/'notes.txt').write_bytes(b'two\n')
+        return {'status':'PROPOSED','model_calls':1}
+    monkeypatch.setattr(native_agent,'run_session',worker)
+    monkeypatch.setattr(work_units,'run_checks',lambda tree,commands:(
+        ('green','Fixture checks passed') if rechecking else ('inconclusive','Host check environment stopped')))
+    first=work_units.run_unit(custody,state,{'unit':'change'},lambda:False,review=lambda *a:{'verdict':'ACCEPT'})
+    assert first['verdict']=='INCONCLUSIVE' and not first.get('applied')
+    candidate={**first['candidate'],'review_only':True}
+    manifest.write_text(json.dumps({'modules':[{'name':'b.py','sha256':'2'*64}]})+'\n',encoding='utf8',newline='\n')
+    rechecking.append(True)  # only the project's manifest moved; the candidate never touched it
+    result=work_units.run_unit(custody,state,{'unit':'change'},lambda:False,review=lambda *a:{'verdict':'ACCEPT'},
+                               candidate=candidate)
+    assert calls==['worker'] and result.get('applied'),result
+    assert (root/'notes.txt').read_bytes().replace(b'\r\n',b'\n')==b'two\n'
+    receipt=json.loads(Path(result['receipt']).read_bytes())
+    witness=receipt['rungs'][0]['retained_baseline_requalification']
+    assert witness['kind']=='REQUALIFIED_UNTOUCHED_GENERATED_FILE'
