@@ -213,6 +213,10 @@ def step(tool, args, status, output):
     elif tool in ('verify', 'terminal_read') or status == 'returned':
         value['summary'] = _last_line(output.get('output'))
     detail = _detail(tool, args, output)
+    if tool == 'edit':
+        from .native_activity import deletion_requested, deletion_detail
+        if deletion_requested(args):
+            detail = deletion_detail(status, output)
     if detail:
         value['detail'] = detail
     return value

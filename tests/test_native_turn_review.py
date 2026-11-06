@@ -191,3 +191,27 @@ def test_corrupt_completion_receipt_is_unknown_not_success(saved_turn,damage):
     path.write_text(json.dumps(saved))
     assert inspect(saved_turn)['undo']['status']=='UNKNOWN'
     assert (root/'a.py').read_bytes()==before
+
+
+@pytest.mark.parametrize('before', [b'value = 1\n', b''])
+def test_deleted_file_is_in_turn_confirmation_and_can_be_restored(setup, before):
+    config, custody, root = setup
+    (root/'a.py').write_bytes(before)
+    config['verifiers']['unit']['argv'][-1] = "from pathlib import Path; assert not Path('a.py').exists()"
+    client = Client(steps=[('read', {'repository': 'repo', 'path': 'a.py'}),
+        ('edit', {'repository': 'repo', 'path': 'a.py',
+        'sha256': digest(before), 'delete': 'true', 'changes': []}),
+        ('verify', {'name': 'unit'}),
+        ('tare_deliver', {'summary': 'Removed file.'})])
+    result = run(config, custody, client, budget=NativeBudget(max_model_calls=8))
+    assert result['status'] == 'PROPOSED', result
+    confirmation = review(custody)
+    assert confirmation['edits'], confirmation
+    turn = confirmation['turns'][0]['id']
+    view = turn_review.review_turn(custody, project=root, invocation_id=turn)
+    assert view['files'] and view['files'][0].get('deleted') is True, view
+    assert view['undo']['status'] == 'READY', view
+    if not before:
+        assert 'Deleted empty file' in view['files'][0]['diff']
+    turn_review.undo_turn(custody, project=root, invocation_id=turn, expected_plan=view['undo']['plan'])
+    assert (root/'a.py').read_bytes() == before

@@ -30,6 +30,8 @@ def edit_snapshots(root, request, result):
                 'before': args['sha256'], 'after': output['sha256']}
     if receipt != expected:
         raise ValueError('review_receipt_mismatch')
+    if receipt['after'] is None and not (args.get('delete') is True and receipt['before'] is not None):
+        raise ValueError('review_deletion_not_confirmed')
     raw = []
     for sha in (receipt['before'], receipt['after']):
         if sha is None:
@@ -46,7 +48,10 @@ def edit_snapshots(root, request, result):
 
 def edit_diff(root, request, result, *, max_bytes=None):
     args = json.loads(request['tool_call']['arguments_json'])
-    raw = [value if value is not None else b'' for value in edit_snapshots(root, request, result)]
+    snapshots = edit_snapshots(root, request, result)
+    if snapshots == [b'', None]:
+        return 'Deleted empty file: '+args['path']+'\n'
+    raw = [value if value is not None else b'' for value in snapshots]
     if max_bytes is not None and (sum(map(len,raw)) > max_bytes or sum(v.count(b'\n') for v in raw) > 20000):
         raise ValueError('File exceeds the interactive diff preview limit.')
     diff = []
@@ -71,6 +76,8 @@ def confirmed_edits(request, result):
         if not effect.startswith(request['effect_id']+':'):
             raise ValueError('host_edit_parent_mismatch')
         args = {k: edit[k] for k in ('repository', 'path', 'sha256')}
+        if edit.get('deleted') is True:
+            args.update(delete=True, changes=[])
         rows.append(({'effect_id': effect, 'tool_call': {'name': 'edit', 'arguments_json': json.dumps(args)}},
                      {'effect_id': effect, 'status': 'succeeded', 'output_json': json.dumps({'sha256': edit['after']})}))
     return rows
@@ -113,9 +120,12 @@ def summarize(root, state, events, *, start=0, end=None, include_diffs=True, dif
                 if edit_result['status'] == 'succeeded':
                     last_edit = sequence
                     observed[(edit['repository'], edit['path'])] = json.loads(edit_result['output_json'])['sha256']
-                    if selected and include_diffs and (diff_effect_id is None or diff_effect_id == edit_id):
+                    if selected:
                         try:
-                            row['diff'] = edit_diff(root, edit_request, edit_result, max_bytes=max_diff_bytes)
+                            before, after = edit_snapshots(root, edit_request, edit_result)
+                            row['deleted'] = after is None
+                            if include_diffs and (diff_effect_id is None or diff_effect_id == edit_id):
+                                row['diff'] = edit_diff(root, edit_request, edit_result, max_bytes=max_diff_bytes)
                         except (ValueError, OSError, KeyError, TypeError, ConversationRejected) as exc:
                             row['diff_unavailable'] = str(exc)[:256] if isinstance(exc,ValueError) else type(exc).__name__
                 elif edit_result['status'] == 'unknown':
