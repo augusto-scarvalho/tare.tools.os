@@ -862,8 +862,12 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
     waiting = None
     if worker:
         worker={**worker,'producer':candidate_producer(custody,worker['producer'])}
-        from .worker_wait import restore
+        from .worker_wait import release, restore
         waiting = restore(worker, custody, config, unit)
+    if worker and waiting is None:  # a new plan replaced the one it waited under: a fresh implementer runs it
+        release(root, worker)
+        worker = None
+    if worker:
         from .execution_scope import current
         from .execution_team import reasoning
         permitted,why=current().allows(worker['producer'],'implementer')
@@ -1079,7 +1083,10 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     row['attempts'] = [attempt]  # one row per rung; earlier rungs keep their own attempts
                     (job/'receipt.json').write_text(json.dumps({**receipt, 'rungs': receipt['rungs'] + [row]}), encoding='utf-8')
                     if waiting:
-                        note='[tare] Read access is now granted for '+worker['folder_access_request']['path']+'. '
+                        path=worker['folder_access_request']['path']
+                        note=('[tare] Read access is now granted for '+path+'. ' if waiting[3] else
+                              '[tare] The user did not grant read access to '+path+'. Continue without it; do not '
+                              'request it again for this unit. ')
                         note+='Continue the saved unit using your existing observations. Keep all original criteria and checks. '
                         note+=(args.get('note') or '')
                         keep_tree=False
