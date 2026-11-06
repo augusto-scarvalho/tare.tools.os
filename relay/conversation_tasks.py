@@ -14,6 +14,7 @@ from compute_plane.native_journal import regular, save_json
 from compute_plane.native_models import encode, object_json
 from .candidate_checks import ScopeRepair
 
+
 FILE = 'conversation-tasks.json'
 MAX_BYTES, MAX_TASKS = 65536, 16
 BACKLOG_CHECK = 'tare-backlog-validate'
@@ -701,6 +702,8 @@ def recover_completed_plan(root, config, value):
     return False
 
 
+
+
 class ConversationTools:
     def __init__(self, tools, root, state, invocation_id, *, permission_directory=None):
         self.tools, self.root, self.state = tools, Path(root), state
@@ -1023,6 +1026,11 @@ class ConversationTools:
             args = object_json(request.tool_call.arguments_json)
             if len(encode(args).encode()) > 8192:
                 raise ValueError('Use bounded demand and context fields, within 8 KiB.')
+            from . import consent_decisions
+            receipts = ([] if getattr(self, '_host_retry_delivery', False)
+                        else consent_decisions.process(self.root, self.session_id))
+            if name == 'implement' and any(r['decision'] == 'pending' for r in receipts):
+                return refused(consent_decisions.REASK)
             routing = self.routing_boundary(request)
             if routing:
                 return refused('COORDINATOR_ROUTING_REQUIRED', **routing)

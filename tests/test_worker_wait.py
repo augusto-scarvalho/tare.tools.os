@@ -122,11 +122,15 @@ def test_a_declined_folder_or_a_new_plan_never_holds_the_waiting_worker(setup, t
             work_units.run_unit(custody,state,{'unit':'wait'},lambda:False,review=lambda *a:{'verdict':'ACCEPT'},
                                 worker=worker)
         return
-    if after=='declined':  # the user's reply to the coordinator's request granted nothing
-        from relay import folder_access
-        note=folder_access.answer('não',{'path':str(external),'reason':'Read it.','session':str(custody)},
-                                  config['folder_access']['grants'])
-        assert 'did not grant' in note and folder_access.declined(custody,str(external))
+    if after=='declined':  # an explicit host decision, not an inferred missing reply
+        from relay import consent_decisions, folder_access
+        scope={'path':str(external),'store':config['folder_access']['grants']}
+        key=consent_decisions.register(custody,'worker-wait','folder',scope,
+            question=folder_access.question({'path':str(external),'reason':'Read it.'},scope['store']))
+        receipt=consent_decisions.record(custody,'worker-wait',key,choice='deny')
+        assert receipt['decision']=='no' and 'was not granted' in receipt['notice']
+        assert folder_access.declined(custody,str(external))
+        assert not folder_access.granted(scope['store'])
     second=work_units.run_unit(custody,state,{'unit':'wait'},lambda:False,review=lambda *a:{'verdict':'ACCEPT'},
                                worker=worker)
     assert second.get('applied'), {k: second.get(k) for k in ('verdict', 'reason', 'checks_after', 'next')}
@@ -134,5 +138,7 @@ def test_a_declined_folder_or_a_new_plan_never_holds_the_waiting_worker(setup, t
     told=[body for _,body in client.calls if 'did not grant read access to' in json.dumps(body)]
     if after=='declined':  # the same worker went on, told the folder stays closed
         assert told
+        assert folder_access.declined(custody,str(external))
+        assert not folder_access.granted(scope['store'])
     else:  # the old worker never resumed: a fresh implementer ran the new plan
         assert not told

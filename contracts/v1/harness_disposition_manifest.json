@@ -2,8 +2,18 @@
   "$schema": "https://tare.tools/schemas/v1/disposition-manifest.json",
   "version": "1.0.0",
   "generated_at": "2026-10-04T03:10:28.054735+00:00",
-  "total_modules": 434,
+  "total_modules": 435,
   "modules": [
+    {
+      "name": "consent_decisions.py",
+      "path": "tare.tools.os/relay/consent_decisions.py",
+      "summary": "Journal-bound consent decisions and durable question state",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns host-validated conversation consent.",
+      "size_bytes": 14470,
+      "sha256": "0d9c0ad76669859f48f437beb11d58c55b181534b973eab5496324d887cda86c"
+    },
     {
       "name": "inference_allowlist.py",
       "path": "tare.tools.os/relay/inference_allowlist.py",
@@ -2141,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 111827,
-      "sha256": "09ea88e40842d9245318ba8d7a39c5e9446984ee44761794be7b5ee3172df7d6"
+      "size_bytes": 115921,
+      "sha256": "3d1cc08614a794593c2f79d073fbfad8523f175b2240c4482b36bb90b17ac6fc"
     },
     {
       "name": "native_artifacts.py",
@@ -2451,8 +2461,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator-facing entry points and route policy; Runtime retains session execution.",
-      "size_bytes": 33038,
-      "sha256": "94e533c8a297ec711261b3ff82dbde276d2c42077b0a1db59373d3c8d461773b"
+      "size_bytes": 34797,
+      "sha256": "812e67fcf2aed388da3d735aaa81ec93f00e07561f567acbaed4870c8dfc053d"
     },
     {
       "name": "turn_capabilities.py",
@@ -2671,8 +2681,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 172925,
-      "sha256": "3fa7967c33918b5e9d1cf83c8ca75412f417be6f2825595da31729ee9575b33c"
+      "size_bytes": 175853,
+      "sha256": "9f2c5df41bf16f9d31504c926abdecc44056fc4e9c0ec8fccde621b8b0412eb1"
     },
     {
       "name": "native_display.py",
@@ -3771,8 +3781,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 13185,
-      "sha256": "9441eab9ca27e2939482300cecc771e11bb2129c1607bc7b8201509146216ce5"
+      "size_bytes": 13127,
+      "sha256": "63bdd32e6088853f9c6cc28411cac8e467ab0ab8bfbd488ae025297fd118a7b1"
     },
     {
       "name": "console_images.py",
@@ -3831,8 +3841,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 95191,
-      "sha256": "10cf783352d4f054611b8ab2b205ed58559401dd0e312d3ec49901585f37b37c"
+      "size_bytes": 95323,
+      "sha256": "e9c94b4953310201623b4815e31ab6a9f11b3449cbf8a99423ae2f92d44a2945"
     },
     {
       "name": "gpu.py",
@@ -4091,8 +4101,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 101943,
-      "sha256": "5d262ae2281ea4b70f05a0b50e613ff4c94ad54fef9b5bc464258f1b0cadea91"
+      "size_bytes": 102295,
+      "sha256": "ebb5a91d5a4e3f11b211ff131b91ca5ca3f4fda6d8e2c3a0b527d195a4e34272"
     },
     {
       "name": "conversation_review.py",
@@ -4281,8 +4291,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 8429,
-      "sha256": "3e002a5bf2dabf7268d6b530d8ad6bbe761240b27eecbaff9c38eb6d043a7cc1"
+      "size_bytes": 6912,
+      "sha256": "3eac03a30ec062f002fc4fca0028d15feeacf4dc90f7cf9b33e6c7742b5de9e9"
     },
     {
       "name": "execution_resources.py",

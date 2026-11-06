@@ -321,16 +321,15 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
         mode = (state or {}).get('mode') or project_mode(root)
         flow = (command.group(1), command.group(2).strip(), '') if command and command.group(2).strip() else None
         note = ''
-        asked = (state or {}).pop('folder_request', None)
-        if asked:  # the user's reply, not the model, decides; the note tells the agent what it decided
-            from . import folder_access
-            try:
-                note = '\n\n' + folder_access.answer(requests[-1], asked, folder_access.project_store(root))
-            except (OSError, ValueError) as exc:
-                note = f'\n\n[tare] Read access to {asked["path"]} could not be granted: {exc}'
-            folder_access.settle(asked['session'])
-            if asked.get('flow') and not flow and folder_access.allows(requests[-1]):
-                flow = (asked['flow'], asked['text'], note)  # the flow that asked runs again, able to read it
+        asked = (state or {}).get('folder_request')
+        # Forward the original reply. Submission alone cannot grant or decline.
+        consent_options = {}
+        if asked and asked.get('flow'):
+            if asked.get('question_id'):
+                consent_options = {'folder_consent_request': {**asked, 'reply': requests[-1]}}
+            note = ('\n\n[tare] A standalone flow is waiting for folder consent. '
+                    'The host classifies the original user reply in isolation. '
+                    'If this is a legacy request without a question ID, re-present it in a compatible coordinator.')
         if flow:
             kind, text, extra = flow
             record, answer = (engine.run_research(text, emit) if kind == 'research' else
@@ -338,9 +337,12 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
             if record:
                 state = state or {'workspace': str(root), 'first_request': requests[0][:2000], 'turns': 0, 'sessions': []}
                 asked = record.pop('folder_access_request', None)
-                if asked:  # the next message answers it; a yes runs this flow again
+                if asked:
                     state['folder_request'] = {**asked, 'session': record['session'], 'flow': kind, 'text': text}
                     answer += folder_question(asked, root)
+                    if asked.get('question_id'):
+                        from .consent_decisions import present
+                        present(record['session'], asked['question_id'])
                 state.setdefault('flows', []).append(record)
                 # The conversation session did not see the flow; its next turn receives the result.
                 state.setdefault('notes', []).append(f'/{kind} {engine.clip(text, 500)}\n{engine.clip(answer, 3000)}')
@@ -368,7 +370,8 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
             config = with_folder_access(engine.config_for(root, mode), root)
             result = native_agent.run_session(config, engine.streaming(deployment), session, instruction,
                                               limits=dict(engine.LIMITS), conversation=True, on_progress=emit_text,
-                                              on_activity=activity, terminal_client=engine.terminal_for(session, config))
+                                              on_activity=activity, terminal_client=engine.terminal_for(session, config),
+                                              **consent_options)
             runs = [(session, result)]
             state = {**(state or {}), 'workspace': str(root), 'first_request': requests[0][:2000], 'turns': 1,
                      'sessions': [{'session': str(session), 'route': name, 'tier': tier, 'skipped': skipped,
@@ -390,8 +393,10 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
             else:
                 try:
                     result = native_agent.run_session(None, None, session, resume=True, follow_up=instruction,
+                                                      raw_user_reply=requests[-1],
                                                       message_id=uuid.uuid4().hex, on_progress=emit_text,
-                                                      on_activity=activity, terminal_client=engine.session_terminal(session))
+                                                      on_activity=activity, terminal_client=engine.session_terminal(session),
+                                                      **consent_options)
                 except ValueError as exc:
                     if 'budget exhausted' not in str(exc):
                         raise
@@ -426,6 +431,26 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
                                                    mode=mode)
                     runs.append((target, next_result))
                     result = next_result or result
+        waiting = state.get('folder_request')
+        if waiting and waiting.get('flow') and waiting.get('question_id'):
+            from . import consent_decisions as consent, folder_access
+            source = next((q for q in consent.load(waiting['session'])['questions']
+                           if q['id'] == waiting['question_id']), None)
+            target = source.get('target') if source else None
+            if target and target['root'] == str(Path(session).resolve()):
+                q = next((q for q in consent.load(session)['questions']
+                          if q['id'] == source['target_question']), None)
+                if q and q['status'] == 'DECLINED':
+                    state.pop('folder_request', None)
+                elif (q and waiting['path'] in folder_access.granted(q['scope']['store'])
+                      and consent.consume(session, target['session'], 'folder', q['scope'])):
+                    # Consume and save before dispatch: interruption cannot replay a flow.
+                    state.pop('folder_request', None)
+                    save(None)
+                    record, resumed = run_flow(waiting['flow'], waiting['text'], root, emit, activity)
+                    if record:
+                        state.setdefault('flows', []).append(record)
+                    emit('\n\n' + resumed)
         files = engine.turn_changes(runs, root)
         if before_tree:
             after_tree, _ = engine.snapshot(root)
@@ -495,6 +520,9 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
         save(None)
         answer = (result or {}).get('output') or ''
         ask = folder_question(asked, root) if asked else ''
+        if asked and asked.get('question_id'):
+            from .consent_decisions import present
+            present(state['sessions'][-1]['session'], asked['question_id'])
         from .work_units import kept_patches
         kept = '\n'.join(f'_tare: unit {key} was not applied ({outcome}); its patch is kept at {patch}_'
                          for session, _ in runs for key, outcome, patch in kept_patches(session, started))

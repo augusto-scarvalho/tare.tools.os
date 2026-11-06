@@ -38,6 +38,37 @@ from .console_models import ConversationModels
 from .console_workbench import ConversationWorkbench, WorkbenchPanel
 
 
+from .console_panels import SupportPanel
+
+
+class ConsentPanel(SupportPanel):
+    """Host choices carry no synthetic user message; Escape keeps typing available."""
+    BINDINGS = [('escape', 'close', 'Type a reply')]
+
+    def __init__(self, question):
+        super().__init__()
+        self.question = question
+
+    def compose(self):
+        with Vertical(classes='support-body'):
+            yield Static(self.question, markup=False)
+            with Horizontal():
+                yield Button('Deny', id='consent-deny')
+                yield Button('Allow', id='consent-allow')
+            yield Static('Escape to answer in the conversation.')
+
+    def on_mount(self):
+        self.query_one('#consent-deny', Button).focus()
+
+    def action_close(self):
+        self.dismiss(None)
+
+    def on_button_pressed(self, event):
+        if event.button.id in {'consent-allow', 'consent-deny'}:
+            event.stop()
+            self.dismiss(event.button.id.removeprefix('consent-'))
+
+
 class PromptArea(TextArea):
     """Enter sends; completion menus consume their keys before submission."""
 
@@ -1730,6 +1761,39 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
     async def refresh_message_status(self):
         await self.refresh_messages()
 
+    def consent_decided(self, choice, custody, identity, question_id, workspace):
+        """Persist first; defer recovery until the current worker really unlocks."""
+        if choice is None or not self.consent_resume_matches(custody, workspace):
+            return
+        from .consent_decisions import record
+        try:
+            receipt = record(custody, identity, question_id, choice=choice)
+            self.say(receipt.get('notice') or 'Consent decision saved.')
+        except (ValueError, OSError) as exc:
+            self.say(str(exc))
+            return
+        self._consent_resume = (custody, workspace)
+        self.call_later(self.drain_consent_resume)
+
+    def consent_resume_matches(self, custody, workspace):
+        selected = self.selection()
+        return (selected.mode == 'assistant' and str(self.assistant_session) == str(custody)
+                and Path(selected.root).resolve() == Path(workspace).resolve()
+                and Path(self.workspace_root).resolve() == Path(workspace).resolve())
+
+    def drain_consent_resume(self):
+        pending = getattr(self, '_consent_resume', None)
+        if pending is None:
+            return
+        if not self.consent_resume_matches(*pending):
+            self._consent_resume = None
+            return
+        if self.busy or self.sending_message:
+            self.set_timer(.05, self.drain_consent_resume)
+            return
+        self._consent_resume = None
+        self.action_resume_conversation()
+
     def action_resume_conversation(self):
         if self.busy or self.sending_message:
             self.set_status('Wait for the current operation before resuming.'); return
@@ -1895,16 +1959,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             context_prompt(self.selection())
         except (ValueError,OSError) as exc:
             self.set_status(str(exc)); return
-        request = self.folder_request
-        self.folder_request = None
-        if (request and self.assistant_session
-                and os.path.normcase(str(request['session'])) == os.path.normcase(str(self.assistant_session))):
-            from . import folder_access
-            try:  # the user's reply, not the model, decides; the note tells the agent what it decided
-                self.folder_note = folder_access.answer(text, request, self.selection().folder_grants)
-            except (ValueError, OSError) as exc:
-                self.folder_note = f'[tare] Read access to {request["path"]} could not be granted: {exc}'
-            folder_access.settle(request['session'])
+        # Replies are journaled unchanged; the isolated host judge settles consent.
+        self.folder_note = ''
         session = self.assistant_session
         if session and not any((Path(session)/name).exists() for name in ('native-agent.json', 'continuation.json')):
             # The first turn failed before its session existed: the next message starts it instead of
@@ -2112,6 +2168,21 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 if request:
                     from .folder_access import question
                     self.say(question(request, self.selection().folder_grants))
+                    if request.get('question_id'):
+                        from .consent_decisions import present
+                        present(result['session'], request['question_id'])
+                from .consent_decisions import pending as consent_pending
+                from .native_agent import read_json
+                custody = result.get('session')
+                if custody and (Path(custody)/'native-agent.json').exists():
+                    identity = read_json(Path(custody)/'native-agent.json', 1024*1024)['session_id']
+                    questions = consent_pending(custody, identity)
+                    if questions:
+                        q = questions[0]
+                        workspace = self.selection().root
+                        def decided(choice, custody=custody, identity=identity, q=q, workspace=workspace):
+                            self.consent_decided(choice, custody, identity, q['question_id'], workspace)
+                        self.push_screen(ConsentPanel(q['question']), decided)
             else:
                 from .work_console import render
                 self.say(render('run', result), literal=True)

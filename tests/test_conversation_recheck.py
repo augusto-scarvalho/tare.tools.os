@@ -7,6 +7,11 @@ from test_conversation_tasks import host,intake,planned  # noqa: F401
 from test_native_agent import setup,Client,deployment  # noqa: F401
 
 
+@pytest.fixture(autouse=True)
+def controlled_consent_judges(monkeypatch):
+    monkeypatch.setattr('relay.turn_engine.judges', lambda *a, **k: {})
+
+
 @pytest.mark.parametrize('applied',[False,True])
 def test_host_recheck_keeps_native_journal_untouched_and_dispatches_only_reused_candidate(host,monkeypatch,applied):
     tools,control,*_=host
@@ -94,9 +99,14 @@ def test_public_recheck_command_uses_no_model_or_native_journal_rewrite(setup,mo
     assert argv[argv.index('--active-call-budget')+1]=='90'
 
 
-@pytest.mark.parametrize('answer', ['sim', 'pode', 'ok!', 'yes', 'pode uai', 'não', 'ok, mas antes', ''])
-def test_retry_custody_uses_folder_access_reader_and_consumes_once(host, answer):
-    from relay.folder_access import allows
+@pytest.mark.parametrize('answer,decision', [('sim, tenta de novo', 'yes'), ('manda ver', 'yes'),
+    ('pode sim, manda bala', 'yes'), ('não, obrigado', 'no'), ('deixa pra depois', 'no'),
+    ('espera, me explica antes', 'pending'), ('Por que?', 'pending')])
+def test_retry_custody_uses_isolated_decision_and_consumes_once(host, answer, decision, monkeypatch):
+    from test_consent_decisions import verdict
+    choice = {'yes':'allow', 'no':'deny', 'pending':'unclear'}[decision]
+    monkeypatch.setattr('relay.turn_engine.judges', lambda packet, **k:
+        {'jev': verdict(choice)} if set(packet['options']) == {'allow', 'deny', 'unclear'} else {})
     from test_conversation_tasks import user_reply
     tools = host[0]
     intake(host); task = planned(host); unit = task['plan']['unit']
@@ -105,7 +115,10 @@ def test_retry_custody_uses_folder_access_reader_and_consumes_once(host, answer)
     assert not decide(tools.root, task, unit)
     user_reply(host, answer)
     tools.__dict__['_host_input_id'] = 'synthetic-yes'
-    assert decide(tools.root, task, unit) is allows(answer)
+    from relay import consent_decisions as consent
+    q = consent.pending(tools.root, tools.session_id)[0]
+    consent.record(tools.root, tools.session_id, q['question_id'], q['messages'][-1]['message_id'])
+    assert decide(tools.root, task, unit) is (decision == 'yes')
     assert not decide(tools.root, task, unit)
     user_reply(host, 'yes')
     assert not decide(tools.root, task, unit)
@@ -119,14 +132,19 @@ def test_stale_or_malformed_retry_custody_fails_closed(host, damage):
     intake(host); task = planned(host); unit = task['plan']['unit']
     decide = conversation_recheck.retry_decision
     decide(tools.root, task, unit, register=True)
-    path = tools.root/'conversation-retry/request.json'
+    from relay import consent_decisions as consent
+    path = tools.root/consent.FILE
     value = json.loads(path.read_text())
-    if damage == 'scope': value['scope']['plan'] = 'stale'
-    elif damage == 'boundary': value['boundary'] = True
-    elif damage == 'prefix': value['prefix'] = 'wrong'
-    elif damage == 'status': value['status'] = 'ANSWERED'
-    if damage == 'malformed': path.write_text('{')
-    else: save_json(path, value)
+    question = value['questions'][0]
+    if damage == 'scope': question['scope']['plan'] = 'stale'
+    elif damage == 'boundary': question['boundary'] = True
+    elif damage == 'prefix': question['prefix'] = 'wrong'
+    elif damage == 'status': question['status'] = 'ANSWERED'
+    if damage == 'malformed':
+        path.write_text('{')
+        with pytest.raises(ValueError): decide(tools.root, task, unit)
+        return
+    save_json(path, value)
     user_reply(host, 'yes')
     assert not decide(tools.root, task, unit)
 
@@ -151,6 +169,9 @@ def test_competing_retry_claims_release_exactly_one_attempt(host):
     decide = conversation_recheck.retry_decision
     decide(tools.root, task, unit, register=True)
     user_reply(host, 'sim')
+    from relay import consent_decisions as consent
+    q = consent.pending(tools.root, tools.session_id)[0]
+    consent.record(tools.root, tools.session_id, q['question_id'], choice='allow')
     barrier = Barrier(2)
     def claim(_):
         barrier.wait()
@@ -160,7 +181,10 @@ def test_competing_retry_claims_release_exactly_one_attempt(host):
     assert not decide(tools.root, task, unit)
 
 
-def test_synthetic_input_id_and_old_yes_cannot_answer_retry_question(host):
+def test_synthetic_input_id_and_old_yes_cannot_answer_retry_question(host, monkeypatch):
+    from test_consent_decisions import verdict
+    monkeypatch.setattr('relay.turn_engine.judges', lambda packet, **k:
+        {'jev': verdict('deny')} if set(packet['options']) == {'allow', 'deny', 'unclear'} else {})
     from test_conversation_tasks import user_reply
     tools = host[0]
     intake(host); task = planned(host); unit = task['plan']['unit']
@@ -175,7 +199,8 @@ def test_synthetic_input_id_and_old_yes_cannot_answer_retry_question(host):
     assert not decide(tools.root, task, unit)
 
 
-def test_a_host_observation_is_not_an_answer_and_a_yes_after_it_still_counts(host):
+def test_a_host_observation_is_not_an_answer_and_a_yes_after_it_still_counts(host, monkeypatch):
+    monkeypatch.setattr('relay.turn_engine.judges', lambda *a, **k: {})
     from relay.native_refresh import FOLLOW_UP, OBSERVED
     from test_conversation_tasks import user_reply
     tools = host[0]
@@ -185,5 +210,8 @@ def test_a_host_observation_is_not_an_answer_and_a_yes_after_it_still_counts(hos
     user_reply(host, OBSERVED + ' These are observations. {"source_changes": []}')  # the host alone
     assert not decide(tools.root, task, unit)  # not answered yet
     user_reply(host, OBSERVED + ' These are observations. {"source_changes": []}' + FOLLOW_UP + 'sim')
-    assert decide(tools.root, task, unit)  # the user's own "sim", after the host's prefix
+    from relay import consent_decisions as consent
+    q = consent.pending(tools.root, tools.session_id)[0]
+    consent.record(tools.root, tools.session_id, q['question_id'], q['messages'][-1]['message_id'])
+    assert decide(tools.root, task, unit)  # only the cited user's own sim counts
     assert not decide(tools.root, task, unit)

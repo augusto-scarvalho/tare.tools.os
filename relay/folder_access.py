@@ -115,7 +115,7 @@ def pending(custody):
     """The request the session's last turn left for the user, if any."""
     try:
         value = json.loads((Path(custody)/REQUEST).read_text(encoding='utf-8'))
-        return {'path': value['path'], 'reason': value['reason']}
+        return {**value, 'path': value['path'], 'reason': value['reason']}
     except (OSError, ValueError, KeyError, TypeError):
         return None
 
@@ -135,16 +135,18 @@ def allows(text):
         'vai', 'beleza', 'please', 'por', 'favor'} for word in words)
 
 
+def literal(value):
+    """A Markdown code span that preserves literal paths, including backticks."""
+    text = str(value)
+    fence = '`'
+    while fence in text:
+        fence += '`'
+    return f'{fence} {text} {fence}'
+
+
 def question(request, store):
     """What the user is asked, in the TUI and in tare serve's chats."""
-    def literal(value):
-        text = str(value)
-        fence = '`'
-        while fence in text:
-            fence += '`'
-        return f'{fence} {text} {fence}'
-    return (f"The agent asks to read {literal(request['path'])}: {request['reason'].rstrip('.')}. Reply yes (sim, pode, ok) "
-            "to allow it; any other reply does not. What it reads goes to the conversation's model, and the folder "
+    return (f"The agent asks to read {literal(request['path'])}: {request['reason'].rstrip('.')}. Reply naturally to allow or decline it, or ask for an explanation. What it reads goes to the conversation's model, and the folder "
             f"stays allowed for this project on this machine (remove it from {literal(store)} to take it back).")
 
 
@@ -172,17 +174,7 @@ def _decline(custody, path):
 def answer(text, request, store):
     """The note sent to the agent with the user's reply. A short yes grants (and saves); anything else does not,
     and is recorded in the asking session, so a waiting worker is told of a refusal only the user gave."""
-    if allows(text):
-        path = grant(store, request['path'])
-        return (f'[tare] The user granted read access to {path} (saved for this project). '
-                f'Read it with folder_list, folder_read and folder_search, folder="{path}".')
-    if request.get('session'):
-        try:
-            _decline(request['session'], request['path'])
-        except OSError:
-            pass  # unrecorded, a waiting worker keeps waiting for an answer: never a refusal the user did not give
-    return (f'[tare] This reply did not grant read access to {request["path"]}. '
-            'Answer it; request the folder again if the user still agrees.')
+    raise ValueError('Raw-text consent is disabled. Re-present the folder question in a compatible conversation.')
 
 
 class FolderTools:
@@ -232,8 +224,14 @@ class FolderTools:
             return {'status': 'ALREADY_READABLE', 'next': 'Use read, list and search with this session\'s repository.'}
         if any(same(path, item) for item in granted(self.store)):
             return {'status': 'GRANTED', 'folder': str(path), 'next': 'Read it with folder_list, folder_read and folder_search.'}
+        from . import consent_decisions as consent
+        scope = {'path': str(path), 'store': str(self.store.resolve())}
+        request = {'path': str(path), 'reason': args['reason'].strip()[:500]}
+        question_id = consent.register(self.custody, self.session_id, 'folder', scope, presented=False,
+                                       question=question(request, self.store))
         temporary = self.custody/(REQUEST + '.tmp')
-        temporary.write_text(json.dumps({'path': str(path), 'reason': args['reason'].strip()[:500]}), encoding='utf-8')
+        temporary.write_text(json.dumps({'path': str(path), 'reason': args['reason'].strip()[:500],
+            'question_id': question_id}), encoding='utf-8')
         os.replace(temporary, self.custody/REQUEST)
         return {'status': 'ASKED', 'folder': str(path),
                 'next': 'End your turn now: ask the user, in their language, to allow reading this folder and say why.'}

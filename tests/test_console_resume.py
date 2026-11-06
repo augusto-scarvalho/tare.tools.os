@@ -278,3 +278,118 @@ def test_resume_guards_keep_draft_without_launching(tmp_path, monkeypatch):
             prompt.load_text('/resume invalid'); app.execute(False)
             assert prompt.text == '/resume invalid' and not app.backend.launches
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('keys,expected', [(['enter'], 'deny'), (['tab', 'enter'], 'allow'), (['escape'], None)])
+def test_real_consent_panel_order_focus_and_keyboard(tmp_path, keys, expected):
+    from textual.app import App
+    from textual.widgets import Button
+    from relay.native_console import ConsentPanel
+    from relay import consent_decisions as consent, folder_access
+    from compute_plane.native_journal import NativeJournal
+    NativeJournal(tmp_path/'journal.jsonl').append({'kind': 'session_started', 'session_id': 's'})
+    outside = tmp_path/'reference'; outside.mkdir()
+    store = tmp_path/'grants.json'
+    key = consent.register(tmp_path, 's', 'folder', {'path': str(outside), 'store': str(store)}, question='Allow?')
+    choices = []
+    def decided(choice):
+        choices.append(choice)
+        if choice is not None: consent.record(tmp_path, 's', key, choice=choice)
+    async def scenario():
+        app = App()
+        async with app.run_test(size=(80,24)) as pilot:
+            app.push_screen(ConsentPanel('Allow reading?'), decided)
+            await pilot.pause()
+            assert [b.id for b in app.screen.query(Button)] == ['consent-deny', 'consent-allow']
+            assert app.focused.id == 'consent-deny'
+            await pilot.press(*keys); await pilot.pause()
+            assert choices == [expected]
+    asyncio.run(scenario())
+    assert bool(folder_access.granted(store)) == (expected == 'allow')
+    assert folder_access.declined(tmp_path, str(outside)) == (expected == 'deny')
+    q = consent.load(tmp_path)['questions'][0]
+    assert ('observation' in q) == (expected is not None)
+
+
+@pytest.mark.parametrize('choice', ['allow', 'deny'])
+@pytest.mark.parametrize('busy', [False, True])
+def test_dialog_auto_resume_waits_and_preserves_local_state(tmp_path, monkeypatch, choice, busy):
+    from test_native_console import FakeBackend
+    from relay import consent_decisions as consent
+    from compute_plane.native_journal import NativeJournal
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'history'))
+    project = tmp_path/'project'; project.mkdir()
+    session = tmp_path/'saved'; session.mkdir()
+    (session/'native-agent.json').write_text(json.dumps({'session_id': 's', 'config': {'repositories': {'repo': str(project)}}}))
+    NativeJournal(session/'journal.jsonl').append({'kind': 'session_started', 'session_id': 's'})
+    key = consent.register(session, 's', 'retry', {'task': 't'}, question='Allow retry?')
+    async def scenario():
+        backend = FakeBackend(); backend.process.done.set()
+        app = WorkConsole(project, backend=backend, initial_mode='assistant')
+        async with app.run_test(size=(80,24)) as pilot:
+            await app.workers.wait_for_complete()
+            app.assistant_session = str(session); app.update_mode()
+            prompt = app.query_one('#prompt', TextArea); prompt.load_text('unsent draft')
+            app.context_root, app.context_paths = str(project), ['note.txt']
+            resumes = []
+            actual = app.action_resume_conversation
+            def resume():
+                q = consent.load(session)['questions'][0]
+                assert q['status'] in {'APPROVED', 'DECLINED'}
+                assert choice.title() in q['observation']['text']
+                resumes.append(True); actual()
+            monkeypatch.setattr(app, 'action_resume_conversation', resume)
+            app.busy = busy; app.sending_message = busy
+            app.consent_decided(choice, str(session), 's', key, str(project))
+            await pilot.pause(.1)
+            if busy:
+                assert not resumes
+                app.busy = False
+                await pilot.pause(.1)
+                assert not resumes
+                app.sending_message = False
+            await pilot.pause(.2); await app.workers.wait_for_complete(); await pilot.pause()
+            assert resumes == [True] and len(backend.launches) == 1
+            args = backend.launches[0]
+            assert '--resume' in args and '--follow-up' not in args and '--attachment-input' not in args
+            assert prompt.text == 'unsent draft' and app.context_paths == ['note.txt']
+            assert not any(isinstance(v, str) and v.startswith('You:') for v in app.assistant_history)
+            assert not any(e['kind'] == 'user_message' for e in consent.events(session))
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('guard', ['cancel', 'record-failure', 'session', 'workspace', 'session-during-cleanup', 'workspace-during-cleanup'])
+def test_consent_dialog_guards_do_not_resume(tmp_path, monkeypatch, guard):
+    from test_native_console import FakeBackend
+    from relay import consent_decisions as consent
+    from compute_plane.native_journal import NativeJournal
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'history'))
+    project = tmp_path/'project'; project.mkdir()
+    session = tmp_path/'saved'; session.mkdir()
+    NativeJournal(session/'journal.jsonl').append({'kind': 'session_started', 'session_id': 's'})
+    key = consent.register(session, 's', 'retry', {'task': 't'}, question='Allow retry?')
+    async def scenario():
+        app = WorkConsole(project, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(80,24)) as pilot:
+            await app.workers.wait_for_complete()
+            app.assistant_session = str(session)
+            resumes = []
+            monkeypatch.setattr(app, 'action_resume_conversation', lambda: resumes.append(True))
+            if guard == 'record-failure':
+                def fail(*a, **k): raise OSError('record failed')
+                monkeypatch.setattr(consent, 'record', fail)
+            if guard == 'session': app.assistant_session = str(tmp_path/'other')
+            if guard == 'workspace': app.query_one('#root', Input).value = str(tmp_path/'other')
+            app.busy = guard.endswith('cleanup')
+            app.consent_decided(None if guard == 'cancel' else 'allow', str(session), 's', key, str(project))
+            await pilot.pause(.1)
+            assert not resumes
+            if guard == 'session-during-cleanup': app.assistant_session = str(tmp_path/'other')
+            if guard == 'workspace-during-cleanup': app.query_one('#root', Input).value = str(tmp_path/'other')
+            app.busy = False
+            await pilot.pause(.2)
+            assert not resumes and not app.backend.launches
+            q = consent.load(session)['questions'][0]
+            assert ('observation' in q) == guard.endswith('cleanup')
+            assert not any(e['kind'] == 'user_message' for e in consent.events(session))
+    asyncio.run(scenario())

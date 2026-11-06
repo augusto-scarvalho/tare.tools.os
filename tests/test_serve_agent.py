@@ -24,7 +24,7 @@ def runtime(tmp_path, monkeypatch):
     monkeypatch.setattr(native_agent, 'session_root', lambda: tmp_path/'sessions')
     project = tmp_path/'project'
     project.mkdir()
-    state = {'down': set(), 'outcomes': [], 'calls': []}
+    state = {'down': set(), 'outcomes': [], 'calls': [], 'real_run_session': native_agent.run_session}
     tiers = [['local-a', 'local-b'], ['cheap'], ['middle']]
     monkeypatch.setattr(turn_engine, 'policy', lambda: {'implementer': tiers, 'planner': ['astra', 'opus'],
                                                      'planner_effort': 'high'})
@@ -613,15 +613,15 @@ def test_a_folder_outside_the_project_is_asked_in_the_chat_and_only_a_yes_grants
     assert f'asks to read ` {other} `: its schema' in answer and answer.startswith('answer from local-a')
     chat.append('sim')
     serve_agent.run_turn(copilot(project, *chat), lambda text: None)
-    assert f'The user granted read access to {other.resolve()}' in state['calls'][1]['follow_up']
-    assert folder_access.granted(store) == [str(other.resolve())]
+    assert state['calls'][1]['follow_up'] == 'sim'
+    assert folder_access.granted(store) == []  # submission cannot grant
     chat.append('and the notes folder?')
     serve_agent.run_turn(copilot(project, *chat), lambda text: None)
     assert '[tare]' not in state['calls'][2]['follow_up']  # answered once
     chat.append('why do you need it?')  # not a yes: nothing granted, and the agent is told
     serve_agent.run_turn(copilot(project, *chat), lambda text: None)
-    assert f'did not grant read access to {notes}' in state['calls'][3]['follow_up']
-    assert folder_access.granted(store) == [str(other.resolve())]
+    assert state['calls'][3]['follow_up'] == 'why do you need it?'
+    assert folder_access.granted(store) == []
 
 
 def test_a_chat_starts_without_local_models_and_other_chats_and_the_machine_keep_them(runtime, monkeypatch):
@@ -647,9 +647,9 @@ def test_a_chat_starts_without_local_models_and_other_chats_and_the_machine_keep
     assert not turn_engine.leaves_gpu_to_others()
 
 
-def test_a_flow_that_asks_for_a_folder_runs_again_on_a_yes_and_any_other_reply_goes_to_the_chat(runtime, monkeypatch,
-                                                                                                 tmp_path):
-    from relay import folder_access
+def test_standalone_flow_resumes_only_after_cited_coordinator_approval(runtime, monkeypatch, tmp_path):
+    from relay import folder_access, consent_decisions as consent
+    from compute_plane.native_journal import NativeJournal
     project, state, _ = runtime
     other = tmp_path/'other-repo'
     other.mkdir()
@@ -657,26 +657,53 @@ def test_a_flow_that_asks_for_a_folder_runs_again_on_a_yes_and_any_other_reply_g
 
     def asking(config, deployment, custody, instruction=None, **kw):
         result = fake(config, deployment, custody, instruction, **kw)
-        if len(state['calls']) in (1, 3):  # each /explore's first run asks for the other repository
-            return {**result, 'folder_access_request': {'path': str(other), 'reason': 'its cache'}}
+        custody = Path(custody)
+        custody.mkdir(parents=True, exist_ok=True)
+        log = NativeJournal(custody/'journal.jsonl')
+        if config and config['role'] == 'explorer' and len(state['calls']) == 1:
+            log.append({'kind':'session_started', 'session_id':'flow'})
+            q = consent.register(custody, 'flow', 'folder',
+                {'path':str(other), 'store':str(folder_access.project_store(project).resolve())}, presented=False,
+                question='Allow reading this folder?')
+            return {**result, 'folder_access_request': {'path':str(other), 'reason':'its cache', 'question_id':q}}
+        request = kw.get('folder_consent_request')
+        if request:
+            q = consent.adopt_folder(custody, 'coordinator', request['session'],
+                request['question_id'], folder_access.project_store(project))
+            assert not folder_access.granted(folder_access.project_store(project))
+            message = str(len(state['calls']))
+            log.append({'kind':'user_message', 'message_id':message, 'text':request['reply']})
+            from test_consent_decisions import verdict
+            choice = 'unclear' if request['reply'] == 'Por que?' else 'allow'
+            monkeypatch.setattr('relay.turn_engine.judges', lambda *a, **k: {'jev': verdict(choice)})
+            receipt = consent.record(custody, 'coordinator', q, message)
+            if receipt.get('notice'):
+                kw['on_progress']({'kind':'delta','channel':'text','text':receipt['notice']})
         return result
     monkeypatch.setattr(native_agent, 'run_session', asking)
     chat = ['/explore where is the cache in both repos?']
     answer = serve_agent.run_turn(copilot(project, *chat), lambda text: None)
-    explore = state['calls'][0]
-    assert explore['config']['role'] == 'explorer' and 'folder_access' in explore['config']
     assert f'asks to read ` {other} `: its cache' in answer
+    source = state['calls'][0]['custody']
+    assert consent.pending(source, 'flow')[0]['messages'] == []
+    chat.append('Por que?')
+    serve_agent.run_turn(copilot(project, *chat), lambda text: None)
+    assert len(state['calls']) == 2
+    coordinator = state['calls'][1]['custody']
+    before = consent.load(coordinator)['questions'][0].copy()
     chat.append('pode')
+    output = []
+    serve_agent.run_turn(copilot(project, *chat), output.append)
+    assert len(state['calls']) == 4
+    assert state['calls'][-1]['config']['role'] == 'explorer'
+    assert folder_access.granted(folder_access.project_store(project)) == [str(other)]
+    after = consent.load(coordinator)['questions'][0]
+    assert after['status'] == 'CONSUMED'
+    assert after['boundary'] == before['boundary'] and after['prefix'] == before['prefix']
+    assert any(str(other) in text and 'Revoke' in text and 'saved for this project' in text for text in output)
+    chat.append('continue')
     serve_agent.run_turn(copilot(project, *chat), lambda text: None)
-    again = state['calls'][1]  # the same read-only flow, now able to read the folder
-    assert again['config']['role'] == 'explorer' and again['instruction'].startswith(chat[0].removeprefix('/explore '))
-    assert f'granted read access to {other.resolve()}' in again['instruction']
-    assert folder_access.granted(folder_access.project_store(project)) == [str(other.resolve())]
-    chat += ['/explore and the logs?', 'what for?']  # not a yes: the chat's own session gets the reply and the note
-    serve_agent.run_turn(copilot(project, *chat[:-1]), lambda text: None)
-    serve_agent.run_turn(copilot(project, *chat), lambda text: None)
-    reply = state['calls'][3]
-    assert reply['config']['role'] == 'implementer' and 'did not grant read access' in reply['instruction']
+    assert len(state['calls']) == 5  # no second flow dispatch
 
 
 def test_a_request_choice_rules_out_local_models_for_that_turn_without_changing_the_chat(runtime, monkeypatch):
@@ -722,3 +749,123 @@ def test_first_serve_turn_shares_initial_choice_and_followup_never_reclassifies(
     assert len(asked) == 1 and deployments[-1] is None
     assert state['calls'][-1]['custody'] == state['calls'][0]['custody']
     assert state['calls'][-1]['resume'] is True and len(shadows) == 1  # existing followup shadow retained
+
+
+@pytest.mark.parametrize('kind', ['folder', 'retry'])
+def test_serve_consent_judges_raw_reply_not_enriched_context(runtime, monkeypatch, tmp_path, kind):
+    from compute_plane.native_journal import NativeJournal
+    from relay import consent_decisions as consent, folder_access
+    from test_native_agent import Client, deployment
+    from test_consent_decisions import verdict
+    project, state, _ = runtime
+    (project/'a.py').write_text('value = 1\n')
+    config = {'schema': 'tare.tools/native-agent-config/1', 'role': 'implementer',
+              'repositories': {'workspace': str(project)}, 'writable': {'workspace': ['a.py']},
+              'specgraph_edit_context': False, 'verifiers': {}}
+    sessions = []
+    clients = []
+    def run(config_arg, route, custody, instruction=None, **kwargs):
+        client = Client(steps=[('tare_deliver', {'summary': 'Please clarify.'})])
+        clients.append(client)
+        result = state['real_run_session'](config if config_arg else None,
+            deployment() if config_arg else None, custody, instruction,
+            client=client, local_counter=client, **kwargs)
+        sessions.append((Path(custody), result['session_id']))
+        return result
+    monkeypatch.setattr(native_agent, 'run_session', run)
+    monkeypatch.setattr(turn_engine, 'unanswered', lambda *a, **k: False)
+    monkeypatch.setattr(turn_engine, 'jev_shadow', lambda *a, **k: None)
+    chat = ['Inspect the project']
+    serve_agent.run_turn(copilot(project, *chat), lambda text: None)
+    custody, session = sessions[0]
+    question = 'Allow reading the external folder?' if kind == 'folder' else 'Allow another attempt?'
+    other = tmp_path/'external'; other.mkdir()
+    scope = ({'path': str(other), 'store': str(folder_access.project_store(project).resolve())}
+             if kind == 'folder' else {'task': 'example'})
+    consent.register(custody, session, kind, scope, question=question)
+    packets = []
+    def judges(packet, **kwargs):
+        packets.append(packet)
+        return {'jev': verdict('unclear')}
+    monkeypatch.setattr(turn_engine, 'judges', judges)
+    monkeypatch.setattr(turn_engine, 'read_pages', lambda *a: '\nSECRET LINKED PAGE')
+    monkeypatch.setattr(turn_engine, 'describe_images', lambda *a: '\nSECRET IMAGE DESCRIPTION')
+    store = next(Path(serve_agent.chat_store('x')).parent.glob('*.json'))
+    saved = json.loads(store.read_text())
+    saved['notes'] = ['SECRET FLOW HISTORY']
+    store.write_text(json.dumps(saved))
+    chat.append('pode ler, claro')
+    serve_agent.run_turn(copilot(project, *chat), lambda text: None)
+    assert len(packets) == 1
+    assert set(packets[0]) == {'question', 'options', 'state'}
+    assert packets[0]['options'] == consent.OPTIONS
+    judge_question = ('Allow read access to the entire folder for this project? The grant is saved for this project on this machine. Path: ' + json.dumps(str(other))
+                      if kind == 'folder' else question)
+    assert json.loads(packets[0]['state']) == {'question': judge_question, 'user_words': chat[-1]}
+    assert 'SECRET' not in json.dumps(packets)
+    body = next(b for p, b in clients[-1].calls if p == '/chat/completions')
+    assert all(text in json.dumps(body['messages']) for text in (
+        'SECRET LINKED PAGE', 'SECRET IMAGE DESCRIPTION', 'SECRET FLOW HISTORY', consent.REASK))
+    assert consent.pending(custody, session)
+    assert consent.process(custody, session) == []
+    assert len(packets) == 1
+    rows = [r.event() for r in NativeJournal(custody/'journal.jsonl').snapshot().records]
+    assert any(r.get('text') == chat[-1] for r in rows if r['kind'] == 'user_message')
+
+
+def test_real_serve_folder_notice_is_a_delta_delivered_once(runtime, monkeypatch, tmp_path):
+    from relay import consent_decisions as consent, folder_access
+    from test_native_agent import Client, deployment
+    from test_consent_decisions import verdict
+    project, state, _ = runtime
+    outside = tmp_path/'reference'; outside.mkdir()
+    (project/'a.py').write_text('value = 1\n')
+    results, events, sessions = [], [], []
+
+    def run(config_arg, route, custody, instruction=None, **kwargs):
+        steps = ([('request_folder_access', {'path': str(outside), 'reason': 'Read reference.'})]
+                 if config_arg else [])
+        client = Client(steps=steps + [('tare_deliver', {'summary': 'Turn finished.'})])
+        config = ({'schema': 'tare.tools/native-agent-config/1', 'role': 'implementer',
+                   'repositories': {'workspace': str(project)}, 'writable': {'workspace': ['a.py']},
+                   'specgraph_edit_context': False, 'verifiers': {},
+                   'folder_access': config_arg['folder_access']} if config_arg else None)
+        callback = kwargs['on_progress']
+        def progress(event):
+            assert isinstance(event, dict)
+            events.append(event)
+            callback(event)
+        kwargs['on_progress'] = progress
+        result = state['real_run_session'](config, deployment() if config_arg else None,
+            custody, instruction, client=client, local_counter=client, **kwargs)
+        results.append(result)
+        sessions.append(Path(custody))
+        return result
+
+    monkeypatch.setattr(native_agent, 'run_session', run)
+    monkeypatch.setattr(turn_engine, 'unanswered', lambda *a, **k: False)
+    monkeypatch.setattr(turn_engine, 'jev_shadow', lambda *a, **k: None)
+    monkeypatch.setattr(turn_engine, 'judges', lambda *a, **k: {'jev': verdict('allow')})
+    chat = ['Inspect the reference folder']
+    serve_agent.run_turn(copilot(project, *chat), lambda text: None)
+    assert results[-1]['folder_access_request']['path'] == str(outside)
+    chat.append('pode ler, claro')
+    output = []
+    answer = serve_agent.run_turn(copilot(project, *chat), output.append)
+    assert results[-1]['status'] == 'PROPOSED'
+    q = consent.load(sessions[-1])['questions'][0]
+    notice = q['notice']
+    assert 'Read access granted' in notice and q['notice_delivered'] is True
+    assert results[-1]['output'].count(notice) == 1
+    assert ''.join(output).count(notice) == 1
+    assert notice not in answer  # serve returns only unstreamed text
+    assert [e for e in events if notice in e.get('text', '')] == [
+        {'kind': 'delta', 'channel': 'text', 'text': '\n\n' + notice}]
+    assert folder_access.granted(folder_access.project_store(project)) == [str(outside)]
+    events.clear(); output.clear()
+    chat.append('Continue explaining')
+    answer = serve_agent.run_turn(copilot(project, *chat), output.append)
+    assert results[-1]['status'] == 'PROPOSED'
+    assert notice not in results[-1]['output']
+    assert notice not in answer and notice not in ''.join(output)
+    assert not any(notice in e.get('text', '') for e in events)

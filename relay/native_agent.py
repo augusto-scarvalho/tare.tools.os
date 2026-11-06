@@ -273,7 +273,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 delegated_leaf=False, command_mediation_factory=None,
                 pause_requested=None, receive_message=None, permission_directory=None,
                 active_time_budget=None,active_call_budget=None,recheck_candidate=False,retry_delivery=False,repair_plan=False,
-                unlimited_resources=(), model_recovery_call_limit=None):
+                unlimited_resources=(), model_recovery_call_limit=None, folder_consent_request=None,
+                raw_user_reply=None):
     from compute_plane.native_capabilities import NativeCapabilities
     from compute_plane.native_models import NativeHttpClient, NativeModelAdapter
     from compute_plane.native_project_context import NativeProjectContext
@@ -283,6 +284,15 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
         ModelFailure, NativeBudget, NativeContext, NativeSession,
     )
 
+    # Transports may enrich the coordinator instruction, but only the authentic
+    # reply belongs in the human journal entry used for consent classification.
+    transport_context = None
+    if raw_user_reply is not None:
+        if not isinstance(raw_user_reply, str) or not resume or follow_up is None:
+            raise ValueError('Raw user replies require a resumed follow-up.')
+        if follow_up != raw_user_reply:
+            transport_context = follow_up
+        follow_up = raw_user_reply
     if type(recover_plan_source) is not bool:
         raise ValueError('native_plan_recovery_requires_boolean')
     if type(retry_delivery) is not bool or type(repair_plan) is not bool or sum((bool(retry_delivery),bool(repair_plan),bool(recheck_candidate)))>1:
@@ -458,6 +468,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 state['coordinator_execution_facts'] = True
                 state['coordinator_folder_reads'] = True
                 from .conversation_tasks import GUIDANCE, SPEC
+                state['consent_tools_version'] = 1
                 state['conversation_flow_guidance'] = GUIDANCE
                 state['conversation_specs'] = deepcopy(SPEC)
             if config['role'] in {'implementer', 'explorer'} and not exploration_leaf and not delegated_leaf and deployment is not None:
@@ -588,8 +599,10 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                     raise ValueError('native_agent_project_instructions_changed')
                 # A new message continues: the packet keeps the text the conversation started with (its history
                 # cannot change) and the model rereads AGENTS.md, which the agent itself or the user edited.
-                follow_up = ('[tare] AGENTS.md changed since this conversation started; reread it before relying '
-                             'on its rules.\n\n' + follow_up)
+                from .native_refresh import OBSERVED, FOLLOW_UP, user_words
+                words = user_words(follow_up)
+                follow_up = (OBSERVED + ' AGENTS.md changed since this conversation started; reread it before relying '
+                             'on its rules.' + (FOLLOW_UP + words if words is not None else ''))
                 sources = state['project_instructions']
         else:
             state.update(project_instructions=sources, deadline_utc=None if seconds is None else started_utc+seconds)
@@ -728,6 +741,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 tools = conversation_tools = ConversationTools(tools, root, state, invocation_id,
                     permission_directory=permission_directory)
                 if 'conversation_tool_specs' in state:
+                    # Frozen coordinator schemas cannot supply host consent authority.
                     tools.tool_specs_json = state['conversation_tool_specs']
                     tools.names = tuple(state.get('conversation_tool_names', tools.names))
                 else:
@@ -882,6 +896,23 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                     session.reconcile_effect(control, *recovered_effect)
                     source_changes = tools.restore(journal, refresh=refresh or (follow_up is not None and state.get('conversation', False)),
                         accepted_sources=accepted_sources(state, journal)) or []
+            if folder_consent_request:
+                if not conversation_tools:
+                    raise ValueError('This frozen session cannot decide consent. Start a compatible conversation and re-present the folder question.')
+                from .consent_decisions import adopt_folder
+                adopt_folder(root, session_id, folder_consent_request['session'],
+                    folder_consent_request['question_id'], config['folder_access']['grants'])
+                if not resume:
+                    # Runtime owns the binding header and journals this genuine
+                    # transport reply through its ordinary tuple receiver.
+                    original_receive = receive_message
+                    reply_id = 'serve-consent-' + uuid4().hex
+                    reply = folder_consent_request['reply']
+                    def receive_consent(consumed):
+                        if reply_id not in consumed:
+                            return reply_id, reply
+                        return original_receive(consumed) if original_receive else None
+                    receive_message = receive_consent
             if follow_up is not None and state.get('messages_enabled'):
                 from .native_messages import receiver
                 consumed = tuple(r.event()['message_id'] for r in journal.snapshot().records
@@ -916,6 +947,26 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 from .native_refresh import continuation_text
                 session.continue_with(control, message_id=message_id,
                                       text=continuation_text(state, message_id, follow_up), **follow_options)
+            if state.get('conversation') or config.get('folder_access'):
+                from .consent_decisions import process as process_consent
+                consent_receipts = process_consent(root, session_id)
+                if any(r['decision'] == 'pending' for r in consent_receipts):
+                    from .consent_decisions import REASK
+                    from .native_refresh import OBSERVED
+                    # Journal a host-only clarification notice before the next
+                    # model request. user_words excludes this from consent input;
+                    # the authentic reply above remains the sole judged message.
+                    session.continue_with(control,
+                        message_id='consent-clarification-' + invocation_id,
+                        text=OBSERVED + ' ' + REASK, interrupts_turn=True)
+            from .consent_decisions import deliver_observations
+            deliver_observations(root, session_id, session, control, journal)
+            if transport_context is not None:
+                from .native_refresh import OBSERVED
+                session.continue_with(control,
+                    message_id='transport-context-' + invocation_id,
+                    text=OBSERVED + ' Transport context (not a user decision):\n' + encode({'context': transport_context}),
+                    interrupts_turn=True)
             preparation_ms = round((time.monotonic()-started)*1000, 3)
             run_options = {}
             if pause_requested is not None:
@@ -1093,11 +1144,20 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             result['last_message_id'] = messages[-1]['message_id'] if messages else None
             if source_changes:
                 result['source_changes'] = source_changes
+            from .consent_decisions import pending_notices, acknowledge_notices
+            notices = pending_notices(root, session_id)
+            if notices:
+                notice_text = '\n\n' + '\n'.join(q['notice'] for q in notices)
+                result['output'] = (result.get('output') or '') + notice_text
+                if on_progress:
+                    on_progress({'kind': 'delta', 'channel': 'text', 'text': notice_text})
             if config.get('folder_access'):
                 from .folder_access import pending
                 request = pending(root)
                 if request:
                     result['folder_access_request'] = request  # the TUI asks the user
+            from .consent_decisions import pending as pending_consent_questions
+            result['consent_questions'] = pending_consent_questions(root, session_id)
             if config.get('typed_output') and result['status'] == 'PROPOSED':
                 from .native_artifacts import save_output
                 result['artifact_file'] = save_output(root, config['role'], session_id, adapter.profile_digest, journal)
@@ -1105,6 +1165,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 result['host_action'] = invocation['host_action']
                 result['coordinator_calls_started'] = 0
             save_json(root / 'outcome.json', result)
+            if notices:
+                acknowledge_notices(root, session_id, [q['question_id'] for q in notices])
             invocation['status'] = result['status']
             if not state.get('exploration_leaf') and not state.get('delegated_leaf'):  # children: the parent's form
                 from .work_forms import record_turn
