@@ -717,7 +717,8 @@ class GuardRefusal(ValueError):
 
 
 RETRY_QUESTION = (' Explain why execution stopped and ask the user in plain words whether to try again, '
-    'then wait for their answer. Never ask the user for a command.')
+    'then wait for their answer. The host decides consent through an isolated closed-choice judge or dialog; '
+    'a clarification keeps the same question pending. Never ask the user for a command.')
 
 
 def check_failures(custody, unit, *, conversation=False, operator_retry=False):

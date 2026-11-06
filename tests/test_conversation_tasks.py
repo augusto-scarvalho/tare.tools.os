@@ -805,6 +805,46 @@ def test_resume_freezes_tools_and_guidance_instead_of_invalidating_provider_hist
     assert 'Same conversation' not in (root/'a.py').read_text()
 
 
+@pytest.mark.parametrize('kind', ['retry', 'folder'])
+@pytest.mark.parametrize('choice,probability', [('unclear', .95), ('allow', .6), (None, None)])
+def test_resumed_pending_consent_warns_coordinator_without_judging_host_notice(
+        setup, monkeypatch, kind, choice, probability):
+    from relay import consent_decisions as consent
+    from test_consent_decisions import verdict
+    config, custody, root = setup
+    client = Client(steps=[('tare_deliver', {'summary': 'May I proceed?'})])
+    first = native_agent.run_session(config, deployment(), custody, 'Explain a.py.',
+        conversation=True, client=client, local_counter=client)
+    question = 'Allow another attempt?' if kind == 'retry' else 'Allow reading this folder?'
+    scope = ({'path': str(root.parent/'reference'), 'store': str(root.parent/'grants.json')}
+             if kind == 'folder' else {'task': 'example'})
+    key = consent.register(custody, first['session_id'], kind, scope, question=question)
+    judge_question = ('Allow read access to the entire folder for this project? The grant is saved for this project on this machine. Path: ' + json.dumps(scope['path'])
+                      if kind == 'folder' else question)
+    before = consent.load(custody)['questions'][0]
+    packets = []
+    def judges(packet, **kwargs):
+        packets.append(packet)
+        return {'jev': verdict(choice, probability)} if choice else {}
+    monkeypatch.setattr('relay.turn_engine.judges', judges)
+    follow = Client(steps=[('tare_deliver', {'summary': 'Please clarify your choice.'})])
+    second = native_agent.run_session(None, None, custody, resume=True,
+        follow_up='sim, tenta de novo', message_id='ambiguous-reply', client=follow, local_counter=follow)
+    assert second['status'] == 'PROPOSED'
+    body = next(b for p, b in follow.calls if p == '/chat/completions')
+    assert consent.REASK in json.dumps(body['messages'])
+    after = next(q for q in consent.load(custody)['questions'] if q['id'] == key)
+    assert after['status'] == 'WAITING'
+    assert (after['boundary'], after['prefix']) == (before['boundary'], before['prefix'])
+    assert after['used_messages'] == ['ambiguous-reply']
+    count = len(packets)
+    assert count > 0
+    assert all(json.loads(p['state']) == {
+        'question': judge_question, 'user_words': 'sim, tenta de novo'} for p in packets)
+    assert consent.process(custody, first['session_id']) == []
+    assert len(packets) == count
+
+
 @pytest.mark.parametrize('verdict', ['ACCEPT', 'REVISE', 'INCONCLUSIVE', 'OUTSIDE', 'PROTECTED'])
 def test_real_candidate_is_verified_then_audited_before_application(tmp_path, monkeypatch, verdict):
     protected=verdict=='PROTECTED'
@@ -1506,6 +1546,9 @@ def test_journal_retry_passes_both_guards_once(host, monkeypatch, kind, reply):
     assert attempt('no-message').status == 'refused'
     assert request.read_bytes() == before and calls == []
     user_reply(host, reply)
+    from relay import consent_decisions as consent
+    q = consent.pending(tools.root, tools.session_id)[0]
+    consent.record(tools.root, tools.session_id, q['question_id'], choice='allow')
     intake(host, relation='continue')
     released = attempt('released')
     assert released.status == 'succeeded', released.output_json
@@ -1517,6 +1560,9 @@ def test_journal_retry_passes_both_guards_once(host, monkeypatch, kind, reply):
 
 
 def test_non_yes_first_journal_reply_cannot_be_revived_by_later_yes(host, monkeypatch):
+    from test_consent_decisions import verdict
+    monkeypatch.setattr('relay.turn_engine.judges', lambda packet, **k:
+        {'jev': verdict('deny')} if set(packet['options']) == {'allow', 'deny', 'unclear'} else {})
     tools, execution, _, _ = host
     intake(host); task = planned(host)
     for _ in range(work_units.MAX_FAILURES):
@@ -1539,6 +1585,9 @@ def test_released_retry_is_burned_when_attempt_stops(host, monkeypatch, stop):
         work_units.record(tools.root, task['plan']['unit'], {'verdict': 'NOT_VERIFIED'})
     assert tools.execute(effect('implement', {}, 'ask'), execution).status == 'refused'
     user_reply(host, 'sim')
+    from relay import consent_decisions as consent
+    q = consent.pending(tools.root, tools.session_id)[0]
+    consent.record(tools.root, tools.session_id, q['question_id'], choice='allow')
     intake(host, relation='continue')
     reached = []
     def fail(*args, **kwargs):
@@ -1556,3 +1605,129 @@ def test_released_retry_is_burned_when_attempt_stops(host, monkeypatch, stop):
     monkeypatch.setattr(work_units, 'run_unit', lambda *a, **kw: pytest.fail('Consent replayed'))
     result = tools.execute(effect('implement', {}, 'replay'), execution)
     assert result.status == 'refused'
+
+
+def test_judged_retry_can_be_requested_again_after_consumption(host, monkeypatch):
+    from relay import consent_decisions as consent
+    from test_consent_decisions import verdict
+    monkeypatch.setattr('relay.turn_engine.judges', lambda packet, **k:
+        {'jev': verdict('allow', .95)} if set(packet['options']) == {'allow', 'deny', 'unclear'} else {})
+    tools, execution, _, _ = host
+    intake(host); task = planned(host)
+    unit = task['plan']['unit']
+    for _ in range(work_units.MAX_FAILURES):
+        work_units.record(tools.root, unit, {'verdict': 'NOT_VERIFIED'})
+    calls = []
+    def run(custody, state, *args, **kwargs):
+        worker_unit = work_units.read_ledger(custody)['plan']['units'][0]
+        work_units.check_failures(custody, worker_unit, conversation=True,
+            operator_retry=state.get('operator_delivery_retry', False))
+        calls.append(state.get('operator_delivery_retry'))
+        return {'verdict': 'NOT_VERIFIED'}
+    monkeypatch.setattr(work_units, 'run_unit', run)
+    keys = []
+    for cycle in range(2):
+        refused = tools.execute(effect('implement', {}, f'blocked-{cycle}'), execution)
+        assert refused.status == 'refused'
+        pending = consent.pending(tools.root, tools.session_id)
+        assert len(pending) == 1
+        key = pending[0]['question_id']
+        assert key not in keys
+        keys.append(key)
+        request = json.loads((tools.root/'conversation-retry/request.json').read_text())
+        assert request['question_id'] == key
+        assert tools.execute(effect('implement', {}, f'still-blocked-{cycle}'), execution).status == 'refused'
+        assert consent.pending(tools.root, tools.session_id)[0]['question_id'] == key
+        user_reply(host, 'sim, tenta de novo')
+        intake(host, relation='continue')
+        released = tools.execute(effect('implement', {}, f'released-{cycle}'), execution)
+        assert released.status == 'succeeded', released.output_json
+        assert calls == [True] * (cycle + 1)
+        assert next(q for q in consent.load(tools.root)['questions'] if q['id'] == key)['status'] == 'CONSUMED'
+    assert tools.execute(effect('implement', {}, 'no-third-approval'), execution).status == 'refused'
+    assert calls == [True, True]
+
+
+@pytest.mark.parametrize('choice', ['allow', 'deny'])
+def test_dialog_resume_delivers_host_observation_without_user_message(setup, monkeypatch, choice):
+    from relay import consent_decisions as consent
+    from relay.native_refresh import OBSERVED, FOLLOW_UP, user_words
+    config, custody, root = setup
+    first_client = Client(steps=[('tare_deliver', {'summary': 'May I read the reference?'})])
+    first = native_agent.run_session(config, deployment(), custody, 'Compare references.',
+        conversation=True, client=first_client, local_counter=first_client)
+    outside = root.parent/'reference with spaces'; outside.mkdir()
+    key = consent.register(custody, first['session_id'], 'folder',
+        {'path': str(outside), 'store': str(root.parent/'grants.json')}, question='Allow reading?')
+    before = consent.events(custody)
+    consent.record(custody, first['session_id'], key, choice=choice)
+    observation = consent.load(custody)['questions'][0]['observation']
+    monkeypatch.setattr(consent, 'classify', lambda *a: pytest.fail('host observation was classified'))
+    follow = Client(steps=[('tare_deliver', {'summary': 'Continuing after the choice.'})])
+    result = native_agent.run_session(None, None, custody, resume=True, client=follow, local_counter=follow)
+    assert result['status'] == 'PROPOSED'
+    after = consent.events(custody)
+    assert [e for e in after if e['kind'] == 'user_message'] == [e for e in before if e['kind'] == 'user_message']
+    observed = [e for e in after if e['kind'] == 'host_observation']
+    assert len(observed) == 1 and observed[0]['observation_id'] == observation['id']
+    assert observation['text'].startswith(OBSERVED) and FOLLOW_UP not in observation['text']
+    assert user_words(observation['text']) is None
+    body = next(b for p, b in follow.calls if p == '/chat/completions')
+    assert any(observation['text'] in message.get('content', '')
+               for message in body['messages'] if isinstance(message.get('content'), str))
+    # A repeated resume must use the journal delivery receipt, not append again.
+    again = Client(steps=[('tare_deliver', {'summary': 'Still continuing.'})])
+    native_agent.run_session(None, None, custody, resume=True, client=again, local_counter=again)
+    assert [e for e in consent.events(custody) if e['kind'] == 'host_observation'] == observed
+
+
+@pytest.mark.parametrize('delivery', ['callback', 'no_callback', 'failed_callback'])
+@pytest.mark.parametrize('choice', ['allow', 'deny'])
+def test_session_notice_delivery_survives_resume(setup, monkeypatch, delivery, choice):
+    from relay import consent_decisions as consent
+    config, custody, root = setup
+    config['verifiers'] = {}
+    outside = root.parent/'outside'; outside.mkdir()
+    config['folder_access'] = {'grants': str(root.parent/'grants.json')}
+    def run(**kwargs):
+        client = Client(steps=[('tare_deliver', {'summary': 'Finished this turn.'})])
+        return native_agent.run_session(client=client, local_counter=client, **kwargs)
+    first = run(config=config, deployment=deployment(), custody=custody,
+                instruction='Explain a.py.', conversation=True)
+    session = first['session_id']
+    key = consent.register(custody, session, 'folder',
+        {'path': str(outside), 'store': config['folder_access']['grants']}, question='Allow?')
+    receipt = consent.record(custody, session, key, choice=choice)
+    notice = receipt['notice']
+    before = consent.load(custody)['questions'][0]
+    events = []
+    def progress(event):
+        assert isinstance(event, dict)
+        events.append(event)
+        if notice in event.get('text', '') and delivery == 'failed_callback':
+            raise RuntimeError('notice transport failed')
+    # A dialog settlement resumes without fabricating a new user message.
+    kwargs = dict(config=None, deployment=None, custody=custody, resume=True,
+                  on_progress=None if delivery == 'no_callback' else progress)
+    if delivery == 'failed_callback':
+        with pytest.raises(RuntimeError, match='notice transport failed'):
+            run(**kwargs)
+        assert consent.load(custody)['questions'][0] == before
+        assert consent.pending_notices(custody, session) == [
+            {'question_id': key, 'notice': notice}]
+        kwargs.update(follow_up='Retry delivery.', message_id='retry-notice', on_progress=None)
+    result = run(**kwargs)
+    assert result['status'] == 'PROPOSED'
+    assert result['output'].count(notice) == 1
+    assert json.loads((custody/'outcome.json').read_text())['output'] == result['output']
+    assert consent.load(custody)['questions'][0] == {**before, 'notice_delivered': True}
+    if delivery != 'no_callback':
+        assert [e for e in events if notice in e.get('text', '')] == [
+            {'kind': 'delta', 'channel': 'text', 'text': '\n\n' + notice}]
+    events.clear()
+    resumed = run(config=None, deployment=None, custody=custody, resume=True,
+                  follow_up='Continue again.', message_id='after-notice', on_progress=progress)
+    assert resumed['status'] == 'PROPOSED'
+    assert notice not in resumed['output']
+    assert not any(notice in e.get('text', '') for e in events)
+    assert consent.pending_notices(custody, session) == []
