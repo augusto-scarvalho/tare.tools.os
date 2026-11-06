@@ -21,17 +21,44 @@ FILE = 'consent-questions.json'
 OPTIONS = {'allow': 'The user authorizes exactly what was asked, complete and without condition, limit, or change of scope, duration, or saving.',
            'deny': 'The user refuses the presented request.',
            'unclear': 'The user has not clearly decided, or the response includes a condition, limit, or change on the request. Ask for clarification.'}
-REASK = 'Consent is still pending. Explain what the requested authorization does and ask again plainly; do not proceed.'
+REASK = 'Consent is still pending. Explain what the requested authorization does and ask again plainly for a plain yes or no; do not proceed.'
 
 
-def classify(question, words):
+def select_rule():
+    """Probe availability only; never load or classify to choose a contract."""
+    import os
+    from . import turn_engine
+    from .environment import decides
+    from .execution_scope import current
+    scope = current()
+    if os.environ.get('TARE_JEV_SHADOW', '').lower() == 'off' or scope.disable_judge:
+        return 'fallback'
+    if scope.judge('jev') and decides('jev') and turn_engine.jev_key():
+        return 'judge'
+    if scope.judge('local_judge') and decides('local_judge') and turn_engine.local_judge():
+        return 'judge'
+    return 'fallback'
+
+
+def guidance(rule):
+    return ('Reply yes (sim, pode, ok) to allow it; any other reply declines it'
+            if rule == 'fallback' else
+            'Reply naturally to allow or decline it, or ask for an explanation')
+
+
+def classify(question, words, *, rule='judge'):
     """Isolated closed choice, hosted first. No coordinator or host context."""
     import json
     import math
     from dataclasses import replace
     from . import turn_engine
     from .execution_scope import current, POLICY_VIEW
-    if not isinstance(words, str) or not words.strip() or not question:
+    if not isinstance(words, str) or not question:
+        return 'pending'
+    if rule == 'fallback':
+        from .folder_access import allows
+        return 'yes' if allows(words) else 'no'
+    if rule != 'judge' or not words.strip():
         return 'pending'
     packet = turn_engine.judge_request(
         'Classify the user response to the presented authorization question. '
@@ -74,8 +101,7 @@ def classify(question, words):
                 if answer['probabilities'][choice] >= .9 else 'pending')
     if not unavailable(answer):
         return 'pending'
-    from .folder_access import allows
-    return 'yes' if allows(words) else 'pending'
+    return 'pending'
 
 
 
@@ -100,7 +126,7 @@ def valid(q, rows):
         and q.get('prefix') == digest(rows[:boundary]))
 
 
-def register(root, session, kind, scope, *, presented=True, question=None):
+def register(root, session, kind, scope, *, presented=True, question=None, rule='judge'):
     root = Path(root)
     with lock(root):
         value = load(root)
@@ -110,7 +136,7 @@ def register(root, session, kind, scope, *, presented=True, question=None):
                 return q['id']  # preserve a pending question and its presentation boundary
         rows = events(root)
         q = {'id': uuid4().hex, 'session': session, 'kind': kind, 'scope': scope,
-             'status': 'WAITING', 'question': question, 'boundary': len(rows) if presented else None,
+             'status': 'WAITING', 'rule': rule, 'question': question, 'boundary': len(rows) if presented else None,
              'prefix': digest(rows) if presented else None, 'used_messages': []}
         value['questions'].append(q)
         save_json(regular(root/FILE), value)
@@ -176,7 +202,8 @@ def adopt_folder(root, session, source, question_id, store):
             return q['target_question']
         if q['status'] != 'WAITING':
             raise ValueError('Standalone folder question is already settled or transferred.')
-        key = register(root, session, 'folder', q['scope'], question=q.get('question'))
+        key = register(root, session, 'folder', q['scope'], question=q.get('question'),
+                       rule=q.get('rule', 'judge'))
         q.update(status='TRANSFERRED', target=target, target_question=key)
         save_json(regular(source/FILE), value)
         return key
@@ -204,7 +231,7 @@ def record(root, session, question_id, message_id=None, *, choice=None):
             if q['kind'] == 'folder':
                 import json
                 question = 'Allow read access to the entire folder for this project? The grant is saved for this project on this machine. Path: ' + json.dumps(q['scope']['path'])
-            decision = classify(question, message['text'])
+            decision = classify(question, message['text'], rule=q.get('rule', 'judge'))
             q['used_messages'].append(message_id)
         else:
             decision = 'yes' if choice == 'allow' else 'no'

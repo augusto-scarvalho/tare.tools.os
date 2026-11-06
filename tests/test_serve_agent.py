@@ -664,7 +664,8 @@ def test_standalone_flow_resumes_only_after_cited_coordinator_approval(runtime, 
             log.append({'kind':'session_started', 'session_id':'flow'})
             q = consent.register(custody, 'flow', 'folder',
                 {'path':str(other), 'store':str(folder_access.project_store(project).resolve())}, presented=False,
-                question='Allow reading this folder?')
+                question=folder_access.question({'path': str(other), 'reason': 'its cache'},
+                                                folder_access.project_store(project)))
             return {**result, 'folder_access_request': {'path':str(other), 'reason':'its cache', 'question_id':q}}
         request = kw.get('folder_consent_request')
         if request:
@@ -804,7 +805,7 @@ def test_serve_consent_judges_raw_reply_not_enriched_context(runtime, monkeypatc
     assert json.loads(packets[0]['state']) == {'question': judge_question, 'user_words': chat[-1]}
     assert 'SECRET' not in json.dumps(packets)
     body = next(b for p, b in clients[-1].calls if p == '/chat/completions')
-    assert all(text in json.dumps(body['messages']) for text in (
+    assert all(text in json.dumps(body['messages'], ensure_ascii=False) for text in (
         'SECRET LINKED PAGE', 'SECRET IMAGE DESCRIPTION', 'SECRET FLOW HISTORY', consent.REASK))
     assert consent.pending(custody, session)
     assert consent.process(custody, session) == []
@@ -814,6 +815,7 @@ def test_serve_consent_judges_raw_reply_not_enriched_context(runtime, monkeypatc
 
 
 def test_real_serve_folder_notice_is_a_delta_delivered_once(runtime, monkeypatch, tmp_path):
+    monkeypatch.setattr('relay.consent_decisions.select_rule', lambda: 'judge')
     from relay import consent_decisions as consent, folder_access
     from test_native_agent import Client, deployment
     from test_consent_decisions import verdict

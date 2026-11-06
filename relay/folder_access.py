@@ -144,10 +144,23 @@ def literal(value):
     return f'{fence} {text} {fence}'
 
 
-def question(request, store):
+def question(request, store, *, rule='judge'):
     """What the user is asked, in the TUI and in tare serve's chats."""
-    return (f"The agent asks to read {literal(request['path'])}: {request['reason'].rstrip('.')}. Reply naturally to allow or decline it, or ask for an explanation. What it reads goes to the conversation's model, and the folder "
+    from .consent_decisions import guidance
+    return (f"The agent asks to read {literal(request['path'])}: {request['reason'].rstrip('.')}. {guidance(rule)}. What it reads goes to the conversation's model, and the folder "
             f"stays allowed for this project on this machine (remove it from {literal(store)} to take it back).")
+
+
+def presented_question(request, store, custody):
+    """Render the saved contract; transports never recompute availability."""
+    from . import consent_decisions as consent
+    key = request.get('question_id')
+    if key:
+        q = next((q for q in consent.load(custody)['questions'] if q['id'] == key), None)
+        if not q or not q.get('question'):
+            raise ValueError('Re-present this invalid folder question.')
+        return q['question']
+    return question(request, store)
 
 
 def declined(custody, path):
@@ -227,8 +240,9 @@ class FolderTools:
         from . import consent_decisions as consent
         scope = {'path': str(path), 'store': str(self.store.resolve())}
         request = {'path': str(path), 'reason': args['reason'].strip()[:500]}
+        rule = consent.select_rule()
         question_id = consent.register(self.custody, self.session_id, 'folder', scope, presented=False,
-                                       question=question(request, self.store))
+                                       question=question(request, self.store, rule=rule), rule=rule)
         temporary = self.custody/(REQUEST + '.tmp')
         temporary.write_text(json.dumps({'path': str(path), 'reason': args['reason'].strip()[:500],
             'question_id': question_id}), encoding='utf-8')

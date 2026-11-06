@@ -2166,8 +2166,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 request = result.get('folder_access_request')
                 self.folder_request = {**request, 'session': result.get('session')} if request else None
                 if request:
-                    from .folder_access import question
-                    self.say(question(request, self.selection().folder_grants))
+                    from .folder_access import presented_question
+                    self.say(presented_question(request, self.selection().folder_grants, result['session']))
                     if request.get('question_id'):
                         from .consent_decisions import present
                         present(result['session'], request['question_id'])
