@@ -1344,7 +1344,11 @@ def test_guidance_matches_coordinator_direct_conversation_and_inline_approval():
 
 
 def test_repeated_audit_refusals_stop_before_another_implementer(tmp_path):
-    unit, refused = {'key': 'task-x', 'target_paths': ['a.py']}, {'verdict': 'NOT_REVIEWED', 'reason': 'Not accepted.'}
+    unit = {'key': 'task-x', 'target_paths': ['a.py']}
+    refused = {'verdict': 'NOT_REVIEWED', 'reason': work_units.AUDIT_REFUSED}
+    for reason in ('An observed audit dependency changed before application.', 'The candidate changed during review.'):
+        work_units.record(tmp_path, unit, {'verdict': 'NOT_REVIEWED', 'reason': reason})  # accepted, refused by the host
+    work_units.check_failures(tmp_path, unit, conversation=True)  # the host's refusals are not the auditor's
     for _ in range(work_units.MAX_REFUSALS - 1):
         work_units.record(tmp_path, unit, refused)
     work_units.check_failures(tmp_path, unit, conversation=True)  # still the implementer's to fix

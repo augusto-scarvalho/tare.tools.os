@@ -28,6 +28,7 @@ MAX_FAILURES = 2                # NOT_VERIFIED runs of the same unit before tare
 # NOT_REVIEWED runs in a row before tare refuses another: an audit finding the implementer cannot fix (a file its
 # tools cannot delete) otherwise loops; dogfooding the TUI, a local implementer and the auditor ran 7 rounds, 65 min.
 MAX_REFUSALS = 3                # at most the three runs the ledger keeps
+AUDIT_REFUSED = 'The independent audit did not accept this candidate.'  # only these count toward MAX_REFUSALS
 CHILD_LIMITS = {'max_model_calls': 30, 'max_seconds': 900}
 # ponytail: from the phase 3 comparison (2026-10-06), children that finished a unit used 12 and 16 calls, and one
 # given 7 ran out without changing anything; below this the session edits directly. Revisit with more units.
@@ -717,7 +718,10 @@ def check_failures(custody, unit, *, conversation=False, operator_retry=False):
     context = unit.get('verification_contract_digest') if conversation else None
     failures = sum(h['verdict'] == 'NOT_VERIFIED' and (
         not context or h.get('verification_contract_digest') == context) for h in history)
-    refused = len(history) >= MAX_REFUSALS and all(h['verdict'] == 'NOT_REVIEWED' for h in history[-MAX_REFUSALS:])
+    # The auditor's refusals, not the host's: an accepted candidate refused at application (a changed dependency or
+    # project) is not the implementer's to fix and never counts.
+    refused = len(history) >= MAX_REFUSALS and all(h['verdict'] == 'NOT_REVIEWED' and h.get('reason') == AUDIT_REFUSED
+                                                   for h in history[-MAX_REFUSALS:])
     if refused and not (conversation and operator_retry):
         raise ValueError(f"The independent audit refused the last {MAX_REFUSALS} candidates of unit {unit['key']}. "
             'No implementer started. Tell the user what the latest audit found and ask how to go on: what the '
@@ -1192,7 +1196,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     **({'observed_named_checks':observed} if observed else {})})
                 result['audit'] = row['audit'] = assessment
                 if assessment.get('verdict') != 'ACCEPT':
-                    result.update(verdict='NOT_REVIEWED', reason='The independent audit did not accept this candidate.',
+                    result.update(verdict='NOT_REVIEWED', reason=AUDIT_REFUSED,
                                   patch=row.get('patch'))
                     break
                 from .conversation_review import reference_sources_current
