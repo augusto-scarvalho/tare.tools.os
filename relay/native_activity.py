@@ -111,6 +111,21 @@ def activity_view(value):
             'truncated': value.get('truncated') is True, **extra}
 
 
+def deletion_requested(args):
+    """Use the kernel's boolean/argument contract, never string truthiness."""
+    from compute_plane.native_review import edit_args
+    try:
+        return edit_args(args).get('delete') is True
+    except (ValueError, TypeError, KeyError):
+        return False
+
+
+def deletion_detail(status, output):
+    if status == 'succeeded' and 'sha256' in output and output['sha256'] is None:
+        return 'Deleted file.'
+    return 'File deletion requested; completion not confirmed.'
+
+
 def activity_key(value):
     source = value.get('source')
     if source is None:
@@ -211,6 +226,7 @@ class ActivityJournal:
         self.journal, self.callback, self.clock = journal, callback, clock
         self.source, self.narrate = source, narrate
         self.rows, self.started = {}, {}
+        self.deletions = set()
         self.omitted = self.observation_failures = 0
 
     def snapshot(self):
@@ -236,6 +252,7 @@ class ActivityJournal:
             first = next(iter(self.rows))
             del self.rows[first]
             self.started.pop(first, None)
+            self.deletions.discard(first)
             self.omitted += 1
         if self.callback is not None:
             try:
@@ -262,10 +279,14 @@ class ActivityJournal:
                 target = (f'{len(asked)} in parallel: ' if len(asked) > 1 else '') + ' | '.join(asked)
             if call['name'] in {'folder_list', 'folder_read', 'folder_search'}:  # outside the project: say where
                 target = str(args.get('folder', '')) + ': ' + str(args.get('path', args.get('query', '')))
+            deleting = call['name'] == 'edit' and deletion_requested(args)
+            if deleting:
+                self.deletions.add(event['effect_id'])
             self.started[event['effect_id']] = self.clock()
             self.publish(dict(kind='tool-activity', id=event['effect_id'], operation=call['name'],
                               target=target, state='running', duration_ms=None,
-                              detail='Tool request recorded; awaiting its result.',
+                              detail='File deletion requested; awaiting its result.' if deleting else
+                                     'Tool request recorded; awaiting its result.',
                               receipt=f'{record.sequence} · {record.sha256}'))
         elif event['kind'] == 'effect_returned':
             result = event['result']
@@ -286,6 +307,8 @@ class ActivityJournal:
             # Tool output only. Arguments such as environment overrides and process
             # input are deliberately absent; model messages/reasoning are never projected.
             detail = output_preview(output)
+            if result['effect_id'] in self.deletions:
+                detail = deletion_detail(result['status'], output) + '\n' + detail
             protection = output.get('process', {}).get('command_protection') if isinstance(output, dict) else None
             if isinstance(protection, dict):
                 summary = ('Command review: '+str(protection.get('review', 'unknown'))+'  '

@@ -47,6 +47,8 @@ def _validate_batch(batch,state,turn,records,pairs,root):
 def _diff(before, after, path):
     if before is None and after == b'':
         return 'Created empty file: '+path+'\n'
+    if before == b'' and after is None:
+        return 'Deleted empty file: '+path+'\n'
     lines = difflib.unified_diff((before or b'').decode('utf-8').splitlines(keepends=True),
                                 (after or b'').decode('utf-8').splitlines(keepends=True),
                                 fromfile='before/'+path, tofile='after/'+path)
@@ -108,8 +110,7 @@ def _build(root, state, config, records, project, invocation_id, max_diff_bytes)
                 if snapshot_bytes >= MAX_SNAPSHOT_BYTES:
                     raise ValueError('Turn snapshots exceed the 16 MiB review budget; use individual review.')
                 before, after = edit_snapshots(root,request,result)
-                if after is None:
-                    raise ValueError('Confirmed edit has no file after-image.')
+                row['deleted'] = after is None
                 snapshot_bytes += sum(len(raw) for raw in (before,after) if raw is not None)
                 if snapshot_bytes > MAX_SNAPSHOT_BYTES:
                     raise ValueError('Turn snapshots exceed the 16 MiB review budget; use individual review.')

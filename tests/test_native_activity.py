@@ -128,3 +128,16 @@ def test_the_coordinator_progress_sentence_is_narrated_but_not_its_reasoning_or_
     ActivityJournal(Journal(), quiet.append).append({'kind': 'model_returned', 'call_id': 'x', 'reply': {
         'text': 'Leaf sessions stay quiet.', 'tool_calls': [{'name': 'read'}]}})
     assert quiet == []
+
+
+@pytest.mark.parametrize('delete', [True, 'true', False, 'false'])
+@pytest.mark.parametrize('status', ['succeeded', 'refused', 'failed', 'unknown'])
+def test_deletion_activity_never_claims_unconfirmed_success(delete, status):
+    observer = ActivityJournal(Journal())
+    observer.append(request(name='edit', repository='repo', path='a.py', sha256='a'*64,
+        delete=delete, changes=[]))
+    assert 'Deleted file.' not in observer.presentation()['items'][0]['detail']
+    observer.append({'kind': 'effect_returned', 'result': {'effect_id': 'tool/1',
+        'status': status, 'output_json': json.dumps({'sha256': None})}})
+    detail = observer.presentation()['items'][0]['detail']
+    assert ('Deleted file.' in detail) is (delete in (True, 'true') and status == 'succeeded')

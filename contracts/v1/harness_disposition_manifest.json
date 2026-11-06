@@ -2711,8 +2711,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 14748,
-      "sha256": "e8de62b3c53cd109d74fa4c7a4a1d73eb8c7acb998007e807259207444f4deb2"
+      "size_bytes": 15297,
+      "sha256": "da11d005b27eb2920660dc9d1258eddb41249f1d4250962e066989a92cd3505b"
     },
     {
       "name": "native_sessions.py",
@@ -3151,8 +3151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS projects recorded activity; Runtime and Kernel retain execution ownership.",
-      "size_bytes": 18588,
-      "sha256": "8bce69feb139f5deb1d2a61cf18d65b030b613053d9093b894e32c8304b45ebc"
+      "size_bytes": 19565,
+      "sha256": "80679265510bfd095f5f06a50bf69085dcfec2b7b2590acbc112b60c3eed0b0a"
     },
     {
       "name": "console_panels.py",
@@ -3201,8 +3201,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS composes recorded review and explicit operator actions; Kernel owns file mutation.",
-      "size_bytes": 15699,
-      "sha256": "1cf8a018ade9dbde8377fce41e83508bb131b6981f85dd0d52df353c1a4e22cd"
+      "size_bytes": 15720,
+      "sha256": "184b8f40555041a3c195841e3abf4b51b319bfce41001d7f3e862272f9b9b1c7"
     },
     {
       "name": "turn_changes_panel.py",
@@ -3831,8 +3831,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 92816,
-      "sha256": "e16020b15ec644d4839a3ea823d605dd47dcd1a135b85492467b563f6c85d223"
+      "size_bytes": 93100,
+      "sha256": "9adbcc6c35fef4fd9ea50d9c01391c9296cdc2e0c2fd19fa4557dd1e233db3ba"
     },
     {
       "name": "gpu.py",
@@ -4341,8 +4341,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 31027,
-      "sha256": "d41429aa17035ec98d9815f683ccb6b3f4b62c5e4a0f3ecca388379562953dc7"
+      "size_bytes": 31213,
+      "sha256": "c1e6e4e9872f82c9210547053cec8047af713ba6693f1dbd9756b43c19de76c8"
     }
   ]
 }

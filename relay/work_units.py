@@ -1111,7 +1111,9 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
             if state.get('conversation_flow') and changed and not stop():
                 # Make new paths visible to diff --check before paying for an
                 # independent audit. Intent-to-add keeps their content unstaged.
-                git(tree, 'add', '--intent-to-add', '--all', '--', *changed)
+                added_or_modified = [name for name, raw in changed.items() if raw is not None]
+                if added_or_modified:
+                    git(tree, 'add', '--intent-to-add', '--', *added_or_modified)
             if state.get('conversation_flow') and stop():
                 after, row['after'] = 'inconclusive', 'Not run: execution was stopped.'
             elif candidate and candidate.get('review_only'):
@@ -1227,9 +1229,11 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                                 edit_id = review_effect+':'+hashlib.sha256(file.encode()).hexdigest()[:16]
                                 before_raw = capture(Path(root)/file)
                                 args_ = {'repository': repository, 'path': file, 'sha256': digest(before_raw)}
+                                if raw is None:
+                                    args_.update(delete=True, changes=[])
                                 result_ = {'sha256': digest(raw)}
                                 save_edit(Path(custody)/'review', edit_id, args_, before_raw, raw, result_)
-                                edits.append({'effect_id': edit_id, **args_, 'after': digest(raw)})
+                                edits.append({'effect_id': edit_id, **args_, 'after': digest(raw), 'deleted': raw is None})
                         application_base=(row.get('host_baseline_metadata') or {}).get('base_before',base)
                         applied, files = apply(Path(root), tree, application_base, changed, config['writable'].get(repository) or []) \
                             if allowed else ('CONFLICT' if moved else 'HELD', sorted(changed))
