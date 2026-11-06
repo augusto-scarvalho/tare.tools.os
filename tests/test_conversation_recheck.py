@@ -36,6 +36,20 @@ def test_no_retained_candidate_causes_no_dispatch_or_host_log(host):
     assert not (tools.root/'host-actions.jsonl').exists()
 
 
+def test_retry_delivery_starts_a_fresh_implementer_for_a_planned_demand_without_a_candidate(host,monkeypatch):
+    tools,control,*_=host
+    intake(host);planned(host)  # a guard stopped this demand before any candidate existed
+    seen=[]
+    def run(*args,**kwargs):
+        seen.append((args[1].get('operator_delivery_retry'),kwargs.get('candidate')))
+        return {'verdict':'VERIFIED','applied':True,'files':['a.py']}
+    monkeypatch.setattr(work_units,'run_unit',run)
+    with pytest.raises(ValueError,match='No saved candidate'):  # a recheck still needs one
+        conversation_recheck.recheck(tools,control,tools.root,'recheck',ConversationLog())
+    outcome=conversation_recheck.recheck(tools,control,tools.root,'retry',ConversationLog(),recheck_only=False)
+    assert outcome.status=='proposed' and seen==[(True,None)]  # the user's retry, on a fresh implementer
+
+
 def test_failed_planning_handoff_is_blocked_instead_of_claiming_repaired(host,monkeypatch):
     from compute_plane.native_journal import save_json
     from tare_tools_agent_runtime import EffectResult

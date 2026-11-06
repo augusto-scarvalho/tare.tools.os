@@ -11,7 +11,10 @@ def recheck(tools, control, root, invocation_id, journal, *, recheck_only=True, 
     if not isinstance(tools, ConversationTools) or not tools.state.get('conversation_flow'):
         raise ValueError('Open a saved assistant conversation to recheck its candidate.')
     task=current(load(root))
-    if not task or not (task.get('delivery') or {}).get('candidate'):
+    candidate=(task.get('delivery') or {}).get('candidate') if task else None
+    # /retry_delivery is the user's explicit authorization for another attempt: on a planned demand that a guard
+    # stopped before any candidate existed it starts a fresh implementer. /recheck and plan repair need a candidate.
+    if not task or not candidate and (recheck_only or repair_plan or not (task.get('plan') or {}).get('unit')):
         raise ValueError('No saved candidate is available to recheck. Open the conversation that produced it.')
     tools.__dict__['_host_input_id']='host-'+invocation_id
     # Only the explicit user command admits a further delivery attempt;
@@ -21,7 +24,7 @@ def recheck(tools, control, root, invocation_id, journal, *, recheck_only=True, 
               for r in journal.snapshot().records)
     log=NativeJournal(root/'host-actions.jsonl')
     log.append({'kind':'host_recheck_requested','invocation_id':invocation_id,'task':task['id'],
-                'candidate_sha256':task['delivery']['candidate'].get('sha256'),
+                'candidate_sha256':(candidate or {}).get('sha256'),
                 'recheck_only':recheck_only,'authority':'NONE'})
     operations=[('demand',{'intent':'deliver','relation':'continue'}),
                 ('implement',{'recheck_candidate':True} if recheck_only else {})]
