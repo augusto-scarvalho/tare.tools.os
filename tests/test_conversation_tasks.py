@@ -332,6 +332,125 @@ def test_legacy_failed_graph_reuses_goal_patch_and_diagnostics_but_same_contract
         work_units.check_failures(tools.root, renamed, conversation=True)
 
 
+@pytest.mark.parametrize('kind', ['checks', 'audit'])
+@pytest.mark.parametrize('same_key', [False, True])
+def test_exhausted_scope_blocks_without_changing_ledger(tmp_path, kind, same_key):
+    unit = {'key': 'blocked' if same_key else 'fresh', 'target_paths': ['a.py'],
+            'verification_contract_digest': 'current'}
+    old = {**unit, 'key': 'blocked'}
+    result = {'verdict': 'NOT_VERIFIED'} if kind == 'checks' else {
+        'verdict': 'NOT_REVIEWED', 'reason': work_units.AUDIT_REFUSED}
+    count = work_units.MAX_FAILURES if kind == 'checks' else work_units.MAX_REFUSALS
+    for _ in range(count):
+        work_units.record(tmp_path, old, result)
+    before = (tmp_path/work_units.LEDGER).read_bytes()
+    if not same_key:
+        assert unit['key'] not in work_units.read_ledger(tmp_path)['units']
+    with pytest.raises(ValueError) as exc:
+        work_units.check_failures(tmp_path, unit, conversation=True)
+    if same_key:
+        assert ('same host contract' if kind == 'checks' else 'independent audit refused') in str(exc.value)
+    else:
+        assert all(text in str(exc.value) for text in ('blocked', 'a.py', '/retry_delivery', 'No implementer started'))
+    assert (tmp_path/work_units.LEDGER).read_bytes() == before
+
+
+@pytest.mark.parametrize('kind', ['checks', 'audit'])
+@pytest.mark.parametrize('case', ['disjoint', 'applied', 'below', 'contract', 'host_refusal',
+                                  'interrupted', 'operator_retry', 'nonconversation_retry'])
+def test_scope_guard_preserves_exclusions_and_retry_contract(tmp_path, kind, case):
+    unit = {'key': 'fresh', 'target_paths': ['a.py'], 'verification_contract_digest': 'current'}
+    old = {**unit, 'key': 'old', 'target_paths': ['b.py'] if case == 'disjoint' else ['a.py']}
+    if case == 'contract':
+        old['verification_contract_digest'] = 'previous'
+    result = {'verdict': 'NOT_VERIFIED'} if kind == 'checks' else {
+        'verdict': 'NOT_REVIEWED', 'reason': work_units.AUDIT_REFUSED}
+    if case == 'host_refusal':
+        result = {'verdict': 'NOT_REVIEWED', 'reason': 'application refused'}
+    count = work_units.MAX_FAILURES if kind == 'checks' else work_units.MAX_REFUSALS
+    for _ in range(count - (case == 'below')):
+        work_units.record(tmp_path, old, result)
+    if case == 'applied':
+        ledger = work_units.read_ledger(tmp_path)
+        ledger['units']['old']['state'] = 'APPLIED'
+        save_json(tmp_path/work_units.LEDGER, ledger)
+    if case == 'interrupted':
+        work_units.record(tmp_path, old, {'verdict': 'INCONCLUSIVE'})
+    before = (tmp_path/work_units.LEDGER).read_bytes()
+    blocked = case == 'nonconversation_retry' or (kind == 'audit' and case == 'contract') or (
+        kind == 'checks' and case == 'interrupted')
+    kwargs = {'conversation': case != 'nonconversation_retry',
+              'operator_retry': case in {'operator_retry', 'nonconversation_retry'}}
+    if blocked:
+        with pytest.raises(ValueError, match='/retry_delivery'):
+            work_units.check_failures(tmp_path, unit, **kwargs)
+    else:
+        work_units.check_failures(tmp_path, unit, **kwargs)
+    assert (tmp_path/work_units.LEDGER).read_bytes() == before
+
+
+def test_scope_guard_checks_each_history_without_aggregation(tmp_path):
+    unit = {'key': 'fresh', 'target_paths': ['a.py']}
+    for key in ('first', 'second'):
+        work_units.record(tmp_path, {**unit, 'key': key}, {'verdict': 'NOT_VERIFIED'})
+    work_units.check_failures(tmp_path, unit)
+    work_units.record(tmp_path, {**unit, 'key': 'second'}, {'verdict': 'NOT_VERIFIED'})
+    before = (tmp_path/work_units.LEDGER).read_bytes()
+    with pytest.raises(ValueError, match='blocked unit second'):
+        work_units.check_failures(tmp_path, unit)
+    assert (tmp_path/work_units.LEDGER).read_bytes() == before
+
+
+@pytest.mark.parametrize('kind', ['checks', 'audit'])
+@pytest.mark.parametrize('overlap', [False, True])
+def test_new_demand_scope_guard_precedes_authorization_and_dispatch(host, monkeypatch, kind, overlap):
+    from relay import work_forms
+    tools, execution, *_ = host
+    first = intake(host)['task']
+    old = {'key': first['id'], 'target_paths': ['a.py'] if overlap else ['b.py']}
+    result = {'verdict': 'NOT_VERIFIED'} if kind == 'checks' else {
+        'verdict': 'NOT_REVIEWED', 'reason': work_units.AUDIT_REFUSED}
+    demand = tools.execute(effect('demand', {'intent': 'deliver', 'relation': 'new',
+        'objective': 'Different words, same scope.' if overlap else first['objective'],
+        'criteria': first['criteria']}, 'new-demand'), execution)
+    assert demand.status == 'succeeded', demand.output_json
+    fresh = json.loads(demand.output_json)['task']
+    assert fresh['id'] != first['id']
+    planned(host)
+    # A blocked sibling can appear after this fresh plan was recorded. Rehydration
+    # preserves its empty current-key entry; only the cross-key precheck protects it.
+    for _ in range(work_units.MAX_FAILURES if kind == 'checks' else work_units.MAX_REFUSALS):
+        work_units.record(tools.root, old, result)
+    snapshots = []
+    calls = []
+    def authorize(root, state, *a, **kw):
+        calls.append('authorize')
+        return state['config']
+    original = work_forms.record_plan
+    def record(*a, **kw):
+        calls.append('record_plan')
+        recorded = original(*a, **kw)
+        snapshots.append((tools.root/work_units.LEDGER).read_bytes())
+        return recorded
+    def run(*a, **kw):
+        calls.append('run_unit')
+        return {'verdict': 'INCONCLUSIVE', 'applied': False, 'reason': 'fixture stopped', 'files': []}
+    monkeypatch.setattr('relay.conversation_permissions.authorize', authorize)
+    monkeypatch.setattr(work_forms, 'record_plan', record)
+    monkeypatch.setattr(work_units, 'run_unit', run)
+    answer = tools.execute(effect('implement', {}, 'fresh-demand'), execution)
+    if overlap:
+        assert answer.status == 'refused', answer.output_json
+        assert '/retry_delivery' in answer.output_json and 'a.py' in answer.output_json
+        # Immutable-artifact rehydration records the plan before the precheck;
+        # authorization and dispatch-time record_plan must never be reached.
+        assert calls == ['record_plan']
+        assert (tools.root/work_units.LEDGER).read_bytes() == snapshots[0]
+    else:
+        assert answer.status == 'succeeded', answer.output_json
+        assert calls == ['record_plan', 'authorize', 'record_plan', 'run_unit']
+
+
 def test_saved_coordinator_does_not_advertise_or_request_unusable_folder_access(host):
     tools, execution, _, seen = host
     inner = tools.tools

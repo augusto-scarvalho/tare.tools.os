@@ -3831,8 +3831,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 94051,
-      "sha256": "ed7f18353724cacef7dd3ef7f0ee94a924565367696714166f530231d5772296"
+      "size_bytes": 94787,
+      "sha256": "5336f8429a54d0ed36299138a8b73cf71f858a7d49f93416818d3707e48f7bc6"
     },
     {
       "name": "gpu.py",

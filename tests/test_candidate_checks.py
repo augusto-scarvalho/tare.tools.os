@@ -46,7 +46,10 @@ def test_owned_check_prepares_only_admitted_files_and_uses_focused_runner(tmp_pa
         " assert json.loads(Path("+repr(candidate_checks.MANIFEST)+").read_text())['digest']==hashlib.sha256(Path('relay/a.py').read_bytes()).hexdigest()\n"
         " assert subprocess.check_output(['git','show',':relay/a.py'])==Path('relay/a.py').read_bytes().replace(b'\\r\\n',b'\\n')\n")
     def git(*args):return subprocess.run(['git',*args],cwd=root,check=True,capture_output=True,text=True)
-    git('init');git('add','relay/a.py',candidate_checks.MANIFEST)
+    git('init')
+    # Persist normalization for the candidate runner's separate Git processes too.
+    git('config','core.autocrlf','true')
+    git('add','relay/a.py',candidate_checks.MANIFEST)
     git('-c','user.name=Fixture','-c','user.email=fixture@localhost','-c','commit.gpgsign=false','commit','-m','Base')
     (root/'relay/a.py').write_text('value = 2\n')
     unit={'target_paths':['relay/a.py',candidate_checks.MANIFEST,'tests/test_contract.py']}
