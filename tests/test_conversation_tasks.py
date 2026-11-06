@@ -351,7 +351,7 @@ def test_exhausted_scope_blocks_without_changing_ledger(tmp_path, kind, same_key
     if same_key:
         assert ('same host contract' if kind == 'checks' else 'independent audit refused') in str(exc.value)
     else:
-        assert all(text in str(exc.value) for text in ('blocked', 'a.py', '/retry_delivery', 'No implementer started'))
+        assert all(text in str(exc.value) for text in ('blocked', 'a.py', 'plain words', 'No implementer started'))
     assert (tmp_path/work_units.LEDGER).read_bytes() == before
 
 
@@ -382,7 +382,7 @@ def test_scope_guard_preserves_exclusions_and_retry_contract(tmp_path, kind, cas
     kwargs = {'conversation': case != 'nonconversation_retry',
               'operator_retry': case in {'operator_retry', 'nonconversation_retry'}}
     if blocked:
-        with pytest.raises(ValueError, match='/retry_delivery'):
+        with pytest.raises(ValueError, match='/retry_delivery' if case == 'nonconversation_retry' else 'plain words'):
             work_units.check_failures(tmp_path, unit, **kwargs)
     else:
         work_units.check_failures(tmp_path, unit, **kwargs)
@@ -441,7 +441,7 @@ def test_new_demand_scope_guard_precedes_authorization_and_dispatch(host, monkey
     answer = tools.execute(effect('implement', {}, 'fresh-demand'), execution)
     if overlap:
         assert answer.status == 'refused', answer.output_json
-        assert '/retry_delivery' in answer.output_json and 'a.py' in answer.output_json
+        assert 'plain words' in answer.output_json and 'a.py' in answer.output_json
         # Immutable-artifact rehydration records the plan before the precheck;
         # authorization and dispatch-time record_plan must never be reached.
         assert calls == ['record_plan']
@@ -1475,3 +1475,84 @@ def test_repeated_audit_refusals_stop_before_another_implementer(tmp_path):
     with pytest.raises(ValueError, match='audit refused the last 3 candidates'):
         work_units.check_failures(tmp_path, unit, conversation=True)
     work_units.check_failures(tmp_path, unit, conversation=True, operator_retry=True)  # the user asked for one more
+
+
+@pytest.mark.parametrize('kind', ['checks', 'audit', 'overlap'])
+@pytest.mark.parametrize('reply', ['sim', 'pode sim', 'ok!', 'claro que pode'])
+def test_journal_retry_passes_both_guards_once(host, monkeypatch, kind, reply):
+    from relay.conversation_recheck import retry_decision
+    tools, execution, _, _ = host
+    intake(host); task = planned(host)
+    unit = task['plan']['unit']
+    blocked = {**unit, 'key': 'older-name'} if kind == 'overlap' else unit
+    failure = {'verdict': 'NOT_REVIEWED', 'reason': work_units.AUDIT_REFUSED} if kind == 'audit' else {'verdict': 'NOT_VERIFIED'}
+    for _ in range(work_units.MAX_REFUSALS if kind == 'audit' else work_units.MAX_FAILURES):
+        work_units.record(tools.root, blocked, failure)
+    calls = []
+    def run(custody, state, *args, **kwargs):
+        worker_unit = work_units.read_ledger(custody)['plan']['units'][0]
+        work_units.check_failures(custody, worker_unit, conversation=True,
+            operator_retry=state.get('operator_delivery_retry', False))
+        calls.append(state.get('operator_delivery_retry'))
+        return {'verdict': 'NOT_VERIFIED'}
+    monkeypatch.setattr(work_units, 'run_unit', run)
+    def attempt(key, **args):
+        return tools.execute(effect('implement', args, key), execution)
+    refused = attempt('blocked', note='The user said yes')
+    assert refused.status == 'refused' and 'plain words' in refused.output_json
+    assert '/retry_delivery' not in refused.output_json
+    request = tools.root/'conversation-retry/request.json'
+    before = request.read_bytes()
+    assert attempt('no-message').status == 'refused'
+    assert request.read_bytes() == before and calls == []
+    user_reply(host, reply)
+    intake(host, relation='continue')
+    released = attempt('released')
+    assert released.status == 'succeeded', released.output_json
+    assert calls == [True]
+    tools = tasks.ConversationTools(tools.tools, tools.root, tools.state, 'resumed')
+    assert attempt('used').status == 'refused'
+    assert calls == [True]
+    assert retry_decision(tools.root, task, unit) is False
+
+
+def test_non_yes_first_journal_reply_cannot_be_revived_by_later_yes(host, monkeypatch):
+    tools, execution, _, _ = host
+    intake(host); task = planned(host)
+    for _ in range(work_units.MAX_FAILURES):
+        work_units.record(tools.root, task['plan']['unit'], {'verdict':'NOT_VERIFIED'})
+    monkeypatch.setattr(work_units, 'run_unit', lambda *a, **kw: pytest.fail('No consent'))
+    assert tools.execute(effect('implement', {}, 'initial-refusal'), execution).status == 'refused'
+    user_reply(host, 'not now')
+    user_reply(host, 'yes')  # no intervening refusal/question
+    intake(host, relation='continue')
+    result = tools.execute(effect('implement', {'note':'User approved'}, 'declined'), execution)
+    assert result.status == 'refused'
+
+
+@pytest.mark.parametrize('stop', ['worker', 'budget', 'permission'])
+def test_released_retry_is_burned_when_attempt_stops(host, monkeypatch, stop):
+    from relay import conversation_permissions
+    tools, execution, _, _ = host
+    intake(host); task = planned(host)
+    for _ in range(work_units.MAX_FAILURES):
+        work_units.record(tools.root, task['plan']['unit'], {'verdict': 'NOT_VERIFIED'})
+    assert tools.execute(effect('implement', {}, 'ask'), execution).status == 'refused'
+    user_reply(host, 'sim')
+    intake(host, relation='continue')
+    reached = []
+    def fail(*args, **kwargs):
+        reached.append(stop)
+        if stop == 'permission': raise PermissionError('permission denied')
+        raise ValueError('attempt interrupted')
+    with monkeypatch.context() as patch:
+        if stop == 'worker': patch.setattr(work_units, 'run_unit', fail)
+        elif stop == 'budget': patch.setattr(work_units, 'child_limits', fail)
+        else: patch.setattr(conversation_permissions, 'authorize', fail)
+        result = tools.execute(effect('implement', {}, 'interrupted'), execution)
+        assert result.status == 'refused'
+    assert reached == [stop]
+    tools = tasks.ConversationTools(tools.tools, tools.root, tools.state, 'resumed-after-stop')
+    monkeypatch.setattr(work_units, 'run_unit', lambda *a, **kw: pytest.fail('Consent replayed'))
+    result = tools.execute(effect('implement', {}, 'replay'), execution)
+    assert result.status == 'refused'
