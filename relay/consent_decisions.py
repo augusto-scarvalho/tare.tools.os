@@ -21,7 +21,7 @@ FILE = 'consent-questions.json'
 OPTIONS = {'allow': 'The user authorizes exactly what was asked, complete and without condition, limit, or change of scope, duration, or saving.',
            'deny': 'The user refuses the presented request.',
            'unclear': 'The user has not clearly decided, or the response includes a condition, limit, or change on the request. Ask for clarification.'}
-REASK = 'Consent is still pending. Explain what the requested authorization does and ask again plainly for sim or não (yes or no); do not proceed.'
+REASK = 'Consent is still pending. Explain what the requested authorization does and ask again plainly for a plain yes or no; do not proceed.'
 
 
 def select_rule():

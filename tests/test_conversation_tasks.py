@@ -1612,6 +1612,7 @@ def test_judged_retry_can_be_requested_again_after_consumption(host, monkeypatch
     from test_consent_decisions import verdict
     monkeypatch.setattr('relay.turn_engine.judges', lambda packet, **k:
         {'jev': verdict('allow', .95)} if set(packet['options']) == {'allow', 'deny', 'unclear'} else {})
+    monkeypatch.setattr('relay.consent_decisions.select_rule', lambda: 'judge')
     tools, execution, _, _ = host
     intake(host); task = planned(host)
     unit = task['plan']['unit']

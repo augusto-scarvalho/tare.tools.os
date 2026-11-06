@@ -59,7 +59,7 @@ def test_pending_retains_boundary_and_samples_message_once(tmp_path, monkeypatch
     receipt = consent.process(tmp_path, 's')[0]
     assert receipt['decision'] == 'pending'
     assert receipt['notice'] == consent.REASK
-    assert 'sim' in receipt['notice'] and 'não' in receipt['notice']
+    assert 'a plain yes or no' in receipt['notice'] and receipt['notice'].isascii()
     assert consent.process(tmp_path, 's') == []
     after = consent.load(tmp_path)['questions'][0]
     assert after['boundary'] == before['boundary'] and after['prefix'] == before['prefix']
