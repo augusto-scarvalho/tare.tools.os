@@ -713,25 +713,42 @@ def stale(tree, applied):
 
 
 def check_failures(custody, unit, *, conversation=False, operator_retry=False):
-    entry = ((read_ledger(custody).get('units') or {}).get(unit['key']) or {})
-    history = entry.get('history') or []
+    """Keep exhausted scope blocked across renamed demands without changing its ledger."""
+    entries = read_ledger(custody).get('units') or {}
     context = unit.get('verification_contract_digest') if conversation else None
-    failures = sum(h['verdict'] == 'NOT_VERIFIED' and (
-        not context or h.get('verification_contract_digest') == context) for h in history)
-    # The auditor's refusals, not the host's: an accepted candidate refused at application (a changed dependency or
-    # project) is not the implementer's to fix and never counts.
-    refused = len(history) >= MAX_REFUSALS and all(h['verdict'] == 'NOT_REVIEWED' and h.get('reason') == AUDIT_REFUSED
-                                                   for h in history[-MAX_REFUSALS:])
+
+    def thresholds(entry):
+        history = entry.get('history') or []
+        failures = sum(h['verdict'] == 'NOT_VERIFIED' and (
+            not context or h.get('verification_contract_digest') == context) for h in history)
+        # Only independent audit refusals count, not host application refusals.
+        refused = len(history) >= MAX_REFUSALS and all(
+            h['verdict'] == 'NOT_REVIEWED' and h.get('reason') == AUDIT_REFUSED
+            for h in history[-MAX_REFUSALS:])
+        return failures >= MAX_FAILURES, refused
+
+    failed, refused = thresholds(entries.get(unit['key']) or {})
     if refused and not (conversation and operator_retry):
         raise ValueError(f"The independent audit refused the last {MAX_REFUSALS} candidates of unit {unit['key']}. "
             'No implementer started. Tell the user what the latest audit found and ask how to go on: what the '
             'implementer could not fix needs them. Changing notes, routes or task names does not reset this limit.')
-    if failures >= MAX_FAILURES and not (conversation and operator_retry):
+    if failed and not (conversation and operator_retry):
         if conversation:
             raise ValueError(f"Unit {unit['key']} failed its checks {MAX_FAILURES} times with the same host contract. "
                 'No implementer started. Preserve the goal and candidate; diagnose the verifier or request intervention. '
                 'Changing notes, routes or task names does not reset this limit.')
         raise ValueError(f"Unit {unit['key']} failed its checks {MAX_FAILURES} times: rethink it (plan) or edit directly.")
+    if conversation and operator_retry:
+        return
+    targets = set(unit.get('target_paths') or [])
+    for key, entry in entries.items():
+        if key == unit['key'] or entry.get('state') == 'APPLIED':
+            continue
+        shared = targets.intersection(entry.get('paths') or [])
+        if shared and any(thresholds(entry)):
+            raise ValueError(f"Unit {unit['key']} overlaps blocked unit {key} on scope: {', '.join(sorted(shared))}. "
+                'No implementer started. Tell the user to use /retry_delivery to retry the blocked scope. '
+                'Changing objective wording or demand keys does not reset this limit.')
 
 
 def producer_reference(directory, deployment):
