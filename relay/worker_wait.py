@@ -39,7 +39,7 @@ def restore(worker, custody, config, unit):
     user answers the folder request it is refused; once answered without a grant it resumes without the folder."""
     from .challenger import git
     from .conversation_tasks import source_state
-    from .folder_access import granted, pending, same
+    from .folder_access import declined, granted, same
     from .native_installation import storage_root
     tree, session = regular(Path(worker['tree'])), regular(Path(worker['session']))
     if (tree.resolve().parent != storage_root().resolve()/'wt' or not re.fullmatch('[0-9a-f]{8}', tree.name)
@@ -56,8 +56,9 @@ def restore(worker, custody, config, unit):
     request = worker['folder_access_request']
     store = (config.get('folder_access') or {}).get('grants')
     allowed = bool(store) and any(same(p, request['path']) for p in granted(store))
-    if not allowed and pending(custody):  # asked and not yet answered
-        raise ValueError('The waiting worker still needs the user\'s read permission for '+request['path'])
+    if not allowed and not declined(custody, request['path']):  # not answered yet, or never asked
+        raise ValueError('The waiting worker still needs the user\'s read permission for '+request['path']
+                         +'. Ask it with request_folder_access; only the user\'s reply grants or declines it.')
     if saved['config'].get('folder_access') != config.get('folder_access'):
         raise ValueError('The waiting worker belongs to another folder-grant store.')
     return tree, session, saved, allowed

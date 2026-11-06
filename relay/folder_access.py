@@ -17,6 +17,7 @@ from tare_tools_agent_runtime import EffectResult
 
 SCHEMA = 'tare.tools/folder-grants/1'
 REQUEST = 'folder-access-request.json'  # in the session's custody: the turn's pending request
+DECLINED = 'folder-access-declined.json'  # in the session's custody: folders a reply of the user did not grant
 MAX_FOLDERS = 64
 
 
@@ -147,12 +148,39 @@ def question(request, store):
             f"stays allowed for this project on this machine (remove it from {literal(store)} to take it back).")
 
 
+def declined(custody, path):
+    """Whether a reply of the user to this session's request for `path` granted nothing."""
+    try:
+        folders = json.loads((Path(custody)/DECLINED).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return False
+    return isinstance(folders, list) and any(isinstance(item, str) and same(item, path) for item in folders)
+
+
+def _decline(custody, path):
+    if declined(custody, path):
+        return
+    try:
+        folders = json.loads((Path(custody)/DECLINED).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        folders = []
+    temporary = Path(custody)/(DECLINED + '.tmp')
+    temporary.write_text(json.dumps([*[f for f in folders if isinstance(f, str)], str(path)]), encoding='utf-8')
+    os.replace(temporary, Path(custody)/DECLINED)
+
+
 def answer(text, request, store):
-    """The note sent to the agent with the user's reply. A short yes grants (and saves); anything else does not."""
+    """The note sent to the agent with the user's reply. A short yes grants (and saves); anything else does not,
+    and is recorded in the asking session, so a waiting worker is told of a refusal only the user gave."""
     if allows(text):
         path = grant(store, request['path'])
         return (f'[tare] The user granted read access to {path} (saved for this project). '
                 f'Read it with folder_list, folder_read and folder_search, folder="{path}".')
+    if request.get('session'):
+        try:
+            _decline(request['session'], request['path'])
+        except OSError:
+            pass  # unrecorded, a waiting worker keeps waiting for an answer: never a refusal the user did not give
     return (f'[tare] This reply did not grant read access to {request["path"]}. '
             'Answer it; request the folder again if the user still agrees.')
 

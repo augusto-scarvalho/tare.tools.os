@@ -91,7 +91,7 @@ def test_only_granted_leaf_wait_is_excluded_once_without_renewing_the_budget(tmp
     assert state['deadline_utc']==1900 and state['folder_wait_seconds']==1000
 
 
-@pytest.mark.parametrize('after', ['declined', 'replanned'])
+@pytest.mark.parametrize('after', ['declined', 'replanned', 'never asked'])
 def test_a_declined_folder_or_a_new_plan_never_holds_the_waiting_worker(setup, tmp_path, monkeypatch, after):
     from relay.work_forms import record_plan
     config, custody, root = setup
@@ -117,7 +117,16 @@ def test_a_declined_folder_or_a_new_plan_never_holds_the_waiting_worker(setup, t
     if after=='replanned':  # the user changed the goal: the new plan gets a fresh implementer
         unit['criteria']=['value equals two','nothing else changes']
         record_plan(custody,config,{'units':[unit],'criteria':unit['criteria']})
-    # declined: the request was answered without a grant (no pending request, nothing granted)
+    if after=='never asked':  # the coordinator skipped the question: no refusal the user never gave
+        with pytest.raises(ValueError,match='read permission'):
+            work_units.run_unit(custody,state,{'unit':'wait'},lambda:False,review=lambda *a:{'verdict':'ACCEPT'},
+                                worker=worker)
+        return
+    if after=='declined':  # the user's reply to the coordinator's request granted nothing
+        from relay import folder_access
+        note=folder_access.answer('não',{'path':str(external),'reason':'Read it.','session':str(custody)},
+                                  config['folder_access']['grants'])
+        assert 'did not grant' in note and folder_access.declined(custody,str(external))
     second=work_units.run_unit(custody,state,{'unit':'wait'},lambda:False,review=lambda *a:{'verdict':'ACCEPT'},
                                worker=worker)
     assert second.get('applied'), {k: second.get(k) for k in ('verdict', 'reason', 'checks_after', 'next')}
