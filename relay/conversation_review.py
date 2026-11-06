@@ -393,8 +393,10 @@ def audit_result(outcome, config, unit, changed, references, reference_roots):
     if artifact['session_id']!=outcome['session_id'] or artifact['profile_digest']!=outcome['profile_digest']:
         raise ValueError('The saved auditor artifact identity changed.')
     payload=artifact['payload']
+    # A change that only deletes files leaves no changed candidate file to read: the review diff is its evidence.
+    deletions_only=not any(r['repository']=='candidate' and r['path'] in changed for r in references)
     if payload['verdict']=='ACCEPT' and not any((s['repository']=='candidate' and s['path'] in changed)
-            or (not references[:-1] and s==references[-1]) for s in payload.get('sources',[])):
+            or ((deletions_only or not references[:-1]) and s==references[-1]) for s in payload.get('sources',[])):
         raise ValueError('An accepting auditor must cite an observed changed candidate file.')
     result={k:payload[k] for k in ('verdict','summary','findings','remaining')}
     result['sources']=[{**s,'repository':unit.get('repository') or next(iter(config['repositories']))}
