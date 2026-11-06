@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The disposition manifest checks out with LF on every platform (`.gitattributes`), as its generator writes it. On a Windows checkout it had CRLF, the candidate check regenerated it with LF, and the host then refused to apply any audited change whose auditor had read it ("An observed audit dependency changed before application").
 - An independent audit can accept a change that only deletes files: with no changed file left in the candidate to read, the review diff that shows the deletion is the evidence it cites. Dogfooding the file deletion with the local Qwen implementer, Opus accepted the deletion of an unused module on the diff and the host turned it inconclusive, because it requires citing a changed candidate file. A change that also edits files still needs one cited.
 - A file a native implementer deletes stays a deletion through candidate revision, application and review (an empty file included), instead of failing as an edit without an after-image; the TUI's activity and the heads-up's step detail tell a requested deletion from a completed one. The kernel pin moves to `bd9e0a4` (tare.tools.kernel #4), whose `restore_bytes` recreates a deleted file, so undoing a turn that deleted one brings it back.
 - The kernel pin moves to `40ac307` (tare.tools.kernel #3): a native implementer can delete a file with `edit(delete=true, changes=[], sha256=<current>)`, the only deletion, and boolean tool arguments accept the text `"true"`/`"false"` that Qwen's call format sends.

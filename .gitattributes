@@ -1,5 +1,7 @@
 * text=auto
 relay/*.py text eol=lf
+# The generator writes LF; a CRLF checkout differs from the copy a candidate check regenerates.
+contracts/v1/harness_disposition_manifest.json text eol=lf
 docs/adr/ADR-058_PROPORTIONAL_DELIVERY_EVIDENCE_AND_BEHAVIOR_RELEVANT_COVERAGE.md text eol=lf
 relay/round_tables/analysis_packets/CASE-2026-08-26-ECOSYSTEM-DELIVERY-EVIDENCE-POLICY/** text eol=lf
 ontology/** -text
