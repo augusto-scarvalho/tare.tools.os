@@ -34,28 +34,46 @@ def retain(tree, base, session, unit, producer, route, targets, basis, outcome):
 
 
 def restore(worker, custody, config, unit):
+    """The waiting worker to resume, as (tree, session, saved state, whether its folder was granted), or None when a
+    new plan replaced the one it waited under (the caller releases it and starts a fresh implementer). Until the
+    user answers the folder request it is refused; once answered without a grant it resumes without the folder."""
     from .challenger import git
     from .conversation_tasks import source_state
-    from .folder_access import granted, same
+    from .folder_access import granted, pending, same
     from .native_installation import storage_root
     tree, session = regular(Path(worker['tree'])), regular(Path(worker['session']))
     if (tree.resolve().parent != storage_root().resolve()/'wt' or not re.fullmatch('[0-9a-f]{8}', tree.name)
             or not session.resolve().is_relative_to(Path(custody).resolve()/'units')):
         raise ValueError('The waiting worker is outside this conversation\'s private custody.')
+    if unit_digest(unit) != worker['unit_sha256']:
+        return None
     saved = read_json(session/'native-agent.json', max_bytes=1024*1024)
     if (not tree.is_dir() or saved['config']['repositories'] != {unit['repository']: str(tree)}
-            or unit_digest(unit) != worker['unit_sha256']
             or source_state(config, worker['targets']) != worker['basis']
             or git(tree, 'rev-parse', 'HEAD').decode().strip() != worker['base']
             or contents(tree, worker['base']) != worker['contents_sha256']):
-        raise ValueError('The waiting worker, plan or project changed; inspect the retained evidence before continuing.')
+        raise ValueError('The waiting worker or project changed; inspect the retained evidence before continuing.')
     request = worker['folder_access_request']
     store = (config.get('folder_access') or {}).get('grants')
-    if not store or not any(same(p, request['path']) for p in granted(store)):
+    allowed = bool(store) and any(same(p, request['path']) for p in granted(store))
+    if not allowed and pending(custody):  # asked and not yet answered
         raise ValueError('The waiting worker still needs the user\'s read permission for '+request['path'])
     if saved['config'].get('folder_access') != config.get('folder_access'):
         raise ValueError('The waiting worker belongs to another folder-grant store.')
-    return tree, session, saved
+    return tree, session, saved, allowed
+
+
+def release(root, worker):
+    """Remove a waiting worker that a new plan replaced: its Git worktree entry and private tree."""
+    import subprocess
+    from .challenger import git
+    tree = Path(worker['tree'])
+    try:
+        git(root, 'worktree', 'remove', '--force', str(tree), timeout=120)
+    except (ValueError, subprocess.SubprocessError):
+        pass
+    if tree.exists():
+        discard(tree)
 
 
 def _conversation_clock(state, follow_up, instant, message_id):
@@ -136,6 +154,7 @@ def resume_clock(root, state, follow_up, instant, *, message_id=None):
     ended = state['invocations'][-1].get('ended_at')
     store = (state['config'].get('folder_access') or {}).get('grants')
     if not ended or not store or not any(same(p, request['path']) for p in granted(store)):
+        settle(root)  # resumed after a reply that granted nothing: go on without the folder, crediting no wait
         return
     waiting = max(0, instant-ended)
     if state.get('deadline_utc') is not None:

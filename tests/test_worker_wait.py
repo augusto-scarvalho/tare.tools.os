@@ -49,7 +49,9 @@ def test_folder_wait_keeps_the_worker_and_rejects_changed_bases(setup, tmp_path,
     messages=[e['text'] for e in rows if e['kind']=='user_message']
     assert len(messages)==1 and unit['review_feedback'] in messages[0]
     assert client.generations==2 and tree.is_dir() and (root/'a.py').read_bytes()==b'value = 1\n'
-    with pytest.raises(ValueError,match='read permission'):
+    from relay.folder_access import REQUEST
+    (custody/REQUEST).write_text(json.dumps({'path':str(external),'reason':'Read it.'}))  # the coordinator asked
+    with pytest.raises(ValueError,match='read permission'):  # and the user has not answered yet
         work_units.run_unit(custody,state,{'unit':'wait'},lambda:False,review=audit,worker=worker)
     assert client.generations==2
     grant(store,str(external))
@@ -79,10 +81,49 @@ def test_only_granted_leaf_wait_is_excluded_once_without_renewing_the_budget(tmp
     state={'delegated_leaf':True,'config':{'folder_access':{'grants':str(store)}},
            'invocations':[{'ended_at':700}], 'deadline_utc':900,'budget':{'max_model_calls':30}}
     worker_wait.resume_clock(session,state,'continue',1700)
-    assert state['deadline_utc']==900  # no consent, no excluded wait
+    assert state['deadline_utc']==900 and not (session/REQUEST).exists()  # declined: no excluded wait, no request
+    (session/REQUEST).write_text(json.dumps({'path':str(external),'reason':'Read evidence.'}))  # asked again
     grant(store,str(external))
     worker_wait.resume_clock(session,state,'continue',1700)
     assert state['deadline_utc']==1900 and state['deadline_utc']-1700==200
     assert state['budget']=={'max_model_calls':30} and state['folder_wait_seconds']==1000
     worker_wait.resume_clock(session,state,'continue',1900)
     assert state['deadline_utc']==1900 and state['folder_wait_seconds']==1000
+
+
+@pytest.mark.parametrize('after', ['declined', 'replanned'])
+def test_a_declined_folder_or_a_new_plan_never_holds_the_waiting_worker(setup, tmp_path, monkeypatch, after):
+    from relay.work_forms import record_plan
+    config, custody, root = setup
+    custody.mkdir()
+    monkeypatch.setenv('TARE_STORAGE_ROOT',str(tmp_path/'storage'))
+    external=tmp_path/'reference';external.mkdir()
+    config['folder_access']={'grants':str(tmp_path/'grants.json')};config['conversation_flow']=True
+    unit={'key':'wait','repository':'repo','title':'Set two','target_paths':['a.py'],
+          'criteria':['value equals two'],'verifiers':['unit']}
+    record_plan(custody,config,{'units':[unit],'criteria':unit['criteria']})
+    state={'config':config,'conversation_flow':True,'deployment':deployment(),
+           'limits':{'max_model_calls':60},'deadline_utc':None}
+    monkeypatch.setattr(work_units,'routes',lambda *a,**kw:iter([('fixture',deployment())]))
+    client=Client(steps=[('request_folder_access',{'path':str(external),'reason':'Read the requested value.'}),
+        ('tare_deliver',{'summary':'Waiting for read permission.'}),
+        ('edit',{'repository':'repo','path':'a.py','sha256':hashlib.sha256(b'value = 1\n').hexdigest(),
+                 'search':'value = 1','replace':'value = 2'}),
+        ('verify',{'name':'unit'}),('tare_deliver',{'summary':'Changed and checked.'})])
+    monkeypatch.setattr(native_agent,'inference_client',lambda *a,**kw:client)
+    monkeypatch.setattr('compute_plane.native_models.NativeHttpClient',lambda *a,**kw:client)
+    first=work_units.run_unit(custody,state,{'unit':'wait'},lambda:False,review=lambda *a:{'verdict':'ACCEPT'})
+    worker=first['worker'];tree=Path(worker['tree']);session=Path(worker['session'])
+    if after=='replanned':  # the user changed the goal: the new plan gets a fresh implementer
+        unit['criteria']=['value equals two','nothing else changes']
+        record_plan(custody,config,{'units':[unit],'criteria':unit['criteria']})
+    # declined: the request was answered without a grant (no pending request, nothing granted)
+    second=work_units.run_unit(custody,state,{'unit':'wait'},lambda:False,review=lambda *a:{'verdict':'ACCEPT'},
+                               worker=worker)
+    assert second.get('applied'), {k: second.get(k) for k in ('verdict', 'reason', 'checks_after', 'next')}
+    assert (root/'a.py').read_bytes()==b'value = 2\n' and not tree.exists()
+    told=[body for _,body in client.calls if 'did not grant read access to' in json.dumps(body)]
+    if after=='declined':  # the same worker went on, told the folder stays closed
+        assert told
+    else:  # the old worker never resumed: a fresh implementer ran the new plan
+        assert not told
