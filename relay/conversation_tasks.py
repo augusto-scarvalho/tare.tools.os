@@ -1223,7 +1223,8 @@ class ConversationTools:
                 # never implementation criteria, and require no paid replanning.
                 task_plan(self.root, self.state['config'], task, {'artifact': str(artifact)})
                 plan = task['plan']
-                from .work_units import run_unit, check_failures, child_limits
+                from .work_units import run_unit, check_failures, child_limits, GuardRefusal
+                from .conversation_recheck import retry_decision
                 from .conversation_review import review
                 from .conversation_permissions import authorize
                 execution_unit = deepcopy(plan['unit'])
@@ -1243,10 +1244,18 @@ class ConversationTools:
                         prior_audit.get('verdict') == 'INCONCLUSIVE' and not candidate_revision)}
                 # Diagnose a stopped/exhausted unit before asking for consent.
                 # Dispatch still rechecks the shared budget after human waiting.
+                operator_retry = False
                 try:
                     if not candidate or not candidate['review_only']:
+                        explicit_retry = bool(getattr(self, '_host_retry_delivery', False))
+                        operator_retry = retry_decision(self.root, task, execution_unit, explicit=explicit_retry) or explicit_retry
                         check_failures(self.root, execution_unit, conversation=True,
-                            **({'operator_retry':True} if getattr(self,'_host_retry_delivery',False) else {}))
+                            **({'operator_retry': True} if operator_retry else {}))
+                except GuardRefusal:
+                    retry_decision(self.root, task, execution_unit, register=True)
+                    task['stage'] = 'PENDING'; save(self.root, value)
+                    raise
+                try:
                     if not candidate or not candidate['review_only']:
                         child_limits(self.root, self.state)
                 except ValueError:
@@ -1262,7 +1271,8 @@ class ConversationTools:
                     raise
                 # Host-defined baseline check is available even for documentation.
                 state = deepcopy(self.state)
-                if getattr(self,'_host_retry_delivery',False):state['operator_delivery_retry']=True
+                state.pop('operator_delivery_retry', None)
+                if operator_retry: state['operator_delivery_retry'] = True
                 state['config'] = {**config, 'conversation_flow': True}  # worker grant, never coordinator capabilities
                 if config.get('command_protection'):
                     from .command_protection import encode_context

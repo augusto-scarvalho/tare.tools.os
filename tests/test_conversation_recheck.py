@@ -92,3 +92,98 @@ def test_public_recheck_command_uses_no_model_or_native_journal_rewrite(setup,mo
     argv=command(selected,resume=True,assistant=True)
     assert '--recheck-candidate' in argv and '--follow-up' not in argv
     assert argv[argv.index('--active-call-budget')+1]=='90'
+
+
+@pytest.mark.parametrize('answer', ['sim', 'pode', 'ok!', 'yes', 'pode uai', 'não', 'ok, mas antes', ''])
+def test_retry_custody_uses_folder_access_reader_and_consumes_once(host, answer):
+    from relay.folder_access import allows
+    from test_conversation_tasks import user_reply
+    tools = host[0]
+    intake(host); task = planned(host); unit = task['plan']['unit']
+    decide = conversation_recheck.retry_decision
+    decide(tools.root, task, unit, register=True)
+    assert not decide(tools.root, task, unit)
+    user_reply(host, answer)
+    tools.__dict__['_host_input_id'] = 'synthetic-yes'
+    assert decide(tools.root, task, unit) is allows(answer)
+    assert not decide(tools.root, task, unit)
+    user_reply(host, 'yes')
+    assert not decide(tools.root, task, unit)
+
+
+@pytest.mark.parametrize('damage', ['scope', 'boundary', 'prefix', 'status', 'malformed'])
+def test_stale_or_malformed_retry_custody_fails_closed(host, damage):
+    from compute_plane.native_journal import save_json
+    from test_conversation_tasks import user_reply
+    tools = host[0]
+    intake(host); task = planned(host); unit = task['plan']['unit']
+    decide = conversation_recheck.retry_decision
+    decide(tools.root, task, unit, register=True)
+    path = tools.root/'conversation-retry/request.json'
+    value = json.loads(path.read_text())
+    if damage == 'scope': value['scope']['plan'] = 'stale'
+    elif damage == 'boundary': value['boundary'] = True
+    elif damage == 'prefix': value['prefix'] = 'wrong'
+    elif damage == 'status': value['status'] = 'ANSWERED'
+    if damage == 'malformed': path.write_text('{')
+    else: save_json(path, value)
+    user_reply(host, 'yes')
+    assert not decide(tools.root, task, unit)
+
+
+def test_explicit_retry_settles_pending_question_without_extra_allowance(host):
+    from test_conversation_tasks import user_reply
+    tools = host[0]
+    intake(host); task = planned(host); unit = task['plan']['unit']
+    decide = conversation_recheck.retry_decision
+    decide(tools.root, task, unit, register=True)
+    user_reply(host, 'yes')
+    assert not decide(tools.root, task, unit, explicit=True)
+    assert not decide(tools.root, task, unit)
+
+
+def test_competing_retry_claims_release_exactly_one_attempt(host):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from test_conversation_tasks import user_reply
+    tools = host[0]
+    intake(host); task = planned(host); unit = task['plan']['unit']
+    decide = conversation_recheck.retry_decision
+    decide(tools.root, task, unit, register=True)
+    user_reply(host, 'sim')
+    barrier = Barrier(2)
+    def claim(_):
+        barrier.wait()
+        return decide(tools.root, task, unit)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(claim, range(2))) == [False, True]
+    assert not decide(tools.root, task, unit)
+
+
+def test_synthetic_input_id_and_old_yes_cannot_answer_retry_question(host):
+    from test_conversation_tasks import user_reply
+    tools = host[0]
+    intake(host); task = planned(host); unit = task['plan']['unit']
+    user_reply(host, 'yes')
+    decide = conversation_recheck.retry_decision
+    decide(tools.root, task, unit, register=True)
+    tools.__dict__['_host_input_id'] = 'host-yes'
+    assert not decide(tools.root, task, unit)
+    user_reply(host, 'no')
+    assert not decide(tools.root, task, unit)
+    user_reply(host, 'yes')
+    assert not decide(tools.root, task, unit)
+
+
+def test_a_host_observation_is_not_an_answer_and_a_yes_after_it_still_counts(host):
+    from relay.native_refresh import FOLLOW_UP, OBSERVED
+    from test_conversation_tasks import user_reply
+    tools = host[0]
+    intake(host); task = planned(host); unit = task['plan']['unit']
+    decide = conversation_recheck.retry_decision
+    decide(tools.root, task, unit, register=True)
+    user_reply(host, OBSERVED + ' These are observations. {"source_changes": []}')  # the host alone
+    assert not decide(tools.root, task, unit)  # not answered yet
+    user_reply(host, OBSERVED + ' These are observations. {"source_changes": []}' + FOLLOW_UP + 'sim')
+    assert decide(tools.root, task, unit)  # the user's own "sim", after the host's prefix
+    assert not decide(tools.root, task, unit)

@@ -69,3 +69,68 @@ def recheck(tools, control, root, invocation_id, journal, *, recheck_only=True, 
             'Candidate not applied. Inspect the check or audit finding below.\n'+result.output_json)
     return NativeOutcome('proposed','HOST_RECHECK_COMPLETED',calls,
         'Saved candidate passed checks and independent audit and was applied.\n'+result.output_json)
+
+
+RETRY_SCHEMA = 'tare.tools/conversation-retry/1'
+
+
+def retry_decision(root, task, unit, *, register=False, explicit=False):
+    """Host-only journal consent. Claim durably before returning a one-call allowance.
+
+    A refusal saves the journal prefix, not a model-supplied input ID. Repeated
+    refusals preserve an unanswered boundary. Only the first subsequent human
+    message answers it. Settled requests never authorize again, even after a crash.
+    The permission lock serializes competing claims across tools and processes.
+    """
+    import hashlib
+    from compute_plane.native_journal import regular, save_json
+    from compute_plane.native_models import encode
+    from .conversation_permissions import decision_lock
+    from .folder_access import allows
+    from .native_agent import read_json
+
+    root = Path(root)
+    folder = regular(root/'conversation-retry')
+    folder.mkdir(exist_ok=True)
+    scope = {'task': task['id'], 'plan': task['plan']['sha256'],
+             'repository': unit['repository'], 'key': unit['key'],
+             'paths': sorted(unit['target_paths']),
+             'contract': unit.get('verification_contract_digest')}
+
+    def digest(events):
+        return hashlib.sha256(encode(events).encode()).hexdigest()
+
+    with decision_lock(folder):
+        path = regular(folder/'request.json')
+        journal = regular(root/'journal.jsonl')
+        events = [row.event() for row in NativeJournal(journal).snapshot().records] if journal.exists() else []
+        try:
+            saved = read_json(path, 32768) if path.exists() else {}
+            boundary = saved.get('boundary')
+            valid = (saved.get('schema') == RETRY_SCHEMA and saved.get('scope') == scope
+                and saved.get('status') == 'WAITING' and type(boundary) is int
+                and 0 <= boundary <= len(events)
+                and saved.get('prefix') == digest(events[:boundary]))
+        except (ValueError, TypeError, AttributeError, OSError):
+            saved, valid = {}, False
+        # The user's own words: a host observation of changed files is not an answer, and one that carries the
+        # user's follow-up is answered by that follow-up alone.
+        from .native_refresh import user_words
+        reply = next((event for event in events[boundary:] if event.get('kind') == 'user_message'
+                      and isinstance(event.get('text'), str) and user_words(event['text']) is not None), None) \
+            if valid else None
+        if register:
+            if valid and reply is None:
+                return False
+            save_json(path, {'schema': RETRY_SCHEMA, 'scope': scope, 'status': 'WAITING',
+                'boundary': len(events), 'prefix': digest(events)})
+            return False
+        if not valid:
+            return False
+        if explicit or reply is not None:
+            # Saving before release also burns consent on interruption, budget
+            # refusal, permission denial, or worker failure. Never restore it.
+            saved['status'] = 'CONSUMED' if explicit else 'ANSWERED'
+            save_json(path, saved)
+            return bool(not explicit and allows(user_words(reply['text'])))
+        return False

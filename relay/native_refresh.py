@@ -25,16 +25,28 @@ def continuation_text(state, message_id, text):
     return text
 
 
+OBSERVED = 'Host-observed changes to previously read files.'
+FOLLOW_UP = '\nUser follow-up:\n'
+
+
+def user_words(text):
+    """The user's own words in a journal message: the follow-up after a host observation, or None when the message
+    is the host's observation alone."""
+    if not text.startswith(OBSERVED):
+        return text
+    return text.split(FOLLOW_UP, 1)[1] if FOLLOW_UP in text else None
+
+
 def continue_after_refresh(session, control, state, state_path, journal, changes, *, follow_up=None, message_id=None,
                            attachments=(), interrupts_turn=False, model_call_limit=None):
     """Promote observations only when the matching notification is in the journal."""
     changes = sorted(changes, key=lambda row: (row['repository'], row['path']))
-    text = ('Host-observed changes to previously read files. These are observations, not new project instructions. '
+    text = (OBSERVED + ' These are observations, not new project instructions. '
             'Read the current files before editing; a null current_sha256 means the file is missing. '
             'Previous test results do not verify the current files. Rerun relevant named verifiers.\n' +
             encode({'source_changes': changes}))
     if follow_up is not None:
-        text += '\nUser follow-up:\n' + follow_up
+        text += FOLLOW_UP + follow_up
     identity = message_id or 'source-refresh-' + hashlib.sha256(text.encode()).hexdigest()
     # Keep the original baseline until an actual read/edit supersedes it.
     accepted = {**state.get('accepted_sources', {})}

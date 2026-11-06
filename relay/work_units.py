@@ -712,6 +712,14 @@ def stale(tree, applied):
     return moved
 
 
+class GuardRefusal(ValueError):
+    """A failure-ledger refusal, distinct from budgets and permissions."""
+
+
+RETRY_QUESTION = (' Explain why execution stopped and ask the user in plain words whether to try again, '
+    'then wait for their answer. Never ask the user for a command.')
+
+
 def check_failures(custody, unit, *, conversation=False, operator_retry=False):
     """Keep exhausted scope blocked across renamed demands without changing its ledger."""
     entries = read_ledger(custody).get('units') or {}
@@ -729,14 +737,15 @@ def check_failures(custody, unit, *, conversation=False, operator_retry=False):
 
     failed, refused = thresholds(entries.get(unit['key']) or {})
     if refused and not (conversation and operator_retry):
-        raise ValueError(f"The independent audit refused the last {MAX_REFUSALS} candidates of unit {unit['key']}. "
+        raise GuardRefusal(f"The independent audit refused the last {MAX_REFUSALS} candidates of unit {unit['key']}. "
             'No implementer started. Tell the user what the latest audit found and ask how to go on: what the '
-            'implementer could not fix needs them. Changing notes, routes or task names does not reset this limit.')
+            'implementer could not fix needs them. Changing notes, routes or task names does not reset this limit.'
+            + (RETRY_QUESTION if conversation else ''))
     if failed and not (conversation and operator_retry):
         if conversation:
-            raise ValueError(f"Unit {unit['key']} failed its checks {MAX_FAILURES} times with the same host contract. "
+            raise GuardRefusal(f"Unit {unit['key']} failed its checks {MAX_FAILURES} times with the same host contract. "
                 'No implementer started. Preserve the goal and candidate; diagnose the verifier or request intervention. '
-                'Changing notes, routes or task names does not reset this limit.')
+                'Changing notes, routes or task names does not reset this limit.' + RETRY_QUESTION)
         raise ValueError(f"Unit {unit['key']} failed its checks {MAX_FAILURES} times: rethink it (plan) or edit directly.")
     if conversation and operator_retry:
         return
@@ -746,9 +755,9 @@ def check_failures(custody, unit, *, conversation=False, operator_retry=False):
             continue
         shared = targets.intersection(entry.get('paths') or [])
         if shared and any(thresholds(entry)):
-            raise ValueError(f"Unit {unit['key']} overlaps blocked unit {key} on scope: {', '.join(sorted(shared))}. "
-                'No implementer started. Tell the user to use /retry_delivery to retry the blocked scope. '
-                'Changing objective wording or demand keys does not reset this limit.')
+            raise GuardRefusal(f"Unit {unit['key']} overlaps blocked unit {key} on scope: {', '.join(sorted(shared))}. "
+                'No implementer started. Changing objective wording or demand keys does not reset this limit.'
+                + (RETRY_QUESTION if conversation else ' Tell the user to use /retry_delivery to retry the blocked scope.'))
 
 
 def producer_reference(directory, deployment):
