@@ -28,6 +28,7 @@ MAX_FAILURES = 2                # NOT_VERIFIED runs of the same unit before tare
 # NOT_REVIEWED runs in a row before tare refuses another: an audit finding the implementer cannot fix (a file its
 # tools cannot delete) otherwise loops; dogfooding the TUI, a local implementer and the auditor ran 7 rounds, 65 min.
 MAX_REFUSALS = 3                # at most the three runs the ledger keeps
+AUDIT_REFUSED = 'The independent audit did not accept this candidate.'  # only these count toward MAX_REFUSALS
 CHILD_LIMITS = {'max_model_calls': 30, 'max_seconds': 900}
 # ponytail: from the phase 3 comparison (2026-10-06), children that finished a unit used 12 and 16 calls, and one
 # given 7 ran out without changing anything; below this the session edits directly. Revisit with more units.
@@ -717,7 +718,10 @@ def check_failures(custody, unit, *, conversation=False, operator_retry=False):
     context = unit.get('verification_contract_digest') if conversation else None
     failures = sum(h['verdict'] == 'NOT_VERIFIED' and (
         not context or h.get('verification_contract_digest') == context) for h in history)
-    refused = len(history) >= MAX_REFUSALS and all(h['verdict'] == 'NOT_REVIEWED' for h in history[-MAX_REFUSALS:])
+    # The auditor's refusals, not the host's: an accepted candidate refused at application (a changed dependency or
+    # project) is not the implementer's to fix and never counts.
+    refused = len(history) >= MAX_REFUSALS and all(h['verdict'] == 'NOT_REVIEWED' and h.get('reason') == AUDIT_REFUSED
+                                                   for h in history[-MAX_REFUSALS:])
     if refused and not (conversation and operator_retry):
         raise ValueError(f"The independent audit refused the last {MAX_REFUSALS} candidates of unit {unit['key']}. "
             'No implementer started. Tell the user what the latest audit found and ask how to go on: what the '
@@ -862,8 +866,12 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
     waiting = None
     if worker:
         worker={**worker,'producer':candidate_producer(custody,worker['producer'])}
-        from .worker_wait import restore
+        from .worker_wait import release, restore
         waiting = restore(worker, custody, config, unit)
+    if worker and waiting is None:  # a new plan replaced the one it waited under: a fresh implementer runs it
+        release(root, worker)
+        worker = None
+    if worker:
         from .execution_scope import current
         from .execution_team import reasoning
         permitted,why=current().allows(worker['producer'],'implementer')
@@ -934,8 +942,10 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                         raise ValueError('The project changed since the retained candidate: '+', '.join(changed[:16])+
                             '. Inspect and replan the affected scope; the candidate remains preserved.')
                 base,excluded,metadata=prepare_baseline(tree,unit,base,retained_patch=patch)
-                if requalified:
+                if requalified and metadata:
                     metadata['retained_baseline_requalification']=requalified
+                elif requalified:  # no generated baseline was prepared: the witness stays on the rung
+                    row['retained_baseline_requalification']=requalified
                 if metadata:row['host_baseline_metadata']=metadata
                 git(tree, 'apply', '--binary', *(['--allow-empty'] if excluded else []),
                     *('--exclude='+p for p in excluded), str(patch))
@@ -1079,7 +1089,10 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     row['attempts'] = [attempt]  # one row per rung; earlier rungs keep their own attempts
                     (job/'receipt.json').write_text(json.dumps({**receipt, 'rungs': receipt['rungs'] + [row]}), encoding='utf-8')
                     if waiting:
-                        note='[tare] Read access is now granted for '+worker['folder_access_request']['path']+'. '
+                        path=worker['folder_access_request']['path']
+                        note=('[tare] Read access is now granted for '+path+'. ' if waiting[3] else
+                              '[tare] The user did not grant read access to '+path+'. Continue without it; do not '
+                              'request it again for this unit. ')
                         note+='Continue the saved unit using your existing observations. Keep all original criteria and checks. '
                         note+=(args.get('note') or '')
                         keep_tree=False
@@ -1185,7 +1198,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     **({'observed_named_checks':observed} if observed else {})})
                 result['audit'] = row['audit'] = assessment
                 if assessment.get('verdict') != 'ACCEPT':
-                    result.update(verdict='NOT_REVIEWED', reason='The independent audit did not accept this candidate.',
+                    result.update(verdict='NOT_REVIEWED', reason=AUDIT_REFUSED,
                                   patch=row.get('patch'))
                     break
                 from .conversation_review import reference_sources_current

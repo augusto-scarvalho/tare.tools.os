@@ -9,7 +9,26 @@ from compute_plane.native_review import digest
 from tare_tools_agent_runtime import EffectRequest, ToolCall
 import json
 import time
+
+
 from tare_tools_agent_runtime import BindingRef, CancellationToken, ExecutionControl
+
+
+def _scratch_diagnosis(scratch_root):
+    """Format only failure diagnostics, without resolving the original paths."""
+    def query(path, name):
+        try:
+            method = getattr(path, name, None)
+            return 'unavailable' if method is None else str(method())
+        except Exception as exc:
+            return f'error({type(exc).__name__}: {exc})'
+
+    rows = [f'scratch_root={scratch_root}']
+    for path in (scratch_root, *scratch_root.parents):
+        fields = ' '.join(f'{name}={query(path, name)}' for name in
+                          ('is_dir', 'is_symlink', 'is_junction'))
+        rows.append(f'{path}: {fields}')
+    return '\n'.join(rows)
 
 
 @pytest.mark.parametrize('delete', [True, 'true'])
@@ -82,22 +101,31 @@ def test_retained_real_deletion_is_revised_and_applied(tmp_path, monkeypatch, be
              'limits': {'max_model_calls': 30}, 'deadline_utc': None, 'session_id': 's',
              'instruction': 'Remove file'}
     monkeypatch.setattr(work_units, 'routes', lambda *a, **kw: iter([('fixture', deployment())]))
+    scratch_root = tmp_path/'scratch'
     calls = []
     def child(child_config, dep, session, instruction, **kwargs):
         path = Path(child_config['repositories']['repo'])/'a.py'
         assert (project/'a.py').read_bytes() == before
         if not calls:
             binding = BindingRef('w', 'b', 'o', 1, 't')
-            (tmp_path/'scratch').mkdir()
-            tools = NativeCapabilities(session_id='s', binding=binding,
-                repositories=child_config['repositories'], writable={'repo': ['a.py']},
-                verifiers={}, scratch_root=tmp_path/'scratch', specgraph_edit_context=False,
-                review_root=Path(session)/'review')
+            try:
+                scratch_root.mkdir()
+                tools = NativeCapabilities(session_id='s', binding=binding,
+                    repositories=child_config['repositories'], writable={'repo': ['a.py']},
+                    verifiers={}, scratch_root=scratch_root, specgraph_edit_context=False,
+                    review_root=Path(session)/'review')
+            except Exception as exc:
+                exc.add_note(_scratch_diagnosis(scratch_root))
+                raise
             args = {'repository': 'repo', 'path': 'a.py', 'sha256': digest(path.read_bytes()),
                     'delete': delete, 'changes': []}
             control = ExecutionControl(binding, CancellationToken(), time.monotonic()+30)
-            result = tools.execute(EffectRequest('s', 'delete', ToolCall('t', 'edit', json.dumps(args))), control)
-            assert result.status == 'succeeded', result.output_json
+            try:
+                result = tools.execute(EffectRequest('s', 'delete', ToolCall('t', 'edit', json.dumps(args))), control)
+            except Exception as exc:
+                exc.add_note(_scratch_diagnosis(scratch_root))
+                raise
+            assert result.status == 'succeeded', f'{result.output_json}\n{_scratch_diagnosis(scratch_root)}'
             observer = ActivityJournal(Journal())
             observer.append({'kind': 'effect_requested', 'effect_id': 'delete',
                 'tool_call': {'name': 'edit', 'arguments_json': json.dumps(args)}})
@@ -116,11 +144,11 @@ def test_retained_real_deletion_is_revised_and_applied(tmp_path, monkeypatch, be
         assert (project/'a.py').read_bytes() == before
         return {'verdict': 'INCONCLUSIVE' if len(calls) == 1 else 'ACCEPT'}
     first = work_units.run_unit(custody, state, {'unit': 'remove'}, lambda: False, review=audit)
-    assert not first.get('applied') and first.get('candidate'), first
+    assert not first.get('applied') and first.get('candidate'), f'{first}\n{_scratch_diagnosis(scratch_root)}'
     assert (project/'a.py').read_bytes() == before
     second = work_units.run_unit(custody, state, {'unit': 'remove'}, lambda: False,
         review=audit, candidate=first['candidate'], review_effect='s/implement')
-    assert second['applied'], second
+    assert second['applied'], f'{second}\n{_scratch_diagnosis(scratch_root)}'
     assert len(calls) == 2 and not (project/'a.py').exists()
     assert second['review_edits'][0]['deleted'] is True
     events = [{'kind': 'effect_requested', 'effect_id': 's/implement',

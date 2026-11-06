@@ -78,11 +78,20 @@ def retained_baseline(root,unit,candidate,observed):
     from .challenger import git
     repository=unit['repository'];key=repository+':'+MANIFEST
     changed={k for k in observed if observed[k]!=candidate['basis'].get(k)}
-    if changed!={key} or not applies(root,unit) or MANIFEST not in unit['target_paths']:
+    if changed!={key} or MANIFEST not in unit['target_paths']:
         return None
     patch=Path(candidate['patch']).read_bytes()
     marker=('diff --git a/'+MANIFEST+' b/'+MANIFEST+'\n').encode()
-    if patch.count(marker)!=1:return None
+    if patch.count(marker)==0:
+        # The candidate never edits the generated manifest: only the project's copy moved under it. Its patch still
+        # applies, and the fresh checks and review run against the project as it is now.
+        try:
+            if hashlib.sha256((Path(root)/MANIFEST).read_bytes()).hexdigest()!=observed[key]:return None
+        except OSError:
+            return None
+        return {'kind':'REQUALIFIED_UNTOUCHED_GENERATED_FILE','files':[MANIFEST],
+            'before_sha256':candidate['basis'][key],'after_sha256':observed[key]}
+    if patch.count(marker)!=1 or not applies(root,unit):return None
     section=patch.split(marker,1)[1].split(b'\ndiff --git ',1)[0]
     match=re.search(rb'^index ([0-9a-f]{7,64})\.\.[0-9a-f]{7,64}(?: 100644)?$',section,re.M)
     if match is None:return None

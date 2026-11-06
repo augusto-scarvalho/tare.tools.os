@@ -1,6 +1,7 @@
 """Offline production composition controls; live native approval has separate dogfood."""
 from dataclasses import replace
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 import time
@@ -271,7 +272,11 @@ def test_conversation_host_verifier_uses_the_real_mediation_gate(host,monkeypatc
         host.deployment, host.root,
         {'repository': 'project', 'title': 'Run the named check', 'criteria': [], 'target_paths': ['.']},
         {'check': command, 'failing': failing})
-    assert contexts[0]['verification']['commands']=={'check':command,'failing':failing}
+    expected_commands = {name: [os.path.normcase(Path(argv[0]).resolve()), *argv[1:]]
+                         for name, argv in {'check': command, 'failing': failing}.items()}
+    actual_commands = {name: [os.path.normcase(argv[0]), *argv[1:]]
+                       for name, argv in contexts[0]['verification']['commands'].items()}
+    assert actual_commands == expected_commands
     assert 'no project application or network' in contexts[0]['verification']['scope']
     assert str(host.root) not in policies[0].enumerate_only
     assert str(host.root.anchor) in policies[0].enumerate_only
