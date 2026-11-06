@@ -53,6 +53,7 @@ def replies(client):
 
 @pytest.mark.parametrize('conversation', [False, True])
 def test_the_user_grants_a_folder_mid_conversation_and_later_sessions_keep_it(setup, tmp_path, outside, conversation, monkeypatch):
+    monkeypatch.setattr('relay.consent_decisions.select_rule', lambda: 'judge')
     from test_consent_decisions import verdict
     monkeypatch.setattr('relay.turn_engine.judges', lambda *a, **k: {'jev': verdict()})
     config, custody, grants = granting(setup, tmp_path)
@@ -277,6 +278,7 @@ def test_initial_coordinator_journals_flow_answer_before_deciding(setup, tmp_pat
 
 
 def test_folder_denial_can_be_followed_by_a_fresh_request(tmp_path, outside, monkeypatch):
+    monkeypatch.setattr('relay.consent_decisions.select_rule', lambda: 'judge')
     from types import SimpleNamespace
     from compute_plane.native_journal import NativeJournal
     from relay import consent_decisions as consent
@@ -313,3 +315,51 @@ def test_folder_denial_can_be_followed_by_a_fresh_request(tmp_path, outside, mon
     assert consent.pending(tmp_path, 'folder-test') == []
     with pytest.raises(ValueError):
         consent.record(tmp_path, 'folder-test', second, choice='allow')
+
+
+@pytest.mark.parametrize('rule', ['fallback', 'judge'])
+@pytest.mark.parametrize('words', ['sim', 'não', 'pode ler, claro'])
+def test_folder_contract_survives_availability_changes(tmp_path, monkeypatch, rule, words):
+    from types import SimpleNamespace
+    from compute_plane.native_journal import NativeJournal
+    from relay import consent_decisions as consent
+    from relay.serve_agent import folder_question
+    outside = tmp_path/'reference with `ticks`'; outside.mkdir()
+    project = tmp_path/'project'; project.mkdir()
+    store = tmp_path/'grants.json'
+    tools = folder_access.FolderTools(
+        SimpleNamespace(names=(), tool_specs_json='{}', session_id='s'),
+        {'folder_access': {'grants': str(store)}, 'repositories': {'p': str(project)}}, tmp_path)
+    log = NativeJournal(tmp_path/'journal.jsonl')
+    log.append({'kind': 'session_started', 'session_id': 's'})
+    monkeypatch.setattr(consent, 'select_rule', lambda: rule)
+    tools._request({'path': str(outside), 'reason': 'Compare files'})
+    request = json.loads((tmp_path/folder_access.REQUEST).read_text())
+    q = consent.load(tmp_path)['questions'][0]
+    assert q['rule'] == rule
+    expected = consent.guidance(rule)
+    assert expected in q['question']
+    assert folder_access.literal(outside) in q['question']
+    # Availability flips before the first presentation, and stays flipped at reply.
+    monkeypatch.setattr(consent, 'select_rule', lambda: 'judge' if rule == 'fallback' else 'fallback')
+    tools._request({'path': str(outside), 'reason': 'Changed reason'})
+    assert consent.load(tmp_path)['questions'][0] == q
+    text = folder_access.presented_question(request, store, tmp_path)
+    assert text == q['question']
+    assert text in folder_question(request, project, tmp_path)
+    consent.present(tmp_path, q['id'])
+    consent.present(tmp_path, q['id'])
+    if rule == 'fallback':
+        monkeypatch.setattr('relay.turn_engine.judges', lambda *a, **k: pytest.fail('fallback consulted judge'))
+    else:
+        monkeypatch.setattr('relay.turn_engine.judges', lambda *a, **k: {})
+    log.append({'kind': 'user_message', 'message_id': 'answer', 'text': words})
+    receipt = consent.record(tmp_path, 's', q['id'], 'answer')
+    decision = ('yes' if words == 'sim' else 'no') if rule == 'fallback' else 'pending'
+    assert receipt['decision'] == decision
+    saved = consent.load(tmp_path)['questions'][0]
+    assert saved['rule'] == rule and saved['question'] == text
+    assert saved['status'] == {'yes': 'APPROVED', 'no': 'DECLINED', 'pending': 'WAITING'}[decision]
+    assert bool(folder_access.granted(store)) == (decision == 'yes')
+    assert folder_access.declined(tmp_path, str(outside)) == (decision == 'no')
+    assert consent.process(tmp_path, 's') == []

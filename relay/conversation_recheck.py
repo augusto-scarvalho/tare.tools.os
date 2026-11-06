@@ -94,8 +94,10 @@ def retry_decision(root, task, unit, *, register=False, explicit=False):
              'paths': sorted(unit['target_paths']),
              'contract': unit.get('verification_contract_digest')}
     if register:
-        question = consent.register(root, session, 'retry', scope,
-            question='Execution stopped after repeated failures. Allow one more attempt for this task?')
+        rule = consent.select_rule()
+        question = consent.register(root, session, 'retry', scope, rule=rule,
+            question='Execution stopped after repeated failures. Allow one more attempt for this task? '
+                     + consent.guidance(rule) + '.')
         folder = regular(root/'conversation-retry')
         folder.mkdir(exist_ok=True)
         path = regular(folder/'request.json')

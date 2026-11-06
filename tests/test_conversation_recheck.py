@@ -103,6 +103,7 @@ def test_public_recheck_command_uses_no_model_or_native_journal_rewrite(setup,mo
     ('pode sim, manda bala', 'yes'), ('não, obrigado', 'no'), ('deixa pra depois', 'no'),
     ('espera, me explica antes', 'pending'), ('Por que?', 'pending')])
 def test_retry_custody_uses_isolated_decision_and_consumes_once(host, answer, decision, monkeypatch):
+    monkeypatch.setattr('relay.consent_decisions.select_rule', lambda: 'judge')
     from test_consent_decisions import verdict
     choice = {'yes':'allow', 'no':'deny', 'pending':'unclear'}[decision]
     monkeypatch.setattr('relay.turn_engine.judges', lambda packet, **k:
@@ -200,6 +201,7 @@ def test_synthetic_input_id_and_old_yes_cannot_answer_retry_question(host, monke
 
 
 def test_a_host_observation_is_not_an_answer_and_a_yes_after_it_still_counts(host, monkeypatch):
+    monkeypatch.setattr('relay.consent_decisions.select_rule', lambda: 'fallback')
     monkeypatch.setattr('relay.turn_engine.judges', lambda *a, **k: {})
     from relay.native_refresh import FOLLOW_UP, OBSERVED
     from test_conversation_tasks import user_reply
@@ -215,3 +217,28 @@ def test_a_host_observation_is_not_an_answer_and_a_yes_after_it_still_counts(hos
     consent.record(tools.root, tools.session_id, q['question_id'], q['messages'][-1]['message_id'])
     assert decide(tools.root, task, unit)  # only the cited user's own sim counts
     assert not decide(tools.root, task, unit)
+
+
+@pytest.mark.parametrize('words', ['sim', 'não', 'pode ler, claro'])
+def test_retry_fallback_contract_is_preserved_and_final(host, monkeypatch, words):
+    from relay import consent_decisions as consent
+    from test_conversation_tasks import user_reply
+    tools = host[0]
+    intake(host); task = planned(host); unit = task['plan']['unit']
+    monkeypatch.setattr(consent, 'select_rule', lambda: 'fallback')
+    decide = conversation_recheck.retry_decision
+    decide(tools.root, task, unit, register=True)
+    original = consent.load(tools.root)['questions'][-1]
+    assert original['rule'] == 'fallback'
+    assert consent.guidance('fallback') in original['question']
+    monkeypatch.setattr(consent, 'select_rule', lambda: 'judge')
+    decide(tools.root, task, unit, register=True)
+    assert consent.load(tools.root)['questions'][-1] == original
+    monkeypatch.setattr('relay.turn_engine.judges', lambda *a, **k: pytest.fail('fallback consulted judge'))
+    user_reply(host, words)
+    assert decide(tools.root, task, unit) == (words == 'sim')
+    assert not decide(tools.root, task, unit)
+    user_reply(host, 'sim')
+    assert not decide(tools.root, task, unit)
+    q = consent.load(tools.root)['questions'][-1]
+    assert q['status'] == ('CONSUMED' if words == 'sim' else 'DECLINED')

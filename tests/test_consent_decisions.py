@@ -36,10 +36,10 @@ def test_valid_hosted_never_samples_local(monkeypatch, choice, p, decision):
     assert calls == [1]
 
 
-@pytest.mark.parametrize('words,decision', [('sim', 'yes'), ('sim, tenta de novo', 'pending')])
+@pytest.mark.parametrize('words,decision', [('sim', 'yes'), ('não', 'no'), ('pode ler, claro', 'no'), ('sim, tenta de novo', 'no')])
 def test_no_judge_short_yes_only(monkeypatch, words, decision):
-    monkeypatch.setattr('relay.turn_engine.judges', lambda *a, **k: {})
-    assert consent.classify('Allow?', words) == decision
+    monkeypatch.setattr('relay.turn_engine.judges', lambda *a, **k: pytest.fail('fallback called judge'))
+    assert consent.classify('Allow?', words, rule='fallback') == decision
 
 
 def question(root):
@@ -58,7 +58,8 @@ def test_pending_retains_boundary_and_samples_message_once(tmp_path, monkeypatch
     log.append({'kind': 'user_message', 'message_id': 'a', 'text': 'sim, tenta de novo'})
     receipt = consent.process(tmp_path, 's')[0]
     assert receipt['decision'] == 'pending'
-    assert receipt['notice'] == 'Consent is still pending. Explain what the requested authorization does and ask again plainly; do not proceed.'
+    assert receipt['notice'] == consent.REASK
+    assert 'sim' in receipt['notice'] and 'não' in receipt['notice']
     assert consent.process(tmp_path, 's') == []
     after = consent.load(tmp_path)['questions'][0]
     assert after['boundary'] == before['boundary'] and after['prefix'] == before['prefix']
@@ -211,7 +212,7 @@ def test_folder_reason_is_display_only(tmp_path, monkeypatch, local, choice, p, 
     assert bool(folder_access.granted(store)) == (decision == 'yes')
     assert folder_access.declined(tmp_path, str(outside)) == (decision == 'no')
     if decision == 'pending':
-        assert receipt['notice'] == 'Consent is still pending. Explain what the requested authorization does and ask again plainly; do not proceed.'
+        assert receipt['notice'] == consent.REASK
         assert consent.pending(tmp_path, 's')[0]['question_id'] == key
 
 
@@ -328,3 +329,50 @@ def test_notice_delivery_is_question_and_session_scoped(tmp_path, choice, legacy
     assert consent.pending_notices(tmp_path, 'other')[0]['question_id'] == third
     consent.acknowledge_notices(tmp_path, 's', [first])
     assert consent.pending_notices(tmp_path, 's')[0]['question_id'] == second
+
+
+@pytest.mark.parametrize('words', ['sim', 'não', 'pode ler, claro', ''])
+def test_announced_judge_unavailable_never_uses_fallback(tmp_path, monkeypatch, words):
+    log, key, scope = question(tmp_path)
+    monkeypatch.setattr('relay.turn_engine.judges', lambda *a, **k: {})
+    log.append({'kind': 'user_message', 'message_id': 'answer', 'text': words})
+    receipt = consent.record(tmp_path, 's', key, 'answer')
+    assert receipt == {'question_id': key, 'decision': 'pending', 'notice': consent.REASK}
+    q = consent.load(tmp_path)['questions'][0]
+    assert q['rule'] == 'judge' and q['status'] == 'WAITING'
+    assert q['used_messages'] == ['answer']
+    assert consent.process(tmp_path, 's') == []
+    assert not consent.consume(tmp_path, 's', 'retry', scope)
+
+
+@pytest.mark.parametrize('hosted,local,expected', [(False, False, 'fallback'),
+    (True, False, 'judge'), (False, True, 'judge')])
+def test_rule_selection_probes_without_classifying(monkeypatch, hosted, local, expected):
+    from relay.execution_scope import Scope, POLICY_VIEW
+    monkeypatch.delenv('TARE_JEV_SHADOW', raising=False)
+    monkeypatch.setattr('relay.environment.decides', lambda name: True)
+    monkeypatch.setattr('relay.turn_engine.jev_key', lambda: 'key' if hosted else '')
+    monkeypatch.setattr('relay.turn_engine.local_judge', lambda: 'url' if local else None)
+    monkeypatch.setattr('relay.turn_engine.judges', lambda *a, **k: pytest.fail('selection classified'))
+    token = POLICY_VIEW.set(Scope())
+    try:
+        assert consent.select_rule() == expected
+    finally:
+        POLICY_VIEW.reset(token)
+
+
+@pytest.mark.parametrize('mode', ['shadow', 'disabled', 'permissions', 'local-only', 'api-only'])
+def test_rule_selection_honors_restrictions(monkeypatch, mode):
+    from relay.execution_scope import Scope, POLICY_VIEW
+    monkeypatch.delenv('TARE_JEV_SHADOW', raising=False)
+    if mode == 'shadow':
+        monkeypatch.setenv('TARE_JEV_SHADOW', 'off')
+    monkeypatch.setattr('relay.environment.decides', lambda name: mode != 'permissions')
+    monkeypatch.setattr('relay.turn_engine.jev_key', lambda: '' if mode == 'api-only' else 'key')
+    monkeypatch.setattr('relay.turn_engine.local_judge', lambda: None if mode == 'local-only' else 'url')
+    token = POLICY_VIEW.set(Scope(disable_judge=mode == 'disabled',
+        only={'local-only': 'local', 'api-only': 'api'}.get(mode, '')))
+    try:
+        assert consent.select_rule() == 'fallback'
+    finally:
+        POLICY_VIEW.reset(token)

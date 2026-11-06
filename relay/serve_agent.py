@@ -98,9 +98,11 @@ def with_folder_access(config, root):
         return config
 
 
-def folder_question(request, root):
-    from .folder_access import project_store, question
-    return '\n\n_tare: ' + question(request, project_store(root)) + '_\n'
+def folder_question(request, root, custody=None):
+    from .folder_access import project_store, question, presented_question
+    text = (presented_question(request, project_store(root), custody) if custody
+            else question(request, project_store(root)))
+    return '\n\n_tare: ' + text + '_\n'
 
 
 def project_mode(root):
@@ -339,7 +341,7 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
                 asked = record.pop('folder_access_request', None)
                 if asked:
                     state['folder_request'] = {**asked, 'session': record['session'], 'flow': kind, 'text': text}
-                    answer += folder_question(asked, root)
+                    answer += folder_question(asked, root, record['session'])
                     if asked.get('question_id'):
                         from .consent_decisions import present
                         present(record['session'], asked['question_id'])
@@ -519,7 +521,7 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
         state['updated'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
         save(None)
         answer = (result or {}).get('output') or ''
-        ask = folder_question(asked, root) if asked else ''
+        ask = folder_question(asked, root, state['sessions'][-1]['session']) if asked else ''
         if asked and asked.get('question_id'):
             from .consent_decisions import present
             present(state['sessions'][-1]['session'], asked['question_id'])
