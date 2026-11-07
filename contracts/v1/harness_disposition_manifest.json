@@ -11,8 +11,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns host-validated conversation consent.",
-      "size_bytes": 15731,
-      "sha256": "df51e5b6889c40a791327958b6e390344276f9c3c62dc9746c1f42e383c1b585"
+      "size_bytes": 15926,
+      "sha256": "93e397444ac5e84250581760f0050571dc87e4338c230e1fb49f2a0641328675"
     },
     {
       "name": "inference_allowlist.py",

@@ -302,7 +302,7 @@ def acknowledge_notices(root, session, question_ids):
 
 
 def deliver_observations(root, session_id, session, control, journal):
-    """Deliver durable dialog choices through Runtime's host-only continuation.
+    """Deliver durable host dialog choices through repeatable continuations.
 
     Runtime's journal is the delivery receipt: a crash after append but before
     returning cannot duplicate the observation on a later resume.
@@ -312,14 +312,17 @@ def deliver_observations(root, session_id, session, control, journal):
             observation = q.get('observation')
             if not observation or q['session'] != session_id:
                 continue
+            from .native_refresh import OBSERVED
+            message_id = 'consent-decision-' + observation['id']
             records = journal.snapshot().records
-            if any(r.event().get('kind') == 'host_observation'
-                   and r.event().get('observation_id') == observation['id'] for r in records):
+            if any((r.event().get('kind') == 'host_observation'
+                    and r.event().get('observation_id') == observation['id'])
+                   or (r.event().get('kind') == 'user_message'
+                       and r.event().get('message_id') == message_id
+                       and r.event().get('text', '').startswith(OBSERVED)) for r in records):
                 continue
-            predecessor = records[-1]
-            session.continue_after_observation(control,
-                observation_id=observation['id'], text=observation['text'],
-                after_sequence=predecessor.sequence, after_sha256=predecessor.sha256)
+            session.continue_with(control, message_id=message_id,
+                text=observation['text'], interrupts_turn=True)
 
 
 def process(root, session):
