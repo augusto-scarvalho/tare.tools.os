@@ -835,7 +835,10 @@ class ConversationTools:
             if extending and task.get('plan'):
                 task['inherited_criteria']=(task['plan'].get('unit') or {}).get('criteria',task.get('inherited_criteria',[]))
             if not extending:task.pop('inherited_criteria',None)
-            if (task.get('delivery') or {}).get('candidate') and not task['delivery'].get('applied'):
+            if (task.get('delivery') or {}).get('applied'):
+                task['prior_delivery']=task['delivery']
+                task.pop('replan_candidate',None)
+            elif (task.get('delivery') or {}).get('candidate'):
                 task['prior_delivery']=task['delivery']
                 if extending:task['replan_candidate']=task['delivery']
                 else:task.pop('replan_candidate',None)
@@ -860,6 +863,8 @@ class ConversationTools:
                 # A rejected candidate stays available for the implementer's
                 # correction. An already applied patch must not be applied twice.
                 if (task.get('delivery') or {}).get('applied'):
+                    task['prior_delivery'] = task['delivery']
+                    task.pop('replan_candidate', None)
                     task['delivery'] = None
                     # The user's correction of an applied change is a new request: it plans in a round of its
                     # own, since the three delegations guard one request against loops, not a demand's later

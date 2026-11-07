@@ -1156,6 +1156,74 @@ def test_correction_keeps_rejected_candidate_but_not_an_already_applied_patch(ho
     assert json.loads(result.output_json)['task']['delivery'] is None
 
 
+@pytest.mark.parametrize('relation', ['correct', 'revise'])
+@pytest.mark.parametrize('applied_candidate', [False, True])
+def test_applied_delivery_blocks_older_candidates_after_transition(host, monkeypatch, relation, applied_candidate):
+    tools, execution, *_ = host
+    intake(host); original = planned(host)
+    value = tasks.load(tools.root); task = tasks.current(value)
+    stale = {'applied': False, 'files': ['obsolete.py'], 'candidate': {'patch': 'old'}}
+    applied = {'applied': True, 'files': ['a.py']}
+    if applied_candidate:
+        applied['candidate'] = {'patch': 'already-applied'}
+    task.update(prior_delivery=stale, replan_candidate=stale, delivery=applied)
+    tasks.save(tools.root, value)
+    user_reply(host, 'Repair the delivered change.')
+    transitioned = intake(host, relation=relation)['task']
+    stored = tasks.current(tasks.load(tools.root))
+    assert stored['prior_delivery'] == applied
+    assert 'replan_candidate' not in stored
+    assert tasks.retained_candidate(stored) is None
+    assert stored.get('delivery') is None
+    assert transitioned['stage'] == ('PLANNED' if relation == 'correct' else 'DISCOVERY')
+    assert stored.get('planning_revision', 0) == (1 if relation == 'correct' else 0)
+    if relation == 'revise':
+        value = tasks.load(tools.root)
+        tasks.task_plan(tools.root, tools.state['config'], tasks.current(value),
+                        {'artifact': original['plan']['artifact']})
+        tasks.save(tools.root, value)
+    calls = []
+    def run(*args, **kwargs):
+        calls.append(kwargs)
+        return {'verdict': 'INCONCLUSIVE', 'applied': False, 'files': [], 'reason': 'fixture stopped'}
+    monkeypatch.setattr(work_units, 'run_unit', run)
+    result = tools.execute(effect('implement', {}, 'fresh-implementation'), execution)
+    assert result.status == 'succeeded', result.output_json
+    assert len(calls) == 1
+    assert calls[0].get('candidate') is None
+
+
+@pytest.mark.parametrize('extending', [False, True])
+def test_revision_preserves_and_reuses_unapplied_candidate(host, monkeypatch, extending):
+    tools, execution, *_ = host
+    intake(host); original = planned(host)
+    targets = {'repo': ['a.py']}
+    candidate = {'patch': 'retained', 'sha256': 'a'*64, 'targets': targets,
+                 'basis': tasks.source_state(tools.state['config'], targets)}
+    previous = {'applied': False, 'verdict': 'NOT_VERIFIED', 'files': ['a.py'], 'candidate': candidate}
+    value = tasks.load(tools.root); tasks.current(value)['delivery'] = previous
+    tasks.save(tools.root, value)
+    user_reply(host, 'Revise the requested outcome.')
+    intake(host, relation='revise', **({} if extending else {'objective': 'A different outcome.'}))
+    value = tasks.load(tools.root); task = tasks.current(value)
+    assert task['prior_delivery'] == previous
+    assert task.get('replan_candidate') == (previous if extending else None)
+    assert tasks.retained_candidate(task) == previous
+    assert task['stage'] == 'DISCOVERY'
+    assert task.get('planning_revision', 0) == (0 if extending else 1)
+    tasks.task_plan(tools.root, tools.state['config'], task, {'artifact': original['plan']['artifact']})
+    tasks.save(tools.root, value)
+    calls = []
+    def run(*args, **kwargs):
+        calls.append(kwargs)
+        return {'verdict': 'INCONCLUSIVE', 'applied': False, 'files': [], 'reason': 'fixture stopped'}
+    monkeypatch.setattr(work_units, 'run_unit', run)
+    result = tools.execute(effect('implement', {}, 'reuse-implementation'), execution)
+    assert result.status == 'succeeded', result.output_json
+    assert len(calls) == 1
+    assert calls[0]['candidate'] == {**candidate, 'review_only': False}
+
+
 def test_verification_only_uses_named_host_checks_and_leaves_source_untouched(host):
     intake(host, intent='investigate')
     tools, execution, root, _ = host
