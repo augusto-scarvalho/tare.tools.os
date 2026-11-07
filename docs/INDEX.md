@@ -160,6 +160,9 @@ documents are the reference.
 
 Dated records of individual deliveries and qualifications.
 
+- [Jev consent qualification, 2026-11-07](history/JEV_CONSENT_QUALIFICATION_2026-11-07.md): supplied measurements,
+  multilingual plain-language consent judgment, and asymmetric allow >= 0.8 / deny >= 0.9 thresholds.
+
 - [Jev intent input qualification, 2026-10-27](history/JEV_INTENT_QUALIFICATION_2026-10-27.md): what the
   intent classifier received when an implementation request was classified as investigation.
 - [Hosted Jev mode qualification, 2026-10-28](history/JEV_MODE_QUALIFICATION_2026-10-28.md): `jev-1.14.0` for
