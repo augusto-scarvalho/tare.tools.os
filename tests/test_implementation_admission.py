@@ -1,5 +1,5 @@
 """An exhausted implementation budget is diagnosed before requesting consent."""
-import json,time
+import json,re,time
 
 import pytest
 
@@ -21,7 +21,11 @@ def test_preflight_preserves_plan_without_asking_consent_or_starting_a_child(hos
     monkeypatch.setattr('relay.conversation_permissions.authorize',forbidden)
     monkeypatch.setattr('relay.work_units.run_unit',forbidden)
     result=tools.execute(effect('implement',{},key='implementation'),control)
-    assert result.status=='refused' and 'too little left for a child' in result.output_json
+    assert result.status=='refused'
+    assert 'Insufficient implementer funding' in result.output_json
+    assert re.search(r'available (?:\d+|unlimited) calls and (?:\d+|unlimited) s', result.output_json)
+    assert 'required minimum 10 calls and 120 s' in result.output_json
+    assert 'No model call started' in result.output_json
     saved=tasks.current(tasks.load(tools.root))
     assert saved['stage']=='PENDING' and saved['plan']==plan
     assert 'delivery_invocation' not in saved and not (tools.root/'units').exists()

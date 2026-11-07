@@ -274,7 +274,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 pause_requested=None, receive_message=None, permission_directory=None,
                 active_time_budget=None,active_call_budget=None,recheck_candidate=False,retry_delivery=False,repair_plan=False,
                 unlimited_resources=(), model_recovery_call_limit=None, folder_consent_request=None,
-                raw_user_reply=None):
+                raw_user_reply=None, invocation_limits=None):
     from compute_plane.native_capabilities import NativeCapabilities
     from compute_plane.native_models import NativeHttpClient, NativeModelAdapter
     from compute_plane.native_project_context import NativeProjectContext
@@ -315,6 +315,11 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
     if refresh and not resume:
         raise ValueError('native_agent_refresh_requires_resume')
     overrides = dict(native_limits.validate({} if limits is None else limits))
+    invocation_caps = None if invocation_limits is None else dict(native_limits.validate(invocation_limits))
+    if invocation_caps is not None and (not resume or not follow_up or active_call_budget is not None
+                                       or active_time_budget is not None
+                                       or set(invocation_caps)-{'max_model_calls','max_seconds','request_seconds'}):
+        raise ValueError('Invocation ceilings require a delegated implementer resume.')
     legacy = asdict(budget) if budget is not None else {}
     if timeout is not native_limits.UNSET:
         legacy['max_seconds'] = timeout
@@ -574,6 +579,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                                    'native_counter_protocol') == 'utf8-envelope-estimate-v1'}
                                   | state.get('model_context_policy', {}) | config['context_policy']))
         selected_budget = NativeBudget(**state['budget'])
+        if invocation_caps is not None and (not state.get('delegated_leaf') or config['role'] != 'implementer'):
+            raise ValueError('Invocation ceilings require a delegated implementer resume.')
         # Read-only roles can overlap. Their observed bytes are checked at delivery
         # and resume; this is not a coherent repository snapshot. Sessions capable
         # of edits or arbitrary verifier processes retain exclusive workspace custody.
@@ -625,6 +632,29 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 recorded_budget=initial[0].event().get('budget') if initial else None
                 grant_conversation_calls(state,active_call_budget,message_id,native_budget=recorded_budget)
                 selected_budget=NativeBudget(**state['budget'])
+        # Invocation overlays never relabel the persisted tactical budget or deadline.
+        # Apply time only after excluding an authorized idle folder wait.
+        invocation_deadline = state['deadline_utc']
+        effective_limits = dict(resolved_limits)
+        invocation_call_ceiling = None
+        if invocation_caps is not None:
+            from .delegation_tools import count_calls
+            calls = invocation_caps.get('max_model_calls')
+            if calls is not None:
+                invocation_call_ceiling = count_calls(root) + calls
+            for key, value in invocation_caps.items():
+                saved = effective_limits[key]
+                effective_limits[key] = value if saved is None else saved if value is None else min(saved, value)
+            seconds = invocation_caps.get('max_seconds')
+            if seconds is not None:
+                deadline = started_utc + seconds
+                invocation_deadline = deadline if invocation_deadline is None else min(invocation_deadline, deadline)
+            if invocation_deadline is not None:
+                remaining_seconds = max(0.001, invocation_deadline-time.time())
+                for key in native_limits.TIME_FIELDS:
+                    if key != 'max_seconds':
+                        value = effective_limits[key]
+                        effective_limits[key] = remaining_seconds if value is None else min(value, remaining_seconds)
         invocation = {'id': invocation_id, 'started_at': time.time(), 'status': 'PREPARING', 'observation_failures': None}
         owner_interrupted = any(r.get('ended_at') is None for r in state['invocations'])
         state['invocations'].append(invocation)
@@ -643,7 +673,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             binding = BindingRef('session:'+session_id, session_id, 'operator', 1, session_id)
             cancel = cancellation or CancellationToken()
             control = ExecutionControl(binding, cancel,
-                math.inf if state['deadline_utc'] is None else time.monotonic()+max(0, state['deadline_utc']-time.time()))
+                math.inf if invocation_deadline is None else time.monotonic()+max(0, invocation_deadline-time.time()))
             scratch = regular(root / 'scratch'); scratch.mkdir(exist_ok=True)
             from .native_activity import ActivityJournal
             from .flow_activity import observer
@@ -766,7 +796,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 if not value:
                     raise ModelFailure('AUTH_FAILED')
                 return value
-            http_options = native_limits.http_options(resolved_limits)
+            http_options = native_limits.http_options(effective_limits)
             if state.get('attachments_enabled'):
                 http_options['request_byte_limit'] = 32*1024*1024
             from .execution_scope import require
@@ -846,6 +876,19 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             if shared_tools:  # every admitted child consumes the same parent call ceiling
                 from .delegation_tools import SharedModel
                 model = SharedModel(model, shared_tools)
+            if invocation_call_ceiling is not None:
+                # Like SharedModel, count the request already journaled by Runtime.
+                # Summaries and retries consume this same cumulative ceiling.
+                paid_model = model
+                class InvocationModel:
+                    def __getattr__(self, name):
+                        return getattr(paid_model, name)
+                    def generate(self, request, execution):
+                        from .delegation_tools import count_calls
+                        if count_calls(root) > invocation_call_ceiling:
+                            raise ModelFailure('IMPLEMENTER_INVOCATION_CALL_LIMIT', not_started=True)
+                        return paid_model.generate(request, execution)
+                model = InvocationModel()
             packet = encode({'role': state.get('conversation_role', config['role']), 'repositories': config['repositories'],
                 'path_contract': {
                     'repository': 'Use a repository identifier from repositories, not a filesystem path.',
@@ -1061,7 +1104,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 'pending_id': outcome.pending_id, 'model_calls': outcome.model_calls,
                 'execution': 'native', 'authority': 'NONE', 'role': state.get('conversation_role', config['role']), 'session_id': session_id,
                 'runtime_observation': invocation['runtime_observation'],
-                'effective_limits': resolved_limits,
+                'effective_limits': effective_limits,
                 'session': str(root), 'profile_digest': adapter.profile_digest,
                 'context_counting': 'estimated' if policy.allow_estimated_counts and adapter.counter_protocol ==
                     'utf8-envelope-estimate-v1' else 'measured_required',

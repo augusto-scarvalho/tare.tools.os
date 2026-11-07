@@ -661,10 +661,10 @@ def child_limits(custody, state, share=1, *, deployment=None):
     if state.get('deadline_utc') is not None:
         seconds = resources.ceiling('time', seconds, int(state['deadline_utc'] - time.time()) - 60)
     if calls is not None and calls < MIN_CHILD_CALLS or seconds is not None and seconds < 120:
-        raise ValueError(f'The session has too little left for a child ({max(calls, 0)} calls, {max(seconds, 0)} s; '
-                         f'a child needs {MIN_CHILD_CALLS} calls and 120 s): '+
-                         ('preserve the plan and candidate; the coordinator cannot bypass this limit (R5).'
-                          if state.get('conversation_flow') else 'edit directly (R5).'))
+        available_calls = 'unlimited' if calls is None else str(max(calls, 0))
+        available_seconds = 'unlimited' if seconds is None else str(max(seconds, 0))
+        raise ValueError(f'Insufficient implementer funding: available {available_calls} calls and {available_seconds} s; '
+                         f'required minimum {MIN_CHILD_CALLS} calls and 120 s. No model call started (R5).')
     return {'max_model_calls': calls, 'max_seconds': seconds, **({'request_seconds': seconds} if seconds is not None else {})}
 
 
@@ -1094,14 +1094,6 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                         row['amount_committed'] = None
                         (job/'receipt.json').write_text(json.dumps({**receipt, 'rungs': receipt['rungs'] + [row]}), encoding='utf-8')
                     session_path=waiting[1] if waiting else job/f'session-{rung+1}'
-                    if waiting:
-                        remaining=waiting[2]['budget']['max_model_calls']
-                        if selected_limits['max_model_calls'] is not None and (remaining is None or remaining-worker['model_calls'] > selected_limits['max_model_calls']):
-                            raise ValueError('The parent cannot fund the waiting worker\'s saved remaining calls (R5).')
-                        saved_deadline=waiting[2].get('deadline_utc')
-                        ended=waiting[2]['invocations'][-1]['ended_at']
-                        if selected_limits['max_seconds'] is not None and saved_deadline is not None and saved_deadline-ended > selected_limits['max_seconds']:
-                            raise ValueError('The parent cannot fund the waiting worker\'s remaining active time (R5).')
                     from .native_routes import executed_attempt, executed_decision
                     from .execution_scope import current, pin_matches
                     implementer_pin = current().pin('implementer')
@@ -1124,7 +1116,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                         note+=(args.get('note') or '')
                         keep_tree=False
                         outcome=run_session(None,None,session_path,resume=True,follow_up=note,
-                            message_id='folder-granted-'+uuid.uuid4().hex,
+                            message_id='folder-granted-'+uuid.uuid4().hex, invocation_limits=selected_limits,
                             **({'receive_message':receive_advice} if handoff is not None else {}),
                             **({'cancellation': control.cancellation} if control is not None else {}))
                         row['resumed_session']=str(session_path)

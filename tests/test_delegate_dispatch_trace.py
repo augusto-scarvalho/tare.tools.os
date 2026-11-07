@@ -393,6 +393,7 @@ def test_waiting_worker_funding_precedes_executed_record(setup, tmp_path, monkey
     from relay.folder_access import grant
     from test_native_agent import Client
     actual_run = native_agent.run_session
+    actual_child_limits = work_units.child_limits
     custody, state, args = unit_env(setup, tmp_path, monkeypatch, actual_run)
     if active_pin:
         monkeypatch.setattr(turn_engine, 'available',
@@ -428,11 +429,17 @@ def test_waiting_worker_funding_precedes_executed_record(setup, tmp_path, monkey
         monkeypatch.setattr(scope, 'current', lambda: selected_scope)
     limits = {'max_model_calls': 1 if refusal == 'calls' else 4,
               'max_seconds': 1 if refusal == 'time' else 30}
-    monkeypatch.setattr(work_units, 'child_limits', lambda *a, **kw: limits)
+    if refusal:
+        monkeypatch.setattr(work_units, 'child_limits', actual_child_limits)
+        state['limits']['max_model_calls'] = work_units.SESSION_RESERVE + 1 if refusal == 'calls' else None
+        state['deadline_utc'] = __import__('time').time() + 61 if refusal == 'time' else None
+    else:
+        monkeypatch.setattr(work_units, 'child_limits', lambda *a, **kw: limits)
     dispatched = []
     def resume(config, value, session, **kwargs):
         dispatched.append(kwargs)
         assert config is None and value is None and kwargs['resume']
+        assert kwargs['invocation_limits'] == limits
         raise OSError('offline resume interrupted')
     monkeypatch.setattr(native_agent, 'run_session', resume)
     result = work_units.run_unit(custody, state, args, lambda: False, review=audit, worker=worker)
@@ -444,7 +451,8 @@ def test_waiting_worker_funding_precedes_executed_record(setup, tmp_path, monkey
     if refusal:
         assert not dispatched
         assert 'executed_decision' not in row and 'attempts' not in row
-        assert ('saved remaining calls' if refusal == 'calls' else 'remaining active time') in result['reason']
+        assert 'Insufficient implementer funding' in result['reason']
+        assert 'required minimum' in result['reason']
         assert result['worker'] and Path(worker['tree']).is_dir()
     else:
         assert len(dispatched) == 1
