@@ -395,9 +395,11 @@ def run_checks(tree, commands):
     statuses = []
 
     def receipt():
-        # Reserve the front of the receipt for every outcome, before noisy logs.
+        # Clip only logs; exceptional outcomes and pending commands remain complete afterward.
+        output = clip('\n'.join(outputs))
         pending = [f'{name}: not executed' for name in commands if name not in completed]
-        return '\n'.join([*statuses, *pending, clip('\n'.join(outputs))])
+        exceptional = '\n'.join([*statuses, *pending])
+        return output + ('\n' if output and exceptional else '') + exceptional
 
     completed = set()
     state = 'green'
@@ -426,7 +428,6 @@ def run_checks(tree, commands):
         if getattr(done, 'execution_limitation', None):
             statuses.append(f'{name}: {done.execution_limitation}')
             return 'inconclusive', receipt()
-        statuses.append(f'{name}: exit {done.returncode}')
         if done.returncode:
             state = 'red'
     return state, receipt()

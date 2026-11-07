@@ -61,7 +61,10 @@ def test_three_files_exceed_combined_budget(tmp_path, monkeypatch, red, discover
     assert state == ('red' if red else 'green')
     assert [timeout for _, timeout in calls] == [300, 300, 300]
     assert all(len(paths) == 1 for paths, _ in calls)
-    assert all(f'{name}: exit {int(red)}' in output for name in commands)
+    blocks = '\n'.join(
+        f'$ {name} (exit {int(red)})\n{work_units.check_output("x" * 50000)}'
+        for name in commands)
+    assert output == work_units.clip(blocks)
 
 
 @pytest.mark.parametrize('managed', [False, True])
@@ -70,10 +73,63 @@ def test_single_file_timeout_is_named(tmp_path, monkeypatch, managed):
     durations = dict(zip(unit['test_paths'], [120, 301, 120]))
     state, output, calls = simulate(tmp_path, commands, durations, managed=managed)
     assert state == 'inconclusive' and len(calls) == 2
-    assert 'pytest-tests:tests/test_a.py: exit 0' in output
+    assert '$ pytest-tests:tests/test_a.py (exit 0)' in output
     assert 'pytest-tests:tests/test_b.py:' in output and 'timeout' in output
     assert 'pytest-tests:tests/test_c.py: not executed' in output
-    assert 'pytest-tests:tests/test_c.py: exit 0' not in output
+    assert '$ pytest-tests:tests/test_c.py (exit ' not in output
+    assert output.index('pytest-tests:tests/test_b.py:') > output.index('$ pytest-tests:tests/test_a.py (exit 0)')
+
+
+@pytest.mark.parametrize('kind', ['timeout', 'start', 'limitation'])
+@pytest.mark.parametrize('first', [False, True])
+def test_exceptional_status_survives_clipping_after_output(tmp_path, monkeypatch, kind, first):
+    """Only logs are clipped; exceptional and pending statuses form an intact suffix."""
+    commands = {name: [name] for name in (['cut', 'later'] if first else ['prior', 'cut', 'later'])}
+    calls, blocks, clipped = [], [], []
+    original_clip = work_units.clip
+
+    def clip_logs(text):
+        clipped.append(text)
+        return original_clip(text, limit=32)
+
+    monkeypatch.setattr(work_units, 'clip', clip_logs)
+    statuses = {
+        'timeout': 'cut: more than 300 s (timeout)',
+        'start': 'cut: could not start: offline',
+        'limitation': 'cut: Check timeout; process tree cleanup verified.',
+    }
+
+    def port(argv, **options):
+        name = argv[0]
+        calls.append(name)
+        assert options['timeout'] == 300
+        if name == 'cut':
+            if kind == 'timeout':
+                raise subprocess.TimeoutExpired(argv, options['timeout'])
+            if kind == 'start':
+                raise OSError('offline')
+        code = -1 if name == 'cut' else 0
+        log = name + ': ' + 'x' * 200
+        blocks.append(f'$ {name} (exit {code})\n{log}')
+        return SimpleNamespace(returncode=code, stdout=log, stderr='',
+                               execution_limitation=(
+                                   'Check timeout; process tree cleanup verified.' if name == 'cut' else None))
+
+    token = work_units.CHECK_PORT.set(port)
+    try:
+        state, output = work_units.run_checks(tmp_path, commands)
+    finally:
+        work_units.CHECK_PORT.reset(token)
+    assert state == 'inconclusive'
+    assert calls == (['cut'] if first else ['prior', 'cut'])
+    logs = '\n'.join(blocks)
+    assert clipped == [logs]
+    prefix = original_clip(logs, limit=32)
+    suffix = statuses[kind] + '\nlater: not executed'
+    assert output == prefix + ('\n' if prefix else '') + suffix
+    assert '$ later (exit ' not in output
+    if kind != 'limitation':
+        assert '$ cut (exit ' not in output
 
 
 def test_unlimited_time_applies_to_every_file(tmp_path, monkeypatch):

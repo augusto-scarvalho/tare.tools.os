@@ -265,9 +265,9 @@ def test_conversation_unit_runs_only_its_pytest_scope_through_final_application(
     assert all('tests/test_unrelated.py' not in argv for argv in commands)
     assert config == original
     receipt = json.loads(Path(result['receipt']).read_text(encoding='utf8'))
-    for field in ('checks_before', 'checks_after'):
+    for field, code in (('checks_before', 1), ('checks_after', 0)):
         for path in paths:
-            assert f'pytest-tests:{path}: exit ' in receipt['result'][field]
+            assert f'$ pytest-tests:{path} (exit {code})' in receipt['result'][field]
     assert receipt['rungs'][0]['before_state'] == 'red'
     assert receipt['rungs'][0]['after_state'] == 'green'
 
