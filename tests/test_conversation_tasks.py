@@ -1718,36 +1718,52 @@ def test_judged_retry_can_be_requested_again_after_consumption(host, monkeypatch
 
 
 @pytest.mark.parametrize('choice', ['allow', 'deny'])
-def test_dialog_resume_delivers_host_observation_without_user_message(setup, monkeypatch, choice):
+@pytest.mark.parametrize('legacy', [False, True])
+def test_dialog_resume_delivers_host_observation_without_human_words(setup, monkeypatch, choice, legacy):
+    from compute_plane.native_journal import NativeJournal
     from relay import consent_decisions as consent
     from relay.native_refresh import OBSERVED, FOLLOW_UP, user_words
     config, custody, root = setup
     first_client = Client(steps=[('tare_deliver', {'summary': 'May I read the reference?'})])
     first = native_agent.run_session(config, deployment(), custody, 'Compare references.',
         conversation=True, client=first_client, local_counter=first_client)
-    outside = root.parent/'reference with spaces'; outside.mkdir()
-    key = consent.register(custody, first['session_id'], 'folder',
-        {'path': str(outside), 'store': str(root.parent/'grants.json')}, question='Allow reading?')
     before = consent.events(custody)
-    consent.record(custody, first['session_id'], key, choice=choice)
-    observation = consent.load(custody)['questions'][0]['observation']
     monkeypatch.setattr(consent, 'classify', lambda *a: pytest.fail('host observation was classified'))
-    follow = Client(steps=[('tare_deliver', {'summary': 'Continuing after the choice.'})])
-    result = native_agent.run_session(None, None, custody, resume=True, client=follow, local_counter=follow)
-    assert result['status'] == 'PROPOSED'
-    after = consent.events(custody)
-    assert [e for e in after if e['kind'] == 'user_message'] == [e for e in before if e['kind'] == 'user_message']
-    observed = [e for e in after if e['kind'] == 'host_observation']
-    assert len(observed) == 1 and observed[0]['observation_id'] == observation['id']
-    assert observation['text'].startswith(OBSERVED) and FOLLOW_UP not in observation['text']
-    assert user_words(observation['text']) is None
-    body = next(b for p, b in follow.calls if p == '/chat/completions')
-    assert any(observation['text'] in message.get('content', '')
-               for message in body['messages'] if isinstance(message.get('content'), str))
-    # A repeated resume must use the journal delivery receipt, not append again.
+    observations = []
+    for cycle, selected in enumerate([choice, 'deny' if choice == 'allow' else 'allow']):
+        outside = root.parent/f'reference with spaces {cycle}'; outside.mkdir()
+        key = consent.register(custody, first['session_id'], 'folder',
+            {'path': str(outside), 'store': str(root.parent/'grants.json')}, question='Allow reading?')
+        consent.record(custody, first['session_id'], key, choice=selected)
+        observation = next(q['observation'] for q in consent.load(custody)['questions'] if q['id'] == key)
+        observations.append(observation)
+        if legacy and cycle == 0:
+            journal = NativeJournal(custody/'journal.jsonl')
+            predecessor = journal.snapshot().records[-1]
+            journal.append({'kind': 'host_observation',
+                'observation_id': observation['id'], 'text': observation['text'],
+                'after_sequence': predecessor.sequence, 'after_sha256': predecessor.sha256})
+        follow = Client(steps=[('tare_deliver', {'summary': 'Continuing after the choice.'})])
+        result = native_agent.run_session(None, None, custody, resume=True, client=follow, local_counter=follow)
+        assert result['status'] == 'PROPOSED'
+        assert observation['text'].startswith(OBSERVED) and FOLLOW_UP not in observation['text']
+        assert user_words(observation['text']) is None
+        body = next(b for p, b in follow.calls if p == '/chat/completions')
+        assert any(observation['text'] in message.get('content', '')
+                   for message in body['messages'] if isinstance(message.get('content'), str))
+        after = consent.events(custody)
+        assert [e for e in after if e['kind'] == 'user_message' and user_words(e['text']) is not None] == [
+            e for e in before if e['kind'] == 'user_message' and user_words(e['text']) is not None]
+        for index, delivered in enumerate(observations):
+            receipts = [e for e in after if e['kind'] == 'user_message'
+                        and e.get('message_id') == 'consent-decision-' + delivered['id']]
+            assert len(receipts) == (0 if legacy and index == 0 else 1)
+            if receipts:
+                assert receipts[0]['text'] == delivered['text']
+    observed = [e for e in consent.events(custody) if e['kind'] in {'user_message', 'host_observation'}]
     again = Client(steps=[('tare_deliver', {'summary': 'Still continuing.'})])
     native_agent.run_session(None, None, custody, resume=True, client=again, local_counter=again)
-    assert [e for e in consent.events(custody) if e['kind'] == 'host_observation'] == observed
+    assert [e for e in consent.events(custody) if e['kind'] in {'user_message', 'host_observation'}] == observed
 
 
 @pytest.mark.parametrize('delivery', ['callback', 'no_callback', 'failed_callback'])

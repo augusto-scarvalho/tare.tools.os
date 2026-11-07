@@ -409,3 +409,65 @@ def test_rule_selection_honors_restrictions(monkeypatch, mode):
         assert consent.select_rule() == 'fallback'
     finally:
         POLICY_VIEW.reset(token)
+
+
+@pytest.mark.parametrize('choice', ['allow', 'deny'])
+@pytest.mark.parametrize('receipt', ['legacy', 'new', 'other-legacy', 'other-new', 'unprefixed'])
+def test_dialog_delivery_receipts(tmp_path, choice, receipt):
+    from relay.native_refresh import OBSERVED, FOLLOW_UP, user_words
+    log, key, _ = question(tmp_path)
+    consent.record(tmp_path, 's', key, choice=choice)
+    observation = consent.load(tmp_path)['questions'][0]['observation']
+    identity = 'consent-decision-' + observation['id']
+    if receipt in {'legacy', 'other-legacy'}:
+        log.append({'kind': 'host_observation',
+                    'observation_id': observation['id'] if receipt == 'legacy' else 'old'})
+    else:
+        log.append({'kind': 'user_message',
+                    'message_id': identity if receipt != 'other-new' else 'other',
+                    'text': observation['text'] if receipt != 'unprefixed' else 'allow'})
+    calls = []
+    control = object()
+    class Session:
+        def continue_with(self, received_control, **kwargs):
+            assert received_control is control
+            calls.append(kwargs)
+            log.append({'kind': 'user_message', 'message_id': kwargs['message_id'], 'text': kwargs['text']})
+    session = Session()
+    consent.deliver_observations(tmp_path, 'other', session, control, log)
+    assert calls == []
+    consent.deliver_observations(tmp_path, 's', session, control, log)
+    expected = [] if receipt in {'legacy', 'new'} else [
+        {'message_id': identity, 'text': observation['text'], 'interrupts_turn': True}]
+    assert calls == expected
+    consent.deliver_observations(tmp_path, 's', session, control, log)
+    assert calls == expected
+    assert observation['text'].startswith(OBSERVED)
+    assert FOLLOW_UP not in observation['text']
+    assert user_words(observation['text']) is None
+
+
+@pytest.mark.parametrize('choice', ['allow', 'deny'])
+@pytest.mark.parametrize('append_first', [False, True])
+def test_dialog_delivery_retries_after_interruption(tmp_path, choice, append_first):
+    log, key, _ = question(tmp_path)
+    consent.record(tmp_path, 's', key, choice=choice)
+    observation = consent.load(tmp_path)['questions'][0]['observation']
+    calls = []
+    class Session:
+        def continue_with(self, control, **kwargs):
+            calls.append(kwargs)
+            if append_first or len(calls) > 1:
+                log.append({'kind': 'user_message', 'message_id': kwargs['message_id'], 'text': kwargs['text']})
+            if len(calls) == 1:
+                raise RuntimeError('interrupted')
+    session = Session()
+    with pytest.raises(RuntimeError, match='interrupted'):
+        consent.deliver_observations(tmp_path, 's', session, None, log)
+    consent.deliver_observations(tmp_path, 's', session, None, log)
+    consent.deliver_observations(tmp_path, 's', session, None, log)
+    assert len(calls) == (1 if append_first else 2)
+    assert all(call == {'message_id': 'consent-decision-' + observation['id'],
+                        'text': observation['text'], 'interrupts_turn': True} for call in calls)
+    assert len([e for e in consent.events(tmp_path)
+                if e.get('message_id') == 'consent-decision-' + observation['id']]) == 1
