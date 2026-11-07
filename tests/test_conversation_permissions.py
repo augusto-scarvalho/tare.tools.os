@@ -53,7 +53,7 @@ def test_candidate_checks_use_the_source_environment_and_owned_pytest_scratch(tm
     python = project/'.venv/Scripts/python.exe'; python.write_bytes(b'fixture; not executed')
     config = {'repositories': {'repo': str(project)}, 'verifiers': {}, 'conversation_flow': True}
     checks = work_units.checks(config, {'test_paths': ['tests/test_graph.py']}, 'repo', candidate)
-    argv = checks['pytest-tests']
+    argv = checks['pytest-tests:tests/test_graph.py']
     assert argv[0] == str(python)
     assert argv[-2:] == ['--basetemp', str(tmp_path/'.candidate-pytest')]
     assert str(candidate) not in str(argv[0]) and 'tests/test_graph.py' in argv

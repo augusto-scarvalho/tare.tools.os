@@ -29,7 +29,7 @@ def test_only_a_declared_unfiltered_matching_scope_replaces_the_automatic_check(
             'verifiers':{'check':{'repository':'repo','argv':explicit}}}
     unit={'verifiers':['check'],'test_paths':['tests/test_a.py']}
     compiled=work_units.checks(config,unit,'repo',tmp_path)
-    assert ('pytest-tests' not in compiled)==duplicate
+    assert ('pytest-tests:tests/test_a.py' not in compiled)==duplicate
     # Original configured commands remain authoritative, including their flags.
     assert compiled['check'][:len(explicit)]==explicit
 
@@ -48,7 +48,7 @@ def test_another_python_environment_does_not_supply_the_automatic_check(tmp_path
     config={'conversation_flow':True,'repositories':{'repo':str(tmp_path)},'verifiers':{
         'check':{'repository':'repo','argv':[sys.executable,'-m','pytest','tests/test_a.py']}}}
     unit={'verifiers':['check'],'test_paths':['tests/test_a.py']}
-    assert set(work_units.checks(config,unit,'repo',tmp_path))=={'check','pytest-tests'}
+    assert set(work_units.checks(config,unit,'repo',tmp_path))=={'check','pytest-tests:tests/test_a.py'}
 
 
 @pytest.mark.parametrize('extra',[[],['-k','one_case']])

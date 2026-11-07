@@ -194,16 +194,19 @@ def test_verification_only_can_run_saved_plan_tests_in_private_scratch(host,monk
     tasks.save(tools.root,value)
     commands=[]
     monkeypatch.setattr(work_units,'run_checks',lambda tree,argv:(commands.append((tree,argv)) or ('green','passed')))
-    args={'names':['pytest-tests']}
+    args={'names':['pytest-tests:tests/test_graph.py']}
     if requested=='paths':
         refused=tools.execute(effect('check',{'names':['tests/test_graph.py']}),execution)
         assert refused.status=='refused' and commands==[]
         output=json.loads(refused.output_json)
-        assert output['available_checks']['pytest-tests']['argv'][-1]=='tests/test_graph.py'
-        args=output['required_action']['arguments']
+        assert output['available_checks']['pytest-tests:tests/test_graph.py']['argv'][-1]=='tests/test_graph.py'
+        assert output['required_action']=={'tool':'check','arguments':{'names':['pytest-tests:tests/test_graph.py']}}
+        assert output['next']=='This registered check runs exactly the requested test targets, not a broader suite. Retry it.'
+        # File names remain invalid check names; retry with the advertised name.
+        args={'names':['pytest-tests:tests/test_graph.py']}
     result=tools.execute(effect('check',args),execution)
     assert result.status=='succeeded' and json.loads(result.output_json)['status']=='green'
-    tree,argv=commands[0];command=argv['pytest-tests']
+    tree,argv=commands[0];command=argv['pytest-tests:tests/test_graph.py']
     assert 'tests/test_graph.py' in command and command[-2]=='--basetemp'
     assert Path(command[-1]).parent==tree.parent and not Path(command[-1]).is_relative_to(project)
     assert not seen and (project/'a.py').read_text()=='value = 1\n'
@@ -223,7 +226,73 @@ def test_check_path_retry_never_broadens_a_subset_or_arbitrary_command(host,monk
         result=tools.execute(effect('check',{'names':names}),execution)
         assert result.status=='refused'
         output=json.loads(result.output_json)
-        assert 'pytest-tests' in output['available_checks'] and 'required_action' not in output
+        assert 'pytest-tests:tests/test_first.py' in output['available_checks'] and 'required_action' not in output
+
+
+@pytest.mark.parametrize('collisions', [0, 1, 2])
+def test_check_path_retry_uses_exact_registered_files_and_collision_names(host,monkeypatch,collisions):
+    tools,execution,project,_=host
+    intake(host);planned(host)
+    (project/'tests').mkdir()
+    for path in ['test_first.py','test_second.py']:
+        (project/'tests'/path).write_text('def test_value(): pass\n')
+    targets=['tests/test_second.py::test_value','tests/test_first.py::test_value']
+    custom={}
+    for path in ['tests/test_first.py','tests/test_second.py']:
+        base='pytest-tests:'+path
+        for index in range(collisions):
+            name=base if index==0 else base+'#'+str(index+1)
+            custom[name]={'repository':'repo','argv':[sys.executable,'-m','pytest']}
+    tools.state['config']['verifiers'].update(custom)
+    value=tasks.load(tools.root)
+    tasks.current(value)['plan']['unit'].update(test_paths=targets,verifiers=list(custom))
+    tasks.save(tools.root,value)
+    commands=[]
+    monkeypatch.setattr(work_units,'run_checks',lambda tree,argv:(commands.append(argv) or ('green','passed')))
+    result=tools.execute(effect('check',{'names':targets}),execution)
+    assert result.status=='refused' and commands==[]
+    output=json.loads(result.output_json)
+    suffix='' if not collisions else '#'+str(collisions+1)
+    expected=['pytest-tests:'+path+suffix for path in ['tests/test_first.py','tests/test_second.py']]
+    assert output['required_action']=={'tool':'check','arguments':{'names':expected}}
+    assert output['next']=='These registered checks run exactly the requested test targets, not a broader suite. Retry them.'
+    assert all(name in output['available_checks'] and name not in custom for name in expected)
+    retry=tools.execute(effect('check',output['required_action']['arguments']),execution)
+    assert retry.status=='succeeded' and list(commands[0])==expected
+    for name,target in zip(expected,sorted(targets)):
+        assert target in commands[0][name]
+        assert not any(other in commands[0][name] for other in targets if other!=target)
+
+
+@pytest.mark.parametrize('case', ['missing','superset','extra-argument','invalid','limit'])
+def test_check_path_retry_requires_complete_valid_coverage(host,monkeypatch,case):
+    tools,execution,project,_=host
+    intake(host);planned(host)
+    (project/'tests').mkdir()
+    targets=['tests/test_first.py','tests/test_second.py']
+    if case=='limit':
+        targets=[f'tests/test_{index}.py' for index in range(17)]
+    for path in targets:
+        (project/path).write_text('def test_value(): pass\n')
+    value=tasks.load(tools.root)
+    tasks.current(value)['plan']['unit']['test_paths']=targets
+    tasks.save(tools.root,value)
+    if case=='missing':
+        original=work_units.checks
+        def incomplete(*args,**kwargs):
+            checks=original(*args,**kwargs)
+            checks.pop('pytest-tests:tests/test_second.py',None)
+            return checks
+        monkeypatch.setattr(work_units,'checks',incomplete)
+    args={'names':list(targets)}
+    if case=='superset':args['names'].append('tests/test_extra.py')
+    if case=='extra-argument':args['command']='pytest'
+    if case=='invalid':args['names']=[{}]
+    monkeypatch.setattr(work_units,'run_checks',lambda *a:pytest.fail('A refused check must not run'))
+    result=tools.execute(effect('check',args),execution)
+    assert result.status=='refused'
+    output=json.loads(result.output_json)
+    assert 'required_action' not in output and 'next' not in output
 
 
 def user_reply(host, text):
@@ -310,6 +379,12 @@ def test_legacy_failed_graph_reuses_goal_patch_and_diagnostics_but_same_contract
         assert unit['verification_feedback'] == "invalid status 'no'"
         assert unit['previous_candidate_changes'] == patch.read_text()
         assert unit['verification_contract']['example']['nodes']
+        assert unit['key'] == original['unit']['key']
+        expected = hashlib.sha256(tasks.encode(tasks.backlog_authoring_contract()).encode()).hexdigest()
+        assert unit['verification_contract_digest'] == expected
+        compiled_before = deepcopy(unit)
+        work_units.checks(state['config'], unit, unit['repository'], tools.root)
+        assert unit == compiled_before
         calls.append(unit['verification_contract_digest'])
         result = {**failed, 'receipt':str(receipt)}
         work_units.record(custody, unit, result)
@@ -985,8 +1060,8 @@ def test_executable_plan_accepts_new_files_and_tests_but_not_whole_directories(h
     assert tasks.current(value)['plan']['unit']['test_paths'] == ['tests/test_new.py']
     commands = work_units.checks({**tools.state['config'], 'conversation_flow': True},
         tasks.current(value)['plan']['unit'], 'repo', Path(tools.state['config']['repositories']['repo']))
-    assert 'pytest-tests' in commands and '-B' in commands['pytest-tests']
-    assert 'tests/test_new.py' in commands['pytest-tests']
+    assert 'pytest-tests:tests/test_new.py' in commands and '-B' in commands['pytest-tests:tests/test_new.py']
+    assert 'tests/test_new.py' in commands['pytest-tests:tests/test_new.py']
     plan['tasks'][0]['target_paths'] = ['.']; plan['tasks'][0]['test_paths'] = []
     save_json(artifact, {'payload': plan})
     with pytest.raises(ValueError, match='literal target files'):

@@ -209,7 +209,8 @@ def test_each_ecosystem_runs_only_the_units_tests():
     assert n('dotnet', 'dotnet', ['T/CTests.cs']) == ['dotnet', 'test', '--filter', 'FullyQualifiedName~CTests']
 
 
-def test_conversation_unit_runs_only_its_pytest_scope_through_final_application(setup, tmp_path, monkeypatch):
+@pytest.mark.parametrize('file_count', [1, 3])
+def test_conversation_unit_runs_only_its_pytest_scope_through_final_application(setup, tmp_path, monkeypatch, file_count):
     import copy
     import subprocess
     import sys
@@ -220,6 +221,11 @@ def test_conversation_unit_runs_only_its_pytest_scope_through_final_application(
     (root/'tests/test_selected.py').write_text(
         'from pathlib import Path\ndef test_value(): assert "value = 2" in Path("a.py").read_text()\n')
     (root/'tests/test_unrelated.py').write_text('def test_unrelated(): assert False, "outside unit scope"\n')
+    paths = ['tests/test_selected.py']
+    for i in range(1, file_count):
+        path = f'tests/test_selected_{i}.py'
+        paths.append(path)
+        (root/path).write_text('def test_value(): pass\n')
     python = sys.executable
     monkeypatch.setattr(turn_engine, 'project_python', lambda path: python)
     config.update(conversation_flow=True, verifiers={
@@ -234,20 +240,36 @@ def test_conversation_unit_runs_only_its_pytest_scope_through_final_application(
     commands = []
     def run(argv, **kwargs):
         commands.append(list(argv))
+        if file_count == 3:
+            from types import SimpleNamespace
+            selected = [p for p in paths if p in argv]
+            assert selected
+            assert kwargs['timeout'] == 300
+            if 120 * len(selected) > kwargs['timeout']:
+                raise subprocess.TimeoutExpired(argv, kwargs['timeout'])
+            red = 'value = 2' not in (Path(kwargs['cwd'])/'a.py').read_text()
+            return SimpleNamespace(returncode=int(red), stdout='', stderr='')
         return subprocess.run(argv, **kwargs)
     token = work_units.CHECK_PORT.set(run)
     try:
         result = work_units.run_unit(custody, {'config': config, 'conversation_flow': True,
             'deployment': deployment(), 'limits': {'max_model_calls': 30}, 'deadline_utc': None},
             {'title': 'Set two', 'target_paths': ['a.py'], 'criteria': ['value equals two'],
-             'verifiers': ['tests'], 'test_paths': ['tests/test_selected.py']}, lambda: False,
+             'verifiers': ['tests'], 'test_paths': paths}, lambda: False,
             review=lambda *a: {'verdict': 'ACCEPT', 'sources': [], 'reference_sources': []})
     finally:
         work_units.CHECK_PORT.reset(token)
     assert result['verdict'] == 'VERIFIED' and result['applied'] is True
-    assert commands and all('tests/test_selected.py' in argv and '--basetemp' in argv for argv in commands)
+    assert commands and all(sum(p in argv for p in paths) == 1 and '--basetemp' in argv for argv in commands)
+    assert all(any(p in argv for argv in commands) for p in paths)
     assert all('tests/test_unrelated.py' not in argv for argv in commands)
     assert config == original
+    receipt = json.loads(Path(result['receipt']).read_text(encoding='utf8'))
+    for field in ('checks_before', 'checks_after'):
+        for path in paths:
+            assert f'pytest-tests:{path}: exit ' in receipt['result'][field]
+    assert receipt['rungs'][0]['before_state'] == 'red'
+    assert receipt['rungs'][0]['after_state'] == 'green'
 
 
 def test_scoped_pytest_keeps_custom_named_obligations_and_explicit_scratch(tmp_path, monkeypatch):
@@ -265,14 +287,14 @@ def test_scoped_pytest_keeps_custom_named_obligations_and_explicit_scratch(tmp_p
         {'name': 'pytest', 'runner': python, 'narrow': 'pytest <file>'}])
     commands = work_units.checks(config, unit, 'repo', root)
     assert commands['required'] == explicit and commands['lint'] == ['ruff', 'check', '.']
-    assert 'tests/test_selected.py' in commands['tests'] and 'pytest-tests' not in commands
-    assert commands['tests'][-2] == '--basetemp'
+    assert 'tests/test_selected.py' in commands['pytest-tests:tests/test_selected.py'] and 'tests' not in commands
+    assert commands['pytest-tests:tests/test_selected.py'][-2] == '--basetemp'
     ordinary = work_units.checks({**config, 'conversation_flow': False}, unit, 'repo', root)
     assert ordinary['tests'] == [python, '-m', 'pytest', '-q']
     legacy = {**config, 'conversation_flow': False, 'verifiers': {
         'required': {'repository': 'repo', 'argv': work_units.narrowed('pytest', python, unit['test_paths'])}}}
     assert set(work_units.checks(legacy, {**unit, 'verifiers': ['required']}, 'repo', root)) == {
-        'required', 'pytest-tests'}
+        'required', 'pytest-tests:tests/test_selected.py'}
     no_scope = work_units.checks(config, {'verifiers': ['tests']}, 'repo', root)
     assert 'tests/test_selected.py' not in no_scope['tests'] and '--basetemp' in no_scope['tests']
 

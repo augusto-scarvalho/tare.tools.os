@@ -214,7 +214,20 @@ def scoped_verifiers(config, unit, repository, tree):
         argv = list(row['argv'])
         if row['repository'] == repository:
             if name == 'tests' and tests and argv == [python, '-m', 'pytest', '-q']:
-                argv = narrowed('pytest', python, tests)
+                # Compile through the same per-file runner as the unit. Removing
+                # the default first prevents recursion and preserves its origin.
+                without_default = {**config, 'verifiers': {
+                    n: v for n, v in config['verifiers'].items() if n != name}}
+                automatic = checks(without_default, {**unit, 'verifiers': [],
+                                                    'test_paths': tests}, repository, tree)
+                for base, command in automatic.items():
+                    key = base
+                    suffix = 2
+                    while key in config['verifiers'] or key in verifiers:
+                        key = f'{base}#{suffix}'
+                        suffix += 1
+                    verifiers[key] = {**row, 'argv': command}
+                continue
             if not config.get('command_protection'):
                 argv = pytest_scratch(argv, python, tree)
         verifiers[name] = {**row, 'argv': argv}
@@ -265,39 +278,68 @@ def checks(config, unit, repository, tree):
     the unit's test files (pytest, npm with jest/vitest/mocha, cargo, go, maven, gradle, dotnet)."""
     from .work_forms import ecosystems
     from .turn_engine import project_python
+    automatic_default = False
+    if config.get('conversation_flow'):
+        source_python = project_python(Path(config['repositories'][repository]))
+        row = config['verifiers'].get('tests', {})
+        automatic_default = ('tests' in (unit.get('verifiers') or [])
+                             and row.get('repository') == repository
+                             and row.get('argv') == [source_python, '-m', 'pytest', '-q']
+                             and any(test_file(t).endswith('.py') for t in unit.get('test_paths') or []))
     config = scoped_verifiers(config, unit, repository, tree)
     # Candidates omit environments. Keep the source project's interpreter instead of
     # accidentally selecting a different global Python from the disposable worktree.
     python = project_python(Path(config['repositories'][repository]))
     found = {name: config['verifiers'][name]['argv'] for name in unit.get('verifiers') or []
-             if config['verifiers'][name]['repository'] == repository}
+             if not (automatic_default and name == 'tests')
+             and config['verifiers'][name]['repository'] == repository}
+    automatic = {}
+
+    def add_pytest(targets):
+        groups = {}
+        for target in targets:
+            groups.setdefault(test_file(target), []).append(target)
+        for path, selectors in groups.items():
+            base = 'pytest-tests:' + path
+            name = base
+            suffix = 2
+            while name in found:
+                name = f'{base}#{suffix}'
+                suffix += 1
+            found[name] = narrowed('pytest', python, selectors)
+            automatic[name] = selectors
+
     tests = unit.get('test_paths') or []
     if config.get('conversation_flow') and any(test_file(t).endswith('.py') for t in tests) \
             and not any(e['name'] == 'pytest' for e in ecosystems(Path(tree))):
-        found.setdefault('pytest-tests', narrowed('pytest', python, [t for t in tests if test_file(t).endswith('.py')]))
+        if 'pytest-tests' not in found:
+            add_pytest([t for t in tests if test_file(t).endswith('.py')])
         tests = [t for t in tests if not test_file(t).endswith('.py')]
     for eco in ecosystems(Path(tree)) if tests else ():
         mine = [t for t in tests if test_file(t).endswith(SUFFIXES.get(eco['name'], ()))]
         runner = python if eco['name'] == 'pytest' else eco['runner']
         argv = narrowed(eco['name'], runner, mine) if mine and runner and eco['narrow'] else None
         if argv:
-            found.setdefault(f"{eco['name']}-tests", argv)
+            if eco['name'] == 'pytest':
+                if 'pytest-tests' not in found:
+                    add_pytest(mine)
+            else:
+                found.setdefault(f"{eco['name']}-tests", argv)
             tests = [t for t in tests if t not in mine]
+    if config.get('conversation_flow'):
+        for name, selectors in automatic.items():
+            scope = pytest_scope(found[name], python)
+            if any(pytest_scope(argv, python) == scope for other, argv in found.items()
+                   if other not in automatic):
+                del found[name]
+                continue
+            from .candidate_checks import command as candidate_command
+            owned = candidate_command(tree, unit, python, selectors)
+            if owned is not None:
+                found[name] = owned
     if config.get('conversation_flow') and not config.get('command_protection'):
         for name, argv in found.items():
             found[name] = pytest_scratch(argv, python, tree)
-    if config.get('conversation_flow') and 'pytest-tests' in found and 'pytest-tests' not in (unit.get('verifiers') or []):
-        scope=pytest_scope(found['pytest-tests'],python)
-        if any(argv==found['pytest-tests'] or scope is not None and pytest_scope(argv,python)==scope
-               for name,argv in found.items() if name!='pytest-tests'):
-            # Keep the declared check and its argv. Do not synthesize a second
-            # runner for the same targets or copy evidence between check names.
-            del found['pytest-tests']
-    if config.get('conversation_flow') and 'pytest-tests' in found:
-        from .candidate_checks import command as candidate_command
-        targets=[t for t in unit.get('test_paths',[]) if test_file(t).endswith('.py')]
-        owned=candidate_command(tree,unit,python,targets)
-        if owned is not None:found['pytest-tests']=owned
     return found
 
 
@@ -350,6 +392,14 @@ def run_checks(tree, commands):
     """('green' | 'red' | 'inconclusive', output): every command must pass; a timeout or a command that cannot
     start settles nothing."""
     outputs = []
+    statuses = []
+
+    def receipt():
+        # Reserve the front of the receipt for every outcome, before noisy logs.
+        pending = [f'{name}: not executed' for name in commands if name not in completed]
+        return '\n'.join([*statuses, *pending, clip('\n'.join(outputs))])
+
+    completed = set()
     state = 'green'
     from .execution_resources import selected
     timeout = None if selected('time') else VERIFY_SECONDS
@@ -364,15 +414,22 @@ def run_checks(tree, commands):
             done = run(argv, cwd=tree, capture_output=True, text=True, errors='replace',
                                   timeout=timeout, stdin=subprocess.DEVNULL, **options)
         except subprocess.TimeoutExpired as exc:
-            return 'inconclusive', f'{name}: more than {exc.timeout} s'
+            completed.add(name)
+            statuses.append(f'{name}: more than {exc.timeout} s (timeout)')
+            return 'inconclusive', receipt()
         except OSError as exc:
-            return 'inconclusive', f'{name}: {exc}'
+            completed.add(name)
+            statuses.append(f'{name}: could not start: {exc}')
+            return 'inconclusive', receipt()
+        completed.add(name)
         outputs.append(f'$ {name} (exit {done.returncode})\n{check_output(done.stdout + done.stderr)}')
         if getattr(done, 'execution_limitation', None):
-            return 'inconclusive', clip('\n'.join([*outputs, done.execution_limitation]))
+            statuses.append(f'{name}: {done.execution_limitation}')
+            return 'inconclusive', receipt()
+        statuses.append(f'{name}: exit {done.returncode}')
         if done.returncode:
             state = 'red'
-    return state, clip('\n'.join(outputs))
+    return state, receipt()
 
 
 def verdict(before, after, changed, protected, retry):
@@ -992,7 +1049,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     row.update(verdict='NOT_REVIEWED',reason=result['reason'],model_calls=0,calls_reserved=0)
                     break  # no baseline suite, implementer or paid review for an inadmissible unchanged packet
             verification_config = scoped_verifiers(config, unit, repository, tree)
-            commands = checks(verification_config, unit, repository, tree)
+            # Compile from the original defaults, before scoping erases their origin.
+            commands = checks(config, unit, repository, tree)
             if not commands:
                 raise ValueError('This unit names no verifier of the session and no tests tare can run (R0).')
             worker_commands={n:a for n,a in commands.items()
