@@ -9,8 +9,9 @@ from relay import native_agent, work_units, worker_wait
 from test_native_agent import Client, deployment, setup  # noqa: F401
 
 
+@pytest.mark.parametrize('saved_calls', [None, 60])
 @pytest.mark.parametrize('changed', ['none', 'project', 'candidate'])
-def test_folder_wait_keeps_the_worker_and_rejects_changed_bases(setup, tmp_path, monkeypatch, changed):
+def test_folder_wait_keeps_the_worker_and_rejects_changed_bases(setup, tmp_path, monkeypatch, changed, saved_calls):
     from relay.folder_access import grant
     from relay.work_forms import record_plan
     config, custody, root = setup
@@ -39,7 +40,12 @@ def test_folder_wait_keeps_the_worker_and_rejects_changed_bases(setup, tmp_path,
         audits.append(True)
         assert (root/'a.py').read_bytes()==b'value = 1\n'
         return {'verdict':'ACCEPT'}
+    actual_child_limits = work_units.child_limits
+    monkeypatch.setattr(work_units, 'child_limits', lambda *a, **kw: {
+        'max_model_calls': saved_calls, 'max_seconds': 600, 'request_seconds': 600})
     first=work_units.run_unit(custody,state,{'unit':'wait'},lambda:False,review=audit)
+    monkeypatch.setattr(work_units, 'child_limits', actual_child_limits)
+    state['limits']['max_model_calls'] = work_units.SESSION_RESERVE + 12
     assert first['verdict']=='INCONCLUSIVE' and first['worker'] and not audits
     worker=first['worker'];tree=Path(worker['tree'])
     session=Path(worker['session'])
@@ -66,6 +72,11 @@ def test_folder_wait_keeps_the_worker_and_rejects_changed_bases(setup, tmp_path,
     second=work_units.run_unit(custody,state,{'unit':'wait'},lambda:False,review=audit,worker=worker)
     saved=json.loads((session/'native-agent.json').read_text(encoding='utf8'))
     assert second['applied'] and audits==[True] and client.generations==6
+    assert saved['budget']['max_model_calls'] is saved_calls or saved['budget']['max_model_calls'] == saved_calls
+    receipt=json.loads(Path(second['receipt']).read_text(encoding='utf8'))
+    assert receipt['rungs'][0]['calls_reserved'] == 10  # two prior calls remain spent
+    rows_after=[json.loads(s)['event'] for s in (session/'journal.jsonl').read_text(encoding='utf8').splitlines()]
+    assert rows_after[0] == rows[0]
     assert saved['session_id']==frozen['session_id'] and len(saved['invocations'])==2
     for key in ('config','deployment','instruction','budget','limits','prompt','tool_specs'):
         assert saved.get(key)==frozen.get(key)
@@ -142,3 +153,70 @@ def test_a_declined_folder_or_a_new_plan_never_holds_the_waiting_worker(setup, t
         assert not folder_access.granted(scope['store'])
     else:  # the old worker never resumed: a fresh implementer ran the new plan
         assert not told
+
+
+@pytest.mark.parametrize('resource', ['calls', 'time'])
+def test_waiting_implementer_invocation_enforces_dispatch_ceiling(setup, tmp_path, monkeypatch, resource):
+    """Real Runtime resume keeps identity and cannot spend the old unlimited balance."""
+    from relay.folder_access import grant
+    config, session, _ = setup
+    config['verifiers'] = {}
+    external = tmp_path/'reference'; external.mkdir()
+    store = tmp_path/'grants.json'
+    config['folder_access'] = {'grants': str(store)}
+    first_client = Client(steps=[
+        ('request_folder_access', {'path': str(external), 'reason': 'Read reference.'}),
+        ('tare_deliver', {'summary': 'Waiting for permission.'})])
+    native_agent.run_session(config, deployment(), session, 'Inspect the reference.',
+        delegated_leaf=True, client=first_client, local_counter=first_client,
+        limits={'max_model_calls': None, 'max_seconds': None})
+    frozen = json.loads((session/'native-agent.json').read_text(encoding='utf8'))
+    initial = (session/'journal.jsonl').read_text(encoding='utf8').splitlines()[0]
+    assert first_client.generations == 2
+    grant(store, str(external))
+    client = Client(steps=[('read', {'repository': 'repo', 'path': 'a.py'})]*5)
+    if resource == 'time':
+        original = worker_wait.resume_clock
+        def elapsed(*args, **kwargs):
+            original(*args, **kwargs)
+            # Expire the invocation allowance in preparation, not the saved deadline.
+            import time
+            time.sleep(.03)
+        monkeypatch.setattr(worker_wait, 'resume_clock', elapsed)
+    if resource == 'time':
+        with pytest.raises(ValueError, match='execution budget exhausted'):
+            native_agent.run_session(None, None, session, resume=True,
+                follow_up='Permission granted. Continue inspecting.', message_id='consent-resume',
+                invocation_limits={'max_model_calls': 2, 'max_seconds': .01},
+                client=client, local_counter=client)
+        assert client.generations == 0
+    else:
+        result = native_agent.run_session(None, None, session, resume=True,
+            follow_up='Permission granted. Continue inspecting.', message_id='consent-resume',
+            invocation_limits={'max_model_calls': 2, 'max_seconds': 120},
+            client=client, local_counter=client)
+        assert client.generations == 2
+        assert result['status'] != 'PROPOSED'
+        assert result['effective_limits']['max_model_calls'] == 2
+        assert result['effective_limits']['request_seconds'] <= 120
+    saved = json.loads((session/'native-agent.json').read_text(encoding='utf8'))
+    assert saved['budget'] == frozen['budget'] and saved['limits'] == frozen['limits']
+    assert saved['deadline_utc'] is None
+    assert (session/'journal.jsonl').read_text(encoding='utf8').splitlines()[0] == initial
+
+
+@pytest.mark.parametrize('resource', ['calls', 'time'])
+def test_implementer_minimum_reports_missing_resource_with_unlimited_counterpart(tmp_path, monkeypatch, resource):
+    from relay import execution_scope
+    import time
+    monkeypatch.setattr(execution_scope, 'current', lambda: execution_scope.Scope(unlimited=('calls', 'time')))
+    state = {'config': {}, 'conversation_flow': True,
+             'limits': {'max_model_calls': work_units.SESSION_RESERVE + 1 if resource == 'calls' else None},
+             'deadline_utc': time.time()+61 if resource == 'time' else None}
+    with pytest.raises(ValueError) as error:
+        work_units.child_limits(tmp_path, state)
+    message = str(error.value)
+    assert 'unlimited' in message and 'required minimum' in message
+    assert str(work_units.MIN_CHILD_CALLS)+' calls' in message and '120 s' in message
+    assert 'No model call started' in message
+    assert 'configuration' not in message.lower() and 'another conversation' not in message.lower()
