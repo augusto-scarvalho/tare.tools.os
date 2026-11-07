@@ -120,7 +120,9 @@ def reviewed(host,monkeypatch,tmp_path):
     monkeypatch.setattr(turn_engine,'pick_auditors',lambda *a,**kw:[('independent',deployment())])
     actual=native_agent.run_session
     calls=[]
-    def run(verdict,*,after=None,with_findings=True,expected_calls=1,continuation=False,observed_checks=None):
+    def run(verdict,*,after=None,with_findings=True,expected_calls=1,continuation=False,observed_checks=None,changed_files=None):
+        if changed_files is not None:
+            candidate['sha256']=hashlib.sha256(changed_files['a.py']).hexdigest()
         payload={'verdict':verdict,'summary':'Observed source and evidence.',
             'findings':[{'claim':'This criterion needs a correction.','sources':[candidate]}] if verdict in {'INCONCLUSIVE','REVISE'} and with_findings else [],
             'remaining':['Other obligations remain unreviewed.'] if verdict=='INCONCLUSIVE' else [],
@@ -152,12 +154,48 @@ def reviewed(host,monkeypatch,tmp_path):
         monkeypatch.setattr(native_agent,'run_session',child)
         checks={'after':'passed'}
         if observed_checks is not None:checks['observed_named_checks']=observed_checks
-        args=(tools,task,root,deployment(),task['plan']['unit'],{'a.py':changed},checks,execution)
+        args=(tools,task,root,deployment(),task['plan']['unit'],{'a.py':changed} if changed_files is None else changed_files,checks,execution)
         value=conversation_review.review(*args)
         assert conversation_review.review(*args)==value and len(calls)==expected_calls  # no verdict resampling
         return value
     run.task=task
     return host,run,references
+
+
+@pytest.mark.parametrize('files,lines,expected',[
+    (0,0,8),(1,20,8),(2,0,9),(0,399,8),(0,400,9),(17,1500,19),(100,10000,24)])
+def test_audit_call_budget(files,lines,expected):
+    assert conversation_review.audit_call_budget(files,lines)==expected
+
+
+@pytest.mark.parametrize('large,maximum,unlimited,expected',[
+    (False,None,False,8),(True,None,False,19),(True,10,False,3),
+    (True,None,True,None),(True,10,True,3)])
+def test_review_reserves_size_based_calls_with_parent_ceiling(reviewed,monkeypatch,large,maximum,unlimited,expected):
+    from relay import delegation, delegation_tools, execution_resources, review_diff
+    host,run,*_=reviewed
+    tools,execution,root,*_=host
+    changed={'a.py':b'value = 2\n'}
+    if large:
+        changed['a.py']=b'value = 2\n'*1500
+        changed.update({f'extra_{i}.py':b'value = 2\n' for i in range(16)})
+        for path,data in changed.items():
+            (root/path).write_bytes(data)
+    prepared=review_diff.prepare(root,changed)
+    assert not prepared[-1]
+    assert len(changed)==(17 if large else 1)
+    assert conversation_review.audit_call_budget(len(changed),len(prepared[0].splitlines()))==(19 if large else 8)
+    tools.state['limits']['max_model_calls']=maximum
+    monkeypatch.setattr(delegation_tools,'count_calls',lambda *a:3)
+    monkeypatch.setattr(delegation,'child_calls',lambda *a:2)
+    selected=execution_resources.selected
+    monkeypatch.setattr(execution_resources,'selected',lambda name,*a,**kw:
+        unlimited if name=='calls' else selected(name,*a,**kw))
+    assert run('ACCEPT',changed_files=changed)['verdict']=='ACCEPT'
+    receipt=json.loads(next((tools.root/'reviews').glob('*/receipt.json')).read_text())
+    state=json.loads(next((tools.root/'reviews').glob('*/session/native-agent.json')).read_text())
+    assert receipt['calls_reserved']==expected
+    assert state['limits']['max_model_calls']==expected
 
 
 @pytest.mark.parametrize('remaining,phase,request_limit',[(80,75,75),(400,395,395),(1000,995,600),(2000,1200,600)])

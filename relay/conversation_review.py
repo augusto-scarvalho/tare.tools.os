@@ -16,9 +16,20 @@ HOST_FAILURES = CONTEXT_FAILURES | {'DEADLINE', 'CLI_REQUIRED_ACTION', 'CLI_INPU
 
 MAX_RECEIPT_BYTES = 1024*1024  # Shared by review writers, replay and accounting.
 AUDIT_REQUEST_SECONDS = 600
-# Allow inspection and one long frontier verdict. The eight-call ceiling and
+# Requested audit sizing: minimum 8, +1 per 2 files and 400 diff lines, capped at 24.
+AUDIT_CALLS_MINIMUM = 8
+AUDIT_CALLS_PER_FILES = 2
+AUDIT_CALLS_PER_DIFF_LINES = 400
+AUDIT_CALLS_MAXIMUM = 24
+# Allow inspection and one long frontier verdict. The size-based call ceiling and
 # every real enclosing deadline remain independent of this default phase cap.
 AUDIT_SECONDS = 2 * AUDIT_REQUEST_SECONDS
+
+
+def audit_call_budget(files, lines):
+    """Size the auditor's call allowance without changing its time budget."""
+    return min(AUDIT_CALLS_MAXIMUM, AUDIT_CALLS_MINIMUM
+               + files // AUDIT_CALLS_PER_FILES + lines // AUDIT_CALLS_PER_DIFF_LINES)
 
 
 def operational_accounting(owner):
@@ -698,7 +709,7 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
     if not candidates:
         return {'verdict': 'INCONCLUSIVE', 'reason': 'No independent auditor is available. The candidate remains unapplied.'}
     from . import execution_resources as resources
-    calls = resources.child_calls(8)
+    calls = resources.child_calls(audit_call_budget(len(changed), len(diff.splitlines())))
     maximum = owner.state['limits']['max_model_calls']
     if maximum is not None:
         calls = resources.ceiling('calls', calls, maximum-count_calls(owner.root)-resources.known_calls(child_calls(owner.root))-2)
