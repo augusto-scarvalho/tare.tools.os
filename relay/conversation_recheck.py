@@ -89,10 +89,7 @@ def retry_decision(root, task, unit, *, register=False, explicit=False):
         from .native_agent import read_json
         state_path = regular(root/'native-agent.json')
         session = read_json(state_path, 1024*1024)['session_id'] if state_path.exists() else 'parent'
-    scope = {'task': task['id'], 'plan': task['plan']['sha256'],
-             'repository': unit['repository'], 'key': unit['key'],
-             'paths': sorted(unit['target_paths']),
-             'contract': unit.get('verification_contract_digest')}
+    scope = {'task': task['id'], 'repository': unit['repository'], 'key': unit['key']}
     if register:
         rule = consent.select_rule()
         question = consent.register(root, session, 'retry', scope, rule=rule,
