@@ -137,7 +137,7 @@ def test_stale_or_malformed_retry_custody_fails_closed(host, damage):
     path = tools.root/consent.FILE
     value = json.loads(path.read_text())
     question = value['questions'][0]
-    if damage == 'scope': question['scope']['plan'] = 'stale'
+    if damage == 'scope': question['scope']['task'] = 'stale'
     elif damage == 'boundary': question['boundary'] = True
     elif damage == 'prefix': question['prefix'] = 'wrong'
     elif damage == 'status': question['status'] = 'ANSWERED'
@@ -242,3 +242,57 @@ def test_retry_fallback_contract_is_preserved_and_final(host, monkeypatch, words
     assert not decide(tools.root, task, unit)
     q = consent.load(tools.root)['questions'][-1]
     assert q['status'] == ('CONSUMED' if words == 'sim' else 'DECLINED')
+
+
+@pytest.mark.parametrize('approved', [False, True])
+def test_retry_revision_preserves_question_and_single_allowance(host, approved):
+    from copy import deepcopy
+    from relay import consent_decisions as consent
+    tools = host[0]
+    intake(host); task = planned(host); unit = task['plan']['unit']
+    decide = conversation_recheck.retry_decision
+    decide(tools.root, task, unit, register=True)
+    original = deepcopy(consent.load(tools.root)['questions'][0])
+    expected = {'task': task['id'], 'repository': unit['repository'], 'key': unit['key']}
+    assert original['scope'] == expected
+    if approved:
+        consent.record(tools.root, tools.session_id, original['id'], choice='allow')
+    task['plan']['sha256'] = 'revised-plan'
+    unit.update(target_paths=['new.py'], verification_contract_digest='revised-contract')
+    if not approved:
+        decide(tools.root, task, unit, register=True)
+        pending = consent.load(tools.root)['questions']
+        assert len(pending) == 1
+        assert pending[0]['id'] == original['id']
+        assert pending[0]['boundary'] == original['boundary']
+        assert pending[0]['scope'] == expected
+        request = json.loads((tools.root/'conversation-retry/request.json').read_text())
+        assert request['question_id'] == original['id'] and request['scope'] == expected
+        consent.record(tools.root, tools.session_id, original['id'], choice='allow')
+    assert decide(tools.root, task, unit)
+    assert not decide(tools.root, task, unit)
+    decide(tools.root, task, unit, register=True)
+    request = json.loads((tools.root/'conversation-retry/request.json').read_text())
+    assert request['question_id'] != original['id'] and request['scope'] == expected
+    assert not decide(tools.root, task, unit)
+
+
+@pytest.mark.parametrize('field', ['task', 'repository', 'key'])
+def test_retry_identity_mismatch_neither_authorizes_nor_consumes(host, field):
+    from copy import deepcopy
+    from relay import consent_decisions as consent
+    tools = host[0]
+    intake(host); task = planned(host); unit = task['plan']['unit']
+    decide = conversation_recheck.retry_decision
+    decide(tools.root, task, unit, register=True)
+    original = consent.load(tools.root)['questions'][0]
+    consent.record(tools.root, tools.session_id, original['id'], choice='allow')
+    other_task, other_unit = deepcopy(task), deepcopy(unit)
+    if field == 'task': other_task['id'] += '-other'
+    else: other_unit[field] += '-other'
+    assert not decide(tools.root, other_task, other_unit)
+    assert next(q for q in consent.load(tools.root)['questions'] if q['id'] == original['id'])['status'] == 'APPROVED'
+    decide(tools.root, other_task, other_unit, register=True)
+    assert not decide(tools.root, other_task, other_unit)
+    assert decide(tools.root, task, unit)
+    assert not decide(tools.root, task, unit)

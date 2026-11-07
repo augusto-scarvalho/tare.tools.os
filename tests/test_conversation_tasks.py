@@ -1800,3 +1800,90 @@ def test_session_notice_delivery_survives_resume(setup, monkeypatch, delivery, c
     assert notice not in resumed['output']
     assert not any(notice in e.get('text', '') for e in events)
     assert consent.pending_notices(custody, session) == []
+
+
+@pytest.mark.parametrize('mode', ['approved', 'waiting', 'permission-denied'])
+def test_implement_retry_survives_revised_plan_but_not_file_permission_denial(host, monkeypatch, mode):
+    from relay import consent_decisions as consent, conversation_permissions
+    tools, execution, project, _ = host
+    intake(host); task = planned(host)
+    artifact = Path(task['plan']['artifact'])
+    payload = json.loads(artifact.read_text())
+    payload['payload']['tasks'][0]['verifiers'] = [tasks.BACKLOG_CHECK]
+    payload['payload']['tasks'][0]['target_paths'] = ['a.py', 'work-graph.json']
+    tools.state['config']['writable'] = {'repo': ['a.py', 'work-graph.json']}
+    save_json(artifact, payload)
+    value = tasks.load(tools.root); task = tasks.current(value)
+    tasks.task_plan(tools.root, tools.state['config'], task, {'artifact': str(artifact)})
+    tasks.save(tools.root, value)
+    original = deepcopy(task['plan'])
+    original['unit']['verification_contract_digest'] = hashlib.sha256(
+        encode(tasks.backlog_authoring_contract()).encode()).hexdigest()
+    for _ in range(work_units.MAX_FAILURES):
+        work_units.record(tools.root, original['unit'], {'verdict': 'NOT_VERIFIED'})
+    calls = []
+    def run(custody, state, *args, **kwargs):
+        unit = work_units.read_ledger(custody)['plan']['units'][0]
+        assert unit['planner_input']['sha256'] == revised['sha256'] != original['sha256']
+        assert unit['target_paths'] == ['a.py', 'b.py', 'work-graph.json'] != original['unit']['target_paths']
+        assert unit['verification_contract_digest'] == revised['unit']['verification_contract_digest']
+        assert unit['verification_contract_digest'] != original['unit']['verification_contract_digest']
+        assert state['operator_delivery_retry'] is True
+        assert state['config']['writable']['repo'] == ['a.py', 'b.py', 'work-graph.json']
+        work_units.check_failures(custody, unit, conversation=True, operator_retry=True)
+        calls.append(True)
+        return {'verdict': 'NOT_VERIFIED'}
+    monkeypatch.setattr(work_units, 'run_unit', run)
+    assert tools.execute(effect('implement', {}, 'retry-before-revision'), execution).status == 'refused'
+    question = deepcopy(consent.load(tools.root)['questions'][0])
+    expected = {'task': task['id'], 'repository': 'repo', 'key': task['plan']['unit']['key']}
+    assert question['scope'] == expected
+    if mode != 'waiting':
+        consent.record(tools.root, tools.session_id, question['id'], choice='allow')
+    # Rehydrate from a changed saved planner artifact, not a coordinator-only unit edit.
+    (project/'b.py').write_text('value = 1\n')
+    payload['payload']['tasks'][0]['target_paths'] = ['a.py', 'b.py', 'work-graph.json']
+    save_json(artifact, payload)
+    contract = deepcopy(tasks.backlog_authoring_contract())
+    contract['retry_revision_fixture'] = True
+    monkeypatch.setattr(tasks, 'backlog_authoring_contract', lambda: deepcopy(contract))
+    value = tasks.load(tools.root); task = tasks.current(value)
+    tasks.task_plan(tools.root, tools.state['config'], task, {'artifact': str(artifact)})
+    tasks.save(tools.root, value)
+    revised = deepcopy(task['plan'])
+    revised['unit']['verification_contract_digest'] = hashlib.sha256(encode(contract).encode()).hexdigest()
+    assert revised['sha256'] != original['sha256']
+    assert revised['unit']['verification_contract_digest'] != original['unit']['verification_contract_digest']
+    # Saturate the revised identity too: success must not come from resetting history.
+    for _ in range(work_units.MAX_FAILURES):
+        work_units.record(tools.root, revised['unit'], {'verdict': 'NOT_VERIFIED'})
+    with pytest.raises(work_units.GuardRefusal):
+        work_units.check_failures(tools.root, revised['unit'], conversation=True)
+    if mode == 'waiting':
+        result = tools.execute(effect('implement', {}, 'still-waiting-after-revision'), execution)
+        assert result.status == 'refused' and calls == []
+        pending = consent.load(tools.root)['questions']
+        assert len(pending) == 1
+        assert pending[0]['id'] == question['id']
+        assert pending[0]['boundary'] == question['boundary']
+        assert pending[0]['scope'] == expected
+        consent.record(tools.root, tools.session_id, question['id'], choice='allow')
+    tools.state['config']['writable'] = {'repo': ['a.py', 'b.py', 'work-graph.json']}
+    authorized = []
+    real_authorize = conversation_permissions.authorize
+    def authorize(*args, **kwargs):
+        authorized.append(True)
+        if mode == 'permission-denied': raise PermissionError('fixture refuses file authorization')
+        return real_authorize(*args, **kwargs)
+    monkeypatch.setattr(conversation_permissions, 'authorize', authorize)
+    result = tools.execute(effect('implement', {}, 'retry-after-revision'), execution)
+    assert authorized == [True]
+    assert result.status == ('refused' if mode == 'permission-denied' else 'succeeded'), result.output_json
+    assert calls == ([] if mode == 'permission-denied' else [True])
+    assert next(q for q in consent.load(tools.root)['questions'] if q['id'] == question['id'])['status'] == 'CONSUMED'
+    if mode == 'permission-denied':
+        return
+    result = tools.execute(effect('implement', {}, 'retry-consumed-after-revision'), execution)
+    assert result.status == 'refused' and calls == [True] and authorized == [True]
+    request = json.loads((tools.root/'conversation-retry/request.json').read_text())
+    assert request['question_id'] != question['id'] and request['scope'] == expected
