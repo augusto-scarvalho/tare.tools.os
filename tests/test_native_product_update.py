@@ -98,6 +98,7 @@ def test_selected_release_reconciles_before_candidate_lookup(machine, monkeypatc
 
 @pytest.mark.parametrize('with_receipt', [False, True])
 def test_prune_keeps_current_and_previous_and_skips_a_release_in_use(tmp_path, monkeypatch, with_receipt):
+    monkeypatch.setattr(product, '_release_process_in_use', lambda release: False)
     home = tmp_path/'product'
     write_state(home, A, B)
     if with_receipt:
@@ -107,7 +108,7 @@ def test_prune_keeps_current_and_previous_and_skips_a_release_in_use(tmp_path, m
         (home/'releases'/name).mkdir(parents=True)
     real_rename = product.os.rename
     monkeypatch.setattr(product.os, 'rename', lambda a, b: (_ for _ in ()).throw(PermissionError())
-                        if str(a).endswith('d' * 16) else real_rename(a, b))  # a running TUI holds this one
+                        if str(a).endswith('d' * 16) else real_rename(a, b))  # compatibility: rename can still fail independently of registered usage
     product.prune(home)
     assert sorted(p.name for p in (home/'releases').iterdir()) == sorted([A[:16], B[:16], 'd' * 16])
     assert (home/'active.json').read_bytes() == before
@@ -117,6 +118,7 @@ def test_prune_keeps_current_and_previous_and_skips_a_release_in_use(tmp_path, m
 
 
 def test_prune_retries_retired_leftovers_without_touching_selected_or_unknown_folders(tmp_path,monkeypatch):
+    monkeypatch.setattr(product, '_release_process_in_use', lambda release: False)
     home=tmp_path/'product';write_state(home,A,B)
     before=(home/'active.json').read_bytes()
     for name in (A[:16],B[:16],A[:16]+'.delete',C[:16],'operator-notes.delete'):
@@ -132,6 +134,30 @@ def test_prune_retries_retired_leftovers_without_touching_selected_or_unknown_fo
     assert not (home/'releases'/(C[:16]+'.delete')).exists()
     assert sorted(p.name for p in (home/'releases').iterdir())==sorted([A[:16],B[:16],A[:16]+'.delete','operator-notes.delete'])
     assert (home/'active.json').read_bytes()==before
+
+
+@pytest.mark.parametrize('tombstone', [False, True])
+def test_prune_releases_usage_lock_before_recursive_delete(tmp_path, monkeypatch, tombstone):
+    monkeypatch.setattr(product, '_release_process_in_use', lambda release: False)
+    home = tmp_path/'product'
+    write_state(home, A, B)
+    release = home/'releases'/(C[:16] + ('.delete' if tombstone else ''))
+    release.mkdir(parents=True)
+    original = product.shutil.rmtree
+    removed = []
+
+    def remove(path, **options):
+        assert path.name == C[:16]+'.delete'
+        assert not (home/'releases'/C[:16]).exists()
+        # A publisher can acquire the lock even while slow deletion is underway.
+        with product._usage_lock(home):
+            removed.append(path)
+        return original(path, **options)
+
+    monkeypatch.setattr(product.shutil, 'rmtree', remove)
+    product.prune(home)
+    assert removed == [home/'releases'/(C[:16]+'.delete')]
+    assert not removed[0].exists()
 
 
 def test_vs_code_lists_what_serve_publishes_without_touching_anything_else(tmp_path):
@@ -212,3 +238,295 @@ def test_an_installed_release_older_than_the_listed_hundred_is_found_by_name():
     assert asked[-1] == '/repos/owner/repo/releases/tags/product-' + 'a' * 16
     # A release the repository no longer has: its place in the order is unknown, so nothing is installed.
     assert product.latest_published('owner/repo', current='b' * 64, api=api) is None
+
+
+@pytest.mark.parametrize('suffix', ['', '.delete'])
+@pytest.mark.parametrize('condition', ['alive', 'unknown', 'exception', 'mismatch', 'denied', 'malformed'])
+def test_registered_usage_blocks_all_retirement(tmp_path, monkeypatch, suffix, condition):
+    home = tmp_path/'product'
+    write_state(home, A, B)
+    release = home/'releases'/(C[:16]+suffix)
+    release.mkdir(parents=True)
+    dead = release.parent/('.use.'+C[:16]+'.123')
+    dead.write_text('123')
+    marker = release.parent/('.use.'+C[:16]+'.456')
+    marker.write_text('789' if condition == 'mismatch' else '456')
+    if condition == 'malformed':
+        marker.rename(marker.with_name('.use.'+C[:16]+'.bad'))
+    def alive(pid):
+        if pid == 123:
+            return False
+        if condition == 'exception':
+            raise RuntimeError('cannot query')
+        return None if condition == 'unknown' else True
+    monkeypatch.setattr(product, '_pid_alive', alive)
+    if condition == 'denied':
+        original = type(marker).read_text
+        def read(path, *args, **kwargs):
+            if path == marker:
+                raise PermissionError('registry denied')
+            return original(path, *args, **kwargs)
+        monkeypatch.setattr(type(marker), 'read_text', read)
+    monkeypatch.setattr(product.os, 'rename', lambda *a: pytest.fail('rename while protected'))
+    monkeypatch.setattr(product.shutil, 'rmtree', lambda *a, **k: pytest.fail('rmtree while protected'))
+    product.prune(home)
+    assert release.is_dir() and dead.is_file()
+
+
+@pytest.mark.parametrize('failure', ['inventory', 'lock', 'unlink'])
+def test_registry_access_failure_preserves_candidates(tmp_path, monkeypatch, failure):
+    home = tmp_path/'product'
+    write_state(home, A, B)
+    release = home/'releases'/C[:16]
+    release.mkdir(parents=True)
+    marker = release.parent/('.use.'+C[:16]+'.123')
+    marker.write_text('123')
+    monkeypatch.setattr(product, '_pid_alive', lambda pid: False)
+    def denied(*args, **kwargs):
+        raise PermissionError('denied')
+    if failure == 'inventory':
+        monkeypatch.setattr(type(release), 'iterdir', denied)
+    elif failure == 'lock':
+        monkeypatch.setattr(product, '_usage_lock', denied)
+    else:
+        monkeypatch.setattr(type(marker), 'unlink', denied)
+    calls = []
+    monkeypatch.setattr(product.os, 'rename', lambda *a: calls.append('rename'))
+    monkeypatch.setattr(product.shutil, 'rmtree', lambda *a, **k: calls.append('rmtree'))
+    product.prune(home)
+    assert calls == [] and release.is_dir() and marker.is_file()
+
+
+@pytest.mark.parametrize('suffix', ['', '.delete'])
+def test_dead_usage_is_cleaned_but_selected_and_unknown_are_preserved(tmp_path, monkeypatch, suffix):
+    home = tmp_path/'product'
+    write_state(home, A, B)
+    before = (home/'active.json').read_bytes()
+    names = [A[:16], B[:16], A[:16]+'.delete', B[:16]+'.delete', 'notes', C[:16]+suffix]
+    for name in names:
+        (home/'releases'/name).mkdir(parents=True)
+    marker = home/'releases'/('.use.'+C[:16]+'.123')
+    marker.write_text('123')
+    monkeypatch.setattr(product, '_pid_alive', lambda pid: False)
+    product.prune(home)
+    assert not marker.exists()
+    assert not (home/'releases'/(C[:16]+suffix)).exists()
+    assert all((home/'releases'/name).is_dir() for name in names[:-1])
+    assert (home/'active.json').read_bytes() == before
+
+
+def test_prune_preserves_symlink_release(tmp_path):
+    home = tmp_path/'product'
+    write_state(home, A, B)
+    releases = home/'releases'
+    releases.mkdir()
+    target = tmp_path/'external'
+    target.mkdir()
+    link = releases/C[:16]
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError:
+        pytest.skip('symlink privilege unavailable')
+    product.prune(home)
+    assert link.is_symlink() and target.is_dir()
+
+
+@pytest.mark.parametrize('outcome, expected', [('dead', False), ('live', True), ('denied', None), ('error', None)])
+def test_pid_alive_posix(monkeypatch, outcome, expected):
+    from types import SimpleNamespace
+    def kill(pid, signal):
+        assert (pid, signal) == (123, 0)
+        if outcome == 'dead':
+            raise ProcessLookupError()
+        if outcome == 'denied':
+            raise PermissionError()
+        if outcome == 'error':
+            raise OSError()
+    monkeypatch.setattr(product, 'os', SimpleNamespace(name='posix', kill=kill))
+    assert product._pid_alive(123) is expected
+    for invalid in (0, -1, True, '123', None):
+        assert product._pid_alive(invalid) is None
+
+
+@pytest.mark.parametrize('handle, result, error, expected', [
+    (123, 0, 0, False), (123, 258, 0, True), (123, 0xffffffff, 0, None),
+    (123, 'raise', 0, None), (0, 0, 87, False), (0, 0, 5, None), (0, 0, 999, None)])
+def test_pid_alive_windows_closes_handles(monkeypatch, handle, result, error, expected):
+    import ctypes
+    from types import SimpleNamespace
+    closed = []
+    class Function:
+        def __init__(self, call):
+            self.call = call
+        def __call__(self, *args):
+            return self.call(*args)
+    def wait(h, timeout):
+        assert (h, timeout) == (123, 0)
+        if result == 'raise':
+            raise OSError('query failed')
+        return result
+    kernel = SimpleNamespace(OpenProcess=Function(lambda *a: handle),
+                             WaitForSingleObject=Function(wait),
+                             CloseHandle=Function(lambda h: closed.append(h) or 1))
+    monkeypatch.setattr(ctypes, 'WinDLL', lambda *a, **k: kernel, raising=False)
+    monkeypatch.setattr(ctypes, 'get_last_error', lambda: error, raising=False)
+    monkeypatch.setattr(product, 'os', SimpleNamespace(name='nt'))
+    assert product._pid_alive(123) is expected
+    assert closed == ([123] if handle else [])
+
+
+@pytest.mark.parametrize('suffix', ['', '.delete'])
+@pytest.mark.parametrize('outcome', ['live', 'empty', 'error'])
+def test_unmarked_release_requires_successful_process_query(tmp_path, monkeypatch, suffix, outcome):
+    home = tmp_path/'product'
+    write_state(home, A, B)
+    release = home/'releases'/(C[:16]+suffix)
+    release.mkdir(parents=True)
+    queried = []
+    def query(path):
+        queried.append(path)
+        if outcome == 'error':
+            raise PermissionError('process inventory denied')
+        return outcome == 'live'
+    monkeypatch.setattr(product, '_release_process_in_use', query)
+    if outcome != 'empty':
+        monkeypatch.setattr(product.os, 'rename', lambda *a: pytest.fail('rename without clearance'))
+        monkeypatch.setattr(product.shutil, 'rmtree', lambda *a, **k: pytest.fail('rmtree without clearance'))
+    product.prune(home)
+    assert queried == [release]
+    assert release.exists() is (outcome != 'empty')
+    assert not release.with_name(C[:16]+'.delete').exists() if outcome == 'empty' else release.is_dir()
+
+
+@pytest.mark.parametrize('payload, expected', [
+    ('[]', False), ('null', False),
+    ('[{"ProcessId": 123, "ExecutablePath": "C:\\\\PRODUCT\\\\RELEASES\\\\cccccccccccccccc\\\\python.exe", "CommandLine": null}]', True),
+    ('{"ProcessId": 123, "ExecutablePath": null, "CommandLine": "python C:\\\\product\\\\releases\\\\cccccccccccccccc\\\\main.py"}', True),
+    ('not json', None), ('[42]', None)])
+def test_legacy_windows_process_inventory(monkeypatch, payload, expected):
+    from pathlib import PureWindowsPath
+    from types import SimpleNamespace
+    calls = []
+    def run(command, **options):
+        calls.append(command)
+        assert options == dict(capture_output=True, text=True, timeout=15, check=True)
+        return SimpleNamespace(stdout=payload)
+    monkeypatch.setattr(product, 'os', SimpleNamespace(name='nt'))
+    monkeypatch.setattr(product.subprocess, 'run', run)
+    release = PureWindowsPath('C:/product/releases/'+C[:16])
+    if expected is None:
+        with pytest.raises((ValueError, TypeError)):
+            product._release_process_in_use(release)
+    else:
+        assert product._release_process_in_use(release) is expected
+    assert calls[0][:3] == ['powershell', '-NoProfile', '-Command']
+
+
+@pytest.mark.parametrize('source', ['exe', 'cmdline', 'empty', 'denied'])
+def test_legacy_posix_process_inventory(tmp_path, monkeypatch, source):
+    from pathlib import PurePosixPath
+    from types import SimpleNamespace
+    release = PurePosixPath('/releases')/C[:16]
+    proc = tmp_path/'proc'
+    process = proc/'123'
+    process.mkdir(parents=True)
+    (process/'cmdline').write_bytes(
+        b'python\0'+str(release/'main.py').encode()+b'\0' if source == 'cmdline' else b'python\0')
+    actual_path = product.Path
+    monkeypatch.setattr(product, 'Path', lambda path: proc if path == '/proc' else actual_path(path))
+    def readlink(path):
+        assert path == process/'exe'
+        if source == 'denied':
+            raise PermissionError('process denied')
+        return str(release/'python') if source == 'exe' else '/usr/bin/python'
+    monkeypatch.setattr(product, 'os', SimpleNamespace(name='posix', readlink=readlink,
+                       stat=lambda path: SimpleNamespace(st_uid=1000), getuid=lambda: 1000,
+                       fsdecode=product.os.fsdecode, sep='/'))
+    assert product._release_process_in_use(release) is (source in ('exe', 'cmdline'))
+
+
+@pytest.mark.parametrize('case', ['other-user', 'both-denied', 'exe-denied', 'gone', 'listing-denied'])
+@pytest.mark.parametrize('suffix', ['', '.delete'])
+def test_posix_inventory_prune_permissions(tmp_path, monkeypatch, case, suffix):
+    from types import SimpleNamespace
+    from contextlib import nullcontext
+    home = tmp_path/'product'
+    write_state(home, A, B)
+    release = home/'releases'/(C[:16]+suffix)
+    release.mkdir(parents=True)
+    proc = tmp_path/'proc'
+    own = proc/'123'
+    other = proc/'1'
+    own.mkdir(parents=True)
+    other.mkdir()
+    (own/'cmdline').write_bytes(b'python\0')
+    actual_path, actual_os = product.Path, product.os
+    read_bytes = actual_path.read_bytes
+    iterdir = actual_path.iterdir
+    def read(path):
+        if path == own/'cmdline' and case == 'both-denied':
+            raise PermissionError('cmdline denied')
+        return read_bytes(path)
+    def entries(path):
+        if path == proc and case == 'listing-denied':
+            raise PermissionError('inventory denied')
+        return iterdir(path)
+    def stat(path):
+        if path == own and case == 'gone':
+            raise FileNotFoundError('exited')
+        return SimpleNamespace(st_uid=0 if path == other else 1000)
+    def readlink(path):
+        assert path != other/'exe', 'other-user process must not be inspected'
+        if case in ('both-denied', 'exe-denied'):
+            raise PermissionError('exe denied')
+        return '/usr/bin/python'
+    class ProcessOS:
+        name = 'posix'
+        getuid = staticmethod(lambda: 1000)
+        def __getattr__(self, name):
+            return getattr(actual_os, name)
+    fake_os = ProcessOS()
+    fake_os.stat, fake_os.readlink = stat, readlink
+    monkeypatch.setattr(actual_path, 'read_bytes', read)
+    monkeypatch.setattr(actual_path, 'iterdir', entries)
+    monkeypatch.setattr(product, 'Path', lambda path: proc if path == '/proc' else actual_path(path))
+    monkeypatch.setattr(product, 'os', fake_os)
+    # Exercise POSIX inventory on Windows too, without selecting a foreign lock API.
+    monkeypatch.setattr(product, '_usage_lock', lambda home: nullcontext())
+    uncertain = case in ('both-denied', 'listing-denied')
+    if uncertain:
+        monkeypatch.setattr(fake_os, 'rename', lambda *a: pytest.fail('rename under uncertainty'))
+        monkeypatch.setattr(product.shutil, 'rmtree', lambda *a, **k: pytest.fail('rmtree under uncertainty'))
+    product.prune(home)
+    assert release.exists() is uncertain
+    assert (home/'active.json').is_file()
+    if not uncertain:
+        assert not release.with_name(C[:16]+'.delete').exists()
+
+
+@pytest.mark.skipif(product.os.name != 'posix' or not product.Path('/proc').is_dir(),
+                    reason='requires real POSIX /proc')
+def test_real_proc_legacy_release_cleanup(tmp_path):
+    import sys
+    home = tmp_path/'product'
+    write_state(home, A, B)
+    release = home/'releases'/C[:16]
+    release.mkdir(parents=True)
+    script = release/'hold.py'
+    script.write_text('import time\nprint("ready", flush=True)\ntime.sleep(60)\n', encoding='utf-8')
+    child = subprocess.Popen([sys.executable, str(script)], stdout=subprocess.PIPE, text=True)
+    try:
+        import selectors
+        with selectors.DefaultSelector() as selector:
+            selector.register(child.stdout, selectors.EVENT_READ)
+            assert selector.select(timeout=10), 'child did not start'
+        assert child.stdout.readline().strip() == 'ready'
+        product.prune(home)
+        assert release.is_dir()
+    finally:
+        child.terminate()
+        child.wait(timeout=10)
+        child.stdout.close()
+    product.prune(home)
+    assert not release.exists()
+    assert not release.with_name(C[:16]+'.delete').exists()
