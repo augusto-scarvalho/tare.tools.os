@@ -1061,11 +1061,12 @@ class ConversationTools:
                 config = deepcopy(self.state['config'])
                 config['verifiers'].update(detected_checks(config))
                 unit = (task or {}).get('plan', {}).get('unit')
+                unit_checks = {}
                 if unit:
                     config['verifiers'].update(host_checks(config, unit))
                     owner=unit['repository']
-                    config['verifiers'].update({n:{'repository':owner,'argv':a} for n,a in
-                        planned_checks(config,unit,owner,Path(config['repositories'][owner])).items()})
+                    unit_checks = planned_checks(config,unit,owner,Path(config['repositories'][owner]))
+                    config['verifiers'].update({n:{'repository':owner,'argv':a} for n,a in unit_checks.items()})
                 names = args.get('names')
                 if (set(args) != {'names'} or not isinstance(names, list) or not 1 <= len(names) <= 16
                         or any(not isinstance(n,str) or n not in config['verifiers'] for n in names)):
@@ -1077,11 +1078,31 @@ class ConversationTools:
                     # the whole plan or silently execute it on a refused request.
                     tests=(unit or {}).get('test_paths') or []
                     python_tests=[t for t in tests if test_file(t).endswith('.py')]
-                    if (set(args)=={'names'} and isinstance(names,list) and names
+                    if (set(args)=={'names'} and isinstance(names,list) and 1 <= len(names) <= 16
                             and all(isinstance(n,str) for n in names)
-                            and set(names)==set(python_tests) and 'pytest-tests' in catalog):
-                        result.update(required_action={'tool':'check','arguments':{'names':['pytest-tests']}},
-                            next='This registered check runs exactly the requested test targets, not a broader suite. Retry it.')
+                            and set(names)==set(python_tests)):
+                        # Use generated names, including collision suffixes, but
+                        # never a custom verifier that occupied the original name.
+                        retry_names = []
+                        custom = set(unit.get('verifiers') or [])
+                        for path in sorted({test_file(t) for t in python_tests}):
+                            base = 'pytest-tests:' + path
+                            matches = []
+                            for candidate in unit_checks:
+                                suffix = candidate.removeprefix(base + '#')
+                                if (candidate in catalog and candidate not in custom
+                                        and (candidate == base or (candidate.startswith(base + '#')
+                                             and suffix.isdecimal() and int(suffix) >= 2))):
+                                    matches.append(candidate)
+                            if len(matches) != 1:
+                                break  # Missing or ambiguous coverage: no partial advice.
+                            retry_names.append(matches[0])
+                        else:
+                            if 1 <= len(retry_names) <= 16:
+                                result.update(required_action={'tool':'check','arguments':{'names':retry_names}},
+                                    next=('This registered check runs exactly the requested test targets, not a broader suite. Retry it.'
+                                          if len(retry_names) == 1 else
+                                          'These registered checks run exactly the requested test targets, not a broader suite. Retry them.'))
                     return refused(result.pop('reason'),**result)
                 if 'tests' in names and 'godot-import' in config['verifiers']:
                     names = ['godot-import', *[n for n in names if n != 'godot-import']]
