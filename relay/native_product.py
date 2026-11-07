@@ -598,23 +598,25 @@ def _release_process_in_use(release):
     return False
 
 
-def prune(home):
+def prune(home, known_free=None):
     """Retain selected releases and registered users; uncertainty defers cleanup.
 
     Unmarked legacy releases also require a successful OS process inventory.
     usage.lock is independent of install.lock: launching never needs install.lock.
     Retire under the lock, then delete outside it so publishers need not wait for I/O.
+    known_free contains freshly rejected candidates whose workers are confirmed stopped;
+    it is never an override of usage records. Missing cleanup confirmation requires inventory.
     """
     try:
         with _usage_lock(home):
-            retired = _prune_unused(home)
+            retired = _prune_unused(home, known_free=known_free)
     except Exception:
         return  # Lock, state or global inventory failure must never authorize removal.
     for doomed in retired:
         shutil.rmtree(doomed, ignore_errors=True)
 
 
-def _prune_unused(home):
+def _prune_unused(home, known_free=None):
     selected = state(home)
     entries = list((home/'releases').iterdir())
     markers = {}
@@ -634,7 +636,7 @@ def _prune_unused(home):
             continue
         registered = markers.get(match[1], [])
         try:
-            if not registered and _release_process_in_use(release):
+            if not registered and match[1] not in (known_free or set()) and _release_process_in_use(release):
                 continue
             dead = []
             for marker, text in registered:
@@ -700,7 +702,10 @@ def _auto_update_locked(home, *, repo, wait_seconds):
                     # inventing an activation or changing current/previous/receipt.
                     write_json(home/'active.json', {**selected, 'auto_update': {
                         **policy, 'paused': False, 'after': exc.receipt['candidate']}})
-                prune(home)
+                if exc.receipt.get('workers_confirmed_stopped') is True:
+                    prune(home, known_free={exc.receipt['candidate'][:16]})
+                else:
+                    prune(home)
                 return {**result, 'qualification': exc.receipt, **status(home)}
         result['installed'] = tag
         result['serve'] = _restart_locked(home, wait_seconds=wait_seconds)
@@ -964,7 +969,9 @@ def qualify_transition(home, incumbent, candidate):
             stage = 'trial'
             receipt = run_catalog_trial(old, new)
             stage = 'cleanup'
+        receipt['workers_confirmed_stopped'] = True
     except (OSError, ValueError) as exc:
+        receipt['workers_confirmed_stopped'] = False
         receipt.update(status='REJECTED' if stage == 'candidate' else 'INCONCLUSIVE', selected='incumbent',
                        reason=stage+' discovery worker failed: '+type(exc).__name__)
     receipt.update(incumbent=incumbent, candidate=candidate,

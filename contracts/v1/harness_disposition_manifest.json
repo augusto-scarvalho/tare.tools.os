@@ -3551,8 +3551,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator interaction, workflow composition and evidence inspection; execution ports remain in Kernel and Runtime.",
-      "size_bytes": 61646,
-      "sha256": "b3f728c03cfee1ca8053497e6a2ef11a6d123c95e64d424368e65ac6b13001dc"
+      "size_bytes": 62209,
+      "sha256": "192ebb362cefa5343f380ca30cdff522d7a713b38150bcda7dc75899a21dd419"
     },
     {
       "name": "provider_prices.py",

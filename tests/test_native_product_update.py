@@ -241,8 +241,9 @@ def test_an_installed_release_older_than_the_listed_hundred_is_found_by_name():
 
 
 @pytest.mark.parametrize('suffix', ['', '.delete'])
+@pytest.mark.parametrize('known_free', [False, True])
 @pytest.mark.parametrize('condition', ['alive', 'unknown', 'exception', 'mismatch', 'denied', 'malformed'])
-def test_registered_usage_blocks_all_retirement(tmp_path, monkeypatch, suffix, condition):
+def test_registered_usage_blocks_all_retirement(tmp_path, monkeypatch, suffix, condition, known_free):
     home = tmp_path/'product'
     write_state(home, A, B)
     release = home/'releases'/(C[:16]+suffix)
@@ -269,7 +270,7 @@ def test_registered_usage_blocks_all_retirement(tmp_path, monkeypatch, suffix, c
         monkeypatch.setattr(type(marker), 'read_text', read)
     monkeypatch.setattr(product.os, 'rename', lambda *a: pytest.fail('rename while protected'))
     monkeypatch.setattr(product.shutil, 'rmtree', lambda *a, **k: pytest.fail('rmtree while protected'))
-    product.prune(home)
+    product.prune(home, known_free={C[:16]} if known_free else None)
     assert release.is_dir() and dead.is_file()
 
 
@@ -530,3 +531,113 @@ def test_real_proc_legacy_release_cleanup(tmp_path):
     product.prune(home)
     assert not release.exists()
     assert not release.with_name(C[:16]+'.delete').exists()
+
+
+@pytest.mark.parametrize('suffix', ['', '.delete'])
+def test_known_free_bypasses_only_targeted_legacy_inventory(tmp_path, monkeypatch, suffix):
+    home = tmp_path/'product'
+    write_state(home, A, B)
+    before = (home/'active.json').read_bytes()
+    candidate = home/'releases'/(C[:16]+suffix)
+    other = home/'releases'/('d'*16+suffix)
+    candidate.mkdir(parents=True)
+    other.mkdir()
+    queried = []
+    def uncertain(path):
+        queried.append(path)
+        raise PermissionError('inventory unavailable')
+    monkeypatch.setattr(product, '_release_process_in_use', uncertain)
+    product.prune(home, known_free={A[:16], B[:16], C[:16]})
+    assert queried == [other]
+    assert not candidate.exists()
+    assert not candidate.with_name(C[:16]+'.delete').exists()
+    assert other.is_dir()
+    assert (home/'active.json').read_bytes() == before
+
+
+@pytest.mark.parametrize('cleanup_fails', [False, True])
+def test_qualification_records_worker_shutdown_only_after_context_exit(tmp_path, monkeypatch, cleanup_fails):
+    from contextlib import contextmanager
+    closed = []
+
+    @contextmanager
+    def worker(home, identifier, folder, deadline):
+        try:
+            yield lambda: None
+        finally:
+            closed.append(identifier)
+            if cleanup_fails:
+                raise OSError('cleanup unconfirmed')
+
+    def trial(*args):
+        assert closed == []
+        return {'status': 'REJECTED', 'reason': 'controlled refusal', 'selected': 'incumbent'}
+
+    monkeypatch.setattr(product, 'catalog_peer', worker)
+    monkeypatch.setattr(product, 'run_catalog_trial', trial)
+    receipt = product.qualify_transition(tmp_path, A, C)
+    assert closed == [C, A]
+    assert receipt['workers_confirmed_stopped'] is (not cleanup_fails)
+    assert receipt['status'] == ('INCONCLUSIVE' if cleanup_fails else 'REJECTED')
+    assert json.loads((tmp_path/'last-catalog-trial.json').read_text()) == receipt
+
+
+@pytest.mark.parametrize('confirmation', [None, False, True])
+@pytest.mark.parametrize('inventory_error', [False, True])
+@pytest.mark.parametrize('suffix', ['', '.delete'])
+def test_auto_refusal_requires_confirmed_shutdown_to_skip_inventory(
+        machine, monkeypatch, confirmation, inventory_error, suffix):
+    home, _, _, _ = machine
+    write_state(home, A, B)
+    before = (home/'active.json').read_bytes()
+    for name in (A[:16], B[:16], C[:16]+suffix):
+        (home/'releases'/name).mkdir(parents=True)
+    candidate = home/'releases'/(C[:16]+suffix)
+    monkeypatch.setattr(product, '_restart_locked', lambda *a, **k: 'no serve task')
+    monkeypatch.setattr(product, 'latest_published', lambda *a, **k: 'product-'+C)
+
+    def download(repo, tag, folder):
+        with zipfile.ZipFile(product.Path(folder)/'bundle.zip', 'w'):
+            pass
+
+    def refused(*args):
+        receipt = {'status': 'INCONCLUSIVE', 'candidate': C, 'reason': 'cleanup uncertain'}
+        if confirmation is not None:
+            receipt['workers_confirmed_stopped'] = confirmation
+        raise product.CatalogQualificationError(receipt)
+
+    queried, renamed, removed = [], [], []
+    def inventory(path):
+        queried.append(path)
+        if inventory_error:
+            raise PermissionError('inventory unavailable')
+        return True
+
+    real_rename, real_remove = product.os.rename, product.shutil.rmtree
+    def rename(source, destination):
+        renamed.append(source)
+        return real_rename(source, destination)
+
+    def remove(path, **kwargs):
+        if product.Path(path).parent == home/'releases':
+            removed.append(product.Path(path))
+        return real_remove(path, **kwargs)
+
+    monkeypatch.setattr(product, 'download_bundle', download)
+    monkeypatch.setattr(product, '_install_locked', refused)
+    monkeypatch.setattr(product, '_release_process_in_use', inventory)
+    monkeypatch.setattr(product.os, 'rename', rename)
+    monkeypatch.setattr(product.shutil, 'rmtree', remove)
+    result = product.auto_update(home)
+    assert result['qualification']['status'] == 'INCONCLUSIVE'
+    assert (home/'active.json').read_bytes() == before
+    assert all((home/'releases'/name).is_dir() for name in (A[:16], B[:16]))
+    if confirmation is True:
+        assert queried == []
+        assert not candidate.exists()
+        assert len(renamed) == (0 if suffix else 1)
+        assert removed == [home/'releases'/(C[:16]+'.delete')]
+    else:
+        assert queried == [candidate]
+        assert candidate.is_dir()
+        assert renamed == removed == []

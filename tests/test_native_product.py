@@ -29,6 +29,9 @@ def fake_install(monkeypatch):
         exe.write_text('fixture')
     monkeypatch.setattr(product.venv.EnvBuilder, 'create', create)
     monkeypatch.setattr(product.subprocess, 'run', lambda *a, **kw: None)
+    # Synthetic executables never launch a release process. Keep the legacy
+    # inventory independent of the subprocess.run stub (also used by canary tests).
+    monkeypatch.setattr(product, '_release_process_in_use', lambda release: False)
     def qualified(home, incumbent, candidate):
         result = {'status': 'PASS', 'incumbent': incumbent, 'candidate': candidate}
         product.write_json(product.release_at(home, candidate)/'catalog-trial.json', result)
@@ -459,7 +462,10 @@ def main():
     pid = os.getpid()
     marker = home/'releases'/('.use.'+os.environ['TARE_RELEASE_ID'][:16]+'.'+str(pid))
     assert marker.read_text() == str(pid)
-    (home/'entered.json').write_text(json.dumps({'pid': pid, 'args': sys.argv[1:]}))
+    entered = home/'entered.json'
+    pending = home/'entered.tmp'
+    pending.write_text(json.dumps({'pid': pid, 'args': sys.argv[1:]}))
+    os.replace(pending, entered)
     while not (home/'finish').exists():
         time.sleep(.01)
     return 0
@@ -496,7 +502,7 @@ def test_bootstrap_child_registers_before_main_and_is_removed_after_exit(tmp_pat
         marker = release.parent/('.use.'+release.name+'.'+str(child.pid))
         assert marker.read_text() == str(child.pid)
         product.write_json(home/'active.json', {'current': 'a'*64, 'previous': 'b'*64})
-        product.prune(home)
+        product.prune(home, known_free={release.name})
         assert release.is_dir() and marker.is_file()
         (home/'finish').touch()
         stdout, stderr = child.communicate(timeout=10)
@@ -560,3 +566,45 @@ def test_registration_and_retirement_are_serialized_without_install_deadlock(tmp
     # Selection before retirement does not authorize publication into a removed release.
     done = subprocess.run(command, env=env, capture_output=True, text=True, timeout=10)
     assert done.returncode != 0
+
+
+@pytest.mark.parametrize('outcome', ['REJECTED', 'INCONCLUSIVE'])
+def test_fake_install_refusal_cleanup_without_shutdown_confirmation(
+        tmp_path, fake_install, monkeypatch, outcome):
+    """A simulated refusal uses the fixture inventory, not real OS processes."""
+    import zipfile
+
+    home = tmp_path/'home'
+    first = product.install(bundle(tmp_path/'one', '1'), home)['current']
+    candidate = bundle(tmp_path/'two', '2')
+    identifier = product.digest(candidate/'bundle.json')
+    before = product.state(home)
+    monkeypatch.setattr(product, '_restart_locked', lambda *a, **k: 'current')
+    monkeypatch.setattr(product, 'sync_vscode', lambda *a: [])
+    monkeypatch.setattr(product, 'auto_storage', lambda *a: 'off')
+    monkeypatch.setattr(product, 'latest_published', lambda *a, **k: 'product-'+identifier[:16])
+
+    def download(repo, tag, folder):
+        with zipfile.ZipFile(Path(folder)/'bundle.zip', 'w') as archive:
+            for path in candidate.iterdir():
+                archive.write(path, path.name)
+
+    def refused(home, old, new):
+        # No shutdown confirmation: cleanup must still consult the fixture's
+        # explicit inventory rather than treating absent confirmation as safe.
+        value = {'status': outcome, 'reason': 'controlled failure',
+                 'incumbent': old, 'candidate': new}
+        product.write_json(home/'last-catalog-trial.json', value)
+        return value
+
+    monkeypatch.setattr(product, 'download_bundle', download)
+    monkeypatch.setattr(product, 'qualify_transition', refused)
+    result = product.auto_update(home)
+    assert result['installed'] is None
+    assert result['qualification']['status'] == outcome
+    actual = product.state(home)
+    assert actual['current'] == first
+    assert all(actual.get(key) == before.get(key)
+               for key in ('current', 'previous', 'last_transition'))
+    assert not product.release_at(home, identifier).exists()
+    assert (home/'last-catalog-trial.json').is_file()
