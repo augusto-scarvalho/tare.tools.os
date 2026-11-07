@@ -29,6 +29,9 @@ def fake_install(monkeypatch):
         exe.write_text('fixture')
     monkeypatch.setattr(product.venv.EnvBuilder, 'create', create)
     monkeypatch.setattr(product.subprocess, 'run', lambda *a, **kw: None)
+    # Synthetic executables never launch a release process. Keep the legacy
+    # inventory independent of the subprocess.run stub (also used by canary tests).
+    monkeypatch.setattr(product, '_release_process_in_use', lambda release: False)
     def qualified(home, incumbent, candidate):
         result = {'status': 'PASS', 'incumbent': incumbent, 'candidate': candidate}
         product.write_json(product.release_at(home, candidate)/'catalog-trial.json', result)
@@ -163,7 +166,8 @@ def test_launcher_binds_conversations_outside_version_directory(tmp_path, fake_i
     roots = []
     monkeypatch.setattr(relay_mesh, 'rebind_root', lambda root: roots.append(root))
     monkeypatch.setattr(native_installation, 'main', lambda: 0)
-    monkeypatch.setenv('TARE_MANAGED_HOME', options['env']['TARE_MANAGED_HOME'])
+    for key in ('TARE_MANAGED_HOME', 'TARE_PRODUCT_HOME', 'TARE_RELEASE_ID'):
+        monkeypatch.setenv(key, options['env'][key])
     with pytest.raises(SystemExit):
         exec(argv[3])
     assert roots == [tmp_path/'home/control']
@@ -426,3 +430,181 @@ def test_activation_seals_pointer_and_receipt_in_one_replace(tmp_path, fake_inst
     assert len(replacements) == 1
     assert product.state(home) == replacements[0]
     assert result['last_transition'] == replacements[0]['last_transition']
+
+
+# Exercise the actual inline bootstrap with stdlib-only stand-ins for application imports.
+# The selected release can be old and need not contain any new registration helper.
+def _test_python():
+    # Windows venv python.exe is a redirector, not the registering worker.
+    try:
+        base = sys._base_executable
+        return base if base != sys.executable else sys.executable
+    except AttributeError:
+        return sys.executable
+
+
+def usage_launch(home):
+    identifier = 'c'*64
+    release = home/'releases'/identifier[:16]
+    release.mkdir(parents=True)
+    (release/'ready.json').write_text('{}')
+    product.write_json(home/'active.json', {'current': identifier, 'previous': None})
+    command, env = product.release_command(home, ['console', 'two words', '--flag'])
+    assert command[1:3] == ['-I', '-c']
+    setup = '''import sys, types, os, json, time
+from pathlib import Path
+home = Path(os.environ['TARE_PRODUCT_HOME'])
+relay = types.ModuleType('relay')
+mesh = types.ModuleType('relay.relay_mesh')
+mesh.rebind_root = lambda root: None
+app = types.ModuleType('relay.native_installation')
+def main():
+    pid = os.getpid()
+    marker = home/'releases'/('.use.'+os.environ['TARE_RELEASE_ID'][:16]+'.'+str(pid))
+    assert marker.read_text() == str(pid)
+    entered = home/'entered.json'
+    pending = home/'entered.tmp'
+    pending.write_text(json.dumps({'pid': pid, 'args': sys.argv[1:]}))
+    os.replace(pending, entered)
+    while not (home/'finish').exists():
+        time.sleep(.01)
+    return 0
+app.main = main
+relay.relay_mesh = mesh
+sys.modules.update({'relay': relay, 'relay.relay_mesh': mesh, 'relay.native_installation': app})
+'''
+    return release, [_test_python(), *command[1:3], setup+'\nexec('+repr(command[3])+')', *command[4:]], env
+
+
+def wait_for_entry(home, child):
+    import time
+    deadline = time.monotonic()+10
+    while not (home/'entered.json').exists():
+        assert child.poll() is None, child.communicate(timeout=5)
+        assert time.monotonic() < deadline, 'bootstrap did not reach main'
+        time.sleep(.01)
+    return json.loads((home/'entered.json').read_text())
+
+
+def stop_usage_child(child):
+    if child.poll() is None:
+        child.terminate()
+    child.communicate(timeout=10)
+
+
+def test_bootstrap_child_registers_before_main_and_is_removed_after_exit(tmp_path):
+    home = tmp_path/'product'
+    release, command, env = usage_launch(home)
+    child = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        entered = wait_for_entry(home, child)
+        assert entered == {'pid': child.pid, 'args': ['console', 'two words', '--flag']}
+        marker = release.parent/('.use.'+release.name+'.'+str(child.pid))
+        assert marker.read_text() == str(child.pid)
+        product.write_json(home/'active.json', {'current': 'a'*64, 'previous': 'b'*64})
+        product.prune(home, known_free={release.name})
+        assert release.is_dir() and marker.is_file()
+        (home/'finish').touch()
+        stdout, stderr = child.communicate(timeout=10)
+        assert child.returncode == 0, stderr
+        assert product._pid_alive(child.pid) is False
+        product.prune(home)
+        assert not release.exists() and not marker.exists()
+    finally:
+        stop_usage_child(child)
+
+
+def test_bootstrap_publication_failure_prevents_main(tmp_path):
+    home = tmp_path/'product'
+    release, command, env = usage_launch(home)
+    bootstrap = command[3]
+    # Fail only the atomic publication; application imports must not be reached.
+    command[3] = bootstrap.replace('\nexec(', '\ndef denied(*a): raise PermissionError("publication denied")\nos.replace = denied\nexec(', 1)
+    done = subprocess.run(command, env=env, capture_output=True, text=True, timeout=10)
+    assert done.returncode != 0 and 'publication denied' in done.stderr
+    assert not (home/'entered.json').exists()
+    assert list(release.parent.iterdir()) == [release]
+
+
+def test_registration_and_retirement_are_serialized_without_install_deadlock(tmp_path):
+    home = tmp_path/'product'
+    release, command, env = usage_launch(home)
+    product.write_json(home/'active.json', {'current': 'a'*64, 'previous': 'b'*64})
+    # Publisher waits for retirement, then registers before entering main.
+    child = None
+    try:
+        with product._usage_lock(home):
+            child = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            import time
+            time.sleep(.5)
+            assert child.poll() is None
+            assert not (home/'entered.json').exists()
+            product.prune(home)  # nonblocking: another owner defers maintenance
+            assert release.is_dir()
+        wait_for_entry(home, child)
+        marker = release.parent/('.use.'+release.name+'.'+str(child.pid))
+        assert marker.read_text() == str(child.pid)
+        (home/'finish').touch()
+        stdout, stderr = child.communicate(timeout=10)
+        assert child.returncode == 0, stderr
+    finally:
+        if child is not None:
+            stop_usage_child(child)
+    (home/'entered.json').unlink()
+    (home/'finish').unlink()
+    # An installer may hold install.lock while starting a registered child and pruning.
+    with product.exclusive(home):
+        child = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            wait_for_entry(home, child)
+            product.prune(home)
+            assert release.is_dir()
+        finally:
+            stop_usage_child(child)
+    product.prune(home)
+    assert not release.exists()
+    # Selection before retirement does not authorize publication into a removed release.
+    done = subprocess.run(command, env=env, capture_output=True, text=True, timeout=10)
+    assert done.returncode != 0
+
+
+@pytest.mark.parametrize('outcome', ['REJECTED', 'INCONCLUSIVE'])
+def test_fake_install_refusal_cleanup_without_shutdown_confirmation(
+        tmp_path, fake_install, monkeypatch, outcome):
+    """A simulated refusal uses the fixture inventory, not real OS processes."""
+    import zipfile
+
+    home = tmp_path/'home'
+    first = product.install(bundle(tmp_path/'one', '1'), home)['current']
+    candidate = bundle(tmp_path/'two', '2')
+    identifier = product.digest(candidate/'bundle.json')
+    before = product.state(home)
+    monkeypatch.setattr(product, '_restart_locked', lambda *a, **k: 'current')
+    monkeypatch.setattr(product, 'sync_vscode', lambda *a: [])
+    monkeypatch.setattr(product, 'auto_storage', lambda *a: 'off')
+    monkeypatch.setattr(product, 'latest_published', lambda *a, **k: 'product-'+identifier[:16])
+
+    def download(repo, tag, folder):
+        with zipfile.ZipFile(Path(folder)/'bundle.zip', 'w') as archive:
+            for path in candidate.iterdir():
+                archive.write(path, path.name)
+
+    def refused(home, old, new):
+        # No shutdown confirmation: cleanup must still consult the fixture's
+        # explicit inventory rather than treating absent confirmation as safe.
+        value = {'status': outcome, 'reason': 'controlled failure',
+                 'incumbent': old, 'candidate': new}
+        product.write_json(home/'last-catalog-trial.json', value)
+        return value
+
+    monkeypatch.setattr(product, 'download_bundle', download)
+    monkeypatch.setattr(product, 'qualify_transition', refused)
+    result = product.auto_update(home)
+    assert result['installed'] is None
+    assert result['qualification']['status'] == outcome
+    actual = product.state(home)
+    assert actual['current'] == first
+    assert all(actual.get(key) == before.get(key)
+               for key in ('current', 'previous', 'last_transition'))
+    assert not product.release_at(home, identifier).exists()
+    assert (home/'last-catalog-trial.json').is_file()

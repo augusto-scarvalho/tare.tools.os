@@ -473,26 +473,193 @@ def _restart_locked(home, *, wait_seconds, poll=30):
     return recovered if recovered.startswith('deferred:') else 'rolled back: ' + recovered
 
 
-def prune(home):
-    """Keep the current and previous releases; one still open (a running TUI) is left for a later check."""
+# Kept inline in launch commands so even older releases use the same protocol.
+_USAGE_LOCK_SOURCE = '''
+from contextlib import contextmanager
+@contextmanager
+def _usage_lock(home, *, wait=False):
+    import os
+    import time
+    with (home/'usage.lock').open('a+b') as stream:
+        stream.seek(0); stream.write(b'0'); stream.flush(); stream.seek(0)
+        deadline = time.monotonic() + (5 if wait else 0)
+        while True:
+            try:
+                if os.name == 'nt':
+                    import msvcrt
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(.05)
+        try:
+            yield
+        finally:
+            if os.name == 'nt':
+                stream.seek(0); msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(stream, fcntl.LOCK_UN)
+'''
+exec(_USAGE_LOCK_SOURCE)
+
+
+def _pid_alive(pid):
+    """False means proven dead; None means uncertain (and must retain usage)."""
+    if type(pid) is not int or pid <= 0:
+        return None
+    try:
+        if os.name != 'nt':
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return False
+            return True
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel.WaitForSingleObject.restype = wintypes.DWORD
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel.CloseHandle.restype = wintypes.BOOL
+        handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE only
+        if not handle:
+            return False if ctypes.get_last_error() == 87 else None
+        try:
+            result = kernel.WaitForSingleObject(handle, 0)
+            return {0: False, 258: True}.get(result)
+        finally:
+            kernel.CloseHandle(handle)
+    except Exception:
+        return None
+
+
+def _release_process_in_use(release):
+    """Legacy fallback: a failed process inventory must not authorize removal.
+
+    Markers remain authoritative when present. This only protects unregistered
+    legacy processes visible to the OS inventory; it cannot close launch races.
+    """
+    if os.name == 'nt':
+        result = subprocess.run(
+            ['powershell', '-NoProfile', '-Command',
+             'Get-CimInstance Win32_Process -ErrorAction Stop | '
+             'Select-Object ProcessId,ExecutablePath,CommandLine | ConvertTo-Json'],
+            capture_output=True, text=True, timeout=15, check=True)
+        processes = json.loads(result.stdout)
+        if processes is None:
+            processes = []
+        if isinstance(processes, dict):
+            processes = [processes]
+        if not isinstance(processes, list):
+            raise ValueError('Invalid process inventory')
+        target = str(release).casefold()
+        found = False
+        for process in processes:
+            if not isinstance(process, dict) or 'ProcessId' not in process:
+                raise ValueError('Invalid process entry')
+            for field in ('ExecutablePath', 'CommandLine'):
+                value = process.get(field)
+                if value is not None and not isinstance(value, str):
+                    raise ValueError('Invalid process path')
+                if value and target in value.casefold():
+                    found = True
+        return found
+    target = str(release)
+    try:
+        processes = list(Path('/proc').iterdir())
+        uid = os.getuid()
+    except Exception:
+        return True
+    for process in processes:
+        if not process.name.isdecimal():
+            continue
+        try:
+            # Other users cannot launch from this user's private installation.
+            if os.stat(process).st_uid != uid:
+                continue
+            try:
+                executable = os.readlink(process/'exe')
+            except PermissionError:
+                executable = ''  # cmdline can still establish usage or non-usage.
+            arguments = (process/'cmdline').read_bytes().split(b'\0')
+            paths = [executable, *(os.fsdecode(arg) for arg in arguments)]
+            if any(path == target or path.startswith(target + os.sep) for path in paths):
+                return True
+        except FileNotFoundError:
+            continue  # Process exited during inspection.
+        except Exception:
+            return True  # An unreadable current-user process is uncertain.
+    return False
+
+
+def prune(home, known_free=None):
+    """Retain selected releases and registered users; uncertainty defers cleanup.
+
+    Unmarked legacy releases also require a successful OS process inventory.
+    usage.lock is independent of install.lock: launching never needs install.lock.
+    Retire under the lock, then delete outside it so publishers need not wait for I/O.
+    known_free contains freshly rejected candidates whose workers are confirmed stopped;
+    it is never an override of usage records. Missing cleanup confirmation requires inventory.
+    """
+    try:
+        with _usage_lock(home):
+            retired = _prune_unused(home, known_free=known_free)
+    except Exception:
+        return  # Lock, state or global inventory failure must never authorize removal.
+    for doomed in retired:
+        shutil.rmtree(doomed, ignore_errors=True)
+
+
+def _prune_unused(home, known_free=None):
     selected = state(home)
-    for release in (home/'releases').iterdir() if (home/'releases').is_dir() else ():
+    entries = list((home/'releases').iterdir())
+    markers = {}
+    for entry in entries:
+        if not entry.name.startswith('.use.'):
+            continue
+        match = re.fullmatch(r'\.use\.([0-9a-f]{16})\.([1-9][0-9]*)', entry.name)
+        if not match:
+            return []  # Cannot reliably attribute a malformed registry entry.
+        markers.setdefault(match[1], []).append((entry, match[2]))
+    retired = []
+    for release in entries:
         match = re.fullmatch(r'([0-9a-f]{16})(\.delete)?', release.name)
         if (not match or release.is_symlink() or not release.is_dir()
                 or release.resolve() != home.resolve()/'releases'/release.name
                 or any(selected[k] and selected[k].startswith(match[1]) for k in ('current', 'previous'))):
             continue
+        registered = markers.get(match[1], [])
+        try:
+            if not registered and match[1] not in (known_free or set()) and _release_process_in_use(release):
+                continue
+            dead = []
+            for marker, text in registered:
+                if marker.is_symlink() or marker.read_text(encoding='ascii') != text:
+                    raise ValueError('Invalid usage record')
+                if _pid_alive(int(text)) is not False:
+                    raise ValueError('Release usage is live or uncertain')
+                dead.append(marker)
+            # All records have been checked before any mutation, including tombstones.
+            for marker in dead:
+                marker.unlink()
+        except Exception:
+            continue
         if match[2]:
-            # A locked file may have survived the prior retirement. Retry it
-            # on subsequent maintenance instead of leaving tombstones forever.
-            shutil.rmtree(release, ignore_errors=True)
+            retired.append(release)
             continue
         doomed = release.with_name(release.name + '.delete')
         try:
-            os.rename(release, doomed)  # Windows refuses while a process runs from it: nothing is half-deleted
+            os.rename(release, doomed)
         except OSError:
             continue
-        shutil.rmtree(doomed, ignore_errors=True)
+        retired.append(doomed)
+    return retired
 
 
 def auto_update(home, *, repo=UPDATE_REPO, wait_seconds=3 * 3600, resume=False):
@@ -535,7 +702,10 @@ def _auto_update_locked(home, *, repo, wait_seconds):
                     # inventing an activation or changing current/previous/receipt.
                     write_json(home/'active.json', {**selected, 'auto_update': {
                         **policy, 'paused': False, 'after': exc.receipt['candidate']}})
-                prune(home)
+                if exc.receipt.get('workers_confirmed_stopped') is True:
+                    prune(home, known_free={exc.receipt['candidate'][:16]})
+                else:
+                    prune(home)
                 return {**result, 'qualification': exc.receipt, **status(home)}
         result['installed'] = tag
         result['serve'] = _restart_locked(home, wait_seconds=wait_seconds)
@@ -560,10 +730,32 @@ def release_command(home, argv):
         raise ValueError('Active release is incomplete')
     env = clean_env(home, release)
     env['TARE_RELEASE_ID'] = identifier
-    return [str(python_at(release)), '-I', '-c',
-            'import os; from pathlib import Path; from relay import relay_mesh; '
-            'relay_mesh.rebind_root(Path(os.environ["TARE_MANAGED_HOME"])/"control"); '
-            'from relay.native_installation import main; raise SystemExit(main())', *argv], env
+    bootstrap = '''import os, tempfile
+from pathlib import Path
+''' + _USAGE_LOCK_SOURCE + '''
+home = Path(os.environ['TARE_PRODUCT_HOME'])
+release = home/'releases'/os.environ['TARE_RELEASE_ID'][:16]
+with _usage_lock(home, wait=True):
+    if release.is_symlink() or not (release/'ready.json').is_file():
+        raise RuntimeError('Selected release is no longer available')
+    pid = str(os.getpid())
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=release.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(pid.encode('ascii'))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, release.parent/('.use.'+release.name+'.'+pid))
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+from relay import relay_mesh
+relay_mesh.rebind_root(Path(os.environ['TARE_MANAGED_HOME'])/'control')
+from relay.native_installation import main
+raise SystemExit(main())
+'''
+    return [str(python_at(release)), '-I', '-c', bootstrap, *argv], env
 
 
 def auto_storage(home):
@@ -777,7 +969,9 @@ def qualify_transition(home, incumbent, candidate):
             stage = 'trial'
             receipt = run_catalog_trial(old, new)
             stage = 'cleanup'
+        receipt['workers_confirmed_stopped'] = True
     except (OSError, ValueError) as exc:
+        receipt['workers_confirmed_stopped'] = False
         receipt.update(status='REJECTED' if stage == 'candidate' else 'INCONCLUSIVE', selected='incumbent',
                        reason=stage+' discovery worker failed: '+type(exc).__name__)
     receipt.update(incumbent=incumbent, candidate=candidate,
