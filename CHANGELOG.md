@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- Kernel pin moves to 8c4a639: on the Anthropic Messages API the last call of a budget no longer forces the delivery tool while thinking may be active (the API rejects it with HTTP 400). Audits through claude-api-opus-5-5 failed on their 8th call; they now finish.
 - An implementer that waited for folder consent resumes with the calls and time the conversation can fund now, for that invocation, without rewriting its saved budget. One started in a conversation's first turn has an unbounded budget, and later turns have a finite call ceiling, so the old check refused every resume (R5) and the demand could only move in a new conversation. A conversation without the minimum for an implementer is still refused, with a message that says what is available and what is required.
 - Correcting or revising an applied change starts from the project with a fresh implementer: the applied record stays as the barrier against older work, instead of being dropped. Without it, an earlier unapplied candidate (a cancelled attempt from before the application) came back, and the host asked the planner to cover its files over and over.
 - The pending-consent re-ask tells the coordinator, in English, to ask for a plain yes or no; it is a host instruction, and the coordinator already answers in the user's language.
