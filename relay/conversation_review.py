@@ -185,13 +185,27 @@ def uncovered_review(result):
         and not result.get('failure_code') and not result.get('reason'))
 
 
+def coverage_progressed(row):
+    """A coverage continuation that left fewer unread obligations than it started with may continue again; one
+    that read nothing more is where the chain stops."""
+    return bool(row.get('coverage_continuation_of')) and (
+        len((row.get('result') or {}).get('remaining') or []) < row.get('coverage_unread_before', 0))
+
+
+def next_coverage(job):
+    """<review>-coverage, then <review>-coverage-2, -3..."""
+    base, mark, number = job.name.rpartition('-coverage')
+    return job.with_name(f'{base}-coverage-{int(number[1:] or 1)+1}' if mark else job.name+'-coverage')
+
+
 def coverage_recovery_available(root, task):
     """Current read-only host fact; actual dispatch still checks identity and budgets."""
     record=recorded_failure(root,(task.get('delivery') or {}).get('audit') or {})
     if record is None or not task.get('attempt_input'):return False
     job,row,result=record
-    if row.get('status')!='FINISHED' or row.get('coverage_continuation_of') or not uncovered_review(result):return False
-    if (job.with_name(job.name+'-coverage')/'receipt.json').exists():return False
+    if row.get('status')!='FINISHED' or not uncovered_review(result):return False
+    if row.get('coverage_continuation_of') and not coverage_progressed(row):return False
+    if (next_coverage(job)/'receipt.json').exists():return False
     from compute_plane.native_journal import NativeJournal
     messages=[r.event() for r in NativeJournal(Path(root)/'journal.jsonl').snapshot().records
         if r.event()['kind']=='user_message']
@@ -708,7 +722,8 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
                  and ((r.get('result') or {}).get('verdict') in {'ACCEPT', 'REVISE', 'REJECT'}
                       or (r.get('result') or {}).get('verdict') == 'INCONCLUSIVE' and 'summary' in r['result']
                       and r['result'].get('failure_code') not in HOST_FAILURES)
-                 and not (uncovered_review(r['result']) and not r.get('coverage_continuation_of')
+                 and not (uncovered_review(r['result'])
+                          and (not r.get('coverage_continuation_of') or coverage_progressed(r))
                           and (fresh_coverage or has_coverage))]
     if decisions:
         if any(not reference_sources_current(owner.state['config'], r.get('reference_sources', [])) for r in decisions):
@@ -769,10 +784,15 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
         # format failure. An accepted/rejected verdict is never resampled, and
         # unknown dispatches never authorize another charge.
         if uncovered_review(result) and (fresh_coverage or has_coverage):
-            continuation=job.with_name(job.name+'-coverage'); target=continuation/'receipt.json'
-            if target.exists():
-                return read_json(target,MAX_RECEIPT_BYTES).get('result') or {
-                    'verdict':'INCONCLUSIVE','reason':'Coverage continuation requires reconciliation.'}
+            # Each later user turn continues the chain while its unread obligations shrink.
+            continuation=next_coverage(job)
+            while (continuation/'receipt.json').exists():
+                row=read_json(continuation/'receipt.json',MAX_RECEIPT_BYTES)
+                if not (row.get('status')=='FINISHED' and uncovered_review(row.get('result')) and coverage_progressed(row)):
+                    return row.get('result') or {
+                        'verdict':'INCONCLUSIVE','reason':'Coverage continuation requires reconciliation.'}
+                previous,result,continuation=row,row['result'],next_coverage(continuation)
+            target=continuation/'receipt.json'
             if (not fresh_coverage or previous.get('status')!='FINISHED'
                     or previous.get('invocation')==owner.invocation_id):
                 return result
@@ -859,7 +879,8 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
            'deployment': deployment,
            'request_sha256': identity, 'invocation': owner.invocation_id,
            'calls_reserved': calls, 'amount_committed': allowance, 'context_contract': contract}
-    if coverage_previous:row['coverage_continuation_of']=identity
+    if coverage_previous:
+        row.update(coverage_continuation_of=identity,coverage_unread_before=len(coverage_previous.get('remaining') or []))
     save_json(path, row, max_bytes=MAX_RECEIPT_BYTES)  # durable intent, not evidence of dispatch
     try:
         inputs = job/'input'; inputs.mkdir()
