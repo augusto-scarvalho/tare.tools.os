@@ -252,9 +252,15 @@ def test_a_message_queued_during_the_turn_reaches_the_heads_up_but_host_messages
               {'event': {'kind': 'user_message', 'message_id': 'b'*32, 'text': 'Also log every refusal'}},
               {'event': {'kind': 'user_message', 'message_id': 'consent-decision-consent-choice-1',
                          'text': 'Host dialog choice: Allow.'}},
+              {'event': {'kind': 'user_message', 'message_id': 'c'*32, 'text': 'tare audit: fix the failing test'}},
+              {'event': {'kind': 'user_message', 'message_id': 'cli-note', 'text': 'And keep the old route'}},
               {'event': {'kind': 'terminal', 'output': 'Added the endpoint and the refusal log.'}}]
+    (folder/'messages').mkdir()  # the operator's inbox keeps what the user queued, whatever its id looks like
+    (folder/'messages'/'queue.json').write_text(json.dumps({'session_id': 's', 'items': [
+        {'id': 'b'*32, 'text': 'Also log every refusal'}, {'id': 'cli-note', 'text': 'And keep the old route'}]}))
     (folder/'journal.jsonl').write_text('\n'.join(json.dumps(e) for e in events), encoding='utf-8')
     (folder/'native-agent.json').write_text(json.dumps({'deployment': {'id': 'cheap-a'}, 'invocations': [
         {'id': 'inv', 'journal_start': 0, 'journal_end': len(events), 'status': 'PROPOSED'}]}), encoding='utf-8')
     turn = heads_up.from_journal([(folder, 'inv')], 'Add the endpoint')
-    assert turn['request'] == 'Add the endpoint\n\nLater message from the user:\nAlso log every refusal'
+    assert turn['request'] == ('Add the endpoint\n\nLater message from the user:\nAlso log every refusal'
+                               '\n\nLater message from the user:\nAnd keep the old route')

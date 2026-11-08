@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The heads-up tells the user's queued messages from the host's by the session's operator inbox, which keeps every message the user queued, instead of by the shape of a message id: a message queued with any id (tare native) counts, and a host message with a uuid-like id does not.
 - A coverage continuation counts as progress when it settles at least one obligation its predecessor left unread, even if its reading found as many new ones; the chain stops at the first continuation that settles none. Counting the list stopped a continuation that read two files and found two more.
 - A delivery recovered from its unit receipt (an interrupted turn or a lost task record) keeps the files its audit requires outside the plan, so the next plan must still include them. Recovery dropped them, the old plan ran again, and the refusal guard stopped the delivery with a question instead of a replan.
 - The TUI heads-up reads every message the user sent during the turn: the typed request replaces only the turn's opening message, and messages queued while it ran (Enter queue) follow as later messages; the host's own messages (consent choices, recoveries) stay out. The typed request replaced them all, and a side agent called a requirement the user had queued invented.

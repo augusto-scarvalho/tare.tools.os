@@ -2851,8 +2851,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns operator input and custody; the tactical message boundary is an injected Runtime port.",
-      "size_bytes": 13205,
-      "sha256": "7987ef3be30600e8fbfa6fd63443bb8ac4fcd749bb3d804a9d941637a3e2ffa0"
+      "size_bytes": 13699,
+      "sha256": "900330fe50be76b3b4dcb6db658b3961afd567222ac722289676b4e6bc54c559"
     },
     {
       "name": "console_entry.py",
@@ -4351,8 +4351,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 31695,
-      "sha256": "dfc36ab447e4031ceb508f1097bd174a457775d6ab72f590d3e443acefb675b1"
+      "size_bytes": 31750,
+      "sha256": "229c3b3d21f2583724433756033834b0b3366d39593266fed9ce2b8b6d43c1bf"
     }
   ]
 }
