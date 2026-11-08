@@ -510,7 +510,10 @@ def recover_unapplied_delivery(root,state,value):
     if len(matches)!=1:return False
     path,result,_=matches[0]
     candidate={**result['candidate'],'producer':producer_reference(path.parent,candidate_producer(root,result['candidate']['producer']))}
-    delivery=retained_delivery({**result,'candidate':candidate,'receipt':str(path)})
+    # The receipt keeps the whole audit: files it requires outside the plan still gate the next plan.
+    needed=audit_scope(result,plan)
+    delivery=retained_delivery({**result,'candidate':candidate,'receipt':str(path),
+                                **({'scope_needed':needed} if needed else {})})
     if lost:delivery['last_attempt']=task['delivery']
     task.update(stage='PENDING',delivery=delivery)
     # Only the matching interrupted attempt can supply provenance. Lost-candidate
