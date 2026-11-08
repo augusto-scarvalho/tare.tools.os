@@ -1630,6 +1630,157 @@ def test_same_turn_inconclusive_audit_does_not_reask_permission_or_repeat_work(h
     assert calls==[1]
 
 
+def replan_inconclusive(host, monkeypatch, changed=True):
+    """Publish another immutable artifact through the real delegate-plan path."""
+    tools, execution, *_ = host
+    task = tasks.current(tasks.load(tools.root))
+    original = Path(task['plan']['artifact'])
+    artifact = original.parent.parent/'revision'/'artifact.json'
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.loads(original.read_text())
+    if changed:
+        payload['payload']['steps'].append('Address the stopped attempt.')
+        save_json(artifact, payload)
+    else:
+        artifact.write_bytes(original.read_bytes())
+    monkeypatch.setattr(tools.tools, 'execute', lambda request, control: EffectResult(
+        request.effect_id, 'succeeded', encode({'status': 'PLANNED', 'artifact': str(artifact)}), True))
+    result = tools.execute(effect('delegate_plan', {'instruction': 'Reconcile the plan.'}, 'replan'), execution)
+    assert result.status == 'succeeded', result.output_json
+    return tasks.current(tasks.load(tools.root))
+
+
+@pytest.mark.parametrize('with_candidate', [False, True])
+@pytest.mark.parametrize('changed', [False, True])
+@pytest.mark.parametrize('audit_only', [False, True])
+def test_inconclusive_plan_identity_controls_same_turn_dispatch(host, monkeypatch, with_candidate, changed, audit_only):
+    tools, execution, *_ = host
+    intake(host); original = planned(host)['plan']['sha256']
+    candidate = {'patch': 'private-patch', 'sha256': 'a'*64}
+    calls = []
+    def run(*args, **kwargs):
+        calls.append(deepcopy(kwargs.get('candidate')))
+        result = {'verdict': 'NOT_REVIEWED' if audit_only else 'INCONCLUSIVE', 'applied': False}
+        if audit_only:
+            result['audit'] = {'verdict': 'INCONCLUSIVE'}
+        if with_candidate and len(calls) == 1:
+            result.update(candidate=candidate, files=['a.py'])
+        return result
+    monkeypatch.setattr(work_units, 'run_unit', run)
+    assert tools.execute(effect('implement', {}, 'initial'), execution).status == 'succeeded'
+    saved = tasks.current(tasks.load(tools.root))
+    assert saved['delivery_plan_sha256'] == original
+    replanned = replan_inconclusive(host, monkeypatch, changed)
+    assert replanned['delivery_plan_sha256'] == original
+    assert (replanned['plan']['sha256'] != original) is changed
+    if not changed:
+        monkeypatch.setattr('relay.conversation_permissions.authorize', lambda *a, **kw: pytest.fail('Cache must not ask permission'))
+    result = tools.execute(effect('implement', {}, 'after-replan'), execution)
+    assert result.status == 'succeeded', result.output_json
+    assert len(calls) == (2 if changed else 1)
+    if changed and with_candidate:
+        assert calls[1] == {**candidate, 'review_only': False}
+    saved = tasks.current(tasks.load(tools.root))
+    assert saved['delivery_plan_sha256'] == saved['plan']['sha256']
+    if changed and with_candidate:
+        assert saved['delivery']['candidate'] == candidate
+        assert saved['delivery']['last_attempt']['verdict'] == ('NOT_REVIEWED' if audit_only else 'INCONCLUSIVE')
+    before = deepcopy(saved)
+    monkeypatch.setattr('relay.conversation_permissions.authorize', lambda *a, **kw: pytest.fail('No repeat authorization'))
+    cached = tools.execute(effect('implement', {}, 'cached'), execution)
+    assert cached.status == 'succeeded', cached.output_json
+    assert json.loads(cached.output_json)['dispatch'] == {'implementer': 'NOT_STARTED', 'auditor': 'NOT_STARTED'}
+    assert tasks.current(tasks.load(tools.root)) == before
+    assert len(calls) == (2 if changed else 1)
+    if changed:
+        replan_inconclusive(host, monkeypatch, True)
+        assert tools.execute(effect('implement', {}, 'correction-consumed'), execution).status == 'succeeded'
+        assert len(calls) == 2
+        assert tasks.current(tasks.load(tools.root))['delivery_plan_sha256'] == before['delivery_plan_sha256']
+
+
+@pytest.mark.parametrize('guard', ['legacy', 'budget', 'failures', 'permission', 'integrity', 'retry'])
+def test_revised_inconclusive_plan_keeps_guards(host, monkeypatch, guard):
+    tools, execution, *_ = host
+    intake(host); planned(host)
+    monkeypatch.setattr(work_units, 'run_unit', lambda *a, **kw: {'verdict': 'INCONCLUSIVE'})
+    assert tools.execute(effect('implement', {}, 'first'), execution).status == 'succeeded'
+    original = tasks.current(tasks.load(tools.root))['delivery_plan_sha256']
+    revised = replan_inconclusive(host, monkeypatch)
+    monkeypatch.setattr(work_units, 'run_unit', lambda *a, **kw: pytest.fail('Guard must prevent dispatch'))
+    def refuse(*a, **kw):
+        raise ValueError('fixture guard refused')
+    if guard == 'legacy':
+        value = tasks.load(tools.root)
+        tasks.current(value).pop('delivery_plan_sha256')
+        tasks.save(tools.root, value)
+    elif guard == 'budget':
+        monkeypatch.setattr(work_units, 'child_limits', refuse)
+    elif guard == 'failures':
+        for _ in range(work_units.MAX_FAILURES):
+            work_units.record(tools.root, revised['plan']['unit'], {'verdict': 'NOT_VERIFIED'})
+    elif guard == 'permission':
+        def deny(*a, **kw):
+            raise PermissionError('fixture authorization denied')
+        monkeypatch.setattr('relay.conversation_permissions.authorize', deny)
+    elif guard == 'integrity':
+        Path(revised['plan']['artifact']).write_text('{}')
+    else:
+        monkeypatch.setattr('relay.conversation_recheck.retry_decision', refuse)
+    result = tools.execute(effect('implement', {}, 'guarded'), execution)
+    assert result.status == ('succeeded' if guard == 'legacy' else 'refused'), result.output_json
+    saved = tasks.current(tasks.load(tools.root))
+    assert saved.get('delivery_plan_sha256') == (None if guard == 'legacy' else original)
+    if guard == 'legacy':
+        assert json.loads(result.output_json)['dispatch']['implementer'] == 'NOT_STARTED'
+
+
+@pytest.mark.parametrize('provenance', ['bound', 'legacy', 'foreign', 'tampered'])
+def test_recovered_attempt_keeps_executed_plan_identity(host, monkeypatch, provenance):
+    tools, execution, *_ = host
+    intake(host); original = planned(host)['plan']['sha256']
+    folder = tools.root/'units'/(tasks.current(tasks.load(tools.root))['id']+'-recovery')
+    folder.mkdir(parents=True)
+    patch = folder/'patch.diff'
+    patch.write_bytes(b'private retained patch')
+    receipt = folder/'receipt.json'
+    def run(custody, state, *args, **kwargs):
+        unit = work_units.read_ledger(custody)['plan']['units'][0]
+        targets = {'repo': ['a.py']}
+        result = {'verdict': 'INCONCLUSIVE', 'files': ['a.py'], 'receipt': str(receipt),
+            'candidate': {'patch': str(patch), 'sha256': hashlib.sha256(patch.read_bytes()).hexdigest(),
+                'targets': targets, 'basis': tasks.source_state(state['config'], targets),
+                'producer': deployment()}}
+        save_json(receipt, {'unit': unit, 'effect_id': 'completed',
+            'started': '1970-01-01T00:01:40Z', 'finished': '1970-01-01T00:01:50Z', 'result': result})
+        return result
+    monkeypatch.setattr(work_units, 'run_unit', run)
+    assert tools.execute(effect('implement', {}, 'completed'), execution).status == 'succeeded'
+    replan_inconclusive(host, monkeypatch)
+    value = tasks.load(tools.root); task = tasks.current(value)
+    assert task['plan']['sha256'] != original
+    task.update(stage='AUDITING', delivery=None)
+    task.pop('delivery_plan_sha256')
+    if provenance == 'legacy':
+        task.pop('attempt_plan_sha256')
+    elif provenance == 'foreign':
+        record = json.loads(receipt.read_text())
+        record['effect_id'] = 'another-attempt'
+        save_json(receipt, record)
+    elif provenance == 'tampered':
+        patch.write_bytes(b'changed patch')
+    tasks.save(tools.root, value)
+    state = {**tools.state, 'invocations': [
+        {'id': tools.invocation_id, 'started_at': 90, 'ended_at': 120}]}
+    recovered = tasks.recover_unapplied_delivery(tools.root, state, value)
+    saved = tasks.current(tasks.load(tools.root))
+    assert recovered is (provenance in {'bound', 'legacy'})
+    assert saved.get('delivery_plan_sha256') == (original if provenance == 'bound' else None)
+    if recovered:
+        assert saved['delivery_invocation'] == tools.invocation_id
+        assert saved['delivery']['candidate']['sha256'] == hashlib.sha256(patch.read_bytes()).hexdigest()
+
+
 def test_guidance_matches_coordinator_direct_conversation_and_inline_approval():
     text = native_agent.prompt_capsule(deployment(), 'coordinator', 'conversation')['system']
     policy = ("Answer simple questions, explanations, quick comparisons and informal advice such as 'como você faria?' "
