@@ -32,6 +32,14 @@ def read_queue(directory, session_id):
     return queue
 
 
+def operator_ids(directory):
+    """Ids of the messages the operator queued for this session (the TUI composer, tare native message); the queue
+    keeps them after delivery. The journal's other user messages are the host's own: consent choices, recoveries."""
+    path = Path(directory)/'messages'/'queue.json'
+    items = read_json(regular(path), 4*1024*1024).get('items') if path.exists() else []
+    return {m['id'] for m in items if isinstance(m, dict) and isinstance(m.get('id'), str)}
+
+
 def enqueue(directory, text, *, message_id=None, project=None, attachments=(), attachment_root=None):
     directory, state = state_for(directory, project)
     message_id = uuid4().hex if message_id is None else message_id
