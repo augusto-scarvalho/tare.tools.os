@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The satellite snapshot tests copy their fixture repositories with symlinks kept as links, so the dangling-link scenario runs where Git checks out real symlinks (CI) as it does elsewhere.
 - Check receipts keep their usual "$ <check> (exit <code>)" blocks first; the per-file statuses (a file cut by the cap, one that could not start, files not run) follow them and survive clipping.
 - A plan's Python tests run one file per check (`pytest-tests:<file>`), each within the 300-second cap, instead of every file in one 300-second run. Plans with several heavy suites ended INCONCLUSIVE without a finding; a single file over the cap is still cut and named. The guard's key and the verification contract do not change, and a check asked for by test path is answered with the per-file names to run.
 - The independent auditor can read the satellites a change depends on: a candidate snapshot fills the project's initialized submodules at their pinned commits from local objects, with a fixed number of git processes and no network; a submodule that cannot be filled is marked unavailable instead of failing the candidate; without local pins the auditor gets the running paired runtime packages as read-only references, and only then a named gap. Audits of changes that depend on kernel records ended INCONCLUSIVE because satellites/ was empty in the candidate.

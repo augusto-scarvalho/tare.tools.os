@@ -56,7 +56,7 @@ def test_satellite_sources_through_review(reviewed,paired_packages,satellite_rep
     source,pin=satellite_repositories['symlink' if scenario=='symlink' else 'regular']
     # Relative submodule gitdirs survive copying; never mutate the shared source.
     (root/'.git').rename(tmp_path/'original-review-git')
-    shutil.copytree(source,root,dirs_exist_ok=True)
+    shutil.copytree(source,root,dirs_exist_ok=True,symlinks=True)  # the symlink scenario keeps a dangling link
     (root/'a.py').write_bytes(b'value = 2\n')
     satellites=['satellites/tare.tools.kernel','satellites/tare.tools.agent-runtime']
     if scenario in {'deinitialized','neither','one-package'}:
