@@ -237,3 +237,47 @@ def test_audit_time_budget_is_part_of_the_recovery_contract():
     from test_native_agent import deployment
     contract=conversation_review.context_contract(deployment())
     assert contract['max_seconds']==1200
+
+
+def review(**finding):
+    source={'repository':'candidate','path':'a.py','sha256':'a'*64}
+    return {'summary':'Criterion 2 is unmet.','sources':[source],'remaining':[],'verdict':'REVISE',
+            'findings':[{'claim':'The fallback is missing.','sources':[source],**finding}]}
+
+
+def test_audit_finding_names_files_to_change_and_keeps_old_bytes_without_them():
+    from relay.native_artifacts import validate
+    assert validate('auditor',review(paths=['relay/b.py']))['findings'][0]['paths']==['relay/b.py']
+    assert 'paths' not in validate('auditor',review())['findings'][0]
+    with pytest.raises(ValueError,match='relative_source_required'):
+        validate('auditor',review(paths=['../outside.py']))
+
+
+def test_audit_required_file_outside_the_plan_starts_one_planner_scope_repair(host,monkeypatch):
+    tools,control,*_=host
+    intake(host);planned(host)
+    candidate={'patch':'candidate.diff','sha256':'e'*64}
+    audit={'verdict':'REVISE','summary':'The fallback is missing.','requires_candidate_revision':True,
+           'findings':[{'claim':'Change the review packet.','sources':[],'paths':['a.py','relay/b.py']}]}
+    monkeypatch.setattr(work_units,'run_unit',lambda *a,**kw:{'verdict':'NOT_REVIEWED','applied':False,
+        'files':['a.py'],'candidate':candidate,'audit':deepcopy(audit)})
+    result=tools.execute(effect('implement',{},'audit-scope'),control)
+    body=json.loads(result.output_json)
+    assert result.status=='succeeded' and body['missing_target_paths']==['relay/b.py']
+    assert body['required_action']['tool']=='delegate_plan' and 'relay/b.py' in body['required_action']['arguments']['instruction']
+    saved=tasks.current(tasks.load(tools.root))
+    assert saved['delivery']['scope_needed']==['relay/b.py'] and saved['plan']
+    monkeypatch.setattr(work_units,'run_unit',lambda *a,**kw:pytest.fail('The plan cannot write relay/b.py.'))
+    repaired=tools.execute(effect('implement',{},'same-plan'),control)
+    body=json.loads(repaired.output_json)
+    assert repaired.status=='refused' and body['missing_target_paths']==['relay/b.py']
+    saved=tasks.current(tasks.load(tools.root))
+    assert not saved.get('plan') and saved['replan_candidate']['candidate']==candidate
+
+
+def test_a_plan_covering_the_audit_required_file_passes_the_scope_gate():
+    plan={'unit':{'target_paths':['a.py','relay/b.py']}}
+    assert tasks.require_retained_scope(plan,{'files':['a.py'],'scope_needed':['relay/b.py']}) is None
+    with pytest.raises(ScopeRepair,match='independent audit requires') as error:
+        tasks.require_retained_scope({'unit':{'target_paths':['a.py']}},{'files':['a.py'],'scope_needed':['relay/b.py']})
+    assert error.value.missing_target_paths==['relay/b.py']
