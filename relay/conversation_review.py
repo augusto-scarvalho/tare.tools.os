@@ -508,7 +508,8 @@ def audit_result(outcome, config, unit, changed, references, reference_roots, sa
     if outcome['status']!='PROPOSED':
         result={'verdict':'INCONCLUSIVE','reason':outcome.get('reason') or outcome['status'],
                 'failure_code':outcome.get('failure_code')}
-        if outcome.get('delivery_validation'):result['delivery_validation']=outcome['delivery_validation']
+        for key in ('delivery_validation','provider_error'):  # provider_error: why the auditor's request was refused
+            if outcome.get(key):result[key]=outcome[key]
         return result
     from .native_artifacts import read_input
     artifact=read_input(outcome['artifact_file'])['artifact']

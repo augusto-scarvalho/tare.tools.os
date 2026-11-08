@@ -2151,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 119335,
-      "sha256": "7162a26013f34c74cc86fa5d0a14bf4be29798bf9f906f642bac4a51d9517dcf"
+      "size_bytes": 119719,
+      "sha256": "f0b6610f11a15a944c5df7b75d538ff1f233dc7a9da70d4daa08a49565c0b278"
     },
     {
       "name": "native_artifacts.py",
@@ -2691,8 +2691,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 14989,
-      "sha256": "019d9e5d00e3ec5cb302deb4dc43441a33ed95268ee454e0c07633e1fd3ec21e"
+      "size_bytes": 15164,
+      "sha256": "f44c550abfe9712ec444f6fd8c0d7637ff3c7dde16731033949d582c1bbfdc19"
     },
     {
       "name": "native_plan.py",
@@ -4101,8 +4101,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 107997,
-      "sha256": "20e2557adc016481581d4de17fdebf153a56b99a8c2bcf5e7a97b84e70ec27d6"
+      "size_bytes": 108014,
+      "sha256": "0ee9296f024cf88e1e2dfde3bd6100daa80c33a462e5deeed99cf8c69b334fcd"
     },
     {
       "name": "conversation_review.py",
@@ -4111,8 +4111,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 70004,
-      "sha256": "d4fea7fdffe063ce27e681c9223d6bcf85b356852047a87c29fea6c45ec1f67c"
+      "size_bytes": 70072,
+      "sha256": "bde57f5b64ddf61e10fa36dee557b17fb0e1861f824e88a085bd40d5619e246f"
     },
     {
       "name": "conversation_workspace.py",
