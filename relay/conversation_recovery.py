@@ -2,16 +2,20 @@
 from .native_model_recovery import inspect
 
 
-def prepare_correction(session, control, root, journal, observations, state, invocation_id, *, owner_interrupted=False):
+def prepare_correction(session, control, root, journal, observations, state, invocation_id, *,
+                       owner_interrupted=False, custody_lock_held=False):
     """Reconcile an interrupted model and insert older queued user input in order.
 
     Tool recovery remains with its owner before this point. Unknown effects,
-    unconfirmed process cleanup and exhausted limits cannot be bypassed here.
+    unconfirmed process cleanup (unless this HTTP request's local owner is proven
+    dead, or a completed legacy invocation is protected by custody_lock) and
+    exhausted limits cannot be bypassed here.
     No inference or project action is performed while admitting these messages.
     """
     recovery = inspect(journal, observations, state['session_id'],
         max_model_calls=state['budget']['max_model_calls'], deadline_utc=state['deadline_utc'],
-        owner_interrupted=owner_interrupted)
+        owner_interrupted=owner_interrupted, invocations=state.get('invocations'),
+        custody_lock_held=custody_lock_held)
     if recovery and recovery['available']:
         if recovery.get('not_started'):
             session.retry_not_started_model(control, call_id=recovery['call_id'], resolution_id=invocation_id)

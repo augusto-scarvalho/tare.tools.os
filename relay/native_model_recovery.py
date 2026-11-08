@@ -1,5 +1,61 @@
 """Advisory model-response recovery from recorded evidence; never tool recovery."""
 import time
+import socket
+import math
+
+
+def _pending_owner_dead(records, call_id, invocations, custody_lock_held=False):
+    """Only absence of the local owner of this exact request is proof.
+
+    Journal intervals are half-open. A later attempt may close an unfinished
+    interval, but its identity can never stand in for the original owner.
+    Legacy evidence requires a completed invocation and explicit lock custody;
+    overlapping or otherwise ambiguous custody fails closed.
+    """
+    requests = [i for i, r in enumerate(records)
+                if r.event().get('kind') == 'model_requested' and r.event().get('call_id') == call_id]
+    if len(requests) != 1 or not invocations:
+        return False
+    owners = []
+    for i, row in enumerate(invocations):
+        start = row.get('journal_start')
+        following = invocations[i + 1].get('journal_start') if i + 1 < len(invocations) else len(records)
+        end = row.get('journal_end', following)
+        if (type(start) is not int or type(end) is not int or type(following) is not int
+                or not 0 <= start <= end <= following <= len(records)):
+            return False
+        if start <= requests[0] < end:
+            owners.append(row)
+    if len(owners) != 1:
+        return False
+    owner = owners[0]
+    if 'owner_pid' not in owner:
+        ended = owner.get('ended_at')
+        return (custody_lock_held is True and type(ended) in (int, float)
+                and math.isfinite(ended) and ended > 0)
+    pid = owner.get('owner_pid')
+    if (owner.get('owner_host') != socket.gethostname()
+            or type(pid) is not int or pid <= 0):
+        return False
+    import psutil
+    try:
+        psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        return True
+    except (psutil.Error, OSError, ValueError):
+        return False
+    return False
+
+
+HTTP_TRANSPORT = 'isolated_stdlib_http'  # the kernel's HTTP transport receipt (CLI receipts say official_vendor_cli)
+
+
+def _http_transport(transports):
+    """Require positive HTTP evidence and reject CLI or mixed evidence."""
+    return bool(transports) and all(
+        type(t.get('http_attempts_upper_bound')) is int and t['http_attempts_upper_bound'] > 0
+        and 'vendor' not in t and t.get('transport') == HTTP_TRANSPORT
+        for t in transports)
 
 
 RECOVERABLE_ERRORS = frozenset({
@@ -63,7 +119,8 @@ def completed_delivery_refusal(events, observations, session_id):
     return validation
 
 
-def inspect(journal, observations, session_id, *, max_model_calls, deadline_utc, owner_interrupted=False):
+def inspect(journal, observations, session_id, *, max_model_calls, deadline_utc, owner_interrupted=False,
+            invocations=None, custody_lock_held=False):
     records = journal.snapshot().records
     last = records[-1].event() if records else {}
     crashed = owner_interrupted and last.get('kind') == 'model_requested'
@@ -78,7 +135,13 @@ def inspect(journal, observations, session_id, *, max_model_calls, deadline_utc,
     observed = rows[-1] if rows else {}
     transports = observed.get('transport_calls', [])
     cleanup = bool(transports) and all(t.get('cleanup_verified') is True for t in transports)
+    dead_http_owner = (not crashed and not not_started
+                       and observed.get('error') == 'HTTP_CLEANUP_UNCONFIRMED'
+                       and _http_transport(transports)
+                       and _pending_owner_dead(records, call_id, invocations, custody_lock_held))
+    cleanup = cleanup or dead_http_owner
     eligible = (crashed or cleanup and observed.get('error') in RECOVERABLE_ERRORS
+                or dead_http_owner
                 or not_started and observed.get('status') == 'not_started')
     calls = sum(r.event()['kind'] in {'model_requested', 'context_summary_requested'} for r in records)
     remaining = None if max_model_calls is None else max(0, max_model_calls - calls)
