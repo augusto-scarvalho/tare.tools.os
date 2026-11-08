@@ -248,24 +248,25 @@ def test_fresh_human_can_continue_one_completed_unreviewed_audit_without_impleme
     assert not conversation_review.coverage_recovery_available(tools.root,run.task)
 
 
-def test_coverage_continues_each_turn_while_unread_obligations_shrink(reviewed):
+def test_coverage_continues_each_turn_while_it_settles_unread_obligations(reviewed):
     host,run,*_=reviewed;tools,*_=host
     run.task['attempt_input']=tools.input_id()
     unread=['Read b.py.','Read c.py.','Read d.py.']
+    found=['Read d.py.','Read e.py.','Read f.py.']  # b.py and c.py read, and they led to two more files
     first=run('INCONCLUSIVE',with_findings=False,remaining=unread)
-    for turn,(left,calls) in enumerate([(unread[1:],2),(unread[1:],3)]):
+    for turn,(left,calls) in enumerate([(found,2),(found,3)]):
         user_reply(host,'segue')
         tools.invocation_id=f'coverage-{turn}'
         result=run('INCONCLUSIVE',with_findings=False,remaining=left,expected_calls=calls)
         assert result['remaining']==left
         run.task['delivery']={'audit':result}
-        # the first continuation read b.py; the second read nothing more and ends the chain
+        # the first continuation settled b.py and c.py; the second settled nothing and ends the chain
         assert conversation_review.coverage_recovery_available(tools.root,run.task)==(turn==0)
     user_reply(host,'segue')
     tools.invocation_id='no-progress'
     assert run('ACCEPT',expected_calls=3)==result
     rows=conversation_review.records(tools.root)
-    assert [r.get('coverage_unread_before') for r in rows if r.get('coverage_continuation_of')]==[3,2]
+    assert [r.get('coverage_unread_before') for r in rows if r.get('coverage_continuation_of')]==[unread,found]
     assert first['remaining']==unread
 
 
