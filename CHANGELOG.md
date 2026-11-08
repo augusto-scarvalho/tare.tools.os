@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- Repeated audit refusals stop a delivery only when the audit reports a defect again after a correction (the auditor marks that finding `repeated`), or after 6 refusals in a row as a cost backstop. Three refusals in a row stopped it and asked the user whether to retry even when each audit found a new, real defect (5 questions in one demand). Runs recorded before this change keep the three-refusal rule.
 - A plan's scope grows when the independent audit proves a file outside it must change: each audit finding may name the files to change (`paths`), the delivery returns those outside the plan as `missing_target_paths` with a planner repair, and the next plan must include them before the implementer runs on the preserved candidate; the user still approves the new files. The planner kept returning the same plan and the coordinator asked the user to open another block, which then hit the overlap guard.
 - The satellite snapshot tests copy their fixture repositories with symlinks kept as links, so the dangling-link scenario runs where Git checks out real symlinks (CI) as it does elsewhere.
 - Check receipts keep their usual "$ <check> (exit <code>)" blocks first; the per-file statuses (a file cut by the cap, one that could not start, files not run) follow them and survive clipping.

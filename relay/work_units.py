@@ -27,7 +27,8 @@ MAX_RUNGS = 3                   # routes tried for one unit, cheapest first
 MAX_FAILURES = 2                # NOT_VERIFIED runs of the same unit before tare refuses a third (R3)
 # NOT_REVIEWED runs in a row before tare refuses another: an audit finding the implementer cannot fix (a file its
 # tools cannot delete) otherwise loops; dogfooding the TUI, a local implementer and the auditor ran 7 rounds, 65 min.
-MAX_REFUSALS = 3                # at most the three runs the ledger keeps
+MAX_REFUSALS = 3                # at most the three runs the ledger keeps (runs recorded before `repeated`)
+MAX_PROGRESSING_REFUSALS = 6    # a cost backstop: an audit repeating a finding stops the unit at once
 AUDIT_REFUSED = 'The independent audit did not accept this candidate.'  # only these count toward MAX_REFUSALS
 CHILD_LIMITS = {'max_model_calls': 30, 'max_seconds': 900}
 # ponytail: from the phase 3 comparison (2026-10-06), children that finished a unit used 12 and 16 calls, and one
@@ -788,15 +789,22 @@ def check_failures(custody, unit, *, conversation=False, operator_retry=False):
         history = entry.get('history') or []
         failures = sum(h['verdict'] == 'NOT_VERIFIED' and (
             not context or h.get('verification_contract_digest') == context) for h in history)
-        # Only independent audit refusals count, not host application refusals.
-        refused = len(history) >= MAX_REFUSALS and all(
-            h['verdict'] == 'NOT_REVIEWED' and h.get('reason') == AUDIT_REFUSED
-            for h in history[-MAX_REFUSALS:])
+        # Only independent audit refusals count, not host application refusals. An audit finding new defects
+        # is progress; one reporting a defect again (`repeated`) shows the implementer cannot fix it.
+        latest = history[-1] if history else {}
+        if 'repeated' not in latest:
+            refused = len(history) >= MAX_REFUSALS and all(audit_refusal(h) for h in history[-MAX_REFUSALS:])
+            refused = refused and f'The independent audit refused the last {MAX_REFUSALS} candidates'
+        elif latest['repeated']:
+            refused = 'The independent audit reported the same defect again after a correction'
+        else:
+            refused = latest['refusals'] >= MAX_PROGRESSING_REFUSALS and (
+                f"The independent audit refused {latest['refusals']} candidates in a row, each for new defects")
         return failures >= MAX_FAILURES, refused
 
     failed, refused = thresholds(entries.get(unit['key']) or {})
     if refused and not (conversation and operator_retry):
-        raise GuardRefusal(f"The independent audit refused the last {MAX_REFUSALS} candidates of unit {unit['key']}. "
+        raise GuardRefusal(f"{refused} for unit {unit['key']}. "
             'No implementer started. Tell the user what the latest audit found and ask how to go on: what the '
             'implementer could not fix needs them. Changing notes, routes or task names does not reset this limit.'
             + (RETRY_QUESTION if conversation else ''))
@@ -817,6 +825,10 @@ def check_failures(custody, unit, *, conversation=False, operator_retry=False):
             raise GuardRefusal(f"Unit {unit['key']} overlaps blocked unit {key} on scope: {', '.join(sorted(shared))}. "
                 'No implementer started. Changing objective wording or demand keys does not reset this limit.'
                 + (RETRY_QUESTION if conversation else ' Tell the user to use /retry_delivery to retry the blocked scope.'))
+
+
+def audit_refusal(entry):
+    return entry['verdict'] == 'NOT_REVIEWED' and entry.get('reason') == AUDIT_REFUSED
 
 
 def producer_reference(directory, deployment):
@@ -1482,9 +1494,14 @@ def write_record(custody, unit, result):
     entry = (ledger.setdefault('units', {}).get(unit['key'])) or {}
     state = 'APPLIED' if result.get('applied') else 'CONFLICT' if result.get('application') == 'CONFLICT' \
         else result['verdict']
-    history = (entry.get('history') or []) + [{'ts': now(), 'verdict': result['verdict'], 'route': result.get('route'),
+    run = {'ts': now(), 'verdict': result['verdict'], 'route': result.get('route'),
         'rungs': result.get('rungs'), 'reason': result.get('reason'),
-        **({'verification_contract_digest': unit['verification_contract_digest']} if unit.get('verification_contract_digest') else {})}]
+        **({'verification_contract_digest': unit['verification_contract_digest']} if unit.get('verification_contract_digest') else {})}
+    if audit_refusal(run) and result.get('audit'):
+        last = (entry.get('history') or [{'verdict': None}])[-1]
+        run.update(repeated=any(f.get('repeated') is True for f in result['audit'].get('findings') or []),
+                   refusals=(last.get('refusals', 1) if audit_refusal(last) else 0) + 1)
+    history = (entry.get('history') or []) + [run]
     ledger['units'][unit['key']] = {'state': state, 'history': history[-3:], 'paths': sorted(unit.get('target_paths') or [])}
     save_json(path, ledger)
 
