@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- An HTTP model request whose cleanup was unconfirmed is recoverable in the TUI that made it, once the HTTP worker the kernel recorded for it is gone; the user no longer has to close and reopen tare. A process that took a recorded PID later (created after the owner's invocation started, or after a worker's invocation ended) no longer counts as that process still running. A worker the kernel left without a PID still needs its owner to end.
 - A coverage continuation counts as progress when it settles at least one obligation its predecessor left unread, even if its reading found as many new ones; the chain stops at the first continuation that settles none. Counting the list stopped a continuation that read two files and found two more.
 - A delivery recovered from its unit receipt (an interrupted turn or a lost task record) keeps the files its audit requires outside the plan, so the next plan must still include them. Recovery dropped them, the old plan ran again, and the refusal guard stopped the delivery with a question instead of a replan.
 - The TUI heads-up reads every message the user sent during the turn: the typed request replaces only the turn's opening message, and messages queued while it ran (Enter queue) follow as later messages; the host's own messages (consent choices, recoveries) stay out. The typed request replaced them all, and a side agent called a requirement the user had queued invented.

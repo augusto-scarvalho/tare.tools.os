@@ -3541,8 +3541,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator interaction, workflow composition and evidence inspection; execution ports remain in Kernel and Runtime.",
-      "size_bytes": 8264,
-      "sha256": "3694d91cb48b3baf676e627c553b5f0674c2c298e502760afc35c51fdc0c3f68"
+      "size_bytes": 9234,
+      "sha256": "6388db7ef23835916c7edb8e6bb396d8f6949bbaa11d89b453989795464dfe08"
     },
     {
       "name": "native_product.py",

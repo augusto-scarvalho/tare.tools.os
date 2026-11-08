@@ -3,6 +3,7 @@ import hashlib
 import json
 
 import pytest
+from types import SimpleNamespace
 
 from compute_plane.native_journal import NativeJournal
 from compute_plane.native_models import NativeHttpClient, NativeTransportInterrupted
@@ -183,7 +184,7 @@ def test_http_cleanup_requires_death_of_exact_local_request_owner(monkeypatch, c
     def process(pid):
         queried.append(pid)
         if case == 'alive':
-            return object()
+            return SimpleNamespace(create_time=lambda: 1.0)
         if case == 'denied':
             raise psutil.AccessDenied(pid)
         if case == 'error':
@@ -258,7 +259,7 @@ def test_legacy_fallback_requires_lock_completion_and_unambiguous_http(monkeypat
             raise psutil.AccessDenied(pid)
         if case == 'error':
             raise OSError('inconclusive')
-        return object()
+        return SimpleNamespace(create_time=lambda: 1.0)
     monkeypatch.setattr(psutil, 'Process', process)
     monkeypatch.setattr('relay.native_model_recovery.time.time', lambda: 20)
     result = inspect(journal, observations, 's', invocations=invocations,
@@ -274,6 +275,40 @@ def test_legacy_fallback_requires_lock_completion_and_unambiguous_http(monkeypat
     assert not result['owner_interrupted']
     assert result['usage'] == result['remote_stop'] == 'unknown'
     assert queried == ([12345] if case in ('alive', 'denied', 'error') else [])
+
+@pytest.mark.parametrize('case, available', [
+    ('owner_pid_reused', True), ('worker_gone', True), ('worker_pid_reused', True),
+    ('worker_alive', False), ('worker_without_pid', False), ('owner_running', False)])
+def test_an_open_tui_resumes_once_the_requests_worker_is_gone(monkeypatch, case, available):
+    """The owner lives on in the same TUI: the request is over once its recorded HTTP worker is gone, and a PID
+    another process now holds is no proof of life."""
+    import socket
+    import psutil
+    from tare_tools_agent_runtime import ConversationLog
+    journal, observations = ConversationLog(), ConversationLog()
+    journal.append({'kind': 'model_requested', 'call_id': 's/model/1'})
+    journal.append({'kind': 'invocation_interrupted', 'invocation_id': 's/model/1'})
+    transport = {'cleanup_verified': False, 'http_attempts_upper_bound': 1, 'transport': 'isolated_stdlib_http',
+                 'pid': 777}
+    if case == 'worker_without_pid':
+        transport.pop('pid')  # the kernel's exception path records none
+    observations.append({'call_id': 's/model/1', 'purpose': 'model', 'error': 'HTTP_CLEANUP_UNCONFIRMED',
+                         'transport_calls': [transport]})
+    owner = {'journal_start': 0, 'journal_end': 2, 'owner_pid': 12345, 'owner_host': socket.gethostname(),
+             'started_at': 100.0, 'ended_at': 150.0}
+    if case == 'owner_running':
+        owner.pop('ended_at')
+    created = {12345: 200.0 if case == 'owner_pid_reused' else 50.0,
+               777: {'worker_pid_reused': 300.0, 'worker_alive': 120.0}.get(case)}
+    def process(pid):
+        if created.get(pid) is None:
+            raise psutil.NoSuchProcess(pid)
+        return SimpleNamespace(create_time=lambda: created[pid])
+    monkeypatch.setattr(psutil, 'Process', process)
+    result = inspect(journal, observations, 's', invocations=[owner], max_model_calls=8, deadline_utc=None)
+    assert result['available'] is available
+    assert result['reason'] == ('EXPLICIT_RESUME_AVAILABLE' if available else 'LOCAL_CLEANUP_UNCONFIRMED')
+
 
 @pytest.mark.parametrize('transport, available', [('isolated_stdlib_http', True), ('official_vendor_cli', False)])
 def test_recorded_kernel_receipt_shape_decides_the_dead_http_owner(transport, available):
