@@ -493,6 +493,12 @@ def recover_unapplied_delivery(root,state,value):
     delivery=retained_delivery({**result,'candidate':candidate,'receipt':str(path)})
     if lost:delivery['last_attempt']=task['delivery']
     task.update(stage='PENDING',delivery=delivery)
+    # Only the matching interrupted attempt can supply provenance. Lost-candidate
+    # recovery restores older work, not the identity of the latest attempt.
+    if not lost:
+        task['delivery_plan_sha256'] = (task.get('attempt_plan_sha256')
+            if task.get('attempt_effect') else None)
+        task['delivery_invocation'] = task.get('attempt_invocation')
     save(root,value)
     return True
 
@@ -1173,7 +1179,10 @@ class ConversationTools:
                     preserved = retained_candidate({key: task.get(key)
                         for key in ('replan_candidate', 'delivery')})
                     task.pop('replan_candidate', None)
-                    task['delivery'] = deepcopy(preserved)
+                    # Keep an unapplied attempt's provenance for the same-turn plan comparison;
+                    # an applied record never stands in for the new plan's delivery.
+                    kept = task.get('delivery') if not (task.get('delivery') or {}).get('applied') else None
+                    task['delivery'] = deepcopy(preserved or kept)
                     task.pop('replan_from',None)
                     save(self.root, value)
                     output['next'] = 'Return this plan to the user.' if task['intent'] == 'plan' else 'Use implement to execute this saved plan.'
@@ -1244,8 +1253,15 @@ class ConversationTools:
                     and prior_audit.get('verdict')=='INCONCLUSIVE' and prior_audit.get('summary')
                     and prior_audit.get('remaining') and not prior_audit.get('failure_code')
                     and not prior_audit.get('reason'))
-                if task.get('delivery_invocation') == self.invocation_id and (
-                        previous.get('verdict') == 'INCONCLUSIVE' or prior_audit.get('verdict') == 'INCONCLUSIVE') and (
+                last_attempt = previous.get('last_attempt') or previous
+                inconclusive = (last_attempt.get('verdict') == 'INCONCLUSIVE'
+                    or (last_attempt.get('audit') or {}).get('verdict') == 'INCONCLUSIVE'
+                    or prior_audit.get('verdict') == 'INCONCLUSIVE')
+                # Compare attempt provenance, never the artifact path or a newly loaded plan.
+                plan_revision = bool(inconclusive and task.get('delivery_plan_sha256')
+                    and plan.get('sha256') and plan['sha256'] != task['delivery_plan_sha256'])
+                candidate_revision=candidate_revision or plan_revision
+                if task.get('delivery_invocation') == self.invocation_id and inconclusive and (
                         not candidate_revision or task.get('candidate_correction_invocation')==self.invocation_id):
                     return EffectResult(request.effect_id, 'succeeded', encode({**delivery_view(
                         previous, config=self.state['config'], unit=plan['unit']),
@@ -1359,7 +1375,8 @@ class ConversationTools:
                             'summary', 'findings', 'remaining') if k in feedback})
                 from .work_forms import record_plan
                 record_plan(self.root, state['config'], {'units': [execution_unit], 'criteria': execution_unit['criteria']})
-                task.update(stage='IMPLEMENTING', attempt_invocation=self.invocation_id, attempt_effect=request.effect_id)
+                task.update(stage='IMPLEMENTING', attempt_invocation=self.invocation_id, attempt_effect=request.effect_id,
+                            attempt_plan_sha256=execution_unit['planner_input']['sha256'])
                 # A cached-review lookup did not attempt an implementation. It must not consume
                 # the new human input before the coordinator corrects its relation in this turn.
                 if not candidate or not candidate['review_only']:task['attempt_input']=self.input_id()
@@ -1391,7 +1408,8 @@ class ConversationTools:
                     output.update(candidate=previous['candidate'],last_attempt={k:output[k] for k in
                         ('verdict','reason','route') if k in output})
                 task.update(stage='DELIVERED' if output.get('applied') else 'PENDING', delivery=retained,
-                            delivery_invocation=self.invocation_id)
+                            delivery_invocation=self.invocation_id,
+                            delivery_plan_sha256=execution_unit['planner_input']['sha256'])
                 save(self.root, value)
                 output = delivery_view(output, config=self.state['config'], unit=plan['unit'])
             else:
