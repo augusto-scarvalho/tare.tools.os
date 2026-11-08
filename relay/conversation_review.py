@@ -494,9 +494,8 @@ def resume_tree(owner, task):
     job,row,_=found
     if row.get('task')!=task.get('id'):return None
     state=resumable_review_state(job,row)
-    if state is None:return None
-    from .execution_scope import require
-    require(state['deployment'],'auditor')
+    from .execution_scope import current
+    if state is None or not current().allows(state['deployment'],'auditor')[0]:return None  # a new pin audits afresh
     view=regular(Path(state['config']['repositories']['candidate']))
     if (view.parent!=regular(storage_root()/'wt') or not re.fullmatch('[0-9a-f]{8}',view.name)
             or view.exists()):return None
@@ -538,12 +537,12 @@ def resume_review(owner, task, job, previous, tree, unit, changed, control):
     from .native_agent import read_json, run_session
     from .delegation_tools import count_calls
     from .native_spend import settings
-    from .execution_scope import require
+    from .execution_scope import current as scope
     state=resumable_review_state(job,previous)
     if (state is None or settings(owner.state['deployment'])[0]
             or Path(state['config']['repositories']['candidate']).resolve()!=Path(tree).resolve()
-            or (previous.get('model_recovery') or {}).get('input')==owner.input_id()):return None
-    require(state['deployment'],'auditor')
+            or (previous.get('model_recovery') or {}).get('input')==owner.input_id()
+            or not scope().allows(state['deployment'],'auditor')[0]):return None  # a new pin audits afresh
     packet=read_json(job/'input/request.json',MAX_RECEIPT_BYTES)
     current=satellite_context(owner.state['config'],unit,tree)
     if packet.get('satellite_sources') != current:
@@ -841,6 +840,9 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
         else:
             return result or {'verdict': 'INCONCLUSIVE',
                 'reason': 'A previous review may be charged. Its interrupted request was not repeated.'}
+    from .execution_scope import current, require
+    if pinned and not current().allows(pinned[1], 'auditor')[0]:
+        pinned = None  # this instance's --auditor pin or allowlist wins over the route of the review it retries
     candidates = [pinned] if pinned else pick_auditors(producer, rules['auditor'] if rules.get('auditor_selection') == 'configured' else None)
     candidates = [(name, dep) for name, dep in candidates if name not in _unavailable]
     if not candidates:
@@ -856,7 +858,6 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
     if calls is not None and calls < 2 or seconds is not None and seconds < 10 or control.should_stop():
         return {'verdict': 'INCONCLUSIVE', 'reason': 'Not enough shared budget remains for review and the coordinator response.'}
     name, deployment = candidates[0]
-    from .execution_scope import current, require
     auditor_pin = current().pin('auditor')
     if auditor_pin:
         require(deployment,'auditor')
