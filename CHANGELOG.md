@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The TUI heads-up reads every message the user sent during the turn: the typed request replaces only the turn's opening message, and messages queued while it ran (Enter queue) follow as later messages; the host's own messages (consent choices, recoveries) stay out. The typed request replaced them all, and a side agent called a requirement the user had queued invented.
 - A turn whose delivery was not applied ends with the host's line "[tare] Not applied: the project files are unchanged" (and whether the candidate is preserved), after the coordinator's reply. A local coordinator had summarized an unapplied candidate as "what changed", and nothing in the reply said otherwise.
 - A re-audit honors the instance's `--auditor` pin: a retry or recovery of an earlier audit whose route the pin now excludes starts afresh with the pinned auditor. It reused the failed audit's route, the pin refused it before any inference, and the coordinator reported the old HTTP 400 as the API failing again.
 - Repeated audit refusals stop a delivery only when the audit reports a defect again after a correction (the auditor marks that finding `repeated`), or after 6 refusals in a row as a cost backstop. Three refusals in a row stopped it and asked the user whether to retry even when each audit found a new, real defect (5 questions in one demand). Runs recorded before this change keep the three-refusal rule.

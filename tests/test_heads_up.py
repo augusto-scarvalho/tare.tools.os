@@ -243,3 +243,18 @@ def test_the_tui_shows_new_notes_once_and_keeps_them_for_the_composer(tmp_path, 
     heads_up.asked(source)  # /heads-up: the operator sent it to the agent, a label joined to the turn by its reply
     row = json.loads((tmp_path/'storage'/'serve'/'heads-up.jsonl').read_text(encoding='utf-8').splitlines()[-1])
     assert row['event'] == 'asked' and row['reply_sha256'] == reply
+
+
+def test_a_message_queued_during_the_turn_reaches_the_heads_up_but_host_messages_do_not(tmp_path):
+    folder = tmp_path/'queued'
+    folder.mkdir()
+    events = [{'event': {'kind': 'user_message', 'message_id': 'a'*32, 'text': 'TUI wrapper...\nAdd the endpoint'}},
+              {'event': {'kind': 'user_message', 'message_id': 'b'*32, 'text': 'Also log every refusal'}},
+              {'event': {'kind': 'user_message', 'message_id': 'consent-decision-consent-choice-1',
+                         'text': 'Host dialog choice: Allow.'}},
+              {'event': {'kind': 'terminal', 'output': 'Added the endpoint and the refusal log.'}}]
+    (folder/'journal.jsonl').write_text('\n'.join(json.dumps(e) for e in events), encoding='utf-8')
+    (folder/'native-agent.json').write_text(json.dumps({'deployment': {'id': 'cheap-a'}, 'invocations': [
+        {'id': 'inv', 'journal_start': 0, 'journal_end': len(events), 'status': 'PROPOSED'}]}), encoding='utf-8')
+    turn = heads_up.from_journal([(folder, 'inv')], 'Add the endpoint')
+    assert turn['request'] == 'Add the endpoint\n\nLater message from the user:\nAlso log every refusal'

@@ -222,8 +222,10 @@ def step(tool, args, status, output):
     return value
 
 
-def from_journal(runs):
-    """A TUI or tare serve turn from its sessions' journals: runs are (session folder, invocation id), oldest first."""
+def from_journal(runs, request=None):
+    """A TUI or tare serve turn from its sessions' journals: runs are (session folder, invocation id), oldest first.
+    request, the user's own words for the turn, replaces only its opening message: messages the user queued while
+    the turn ran stay (a side agent without them called a requirement the user had asked for invented)."""
     from .native_agent import read_json
     requests, steps, reply, earlier = [], [], '', None
     for session, invocation_id in runs:
@@ -237,6 +239,8 @@ def from_journal(runs):
             event = json.loads(line)['event']
             kind = event.get('kind')
             if kind in ('user_message', 'session_started') and (event.get('text') or event.get('instruction')):
+                if requests and not re.fullmatch('[0-9a-f]{32}', str(event.get('message_id'))):
+                    continue  # the host's own messages (consent choices, recoveries) carry prefixed ids
                 requests.append(event.get('text') or event.get('instruction'))
             elif kind == 'effect_requested':
                 asked[event['effect_id']] = event.get('tool_call') or {}
@@ -246,6 +250,8 @@ def from_journal(runs):
                                   _loads(result.get('output_json'))))
             elif kind == 'terminal' and event.get('output'):
                 reply = event['output']
+    if request:
+        requests[:1] = [request]
     return {'request': '\n\nLater message from the user:\n'.join(requests), 'steps': steps, 'reply': reply,
             'earlier': earlier or []}
 
