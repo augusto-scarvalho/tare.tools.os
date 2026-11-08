@@ -269,6 +269,28 @@ def test_coverage_continues_each_turn_while_unread_obligations_shrink(reviewed):
     assert first['remaining']==unread
 
 
+def test_a_retried_audit_uses_the_instance_auditor_pin_not_the_failed_route(reviewed,monkeypatch):
+    from relay import execution_scope
+    host,run,*_=reviewed;tools,*_=host
+    run('ACCEPT')
+    receipt=next((tools.root/'reviews').glob('*/receipt.json'));row=json.loads(receipt.read_text())
+    row.update(route='old-auditor',deployment={**row['deployment'],'id':'old-auditor'},
+               result={'verdict':'INCONCLUSIVE','reason':'HTTP_400','failure_code':'HTTP_400'})
+    receipt.write_text(json.dumps(row))
+    real=execution_scope.current()
+
+    class Reopened:  # the TUI reopened with --auditor naming another connection
+        def __getattr__(self,name):return getattr(real,name)
+        def pin(self,role):return 'google/agy-gemini-4-argon-cli@high' if role=='auditor' else real.pin(role)
+        def allows(self,deployment,role=None):
+            return (False,'Excluded by --auditor exact pin.') if deployment.get('id')=='old-auditor' else real.allows(deployment,role)
+    monkeypatch.setattr(execution_scope,'current',Reopened)
+    tools.invocation_id='reopened-with-auditor-pin'
+    assert run('ACCEPT',expected_calls=2)['verdict']=='ACCEPT'
+    retried=json.loads((receipt.parent.with_name(receipt.parent.name+'-retry')/'receipt.json').read_text())
+    assert retried['route']=='independent'
+
+
 @pytest.mark.parametrize('verdict',['ACCEPT','REVISE','INCONCLUSIVE'])
 def test_fresh_human_does_not_resample_acceptance_or_adverse_findings(reviewed,verdict):
     host,run,*_=reviewed;tools,*_=host
