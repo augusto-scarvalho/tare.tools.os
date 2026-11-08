@@ -86,3 +86,60 @@ def test_new_conversation_message_refreshes_host_applied_files_without_manual_re
     correction=next(r for r in rows if r.get('message_id')=='current-change')
     assert 'Host-observed changes' in correction['text'] and 'Now inspect the current change.' in correction['text']
     assert result['model_calls']==4
+
+
+@pytest.mark.parametrize('proof', ['dead', 'legacy', 'alive', 'missing', 'codex', 'claude', 'agy',
+                                   'legacy_codex', 'legacy_claude', 'legacy_agy'])
+def test_http_owner_death_correction_recovers_before_ordered_messages(setup, monkeypatch, proof):
+    import psutil
+    from compute_plane.native_models import NativeHttpClient, NativeTransportInterrupted
+    config, custody, project = setup
+    config.update(writable={}, verifiers={}, capabilities=['read', 'list', 'search'])
+    class Interrupted(Client, NativeHttpClient):
+        def post_observed(self, path, body, control):
+            if path.endswith('/chat/completions'):
+                self.generations += 1
+                transport = {'started': True, 'cleanup_verified': False,
+                             'remote_stop': 'unknown', 'http_attempts_upper_bound': 1, 'transport': 'isolated_stdlib_http', 'transport': 'isolated_stdlib_http'}
+                if proof.removeprefix('legacy_') in ('codex', 'claude', 'agy'):
+                    transport.update(vendor=proof.removeprefix('legacy_'), http_attempts_upper_bound=0)
+                raise NativeTransportInterrupted('HTTP_CLEANUP_UNCONFIRMED', transport)
+            return self.post(path, body, control), {'started': True, 'cleanup_verified': True}
+    first = Interrupted()
+    initial = native_agent.run_session(config, deployment(), custody, 'Read the project.', conversation=True,
+        accept_messages=True, budget=NativeBudget(max_model_calls=4), client=first, local_counter=first)
+    state = json.loads((custody/'native-agent.json').read_text())
+    if proof == 'missing' or proof.startswith('legacy'):
+        state['invocations'][0].pop('owner_pid')
+        assert state['invocations'][0]['ended_at'] > 0
+        if proof == 'missing':
+            state['invocations'][0].pop('ended_at')
+    else:
+        state['invocations'][0]['owner_pid'] = 12345
+    (custody/'native-agent.json').write_text(json.dumps(state))
+    def process(pid):
+        if pid == 12345 and proof != 'alive':
+            raise psutil.NoSuchProcess(pid)
+        return object()
+    monkeypatch.setattr(psutil, 'Process', process)
+    native_messages.enqueue(custody, 'Earlier correction', message_id='queued')
+    before = (custody/'journal.jsonl').read_bytes()
+    second = Client(steps=[('tare_deliver', {'summary': 'Correction received.'})])
+    if proof not in ('dead', 'legacy'):
+        with pytest.raises(ValueError, match='completed proposal'):
+            native_agent.run_session(None, None, custody, resume=True, follow_up='Answer this instead.',
+                message_id='new', client=second, local_counter=second)
+        assert second.generations == 0
+        assert (custody/'journal.jsonl').read_bytes() == before
+        return
+    result = native_agent.run_session(None, None, custody, resume=True, follow_up='Answer this instead.',
+        message_id='new', client=second, local_counter=second)
+    assert result['status'] == 'PROPOSED' and result['model_calls'] == 2
+    assert (custody/'journal.jsonl').read_bytes().startswith(before)
+    rows = [r.event() for r in NativeJournal(custody/'journal.jsonl').snapshot().records]
+    abandoned = [r for r in rows if r['kind'] == 'model_abandoned']
+    assert len(abandoned) == 1 and abandoned[0]['call_id'] == initial['pending_id']
+    assert abandoned[0]['usage'] is None and abandoned[0]['remote_stop'] == 'unknown'
+    assert [r['message_id'] for r in rows if r['kind'] == 'user_message'] == ['queued', 'new']
+    assert rows.index(abandoned[0]) < next(i for i, r in enumerate(rows) if r['kind'] == 'user_message')
+    assert not any(r['kind'] == 'effect_requested' for r in rows)

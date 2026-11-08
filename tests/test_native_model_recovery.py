@@ -53,9 +53,9 @@ def test_interrupted_model_recovery_preserves_edit_calls_and_unknown_usage(setup
                 self.generations += 1
                 raise NativeTransportInterrupted('HTTP_INCOMPLETE_STREAM', {
                     'started': True, 'cleanup_verified': cleanup, 'remote_stop': 'unknown',
-                    'http_attempts_upper_bound': 1, 'stream_events': 0, 'worker_error_type': 'URLError'})
+                    'http_attempts_upper_bound': 1, 'transport': 'isolated_stdlib_http', 'stream_events': 0, 'worker_error_type': 'URLError'})
             return self.post(path, body, control), {'started': True, 'cleanup_verified': True,
-                'remote_stop': 'unknown', 'http_attempts_upper_bound': 1}
+                'remote_stop': 'unknown', 'http_attempts_upper_bound': 1, 'transport': 'isolated_stdlib_http', 'transport': 'isolated_stdlib_http'}
 
     client = Interrupted(steps=steps())
     first = native_agent.run_session(config, deployment(), directory, 'Change and check a.py.',
@@ -132,3 +132,168 @@ def test_owner_exception_at_model_return_is_explicitly_resumable(setup, monkeypa
     events = [r.event() for r in NativeJournal(directory/'journal.jsonl').snapshot().records]
     assert sum(e['kind'] == 'model_abandoned' for e in events) == 1
     assert sum(e['kind'] == 'effect_requested' and e['tool_call']['name'] == 'edit' for e in events) == 1
+
+
+@pytest.mark.parametrize('case,expected', [
+    ('dead', 'EXPLICIT_RESUME_AVAILABLE'), ('alive', 'LOCAL_CLEANUP_UNCONFIRMED'),
+    ('missing', 'LOCAL_CLEANUP_UNCONFIRMED'), ('foreign', 'LOCAL_CLEANUP_UNCONFIRMED'),
+    ('invalid', 'LOCAL_CLEANUP_UNCONFIRMED'), ('denied', 'LOCAL_CLEANUP_UNCONFIRMED'),
+    ('error', 'LOCAL_CLEANUP_UNCONFIRMED'), ('wrong_call', 'LOCAL_CLEANUP_UNCONFIRMED'),
+    ('ambiguous', 'LOCAL_CLEANUP_UNCONFIRMED'), ('legacy', 'LOCAL_CLEANUP_UNCONFIRMED'),
+    ('codex', 'LOCAL_CLEANUP_UNCONFIRMED'), ('claude', 'LOCAL_CLEANUP_UNCONFIRMED'),
+    ('agy', 'LOCAL_CLEANUP_UNCONFIRMED'), ('mixed', 'LOCAL_CLEANUP_UNCONFIRMED'),
+    ('unknown_transport', 'LOCAL_CLEANUP_UNCONFIRMED'),
+    ('budget', 'MODEL_CALL_LIMIT'), ('deadline', 'DEADLINE_EXHAUSTED'),
+])
+def test_http_cleanup_requires_death_of_exact_local_request_owner(monkeypatch, case, expected):
+    import socket
+    import psutil
+    from tare_tools_agent_runtime import ConversationLog
+    journal, observations = ConversationLog(), ConversationLog()
+    journal.append({'kind': 'model_requested', 'call_id': 's/model/1'})
+    journal.append({'kind': 'invocation_interrupted', 'invocation_id': 's/model/1'})
+    transport = {'cleanup_verified': False, 'http_attempts_upper_bound': 1, 'transport': 'isolated_stdlib_http', 'transport': 'isolated_stdlib_http'}
+    if case in ('codex', 'claude', 'agy'):
+        transport['vendor'] = case
+        transport['http_attempts_upper_bound'] = 0
+    if case == 'unknown_transport':
+        transport = {'cleanup_verified': False}
+    transports = [transport]
+    if case == 'mixed':
+        transports.append({'vendor': 'codex', 'cleanup_verified': False})
+    observations.append({'call_id': 's/model/1', 'purpose': 'model',
+                         'error': 'HTTP_CLEANUP_UNCONFIRMED', 'transport_calls': transports})
+    owner = {'journal_start': 0, 'journal_end': 2, 'owner_pid': 12345,
+             'owner_host': socket.gethostname()}
+    later = {'journal_start': 2, 'owner_pid': 54321, 'owner_host': socket.gethostname()}
+    invocations = [owner, later]
+    if case == 'missing':
+        owner.pop('owner_pid')
+    if case == 'foreign':
+        owner['owner_host'] = 'not-this-host'
+    if case == 'invalid':
+        owner['owner_pid'] = True
+    if case == 'legacy':
+        invocations = None
+    if case == 'wrong_call':
+        owner.pop('owner_pid')  # Only a later invocation has proof; never borrow it.
+    if case == 'ambiguous':
+        invocations.insert(1, dict(owner))
+    queried = []
+    def process(pid):
+        queried.append(pid)
+        if case == 'alive':
+            return object()
+        if case == 'denied':
+            raise psutil.AccessDenied(pid)
+        if case == 'error':
+            raise OSError('inconclusive process query')
+        raise psutil.NoSuchProcess(pid)
+    monkeypatch.setattr(psutil, 'Process', process)
+    monkeypatch.setattr('relay.native_model_recovery.time.time', lambda: 20)
+    result = inspect(journal, observations, 's', invocations=invocations,
+                     max_model_calls=1 if case == 'budget' else 8,
+                     deadline_utc=10 if case == 'deadline' else None)
+    assert result['reason'] == expected
+    assert result['available'] is (case == 'dead')
+    proven = case in ('dead', 'budget', 'deadline')
+    assert result['local_cleanup_verified'] is proven
+    assert result['transport_eligible'] is proven
+    assert not result['owner_interrupted']
+    assert result['usage'] == result['remote_stop'] == 'unknown'
+    assert 54321 not in queried
+
+
+@pytest.mark.parametrize('locked', [False, True])
+@pytest.mark.parametrize('case', [
+    'legacy', 'no_end', 'null_end', 'bad_end', 'bool_end', 'nan_end', 'negative_end',
+    'null_pid', 'bool_pid', 'zero_pid', 'text_pid', 'alive', 'denied', 'error', 'foreign',
+    'wrong_call', 'ambiguous', 'no_invocations', 'codex', 'claude', 'agy', 'mixed',
+    'empty_vendor', 'unknown_transport', 'budget', 'deadline',
+])
+def test_legacy_fallback_requires_lock_completion_and_unambiguous_http(monkeypatch, locked, case):
+    import socket
+    import psutil
+    from tare_tools_agent_runtime import ConversationLog
+    journal, observations = ConversationLog(), ConversationLog()
+    journal.append({'kind': 'model_requested', 'call_id': 's/model/1'})
+    journal.append({'kind': 'invocation_interrupted', 'invocation_id': 's/model/1'})
+    transport = {'cleanup_verified': False, 'http_attempts_upper_bound': 1, 'transport': 'isolated_stdlib_http', 'transport': 'isolated_stdlib_http'}
+    if case in ('codex', 'claude', 'agy'):
+        transport.update(vendor=case, http_attempts_upper_bound=0, transport='official_vendor_cli')
+    if case == 'empty_vendor':
+        transport['vendor'] = None
+    if case == 'unknown_transport':
+        transport['transport'] = 'unknown'
+    transports = [transport]
+    if case == 'mixed':
+        transports.append({'vendor': 'codex', 'cleanup_verified': False})
+    observations.append({'purpose': 'model', 'call_id': 's/model/1',
+                         'error': 'HTTP_CLEANUP_UNCONFIRMED', 'transport_calls': transports})
+    owner = {'journal_start': 0, 'journal_end': 2, 'ended_at': 10}
+    invocations = [owner]
+    if case == 'no_end':
+        owner.pop('ended_at')
+    end_values = {'null_end': None, 'bad_end': '10', 'bool_end': True,
+                  'nan_end': float('nan'), 'negative_end': -1}
+    if case in end_values:
+        owner['ended_at'] = end_values[case]
+    pid_values = {'null_pid': None, 'bool_pid': True, 'zero_pid': 0, 'text_pid': '12345'}
+    if case in pid_values:
+        owner.update(owner_pid=pid_values[case], owner_host=socket.gethostname())
+    if case in ('alive', 'denied', 'error', 'foreign'):
+        owner.update(owner_pid=12345, owner_host=socket.gethostname())
+    if case == 'foreign':
+        owner['owner_host'] = 'another-host'
+    if case == 'wrong_call':
+        owner.update(journal_start=1)
+    if case == 'ambiguous':
+        invocations.append(dict(owner))
+    if case == 'no_invocations':
+        invocations = []
+    queried = []
+    def process(pid):
+        queried.append(pid)
+        if case == 'denied':
+            raise psutil.AccessDenied(pid)
+        if case == 'error':
+            raise OSError('inconclusive')
+        return object()
+    monkeypatch.setattr(psutil, 'Process', process)
+    monkeypatch.setattr('relay.native_model_recovery.time.time', lambda: 20)
+    result = inspect(journal, observations, 's', invocations=invocations,
+                     custody_lock_held=locked, max_model_calls=1 if case == 'budget' else 8,
+                     deadline_utc=10 if case == 'deadline' else None)
+    proven = locked and case in ('legacy', 'budget', 'deadline')
+    expected = ('MODEL_CALL_LIMIT' if case == 'budget' else
+                'DEADLINE_EXHAUSTED' if case == 'deadline' else 'EXPLICIT_RESUME_AVAILABLE')
+    assert result['reason'] == (expected if proven else 'LOCAL_CLEANUP_UNCONFIRMED')
+    assert result['available'] is (locked and case == 'legacy')
+    assert result['local_cleanup_verified'] is proven
+    assert result['transport_eligible'] is proven
+    assert not result['owner_interrupted']
+    assert result['usage'] == result['remote_stop'] == 'unknown'
+    assert queried == ([12345] if case in ('alive', 'denied', 'error') else [])
+
+@pytest.mark.parametrize('transport, available', [('isolated_stdlib_http', True), ('official_vendor_cli', False)])
+def test_recorded_kernel_receipt_shape_decides_the_dead_http_owner(transport, available):
+    """The exact receipt a coordinator left on 07/11 when its release was removed mid-request (no owner_pid)."""
+    from tare_tools_agent_runtime import ConversationLog
+    journal, observations = ConversationLog(), ConversationLog()
+    journal.append({'kind': 'model_requested', 'call_id': 's/model/7'})
+    journal.append({'kind': 'invocation_interrupted', 'invocation_id': 's/model/7'})
+    receipt = {'cleanup_verified': False, 'first_content_ms': None, 'first_output_ms': None,
+               'http_attempts_upper_bound': 1, 'remote_stop': 'unknown', 'started': None, 'stream_events': 0,
+               'stream_observer_failures': 0, 'stream_status': 'INCOMPLETE', 'stream_usage': None,
+               'timeouts': {'connect_seconds': None, 'read_seconds': None, 'request_seconds': None},
+               'transport': transport}
+    if transport == 'official_vendor_cli':
+        receipt.update(vendor='codex', http_attempts_upper_bound=0)
+    observations.append({'purpose': 'model', 'call_id': 's/model/7', 'error': 'HTTP_CLEANUP_UNCONFIRMED',
+                         'transport_calls': [receipt]})
+    invocations = [{'journal_start': 0, 'journal_end': 2, 'ended_at': 1794058872.1}]
+    result = inspect(journal, observations, 's', invocations=invocations, custody_lock_held=True,
+                     max_model_calls=None, deadline_utc=None)
+    assert result['available'] is available
+    assert result['reason'] == ('EXPLICIT_RESUME_AVAILABLE' if available else 'LOCAL_CLEANUP_UNCONFIRMED')
+
