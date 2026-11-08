@@ -254,8 +254,7 @@ class ConversationModels:
         if not heads_up.enabled():
             return
         try:
-            turn = heads_up.from_journal([(source, i) for i in ids])
-            turn['request'] = request or turn['request']
+            turn = heads_up.from_journal([(source, i) for i in ids], request)
             route = read_json(Path(source)/'native-agent.json', 1024*1024)['deployment'].get('id')
             mine = heads_up.shown(source)
             with local_models(local):  # the conversation's choice: no local judge or writer when it said so
