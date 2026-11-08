@@ -416,6 +416,17 @@ def current(value):
     return next((t for t in value['tasks'] if t['id'] == value['current']), None)
 
 
+def delivery_notice(root, invocation):
+    """The host's line under a turn whose delivery was not applied: no reply reads as a finished change (a local
+    coordinator summarized an unapplied candidate as "what changed")."""
+    task = current(load(root)) or {}
+    delivery = task.get('delivery') or {}
+    if task.get('delivery_invocation') != invocation or not delivery or delivery.get('applied'):
+        return None
+    return '[tare] Not applied: the project files are unchanged' + (
+        '; the candidate is preserved.' if delivery.get('candidate') or delivery.get('worker') else '.')
+
+
 def retained_delivery(output):
     result={k:output[k] for k in ('verdict','applied','files','reason','route','receipt','targets',
         'source_state','candidate','worker','folder_access_request','implementer_report','implementation_stop') if k in output}

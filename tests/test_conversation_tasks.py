@@ -2129,3 +2129,21 @@ def test_implement_retry_survives_revised_plan_but_not_file_permission_denial(ho
     assert result.status == 'refused' and calls == [True] and authorized == [True]
     request = json.loads((tools.root/'conversation-retry/request.json').read_text())
     assert request['question_id'] != question['id'] and request['scope'] == expected
+
+
+@pytest.mark.parametrize('applied', [False, True])
+def test_a_turn_with_an_unapplied_delivery_ends_with_the_host_status(host, monkeypatch, applied):
+    tools, control, *_ = host
+    intake(host); planned(host)
+    output = {'verdict': 'VERIFIED' if applied else 'NOT_REVIEWED', 'applied': applied, 'files': ['a.py'],
+              **({} if applied else {'candidate': {'patch': 'candidate.diff', 'sha256': 'f'*64}})}
+    monkeypatch.setattr(work_units, 'run_unit', lambda *a, **kw: dict(output))
+    monkeypatch.setattr(tasks, 'proof_paths', lambda *a, **kw: {})
+    monkeypatch.setattr(tasks, 'source_state', lambda *a, **kw: {})
+    assert tools.execute(effect('implement', {}, 'deliver'), control).status == 'succeeded'
+    notice = tasks.delivery_notice(tools.root, tools.invocation_id)
+    if applied:
+        assert notice is None
+    else:
+        assert 'Not applied' in notice and 'candidate is preserved' in notice
+        assert tasks.delivery_notice(tools.root, 'a-later-turn') is None  # only the turn that delivered

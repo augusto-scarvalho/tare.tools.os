@@ -1191,8 +1191,12 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 result['source_changes'] = source_changes
             from .consent_decisions import pending_notices, acknowledge_notices
             notices = pending_notices(root, session_id)
-            if notices:
-                notice_text = '\n\n' + '\n'.join(q['notice'] for q in notices)
+            lines = [q['notice'] for q in notices]
+            if state.get('conversation_flow'):
+                from .conversation_tasks import delivery_notice
+                lines += filter(None, [delivery_notice(root, invocation_id)])
+            if lines:
+                notice_text = '\n\n' + '\n'.join(lines)
                 result['output'] = (result.get('output') or '') + notice_text
                 if on_progress:
                     on_progress({'kind': 'delta', 'channel': 'text', 'text': notice_text})
