@@ -655,7 +655,9 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                     if key != 'max_seconds':
                         value = effective_limits[key]
                         effective_limits[key] = remaining_seconds if value is None else min(value, remaining_seconds)
-        invocation = {'id': invocation_id, 'started_at': time.time(), 'status': 'PREPARING', 'observation_failures': None}
+        import socket
+        invocation = {'id': invocation_id, 'started_at': time.time(), 'status': 'PREPARING', 'observation_failures': None,
+                      'owner_pid': os.getpid(), 'owner_host': socket.gethostname()}
         owner_interrupted = any(r.get('ended_at') is None for r in state['invocations'])
         state['invocations'].append(invocation)
         save_json(path, state)
@@ -965,7 +967,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             if follow_up is not None and state.get('conversation'):
                 from .conversation_recovery import prepare_correction
                 prepare_correction(session, control, root, journal, observations, state, invocation_id,
-                                   owner_interrupted=owner_interrupted)
+                                   owner_interrupted=owner_interrupted, custody_lock_held=True)
                 follow_options['interrupts_turn'] = True
                 if active_call_budget is not None and state.get('operator_call_budget',{}).get('source')=='operator_cli':
                     import inspect
@@ -1048,7 +1050,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                         raise ValueError('A bounded audit call grant requires the proven corrected AGY terminal-process stall.')
                 recovery = inspect_model_recovery(journal, observations, session_id,
                     max_model_calls=model_recovery_call_limit or ceiling, deadline_utc=state['deadline_utc'],
-                    owner_interrupted=owner_interrupted)
+                    owner_interrupted=owner_interrupted, invocations=state['invocations'], custody_lock_held=True)
                 if recovery and recovery['available']:
                     abandon = getattr(session, 'retry_not_started_model' if recovery.get('not_started')
                                       else 'abandon_interrupted_model', None)
@@ -1115,7 +1117,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 'elapsed_from_preparation_ms': round((time.monotonic()-started)*1000, 3)}
             recovery = inspect_model_recovery(journal, observations, session_id,
                 max_model_calls=model_call_ceiling(journal,state.get('limits',resolved_limits)['max_model_calls']), deadline_utc=state['deadline_utc'],
-                owner_interrupted=owner_interrupted)
+                owner_interrupted=owner_interrupted, invocations=state['invocations'], custody_lock_held=True)
             if recovery:
                 result['model_recovery'] = recovery
             result['tool_activity'] = journal.presentation()
