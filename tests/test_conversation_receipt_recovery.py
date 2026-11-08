@@ -78,7 +78,7 @@ def test_completed_unapplied_receipt_recovery_never_repeats_or_infers_applicatio
     patch=folder/'patch.diff';patch.write_bytes(b'retained unapplied patch')
     targets={'repo':['a.py']}
     result={'verdict':'NOT_REVIEWED','reason':'Independent audit requested corrections.',
-            'files':['a.py'],'audit':{'verdict':'REVISE','findings':[{'claim':'Keep the actual obligation.'}]},
+            'files':['a.py'],'audit':{'verdict':'REVISE','findings':[{'claim':'Keep the actual obligation.','paths':['a.py','relay/b.py']}]},
             'candidate':{'patch':str(patch),'sha256':hashlib.sha256(patch.read_bytes()).hexdigest(),
                 'targets':targets,'basis':tasks.source_state(state['config'],targets),
                 'producer':{**deployment(),'native_cli':{'adapter':'x'*70000}}}}
@@ -112,6 +112,7 @@ def test_completed_unapplied_receipt_recovery_never_repeats_or_infers_applicatio
         assert (tools.root/tasks.FILE).stat().st_size<tasks.MAX_BYTES
         assert saved['objective']==original['objective'] and saved['criteria']==original['criteria']
         assert saved['plan']==original['plan']
+        assert saved['delivery']['scope_needed']==['relay/b.py']  # the audit's out-of-plan file still gates replanning
         if case=='cancelled':assert saved['delivery']['last_attempt']['reason']=='cancelled before worker start'
     else:
         assert not recovered and saved['stage']=='AUDITING'
