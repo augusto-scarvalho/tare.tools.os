@@ -71,6 +71,9 @@ class Finding(Record):
     paths: list[str] = Field(default_factory=list, max_length=16, description=(
         'Repository-relative files that must change to resolve this finding, including files outside the plan\'s '
         'target paths: tare then asks the planner to add them, and the user approves the new files.'))
+    repeated: bool = Field(default=False, description=(
+        'true only when unit.review_feedback already reported this same defect and this candidate still has it: '
+        'tare then stops and asks the user instead of paying for another correction.'))
 
 
 class Review(Proposal):
@@ -110,8 +113,9 @@ def validate(role, value):
         raise ValueError('native_artifact_empty_text')
     findings = result.get('findings', [])
     for finding, given in zip(findings, value.get('findings', [])):
-        if 'paths' not in given:
-            finding.pop('paths')  # likewise for a review naming no files to change
+        for key in ('paths', 'repeated'):
+            if key not in given:
+                finding.pop(key)  # likewise for a review naming no files to change or repeated defect
     claims = [' '.join(f['claim'].casefold().split()) for f in findings]
     if any(not claim for claim in claims) or len(claims) != len(set(claims)):
         raise ValueError('native_artifact_duplicate_or_empty_finding')
