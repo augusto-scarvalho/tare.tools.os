@@ -296,4 +296,3 @@ def test_recorded_kernel_receipt_shape_decides_the_dead_http_owner(transport, av
                      max_model_calls=None, deadline_utc=None)
     assert result['available'] is available
     assert result['reason'] == ('EXPLICIT_RESUME_AVAILABLE' if available else 'LOCAL_CLEANUP_UNCONFIRMED')
-
