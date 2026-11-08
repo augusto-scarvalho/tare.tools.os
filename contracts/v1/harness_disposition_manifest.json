@@ -3671,8 +3671,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded experiment scheduling, evidence comparison and operator controls; execution ports remain in Kernel and Runtime.",
-      "size_bytes": 8991,
-      "sha256": "04c10b465a5f7feef44d83ab017c643fe6d013d56ce0af6f12bc7656119a9590"
+      "size_bytes": 16074,
+      "sha256": "60053e08185c70e4924066272c95e6edc58b39d575e5b68c07870719997874ca"
     },
     {
       "name": "console_challenger.py",
@@ -4111,8 +4111,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 61452,
-      "sha256": "955335af083e2b86e4414530373cb1d09cf49d6ce47120dec8d1f77a8dfc232b"
+      "size_bytes": 68563,
+      "sha256": "cfe616252f429808779a2040d20e8d7cf0f6aead9a9d7f4a4c6f8eb2625be9b5"
     },
     {
       "name": "conversation_workspace.py",
