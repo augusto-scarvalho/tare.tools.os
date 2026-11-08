@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The interrupted-model recovery tests use the receipt the kernel actually records (`transport: isolated_stdlib_http`), with a regression case on a receipt left by a coordinator that died mid-request.
 - Check receipts keep their usual "$ <check> (exit <code>)" blocks first; the per-file statuses (a file cut by the cap, one that could not start, files not run) follow them and survive clipping.
 - A plan's Python tests run one file per check (`pytest-tests:<file>`), each within the 300-second cap, instead of every file in one 300-second run. Plans with several heavy suites ended INCONCLUSIVE without a finding; a single file over the cap is still cut and named. The guard's key and the verification contract do not change, and a check asked for by test path is answered with the per-file names to run.
 - The consent dialog works more than once per conversation: a choice reaches the coordinator as a host-prefixed message with its own id, the same repeatable path as the pending-consent re-ask, instead of Runtime's one-time host observation. The second dialog choice in a conversation failed with "native continuation conflicting observation" and every later resume failed the same way; conversations already in that state resume.
