@@ -801,6 +801,35 @@ def test_the_gpu_giving_way_mid_session_blocks_the_turn_so_serve_escalates(setup
     assert turn_engine.successor(result['status'], per_message_limits=True) == 'continue'
 
 
+def test_a_refused_request_tells_why_in_the_result_and_its_failure_lines(setup):
+    """An HTTP 400 left only its code; the provider's own type and message now reach the result (the kernel removed
+    request headers and keys) and the failure lines the TUI shows."""
+    from relay.native_display import render_failure
+    config, custody, root = setup
+    fixture = Client('openai-chat', steps())
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+            if self.path.endswith('/completions'):
+                status, raw = 400, json.dumps({'error': {'type': 'invalid_request_error',
+                                                         'message': 'messages.3: thinking signature is invalid'}}).encode()
+            else:
+                status, raw = 200, json.dumps(fixture.post(self.path, body, None)).encode()
+            self.send_response(status); self.send_header('Content-Length', str(len(raw))); self.end_headers()
+            self.wfile.write(raw)
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True); thread.start()
+    try:
+        result = native_agent.run_session(config, deployment('openai-chat', f'http://127.0.0.1:{server.server_port}'),
+            custody, 'Change and verify a.py', budget=NativeBudget(max_model_calls=8), timeout=60)
+    finally:
+        server.shutdown(); server.server_close(); thread.join(timeout=2)
+    assert result['failure_code'] == 'HTTP_400', result
+    assert result['provider_error'] == {'type': 'invalid_request_error', 'message': 'messages.3: thinking signature is invalid'}
+    assert 'Provider said: invalid_request_error: messages.3: thinking signature is invalid' in render_failure(result)
+
+
 def test_only_an_image_job_makes_the_local_gpu_unavailable(monkeypatch):
     from relay import turn_engine
     local = {'native_profile': {'endpoint': 'http://127.0.0.1:8080/v1'}}

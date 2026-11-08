@@ -48,6 +48,9 @@ def render_failure(result):
     lines = []
     if result.get('failure_code'):
         lines.append('Failure: '+result['failure_code'])
+    reason = result.get('provider_error') or {}
+    if reason:
+        lines.append('Provider said: '+': '.join(str(reason[k]) for k in ('type', 'message') if reason.get(k)))
     if result.get('delivery_validation'):
         lines.append('Delivery validation:')
         lines.extend('  '+item['field']+': '+item['code']
