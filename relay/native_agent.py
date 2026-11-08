@@ -1159,6 +1159,10 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                                  if call.get('busy_reason')), None)
                     if busy:  # contract gpu-lease/1: the node's GPU was taken; retry_after in seconds, or None
                         result['gpu_busy'] = {'reason': busy['busy_reason'], 'retry_after': busy.get('retry_after')}
+                    refused = next((call['provider_error'] for call in (observation or {}).get('transport_calls', [])
+                                    if isinstance(call.get('provider_error'), dict)), None)
+                    if refused:  # a 4xx reply's own type and message; the kernel removed request headers and keys
+                        result['provider_error'] = refused
                     if failure['code'] == 'INVALID_DELIVERY' and diagnostic:
                         result['delivery_validation'] = diagnostic
                     if (failure['code'] == 'CLI_GENERATION_FAILED' and observation

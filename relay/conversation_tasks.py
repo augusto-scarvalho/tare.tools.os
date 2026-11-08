@@ -441,7 +441,7 @@ def retained_delivery(output):
         'scope_needed') if k in output}
     if output.get('audit'):
         result['audit']={k:output['audit'][k] for k in ('verdict','route','session','reason','failure_code','budget','actor',
-            'requires_candidate_revision','diff_projection','delivery_validation')
+            'requires_candidate_revision','diff_projection','delivery_validation','provider_error')
                          if k in output['audit']}
     return result
 

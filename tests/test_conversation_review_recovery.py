@@ -590,3 +590,11 @@ def test_runtime_alias_write_authority_is_denied(paired_packages,setup,tmp_path)
         ExecutionControl(binding,CancellationToken(),time.monotonic()+30))
     assert result.status!='succeeded'
     assert path.read_bytes()==before
+
+
+def test_a_refused_audit_request_keeps_the_providers_reason_for_the_coordinator():
+    reason = {'type': 'invalid_request_error', 'message': 'messages.3: thinking signature is invalid'}
+    result = conversation_review.audit_result({'status': 'BLOCKED', 'reason': 'MODEL_FAILURE', 'failure_code': 'HTTP_400',
+                                               'provider_error': reason}, {}, {}, {}, [], {})
+    assert result['failure_code'] == 'HTTP_400' and result['provider_error'] == reason
+    assert tasks.retained_delivery({'verdict': 'NOT_REVIEWED', 'audit': result})['audit']['provider_error'] == reason
