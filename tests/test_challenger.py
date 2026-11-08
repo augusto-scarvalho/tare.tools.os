@@ -1062,3 +1062,139 @@ def test_audit_revalidates_x5_before_session_creation(linked_job, x5_argv, monke
     with pytest.raises(ValueError, match='Managed X5.*worktrees'):
         worker.audit(row, job, 'challenger', None)
     assert not (job/'challenger-audit').exists()
+
+
+@pytest.mark.parametrize('linked', [False, True])
+@pytest.mark.parametrize('file_count', [1, 40])
+def test_snapshot_materializes_local_pinned_submodule(project, tmp_path, monkeypatch, linked, file_count):
+    dependency = tmp_path/'dependency'; dependency.mkdir()
+    c.git(dependency, 'init')
+    c.git(dependency, 'config', 'user.name', 'Test')
+    c.git(dependency, 'config', 'user.email', 'test@localhost')
+    (dependency/'source.py').write_bytes(b'pinned = True\n')
+    for number in range(file_count-1):
+        (dependency/('file-'+str(number))).write_bytes(b'local bytes\n')
+    c.git(dependency, 'add', '.')
+    c.git(dependency, '-c', 'commit.gpgsign=false', 'commit', '-m', 'Pin')
+    pin = c.git(dependency, 'rev-parse', 'HEAD').decode().strip()
+    c.git(project, '-c', 'protocol.file.allow=always', 'submodule', 'add', str(dependency), 'satellite')
+    c.git(project, '-c', 'commit.gpgsign=false', 'commit', '-am', 'Dependency')
+    if linked:
+        original = project
+        project = tmp_path/'linked'
+        c.git(original, 'worktree', 'add', '--detach', str(project), 'HEAD')
+        c.git(project, '-c', 'protocol.file.allow=always', 'submodule', 'update', '--init')
+    source = project/'satellite'
+    # A remote URL and a filter requesting an external program must never be used.
+    c.git(source, 'config', 'remote.origin.url', 'https://invalid.example/dependency')
+    c.git(source, 'config', 'filter.download.smudge', 'forbidden-download')
+    c.git(source, 'config', 'remote.origin.promisor', 'true')
+    c.git(source, 'config', 'remote.origin.partialclonefilter', 'blob:none')
+    trace = tmp_path/'offline-trace.jsonl'
+    before = {name: c.git(project, *args) for name, args in {
+        'status': ('status', '--porcelain'), 'index': ('ls-files', '--stage'),
+        'config': ('config', '--local', '--list')}.items()}
+    actual = workspace.subprocess.run
+    commands = []
+    def trapped(argv, **kwargs):
+        commands.append(argv)
+        assert not any(arg in {'fetch', 'clone', 'submodule', 'checkout'} for arg in argv)
+        assert kwargs['env']['GIT_ALLOW_PROTOCOL'] == ''
+        assert kwargs['env']['GIT_NO_LAZY_FETCH'] == '1'
+        kwargs['env']['GIT_TRACE2_EVENT'] = str(trace.resolve())
+        return actual(argv, **kwargs)
+    monkeypatch.setattr(workspace.subprocess, 'run', trapped)
+    # Trap only the isolated dependency path, retaining ordinary superproject Git.
+    deadline = time.monotonic()+30
+    destination = tmp_path/'candidate'; destination.mkdir()
+    workspace.populate_submodules(project, destination, deadline=deadline)
+    monkeypatch.setattr(workspace.subprocess, 'run', actual)
+    assert (destination/'satellite/source.py').read_bytes() == b'pinned = True\n'
+    assert c.git(destination/'satellite', 'rev-parse', 'HEAD').decode().strip() == pin
+    for name, args in {'status': ('status', '--porcelain'), 'index': ('ls-files', '--stage'),
+                       'config': ('config', '--local', '--list')}.items():
+        assert c.git(project, *args) == before[name]
+    assert len(commands) == 10, commands
+    assert sum('cat-file' in argv and '--batch-check' in argv for argv in commands) == 1
+    assert sum('checkout-index' in argv for argv in commands) == 1
+    assert not any('cat-file' in argv and ('-e' in argv or 'blob' in argv) for argv in commands)
+    events = [json.loads(line) for line in trace.read_text(encoding='utf8').splitlines()]
+    children = [event.get('argv', []) for event in events if event.get('event') == 'child_start']
+    assert not children, children  # Includes Git-internal remote helpers, hooks and filters.
+    snapshot = tmp_path/'snapshot-with-dependency'
+    workspace.snapshot(project, snapshot)
+    assert c.git(snapshot/'satellite', 'rev-parse', 'HEAD').decode().strip() == pin
+    assert (snapshot/'satellite/source.py').read_bytes() == b'pinned = True\n'
+
+
+def test_submodule_preparation_deadline_and_uninitialized(project, tmp_path):
+    destination = tmp_path/'empty'; destination.mkdir()
+    assert workspace.populate_submodules(project, destination, deadline=time.monotonic()+10) == []
+    rows = workspace.populate_submodules(project, destination, deadline=time.monotonic()-1)
+    assert rows[0]['available'] is False and '300-second' in rows[0]['reason']
+    assert list(destination.iterdir()) == []
+
+
+def test_nested_mixed_and_missing_local_objects(project, tmp_path, monkeypatch):
+    dependency = tmp_path/'dependency'; dependency.mkdir()
+    c.git(dependency, 'init')
+    c.git(dependency, 'config', 'user.name', 'Test')
+    c.git(dependency, 'config', 'user.email', 'test@localhost')
+    (dependency/'data').write_bytes(b'local dependency\n')
+    c.git(dependency, 'add', '.')
+    c.git(dependency, '-c', 'commit.gpgsign=false', 'commit', '-m', 'Dependency')
+    c.git(project, '-c', 'protocol.file.allow=always', 'submodule', 'add', str(dependency), 'one')
+    c.git(project, '-c', 'protocol.file.allow=always', 'submodule', 'add', str(dependency), 'two')
+    c.git(project/'one', '-c', 'protocol.file.allow=always', 'submodule', 'add', str(dependency), 'nested')
+    c.git(project/'one', '-c', 'user.name=Test', '-c', 'user.email=test@localhost',
+          '-c', 'commit.gpgsign=false', 'commit', '-am', 'Nested pin')
+    c.git(project, 'add', '.')
+    c.git(project, '-c', 'commit.gpgsign=false', 'commit', '-m', 'Pins')
+    c.git(project, 'submodule', 'deinit', '-f', 'two')
+    inventory = workspace.submodule_inventory(project)
+    assert [(r['path'], r['initialized']) for r in inventory] == [('one', True), ('one/nested', True), ('two', False)]
+    destination = tmp_path/'mixed'
+    workspace.snapshot(project, destination)
+    assert (destination/'one/nested/data').read_bytes() == b'local dependency\n'
+    assert not (destination/'two/data').exists()
+    # Remove a real local loose blob, leaving the commit and pin initialized.
+    blob = c.git(project/'one', 'rev-parse', 'HEAD:data').decode().strip()
+    objects = Path(c.git(project/'one', 'rev-parse', '--path-format=absolute', '--git-path', 'objects').decode().strip())
+    missing_blob = objects/blob[:2]/blob[2:]
+    missing_blob.chmod(0o600)  # Git loose objects are read-only on Windows.
+    missing_blob.unlink()
+    c.git(project/'one', 'config', 'remote.origin.url', 'https://invalid.example/missing')
+    c.git(project/'one', 'config', 'remote.origin.promisor', 'true')
+    c.git(project/'one', 'config', 'remote.origin.partialclonefilter', 'blob:none')
+    trace = tmp_path/'missing-object-trace.jsonl'
+    actual = workspace.subprocess.run
+    def traced(argv, **kwargs):
+        assert kwargs['env']['GIT_ALLOW_PROTOCOL'] == ''
+        assert kwargs['env']['GIT_NO_LAZY_FETCH'] == '1'
+        kwargs['env']['GIT_TRACE2_EVENT'] = str(trace.resolve())
+        return actual(argv, **kwargs)
+    monkeypatch.setattr(workspace.subprocess, 'run', traced)
+    inventory = workspace.submodule_inventory(project)
+    assert inventory[0]['initialized'] and not inventory[0]['available']
+    missing = tmp_path/'missing'; missing.mkdir()
+    workspace.populate_submodules(project, missing, deadline=time.monotonic()+30)
+    assert not (missing/'one').exists()
+    events = [json.loads(line) for line in trace.read_text(encoding='utf8').splitlines()]
+    children = [event.get('argv', []) for event in events if event.get('event') == 'child_start']
+    assert not children, children  # A missing promisor blob must not launch fetch or a helper.
+
+
+def test_submodule_owned_partial_output_is_cleaned(project, tmp_path, monkeypatch):
+    pin = c.git(project, 'rev-parse', 'HEAD').decode().strip()
+    destination = tmp_path/'partial'; destination.mkdir()
+    monkeypatch.setattr(workspace, 'submodule_inventory', lambda *a, **kw:
+        [{'path': 'owned', 'commit': pin, 'available': True}])
+    def fail(*args, **kwargs):
+        raise ValueError('local object disappeared')
+    monkeypatch.setattr(workspace, '_offline_git', fail)
+    rows = workspace.populate_submodules(project, destination, deadline=time.monotonic()+30)
+    assert rows[0]['available'] is False and rows[0]['reason'] == 'local object disappeared'
+    assert not (destination/'owned').exists()
+    for name in ('../escape', '/absolute', 'C:/drive', '.git/config', 'dir\\escape'):
+        with pytest.raises(ValueError):
+            workspace.safe(destination, name)
