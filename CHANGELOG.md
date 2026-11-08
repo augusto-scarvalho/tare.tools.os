@@ -5,6 +5,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 ## Unreleased
 
 - A turn whose delivery was not applied ends with the host's line "[tare] Not applied: the project files are unchanged" (and whether the candidate is preserved), after the coordinator's reply. A local coordinator had summarized an unapplied candidate as "what changed", and nothing in the reply said otherwise.
+- An incomplete audit keeps continuing, one continuation per user turn, while each continuation leaves fewer unread obligations than it started with (`<review>-coverage`, `-coverage-2`, ...); the chain stops at the first continuation that reads nothing more. After one incomplete continuation, every "continue" returned the same saved result for good, and only a changed candidate got past it.
 - The interrupted-model recovery tests use the receipt the kernel actually records (`transport: isolated_stdlib_http`), with a regression case on a receipt left by a coordinator that died mid-request.
 - The satellite snapshot tests copy their fixture repositories with symlinks kept as links, so the dangling-link scenario runs where Git checks out real symlinks (CI) as it does elsewhere.
 - Check receipts keep their usual "$ <check> (exit <code>)" blocks first; the per-file statuses (a file cut by the cap, one that could not start, files not run) follow them and survive clipping.
