@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import time
+import subprocess
 
 from compute_plane.native_journal import regular, save_json
 from compute_plane.native_models import encode
@@ -24,6 +25,103 @@ AUDIT_CALLS_MAXIMUM = 24
 # Allow inspection and one long frontier verdict. The size-based call ceiling and
 # every real enclosing deadline remain independent of this default phase cap.
 AUDIT_SECONDS = 2 * AUDIT_REQUEST_SECONDS
+
+
+def paired_satellite_references():
+    """Use already-running packages and their own installation records, never candidate imports.
+
+    An installed runtime is reference material, not evidence of gitlink equivalence.
+    Ambiguous or incomplete metadata is deliberately reported as missing provenance.
+    """
+    import sys
+    from importlib.metadata import distributions
+    records = []
+    for module, satellite in (('compute_plane', 'satellites/tare.tools.kernel'),
+                              ('tare_tools_agent_runtime', 'satellites/tare.tools.agent-runtime')):
+        row = {'module': module, 'satellite': satellite, 'alias': 'runtime-'+module.replace('_', '-'),
+               'basis': 'running paired runtime reference; not gitlink equivalence'}
+        try:
+            loaded = sys.modules.get(module)
+            origin = Path(loaded.__file__).resolve() if loaded and loaded.__file__ else None
+            if origin is None or origin.name != '__init__.py' or origin.parent.name != module:
+                raise ValueError('running package origin unavailable')
+            root = regular(origin.parent)
+            site = root.parent
+            matches = []
+            for dist in distributions(path=[str(site)]):
+                files = list(dist.files or [])
+                if not any(str(f).replace('\\', '/') == module+'/__init__.py'
+                           and Path(dist.locate_file(f)).resolve() == origin for f in files):
+                    continue
+                metadata = [Path(dist.locate_file(f)).resolve() for f in files
+                            if str(f).replace('\\', '/').endswith('.dist-info/METADATA')]
+                if len(metadata) != 1 or metadata[0].parent.parent != site:
+                    continue
+                name, version = dist.metadata.get('Name'), dist.version
+                if not name or not version:
+                    continue
+                matches.append({'distribution': name, 'version': version,
+                    'metadata': str(metadata[0]),
+                    'metadata_sha256': hashlib.sha256(metadata[0].read_bytes()).hexdigest()})
+            if len(matches) != 1:
+                raise ValueError('matching installation metadata missing or ambiguous')
+            stat = root.stat()
+            row.update(matches[0], root=str(root), identity=[stat.st_dev, stat.st_ino, stat.st_ctime_ns])
+        except (OSError, ValueError, TypeError, AttributeError) as exc:
+            row['missing'] = module+': '+str(exc)
+        records.append(row)
+    return records
+
+
+def satellite_context(config, unit, tree):
+    """Derive source selection from host repositories, never a candidate-authored report."""
+    from .challenger_workspace import submodule_inventory, _offline_git
+    repositories = config.get('repositories') or {}
+    project = repositories.get(unit.get('repository')) or next(iter(repositories.values()), None)
+    rows = []
+    if project and (Path(project)/'.git').exists():
+        try:
+            rows = submodule_inventory(project)
+        except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+            return {'branch': 'unavailable-pins', 'sources': [],
+                    'remaining': ['Local submodule inventory unavailable: '+str(exc)[:300]]}
+    if any(row['initialized'] for row in rows):
+        remaining, sources = [], []
+        paired = {r['satellite']: r for r in paired_satellite_references() if 'root' in r}
+        fallback = False
+        for row in rows:
+            available = row.pop('available', False)
+            try:
+                if not available:
+                    raise ValueError('local pin unavailable')
+                candidate = Path(tree)/row['path']
+                observed = _offline_git(candidate, 'rev-parse', 'HEAD', deadline=time.monotonic()+30).decode().strip()
+                top = _offline_git(candidate, 'rev-parse', '--show-toplevel', deadline=time.monotonic()+30).decode().strip()
+                if observed != row['commit'] or Path(top).resolve() != candidate.resolve():
+                    raise ValueError('candidate pin absent')
+                sources.append(row)
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                reference = paired.get(row['path'])
+                if reference:
+                    sources.append(reference)
+                    fallback = True
+                else:
+                    sources.append(row)
+                    remaining.append('Missing local pinned source '+row['path']+' at '+row['commit'])
+        return {'branch': 'paired-runtime' if fallback else 'candidate-pins',
+                'sources': sources, 'remaining': remaining}
+    sources = paired_satellite_references()
+    return {'branch': 'paired-runtime', 'sources': sources,
+            'remaining': [row['missing'] for row in sources if 'missing' in row
+                          and any(pin['path'] == row['satellite'] for pin in rows)]}
+
+
+def apply_satellite_obligations(result, context):
+    if context.get('remaining'):
+        result['remaining'] = list(dict.fromkeys([*result.get('remaining', []), *context['remaining']]))
+        if result.get('verdict') == 'ACCEPT':
+            result.update(verdict='INCONCLUSIVE', findings=[])
+    return result
 
 
 def audit_call_budget(files, lines):
@@ -393,7 +491,7 @@ def resume_tree(owner, task):
     return view
 
 
-def audit_result(outcome, config, unit, changed, references, reference_roots):
+def audit_result(outcome, config, unit, changed, references, reference_roots, satellites=None):
     if outcome['status']!='PROPOSED':
         result={'verdict':'INCONCLUSIVE','reason':outcome.get('reason') or outcome['status'],
                 'failure_code':outcome.get('failure_code')}
@@ -412,9 +510,12 @@ def audit_result(outcome, config, unit, changed, references, reference_roots):
     result={k:payload[k] for k in ('verdict','summary','findings','remaining')}
     result['sources']=[{**s,'repository':unit.get('repository') or next(iter(config['repositories']))}
                        for s in payload.get('sources',[]) if s['repository']=='candidate']
-    result['reference_sources']=[{'folder':reference_roots[s['repository']],'path':s['path'],'sha256':s['sha256']}
+    runtime = {r['alias']: r for r in (satellites['sources'] if satellites is not None
+               and satellites['branch']=='paired-runtime' else paired_satellite_references()) if 'root' in r}
+    result['reference_sources']=[{'folder':reference_roots[s['repository']],'path':s['path'],'sha256':s['sha256'],
+        **({'runtime': runtime[s['repository']]} if s['repository'] in runtime else {})}
         for s in payload.get('sources',[]) if s['repository'] in reference_roots]
-    if result['verdict']=='ACCEPT' and not reference_sources_current(config,result['reference_sources']):
+    if not reference_sources_current(config,result['reference_sources']):
         return {'verdict':'INCONCLUSIVE','reason':'An observed read-only reference changed or its grant was revoked before review completed.'}
     return result
 
@@ -429,6 +530,10 @@ def resume_review(owner, task, job, previous, tree, unit, changed, control):
             or Path(state['config']['repositories']['candidate']).resolve()!=Path(tree).resolve()
             or (previous.get('model_recovery') or {}).get('input')==owner.input_id()):return None
     require(state['deployment'],'auditor')
+    packet=read_json(job/'input/request.json',MAX_RECEIPT_BYTES)
+    current=satellite_context(owner.state['config'],unit,tree)
+    if packet.get('satellite_sources') != current:
+        return {'verdict':'INCONCLUSIVE','reason':'Saved runtime source identity changed before audit continuation.'}
     maximum=owner.state['limits']['max_model_calls']
     if maximum is not None:
         from .delegation import child_calls
@@ -467,8 +572,13 @@ def resume_review(owner, task, job, previous, tree, unit, changed, control):
                                 cancellation=cancellation,**({'model_recovery_call_limit':state['_review_call_grant']}
                                     if state.get('_review_call_grant') else {}))
         packet=read_json(job/'input/request.json',MAX_RECEIPT_BYTES)
-        roots={k:v for k,v in state['config']['repositories'].items() if k not in {'candidate','review'}}
-        result=audit_result(outcome,owner.state['config'],unit,changed,packet['source_references_to_read'],roots)
+        current = satellite_context(owner.state['config'], unit, tree)
+        if packet.get('satellite_sources') != current:
+            result={'verdict':'INCONCLUSIVE','reason':'Saved runtime source identity changed during audit continuation.'}
+        else:
+            roots={k:v for k,v in state['config']['repositories'].items() if k not in {'candidate','review'}}
+            result=audit_result(outcome,owner.state['config'],unit,changed,packet['source_references_to_read'],roots,current)
+            result=apply_satellite_obligations(result,current)
         settle_attempt(attempt,outcome)
     except (ValueError,OSError,KeyError,TypeError) as exc:
         result={'verdict':'INCONCLUSIVE','reason':str(exc)[:500]}
@@ -530,10 +640,13 @@ def reference_sources_current(config,sources):
     from .folder_access import granted
     try:
         allowed={Path(p).resolve() for p in granted((config.get('folder_access') or {}).get('grants',''))}
+        runtime = {r['module']: r for r in paired_satellite_references() if 'root' in r}
         for source in sources:
             root=Path(source['folder']).resolve()
             path=regular(root/source['path'])
-            if (root not in allowed or not path.resolve().is_relative_to(root)
+            identity = source.get('runtime')
+            authorized = (runtime.get(identity.get('module')) == identity and str(root) == identity.get('root')) if identity else root in allowed
+            if (not authorized or not path.resolve().is_relative_to(root)
                     or hashlib.sha256(path.read_bytes()).hexdigest()!=source['sha256']):return False
         return True
     except (ValueError,OSError,KeyError,TypeError):return False
@@ -570,7 +683,9 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
     diff,projections,json_views,raw_diff_sha256,failure=prepare(tree,changed)
     if failure:return failure
     planner, planner_proof = planner_source(owner.root, task.get('plan') or {})
+    satellites = satellite_context(owner.state['config'], unit, tree)
     identity_input={'task': task['id'], 'objective': task['objective'],
+        'satellite_sources': satellites,
         'criteria': task['criteria'], 'plan': task['plan']['sha256'],
         'producer': producer, 'diff': raw_diff_sha256, 'planner_provenance': planner_proof}
     if projections:identity_input['diff_projection']={'sha256':hashlib.sha256(diff).hexdigest(),'files':projections}
@@ -596,6 +711,8 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
                  and not (uncovered_review(r['result']) and not r.get('coverage_continuation_of')
                           and (fresh_coverage or has_coverage))]
     if decisions:
+        if any(not reference_sources_current(owner.state['config'], r.get('reference_sources', [])) for r in decisions):
+            return {'verdict':'INCONCLUSIVE','reason':'Cached read-only reference evidence is no longer current.'}
         return decisions[0] if len(decisions) == 1 else {
             'verdict': 'INCONCLUSIVE', 'reason': 'Duplicate audit decisions require reconciliation.'}
     for previous in past:
@@ -806,6 +923,7 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
                 'metered_worker_history':workers,
                 'cumulative_accounting':operational_accounting(owner),
                 'unknown_costs':'Unrecorded or uncertain usage remains unknown, never zero.'},
+            'satellite_sources': satellites,
             'source_references_to_read': references,
             'planner': task['plan']['artifact'], 'unit': {k: v for k, v in unit.items()
                 if k not in ({'planner_advice','review_feedback'} if coverage_previous else {'planner_advice'})},
@@ -833,6 +951,8 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
         else:folders=[]
         folders=[p for p in folders if not (job/'session').resolve().is_relative_to(Path(p).resolve())]
         reference_roots={'reference-'+str(i+1):str(Path(p).resolve()) for i,p in enumerate(folders)}
+        reference_roots.update({r['alias']:r['root'] for r in satellites['sources']
+                                if satellites['branch']=='paired-runtime' and 'root' in r})
         config['repositories'].update(reference_roots)
     except OSError as exc:
         # Preserve the original I/O failure for callers, but leave reusable,
@@ -878,7 +998,7 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
             'request.json lists exact source references with repository aliases candidate and review. '
             +('Already granted read-only reference repositories: '+encode(reference_roots)+'. Read relevant cited evidence with these aliases. '
               'If a required reference is outside these grants, name the exact missing folder in remaining; do not request new grants inside this audit. '
-              if folders else '')+
+              if reference_roots else '')+
             'Start with the provided exact references in one batch when possible; do not list directories to rediscover them. '
             'Initial source references: '+encode(references)+'. '
             'Review this bounded change using its cited evidence. Read only necessary ranges; '
@@ -914,7 +1034,8 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
             spend = outcome.get('spend') or {}
             if spend.get('currency') == parent_spend.currency and spend.get('committed_amount') is not None:
                 row['amount_committed'] = spend['committed_amount']
-        result=audit_result(outcome,owner.state['config'],unit,changed,references,reference_roots)
+        result=audit_result(outcome,owner.state['config'],unit,changed,references,reference_roots,satellites)
+        result=apply_satellite_obligations(result,satellites)
         result.update(route=name, session=str(job/'session'),
                       actor={'role':'auditor','model':deployment['native_profile']['model'],'route':name})
         result = context_failure(job, row, result)

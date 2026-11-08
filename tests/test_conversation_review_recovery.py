@@ -120,7 +120,8 @@ def reviewed(host,monkeypatch,tmp_path):
     monkeypatch.setattr(turn_engine,'pick_auditors',lambda *a,**kw:[('independent',deployment())])
     actual=native_agent.run_session
     calls=[]
-    def run(verdict,*,after=None,with_findings=True,expected_calls=1,continuation=False,observed_checks=None,changed_files=None):
+    def run(verdict,*,after=None,with_findings=True,expected_calls=1,continuation=False,observed_checks=None,changed_files=None,
+            inspect=None,runtime_citations=False,candidate_tree=None):
         if changed_files is not None:
             candidate['sha256']=hashlib.sha256(changed_files['a.py']).hexdigest()
         payload={'verdict':verdict,'summary':'Observed source and evidence.',
@@ -146,15 +147,22 @@ def reviewed(host,monkeypatch,tmp_path):
             assert not any(session.resolve().is_relative_to(Path(p).resolve()) for p in config['repositories'].values())
             assert config['writable']=={} and config['instruction_repositories']==['candidate']
             assert 'reference-1' in instruction
+            if inspect:inspect(config,request,instruction)
+            runtime_reads=[('read',{'repository':r['alias'],'path':'__init__.py'})
+                for r in request['satellite_sources']['sources'] if runtime_citations and 'root' in r]
+            if runtime_citations:
+                payload['sources'].extend({'repository':r['alias'],'path':'__init__.py',
+                    'sha256':hashlib.sha256((Path(r['root'])/'__init__.py').read_bytes()).hexdigest()}
+                    for r in request['satellite_sources']['sources'] if 'root' in r)
             client=Client(steps=[('read',{'repository':'candidate','path':'a.py'}),
-                ('read',{'repository':'reference-1','path':'facts.txt'}),('tare_deliver',payload)])
+                ('read',{'repository':'reference-1','path':'facts.txt'}),*runtime_reads,('tare_deliver',payload)])
             result=actual(config,dep,session,instruction,client=client,local_counter=client,**kw)
             if after:after(facts,store)
             return result
         monkeypatch.setattr(native_agent,'run_session',child)
         checks={'after':'passed'}
         if observed_checks is not None:checks['observed_named_checks']=observed_checks
-        args=(tools,task,root,deployment(),task['plan']['unit'],{'a.py':changed} if changed_files is None else changed_files,checks,execution)
+        args=(tools,task,candidate_tree or root,deployment(),task['plan']['unit'],{'a.py':changed} if changed_files is None else changed_files,checks,execution)
         value=conversation_review.review(*args)
         assert conversation_review.review(*args)==value and len(calls)==expected_calls  # no verdict resampling
         return value
@@ -469,3 +477,72 @@ def test_explicit_later_correction_can_update_evidence_after_a_known_local_refus
     assert result.status=='succeeded' and seen[0]['candidate']['review_only'] is (not revise)
     tools.execute(effect('implement',{},'no-loop'),execution)
     assert len(seen)==1
+
+
+@pytest.fixture
+def paired_packages(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    site = tmp_path/'paired-site'; site.mkdir()
+    for module in ('compute_plane', 'tare_tools_agent_runtime'):
+        root = site/module; root.mkdir()
+        (root/'__init__.py').write_bytes(b'# running runtime\n')
+        metadata = site/(module+'-1.0.dist-info'); metadata.mkdir()
+        (metadata/'METADATA').write_text('Metadata-Version: 2.1\nName: '+module+'\nVersion: 1.0\n', encoding='utf8')
+        (metadata/'RECORD').write_text(module+'/__init__.py,,\n'+metadata.name+'/METADATA,,\n', encoding='utf8')
+        monkeypatch.setattr(sys.modules[module], '__file__', str(root/'__init__.py'))
+    return site
+
+
+def test_running_paired_packages_have_narrow_host_identity(paired_packages):
+    records = conversation_review.paired_satellite_references()
+    assert len(records) == 2
+    assert {r['satellite'] for r in records} == {'satellites/tare.tools.kernel', 'satellites/tare.tools.agent-runtime'}
+    assert len({r['alias'] for r in records}) == 2
+    for row in records:
+        assert row['version'] == '1.0'
+        assert Path(row['root']).parent == paired_packages
+        path = Path(row['root'])/'__init__.py'
+        citation = {'folder': row['root'], 'path': '__init__.py', 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'runtime': row}
+        assert conversation_review.reference_sources_current({}, [citation])
+        path.write_bytes(b'# changed\n')
+        assert not conversation_review.reference_sources_current({}, [citation])
+        path.write_bytes(b'# running runtime\n')
+        Path(row['metadata']).write_text('Metadata-Version: 2.1\nName: '+row['module']+'\nVersion: 2.0\n', encoding='utf8')
+        assert not conversation_review.reference_sources_current({}, [citation])
+
+
+def test_paired_metadata_missing_and_ambiguous(paired_packages):
+    import shutil
+    metadata = paired_packages/'compute_plane-1.0.dist-info'
+    shutil.copytree(metadata, paired_packages/'compute_plane-duplicate.dist-info')
+    records = conversation_review.paired_satellite_references()
+    assert records[0]['missing'] == 'compute_plane: matching installation metadata missing or ambiguous'
+    assert records[1]['version'] == '1.0'
+    shutil.rmtree(metadata)
+    shutil.rmtree(paired_packages/'compute_plane-duplicate.dist-info')
+    assert 'missing' in conversation_review.paired_satellite_references()[0]
+
+
+def test_runtime_alias_write_authority_is_denied(paired_packages,setup,tmp_path):
+    """Automatic runtime references are not writable even with an observed hash."""
+    import time
+    from compute_plane.native_capabilities import NativeCapabilities
+    from tare_tools_agent_runtime import BindingRef, CancellationToken, ExecutionControl, EffectRequest, ToolCall
+    row=conversation_review.paired_satellite_references()[0]
+    binding=BindingRef('w','b','o',1,'t')
+    scratch=tmp_path/'readonly-scratch';scratch.mkdir()
+    tools=NativeCapabilities(session_id='s',binding=binding,
+        repositories={row['alias']:row['root']},writable={},verifiers={},
+        scratch_root=scratch,review_root=tmp_path/'readonly-review',
+        capabilities=['read','list','search'],specgraph_edit_context=False)
+    assert 'edit' not in tools.names
+    path=Path(row['root'])/'__init__.py'
+    before=path.read_bytes()
+    args={'repository':row['alias'],'path':'__init__.py',
+        'sha256':hashlib.sha256(before).hexdigest(),
+        'changes':[{'search':'# running runtime','replace':'# unauthorized'}]}
+    result=tools.execute(EffectRequest('s','denied',ToolCall('t','edit',json.dumps(args))),
+        ExecutionControl(binding,CancellationToken(),time.monotonic()+30))
+    assert result.status!='succeeded'
+    assert path.read_bytes()==before
