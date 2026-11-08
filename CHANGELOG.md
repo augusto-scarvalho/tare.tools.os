@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- A re-audit honors the instance's `--auditor` pin: a retry or recovery of an earlier audit whose route the pin now excludes starts afresh with the pinned auditor. It reused the failed audit's route, the pin refused it before any inference, and the coordinator reported the old HTTP 400 as the API failing again.
 - An incomplete audit keeps continuing, one continuation per user turn, while each continuation leaves fewer unread obligations than it started with (`<review>-coverage`, `-coverage-2`, ...); the chain stops at the first continuation that reads nothing more. After one incomplete continuation, every "continue" returned the same saved result for good, and only a changed candidate got past it.
 - The interrupted-model recovery tests use the receipt the kernel actually records (`transport: isolated_stdlib_http`), with a regression case on a receipt left by a coordinator that died mid-request.
 - The satellite snapshot tests copy their fixture repositories with symlinks kept as links, so the dangling-link scenario runs where Git checks out real symlinks (CI) as it does elsewhere.
