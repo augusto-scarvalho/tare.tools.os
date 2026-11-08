@@ -68,6 +68,9 @@ class Plan(Proposal):
 class Finding(Record):
     claim: str = Field(min_length=1)
     sources: list[Source] = Field(min_length=1)
+    paths: list[str] = Field(default_factory=list, max_length=16, description=(
+        'Repository-relative files that must change to resolve this finding, including files outside the plan\'s '
+        'target paths: tare then asks the planner to add them, and the user approves the new files.'))
 
 
 class Review(Proposal):
@@ -106,13 +109,16 @@ def validate(role, value):
     if any(not text.strip() for text in texts):
         raise ValueError('native_artifact_empty_text')
     findings = result.get('findings', [])
+    for finding, given in zip(findings, value.get('findings', [])):
+        if 'paths' not in given:
+            finding.pop('paths')  # likewise for a review naming no files to change
     claims = [' '.join(f['claim'].casefold().split()) for f in findings]
     if any(not claim for claim in claims) or len(claims) != len(set(claims)):
         raise ValueError('native_artifact_duplicate_or_empty_finding')
     if result.get('verdict') == 'ACCEPT' and (findings or result['remaining']):
         raise ValueError('native_artifact_accept_with_open_findings')
-    for source in result['sources'] + [s for f in findings for s in f['sources']] + result.get('locations', []):
-        path = source['path']
+    for path in [s['path'] for s in result['sources'] + [s for f in findings for s in f['sources']]
+                 + result.get('locations', [])] + [p for f in findings for p in f.get('paths', [])]:
         if ('\\' in path or ':' in path or PurePosixPath(path).is_absolute()
                 or '..' in PurePosixPath(path).parts or '.git' in PurePosixPath(path).parts):
             raise ValueError('native_artifact_relative_source_required')

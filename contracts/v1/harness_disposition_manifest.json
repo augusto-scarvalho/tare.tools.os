@@ -2161,8 +2161,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 13202,
-      "sha256": "ca0ad594fa806e77184f4a579a3cb97ab7ef5de9ff962fb4a49f73f2c68a8aa0"
+      "size_bytes": 13743,
+      "sha256": "61a490cccf7142792781e794277f63030a45889c6cf5f6bb172e3949a9d71c9f"
     },
     {
       "name": "native_attempt.py",
@@ -4101,8 +4101,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 105425,
-      "sha256": "b98e44fa2bd033bf377cb3627cd2f2255c156ffb967c6d4e07d679d799ff58cd"
+      "size_bytes": 107183,
+      "sha256": "f8e0db7c276c78ac60cf53309244c5143501ffd3d6abe93ada1570ce2797cce7"
     },
     {
       "name": "conversation_review.py",
