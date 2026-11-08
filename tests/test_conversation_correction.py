@@ -1,6 +1,7 @@
 """Corrective input after cancellation uses the same saved conversation, not replay."""
 import json
 import pytest
+from types import SimpleNamespace
 from compute_plane.native_journal import NativeJournal
 from tare_tools_agent_runtime import CancellationToken, NativeBudget
 from relay import native_agent, native_messages
@@ -120,7 +121,7 @@ def test_http_owner_death_correction_recovers_before_ordered_messages(setup, mon
     def process(pid):
         if pid == 12345 and proof != 'alive':
             raise psutil.NoSuchProcess(pid)
-        return object()
+        return SimpleNamespace(create_time=lambda: 0.0)  # created before the invocation
     monkeypatch.setattr(psutil, 'Process', process)
     native_messages.enqueue(custody, 'Earlier correction', message_id='queued')
     before = (custody/'journal.jsonl').read_bytes()

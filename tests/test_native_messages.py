@@ -1,6 +1,7 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
 import pytest
+from types import SimpleNamespace
 
 from relay import native_agent, native_messages
 from compute_plane.native_journal import custody_lock
@@ -195,7 +196,7 @@ def test_http_owner_death_explicit_resume_preserves_history_and_effects(setup, m
     def process(pid):
         if pid == 12345 and proof != 'alive':
             raise psutil.NoSuchProcess(pid)
-        return object()
+        return SimpleNamespace(create_time=lambda: 0.0)  # created before the invocation
     monkeypatch.setattr(psutil, 'Process', process)
     before = (directory/'journal.jsonl').read_bytes()
     ordinary = native_agent.run_session(None, None, directory, resume=True, client=client, local_counter=client)
@@ -304,7 +305,7 @@ def test_new_http_failure_is_not_automatically_recovered_in_same_cycle(setup, mo
     state_path.write_text(json.dumps(state))
     def process(pid):
         if pid == os.getpid():
-            return object()
+            return SimpleNamespace(create_time=lambda: 0.0)  # created before the invocation
         raise psutil.NoSuchProcess(pid)
     monkeypatch.setattr(psutil, 'Process', process)
     before = (directory/'journal.jsonl').read_bytes()

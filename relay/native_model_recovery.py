@@ -4,8 +4,25 @@ import socket
 import math
 
 
-def _pending_owner_dead(records, call_id, invocations, custody_lock_held=False):
-    """Only absence of the local owner of this exact request is proof.
+def _gone(pid, born_before):
+    """No process holds this PID, or the one holding it was created after born_before: the recorded process
+    ended and its PID was reused."""
+    import psutil
+    try:
+        return psutil.Process(pid).create_time() > born_before
+    except psutil.NoSuchProcess:
+        return True
+    except (psutil.Error, OSError, ValueError):
+        return False
+
+
+def _moment(value):
+    return type(value) in (int, float) and math.isfinite(value) and value > 0
+
+
+def _pending_owner_dead(records, call_id, invocations, custody_lock_held=False, transports=()):
+    """Only absence of the local processes of this exact request is proof: its owner, or, while the owner lives
+    on (the same TUI), every HTTP worker the kernel recorded for it.
 
     Journal intervals are half-open. A later attempt may close an unfinished
     interval, but its identity can never stand in for the original owner.
@@ -37,14 +54,13 @@ def _pending_owner_dead(records, call_id, invocations, custody_lock_held=False):
     if (owner.get('owner_host') != socket.gethostname()
             or type(pid) is not int or pid <= 0):
         return False
-    import psutil
-    try:
-        psutil.Process(pid)
-    except psutil.NoSuchProcess:
+    # The owner existed when its invocation started; a holder of its PID created later is another process.
+    if _gone(pid, owner['started_at'] if _moment(owner.get('started_at')) else math.inf):
         return True
-    except (psutil.Error, OSError, ValueError):
-        return False
-    return False
+    # Each worker was created before its invocation ended; a worker the kernel left without a PID stays unproven.
+    return (_moment(owner.get('ended_at')) and bool(transports)
+            and all(type(t.get('pid')) is int and t['pid'] > 0 and _gone(t['pid'], owner['ended_at'])
+                    for t in transports))
 
 
 HTTP_TRANSPORT = 'isolated_stdlib_http'  # the kernel's HTTP transport receipt (CLI receipts say official_vendor_cli)
@@ -138,7 +154,7 @@ def inspect(journal, observations, session_id, *, max_model_calls, deadline_utc,
     dead_http_owner = (not crashed and not not_started
                        and observed.get('error') == 'HTTP_CLEANUP_UNCONFIRMED'
                        and _http_transport(transports)
-                       and _pending_owner_dead(records, call_id, invocations, custody_lock_held))
+                       and _pending_owner_dead(records, call_id, invocations, custody_lock_held, transports))
     cleanup = cleanup or dead_http_owner
     eligible = (crashed or cleanup and observed.get('error') in RECOVERABLE_ERRORS
                 or dead_http_owner
