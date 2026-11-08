@@ -121,12 +121,12 @@ def reviewed(host,monkeypatch,tmp_path):
     actual=native_agent.run_session
     calls=[]
     def run(verdict,*,after=None,with_findings=True,expected_calls=1,continuation=False,observed_checks=None,changed_files=None,
-            inspect=None,runtime_citations=False,candidate_tree=None):
+            inspect=None,runtime_citations=False,candidate_tree=None,remaining=None):
         if changed_files is not None:
             candidate['sha256']=hashlib.sha256(changed_files['a.py']).hexdigest()
         payload={'verdict':verdict,'summary':'Observed source and evidence.',
             'findings':[{'claim':'This criterion needs a correction.','sources':[candidate]}] if verdict in {'INCONCLUSIVE','REVISE'} and with_findings else [],
-            'remaining':['Other obligations remain unreviewed.'] if verdict=='INCONCLUSIVE' else [],
+            'remaining':remaining or (['Other obligations remain unreviewed.'] if verdict=='INCONCLUSIVE' else []),
             'sources':[candidate,reference]}
         def child(config,dep,session,instruction,**kw):
             calls.append(session)
@@ -246,6 +246,27 @@ def test_fresh_human_can_continue_one_completed_unreviewed_audit_without_impleme
     assert len(rows)==2 and sum(bool(r.get('coverage_continuation_of')) for r in rows)==1
     assert all(r['calls_used']>0 for r in rows) and first['remaining']
     assert not conversation_review.coverage_recovery_available(tools.root,run.task)
+
+
+def test_coverage_continues_each_turn_while_unread_obligations_shrink(reviewed):
+    host,run,*_=reviewed;tools,*_=host
+    run.task['attempt_input']=tools.input_id()
+    unread=['Read b.py.','Read c.py.','Read d.py.']
+    first=run('INCONCLUSIVE',with_findings=False,remaining=unread)
+    for turn,(left,calls) in enumerate([(unread[1:],2),(unread[1:],3)]):
+        user_reply(host,'segue')
+        tools.invocation_id=f'coverage-{turn}'
+        result=run('INCONCLUSIVE',with_findings=False,remaining=left,expected_calls=calls)
+        assert result['remaining']==left
+        run.task['delivery']={'audit':result}
+        # the first continuation read b.py; the second read nothing more and ends the chain
+        assert conversation_review.coverage_recovery_available(tools.root,run.task)==(turn==0)
+    user_reply(host,'segue')
+    tools.invocation_id='no-progress'
+    assert run('ACCEPT',expected_calls=3)==result
+    rows=conversation_review.records(tools.root)
+    assert [r.get('coverage_unread_before') for r in rows if r.get('coverage_continuation_of')]==[3,2]
+    assert first['remaining']==unread
 
 
 @pytest.mark.parametrize('verdict',['ACCEPT','REVISE','INCONCLUSIVE'])
