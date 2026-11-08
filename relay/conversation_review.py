@@ -186,10 +186,13 @@ def uncovered_review(result):
 
 
 def coverage_progressed(row):
-    """A coverage continuation that left fewer unread obligations than it started with may continue again; one
-    that read nothing more is where the chain stops."""
-    return bool(row.get('coverage_continuation_of')) and (
-        len((row.get('result') or {}).get('remaining') or []) < row.get('coverage_unread_before', 0))
+    """A coverage continuation that settled at least one obligation its predecessor left unread may continue
+    again, even when its reading found new ones; one that settled none is where the chain stops."""
+    before = row.get('coverage_unread_before')
+    if not row.get('coverage_continuation_of') or not isinstance(before, list):
+        return False  # an earlier count-only record ends the chain, as before
+    after = {' '.join(str(item).casefold().split()) for item in (row.get('result') or {}).get('remaining') or []}
+    return any(' '.join(str(item).casefold().split()) not in after for item in before)
 
 
 def next_coverage(job):
@@ -881,7 +884,7 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
            'request_sha256': identity, 'invocation': owner.invocation_id,
            'calls_reserved': calls, 'amount_committed': allowance, 'context_contract': contract}
     if coverage_previous:
-        row.update(coverage_continuation_of=identity,coverage_unread_before=len(coverage_previous.get('remaining') or []))
+        row.update(coverage_continuation_of=identity,coverage_unread_before=list(coverage_previous.get('remaining') or []))
     save_json(path, row, max_bytes=MAX_RECEIPT_BYTES)  # durable intent, not evidence of dispatch
     try:
         inputs = job/'input'; inputs.mkdir()

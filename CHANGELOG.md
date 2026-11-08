@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- A coverage continuation counts as progress when it settles at least one obligation its predecessor left unread, even if its reading found as many new ones; the chain stops at the first continuation that settles none. Counting the list stopped a continuation that read two files and found two more.
 - A delivery recovered from its unit receipt (an interrupted turn or a lost task record) keeps the files its audit requires outside the plan, so the next plan must still include them. Recovery dropped them, the old plan ran again, and the refusal guard stopped the delivery with a question instead of a replan.
 - The TUI heads-up reads every message the user sent during the turn: the typed request replaces only the turn's opening message, and messages queued while it ran (Enter queue) follow as later messages; the host's own messages (consent choices, recoveries) stay out. The typed request replaced them all, and a side agent called a requirement the user had queued invented.
 - A turn whose delivery was not applied ends with the host's line "[tare] Not applied: the project files are unchanged" (and whether the candidate is preserved), after the coordinator's reply. A local coordinator had summarized an unapplied candidate as "what changed", and nothing in the reply said otherwise.
