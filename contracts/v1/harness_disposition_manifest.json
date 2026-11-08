@@ -2161,8 +2161,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 13202,
-      "sha256": "ca0ad594fa806e77184f4a579a3cb97ab7ef5de9ff962fb4a49f73f2c68a8aa0"
+      "size_bytes": 14062,
+      "sha256": "da5dcedb3633811460653d9e4835d30fcaacc949d0ea0dbef04fb001f625ed1c"
     },
     {
       "name": "native_attempt.py",
@@ -3841,8 +3841,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 96927,
-      "sha256": "7076a73d3143d48157e83859947c324018660f2448f7d3924bf782271086809e"
+      "size_bytes": 98028,
+      "sha256": "495fc5d05b387779b85631bb3240a693c66d40be7af4abbcea579c2b9e480a03"
     },
     {
       "name": "gpu.py",
@@ -4101,8 +4101,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 106022,
-      "sha256": "78bb602c58c7bd9eba6059f7bd18555365f2ca74b67feb9a16b20695e5180ba2"
+      "size_bytes": 107780,
+      "sha256": "be99a4ec864d189737cb14f49bf131f8b349e97e2b152fa0d0edb831ab5db3bd"
     },
     {
       "name": "conversation_review.py",

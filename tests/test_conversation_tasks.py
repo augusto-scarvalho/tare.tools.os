@@ -1811,6 +1811,35 @@ def test_repeated_audit_refusals_stop_before_another_implementer(tmp_path):
     work_units.check_failures(tmp_path, unit, conversation=True, operator_retry=True)  # the user asked for one more
 
 
+def test_audit_refusals_stop_on_a_repeated_finding_and_continue_while_each_finds_new_defects(tmp_path):
+    from relay.native_artifacts import validate
+    source = {'repository': 'candidate', 'path': 'a.py', 'sha256': 'a'*64}
+    review = {'summary': 'Unmet.', 'sources': [source], 'remaining': [], 'verdict': 'REVISE',
+              'findings': [{'claim': 'Still missing.', 'sources': [source], 'repeated': True}]}
+    assert validate('auditor', review)['findings'][0]['repeated'] is True
+    assert 'repeated' not in validate('auditor', {**review, 'findings': [{'claim': 'New.', 'sources': [source]}]})['findings'][0]
+
+    def refused(*repeated):
+        return {'verdict': 'NOT_REVIEWED', 'reason': work_units.AUDIT_REFUSED, 'audit': {'verdict': 'REVISE',
+                'findings': [{'claim': str(i), 'repeated': r} for i, r in enumerate(repeated)]}}
+    unit = {'key': 'progress', 'target_paths': ['a.py']}
+    work_units.record(tmp_path, unit, refused(False))
+    work_units.record(tmp_path, unit, {'verdict': 'NOT_VERIFIED'})  # anything else ends the streak
+    for _ in range(work_units.MAX_PROGRESSING_REFUSALS - 1):
+        work_units.record(tmp_path, unit, refused(False, False))
+        work_units.check_failures(tmp_path, unit, conversation=True)  # each audit found new defects
+    work_units.record(tmp_path, unit, refused(False))
+    with pytest.raises(ValueError, match='refused 6 candidates in a row'):
+        work_units.check_failures(tmp_path, unit, conversation=True)
+    stuck = {'key': 'stuck', 'target_paths': ['b.py']}
+    work_units.record(tmp_path, stuck, refused(False))
+    work_units.check_failures(tmp_path, stuck, conversation=True)
+    work_units.record(tmp_path, stuck, refused(False, True))
+    with pytest.raises(ValueError, match='same defect again'):
+        work_units.check_failures(tmp_path, stuck, conversation=True)
+    work_units.check_failures(tmp_path, stuck, conversation=True, operator_retry=True)  # the user asked for one more
+
+
 @pytest.mark.parametrize('kind', ['checks', 'audit', 'overlap'])
 @pytest.mark.parametrize('reply', ['sim', 'pode sim', 'ok!', 'claro que pode'])
 def test_journal_retry_passes_both_guards_once(host, monkeypatch, kind, reply):

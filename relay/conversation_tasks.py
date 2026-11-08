@@ -314,6 +314,14 @@ def delivery_view(value, *, config=None, unit=None):
         result['next']='Do not repeat the same failed route unchanged. Preserve the same plan, prior calls and '
         result['next']+='charges. Explain the provider failure; a fresh authorized continuation can select another '
         result['next']+='available implementer route within the current execution policy. This is not an output-token limit.'
+    from .conversation_permissions import paths_allowed
+    missing = [p for p in value.get('scope_needed') or []
+               if not value.get('applied') and not (unit and paths_allowed([p], unit['target_paths']))]
+    if missing:
+        result.update(missing_target_paths=missing,
+            required_action={'tool': 'delegate_plan', 'arguments': {'instruction': SCOPE_REPAIR+needed_scope(missing)}},
+            next='Ask the separate planner now to add these files to the saved plan, then implement on the preserved '
+                 'candidate; the user approves the new files when implementation starts. Do not open another task.')
     return result
 
 
@@ -429,7 +437,8 @@ def delivery_notice(root, invocation):
 
 def retained_delivery(output):
     result={k:output[k] for k in ('verdict','applied','files','reason','route','receipt','targets',
-        'source_state','candidate','worker','folder_access_request','implementer_report','implementation_stop') if k in output}
+        'source_state','candidate','worker','folder_access_request','implementer_report','implementation_stop',
+        'scope_needed') if k in output}
     if output.get('audit'):
         result['audit']={k:output['audit'][k] for k in ('verdict','route','session','reason','failure_code','budget','actor',
             'requires_candidate_revision','diff_projection','delivery_validation')
@@ -564,15 +573,37 @@ def retained_candidate(task):
     return None
 
 
-def require_retained_scope(plan, previous):
-    """Ask the planner to reconcile omitted outputs; never widen its scope here."""
+SCOPE_REPAIR = ('Repair only this executable-scope omission; reuse the previous plan and preserve all criteria '
+                'and the candidate. ')
+
+
+def audit_scope(output, unit):
+    """Files a REVISE audit says must change that the plan cannot write. The host never writes them; the planner
+    adds them (ScopeRepair) and the user approves the new files when implementation starts."""
     from .conversation_permissions import paths_allowed
-    missing = [path for path in previous.get('files') or []
-               if not paths_allowed([path], plan['unit']['target_paths'])]
-    if missing:
-        error = ScopeRepair('The revised plan omits retained candidate outputs: '+', '.join(missing)+
-            '. Preserve the candidate and reconcile these paths with the recorded goal before implementation.')
-        error.missing_target_paths = missing
+    audit = output.get('audit') or {}
+    if output.get('applied') or audit.get('verdict') != 'REVISE':
+        return []
+    return [path for path in dict.fromkeys(p for f in audit.get('findings') or [] for p in f.get('paths') or [])
+            if not paths_allowed([path], unit['target_paths'])]
+
+
+def needed_scope(paths):
+    return 'The independent audit requires changing files outside the plan: '+', '.join(paths)+'.'
+
+
+def require_retained_scope(plan, previous):
+    """Ask the planner to reconcile omitted outputs and audit-required files; never widen its scope here."""
+    from .conversation_permissions import paths_allowed
+    missing = lambda paths: [p for p in paths or [] if not paths_allowed([p], plan['unit']['target_paths'])]
+    omitted = missing(previous.get('files'))
+    needed = [p for p in missing(previous.get('scope_needed')) if p not in omitted]
+    if omitted or needed:
+        error = ScopeRepair(' '.join(filter(None, [
+            omitted and 'The revised plan omits retained candidate outputs: '+', '.join(omitted)+'.',
+            needed and needed_scope(needed)]))+
+            ' Preserve the candidate and reconcile these paths with the recorded goal before implementation.')
+        error.missing_target_paths = omitted + needed
         raise error
 
 
@@ -1412,6 +1443,8 @@ class ConversationTools:
                     output['targets'] = proof_paths(config, plan['unit'], [*plan.get('sources', []),
                         *(output.get('audit') or {}).get('sources', [])])
                     output['source_state'] = source_state(self.state['config'], output['targets'])
+                if needed := audit_scope(output, plan['unit']):
+                    output['scope_needed'] = needed
                 retained = retained_delivery(output)
                 if (not output.get('applied') and not output.get('candidate') and not output.get('worker')
                         and previous.get('candidate')):
@@ -1447,9 +1480,7 @@ class ConversationTools:
             save(self.root,value)
             return EffectResult(request.effect_id,'refused',encode({'reason':str(exc),
                 'missing_target_paths':getattr(exc,'missing_target_paths',[]),
-                'required_action':{'tool':'delegate_plan','arguments':{'instruction':
-                    'Repair only this executable-scope omission; reuse the previous plan and preserve all criteria '
-                    'and the candidate. '+str(exc)}},
+                'required_action':{'tool':'delegate_plan','arguments':{'instruction':SCOPE_REPAIR+str(exc)}},
                 'next':'Use the separate planner to repair scope; no implementation was dispatched.'}),False)
         except (ValueError, OSError, KeyError, TypeError) as exc:
             return refused(exc, context=True)
