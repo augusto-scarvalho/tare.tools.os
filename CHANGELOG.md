@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The retry question after an audit stop says what a yes allows: "Let this task go on correcting?", with corrections continuing while the audit finds new defects and stopping again on a repeated defect or 6 refusals in a row. It asked for "one more attempt", and a yes ran three correction rounds (about 48 minutes).
 - The kernel pin moves to 08851e4: a read with `start_column: 1` returns a page instead of one line, so an implementer that fills that default (DeepSeek did) no longer stalls into a NO_PROGRESS stop.
 - The side agent sees when an implementer attempt stopped without changing anything (`implementation_stop`, such as NO_PROGRESS): it read three identical refused attempts and called the coordinator's "stopped without progress" wrong.
 - The consent judge takes an affirmative that says how to carry the work out as allow: "pode tentar de novo, corrigindo esses dois pontos" (yes, fixing those two points) was judged unclear at 0.82, because the options called any added detail a change, and the coordinator asked again for a plain yes or no. The options now call unclear only consent that waits on something still to happen or changes the scope, duration or saving of what was asked, so "only for this session" or "only the docs folder" still ask again.
