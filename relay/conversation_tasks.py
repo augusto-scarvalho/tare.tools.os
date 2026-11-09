@@ -1459,6 +1459,14 @@ class ConversationTools:
                             delivery_plan_sha256=execution_unit['planner_input']['sha256'])
                 save(self.root, value)
                 output = delivery_view(output, config=self.state['config'], unit=plan['unit'])
+                if not output.get('applied') and (not candidate or not candidate['review_only']):
+                    try:
+                        check_failures(self.root, execution_unit, conversation=True)
+                    except GuardRefusal as stop:
+                        # This run reached the failure limit: ask now, so the reply to the coordinator's question
+                        # is the consent, instead of a second question when the next correction is refused.
+                        retry_decision(self.root, task, execution_unit, register=True)
+                        output['next'] = str(stop)
             else:
                 return self.argument_feedback(name, self.tools.execute(request, control))
             return EffectResult(request.effect_id, 'succeeded', encode(output), True)
