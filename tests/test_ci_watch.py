@@ -54,6 +54,8 @@ def test_a_red_run_opens_one_alert_with_its_errors_and_a_later_green_run_closes_
 def test_a_shepherd_that_stopped_beating_is_started_again_once(tmp_path, monkeypatch):
     # A pull request's CI alerts only through its shepherd: one that died, or whose machine restarted, is revived.
     monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    monkeypatch.chdir(tmp_path)  # a beat written before shepherds recorded a repository: only its checkout says
+    (tmp_path/'a').mkdir()  # whether there is anything left to follow
     started = []
     monkeypatch.setattr(ci_watch, 'detached', lambda *args, session=None: started.append((*args, session)))
     ci_watch.update(lambda beats: beats.update({
@@ -557,6 +559,8 @@ def test_a_shepherd_sees_its_pull_request_merge_after_its_worktree_is_gone(tmp_p
         if '-R' not in args and not os.path.isdir(cwd):
             raise subprocess.CalledProcessError(1, ['gh', *args], stderr='no git remotes found\n')
         if args[:2] == ['repo', 'view']:
+            if 'isArchived' in args:  # the repository check names it positionally
+                return json.dumps({'isArchived': False})
             return lookups.append(cwd) or json.dumps({'nameWithOwner': 'me/os'})
         if args[:2] == ['run', 'list']:
             return '[]'
@@ -803,3 +807,344 @@ def test_catch_up_never_overwrites_conflict_or_concurrent_advance(tmp_path, monk
     assert git('rev-parse', 'HEAD') == feature
     assert git('status', '--porcelain') == ''
     assert len(git('worktree', 'list', '--porcelain').split('worktree ')) == 2
+
+
+def ci_alert(repo, workflow='CI', branch='main', commit='c'):
+    return {'repo': repo, 'workflow': workflow, 'branch': branch, 'commit': commit, 'url': 'u',
+            'created_at': '2026-11-04T10:00:00Z', 'errors': [], 'session': None}
+
+
+def test_a_removed_pull_request_ends_the_shepherd_gone_with_its_alerts_and_beat(tmp_path, monkeypatch):
+    # SPEC-OS-SHIP-001 AC-05: nothing merges any more, so nothing is left to fix; a deleted pull request used to
+    # fail STUCK_ROUNDS rounds and then alert as "shepherd stuck".
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    monkeypatch.setattr(ci_watch, 'notify', lambda alert: pytest.fail(f'alerted: {alert}'))
+    worktree = tmp_path/'worktree'
+    worktree.mkdir()
+    ci_watch.update(lambda beats: beats.__setitem__(f'{worktree}#9', {'repo_dir': str(worktree), 'number': 9,
+                                                                     'repo': 'me/os', 'session': None, 'at': 0}),
+                    'shepherds.json')
+    ci_watch.update(lambda alerts: alerts.update({
+        'me/os|pull request|feature': ci_alert('me/os', 'pull request', 'feature', '#9 CI failed: t'),
+        'me/os|CI|feature': ci_alert('me/os', 'CI', 'feature')}))  # a push run of the same branch
+
+    state = iter(['OPEN', 'gone'])
+    def gh(args, cwd):
+        if args[:2] == ['repo', 'view']:
+            return json.dumps({'nameWithOwner': 'me/os', 'isArchived': False})
+        if args[:2] == ['run', 'list']:
+            return '[]'
+        if next(state) == 'gone':  # it read the pull request in an earlier round: the branch's alerts are known
+            raise subprocess.CalledProcessError(1, ['gh', *args], stderr='HTTP 404: Not Found (https://api.github.com)\n')
+        return json.dumps({'state': 'OPEN', 'mergeStateStatus': 'CLEAN', 'autoMergeRequest': {'mergeMethod': 'MERGE'},
+                           'headRefName': 'feature', 'headRefOid': 'h', 'url': 'u', 'title': 't'})
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+    slept = []
+    assert ci_watch.shepherd(worktree, 9, sleep=slept.append) == 'GONE'
+    assert len(slept) == 1  # the round it was removed in ended it
+    assert ci_watch.read('shepherds.json') == {} and ci_watch.read() == {}
+
+
+def test_a_removed_repository_ends_the_shepherd_gone_with_its_stand_in_alert(tmp_path, monkeypatch):
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    monkeypatch.setattr(ci_watch, 'notify', lambda alert: pytest.fail(f'alerted: {alert}'))
+    ci_watch.update(lambda alerts: alerts.__setitem__('repo|pull request|#9', ci_alert(
+        'repo', 'pull request', '#9', '#9 shepherd stuck: repo')))
+
+    def gh(args, cwd):
+        raise subprocess.CalledProcessError(1, ['gh', *args], stderr="GraphQL: Could not resolve to a Repository "
+                                                                   "with the name 'me/os'. (repository)\n")
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+    assert ci_watch.shepherd('repo', 9, sleep=lambda s: pytest.fail('it waited another round')) == 'GONE'
+    assert ci_watch.read() == {} and ci_watch.read('shepherds.json') == {}
+
+
+def test_an_archived_repository_ends_the_shepherd_gone_in_one_round(tmp_path, monkeypatch):
+    # Nothing merges into an archived repository, so its pull request's alerts end with it (AC-05).
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    monkeypatch.setattr(ci_watch, 'notify', lambda alert: pytest.fail(f'alerted: {alert}'))
+    ci_watch.update(lambda beats: beats.__setitem__('repo#9', {'repo_dir': 'repo', 'number': 9, 'repo': None,
+                                                              'session': None, 'at': 0}), 'shepherds.json')
+    ci_watch.update(lambda alerts: alerts.update({
+        'repo|pull request|#9': ci_alert('repo', 'pull request', '#9', '#9 shepherd stuck: repo'),
+        'me/os|pull request|feature': ci_alert('me/os', 'pull request', 'feature', '#9 CI failed: t')}))
+
+    def gh(args, cwd):
+        if args[:2] == ['repo', 'view']:
+            return json.dumps({'nameWithOwner': 'me/os', 'isArchived': True})
+        if args[:2] == ['pr', 'view']:
+            return json.dumps({'headRefName': 'feature'})
+        raise AssertionError(args)
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+    assert ci_watch.shepherd('repo', 9, sleep=lambda s: pytest.fail('it waited another round')) == 'GONE'
+    assert ci_watch.read('shepherds.json') == {} and ci_watch.read() == {}
+
+
+def test_an_archived_repository_is_noticed_for_a_known_or_revived_beat(tmp_path, monkeypatch):
+    # AC-05: a beat that already records its repository must check it each round; a repository archived after the
+    # first round (or before a revived shepherd starts) ends GONE like an unknown one does.
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    monkeypatch.setattr(ci_watch, 'notify', lambda alert: pytest.fail(f'alerted: {alert}'))
+    worktree = tmp_path/'worktree'
+    worktree.mkdir()
+    ci_watch.update(lambda beats: beats.__setitem__(f'{worktree}#9', {
+        'repo_dir': str(worktree), 'number': 9, 'repo': 'me/os', 'session': None, 'at': 0}), 'shepherds.json')
+    ci_watch.update(lambda alerts: alerts.__setitem__(
+        'me/os|pull request|feature', ci_alert('me/os', 'pull request', 'feature', '#9 CI failed: t')))
+
+    def gh(args, cwd):
+        if args[:2] == ['repo', 'view']:
+            return json.dumps({'isArchived': True})
+        if args[:2] == ['pr', 'view']:
+            return json.dumps({'headRefName': 'feature'})
+        raise AssertionError(args)
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+    assert ci_watch.shepherd(worktree, 9, sleep=lambda s: pytest.fail('it waited another round')) == 'GONE'
+    assert ci_watch.read('shepherds.json') == {} and ci_watch.read() == {}
+
+
+def test_the_repository_check_names_the_repository_positionally(tmp_path, monkeypatch):
+    # `gh repo view` takes the repository as a positional argument; `-R` is not one of its flags, so a check that
+    # named it that way failed every round and no archived repository was ever noticed (AC-05).
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    calls = []
+
+    def gh(args, cwd):
+        calls.append((args, cwd))
+        return json.dumps({'isArchived': False})
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+    assert ci_watch.repository_view('me/os') == {'isArchived': False}
+    assert calls == [(['repo', 'view', 'me/os', '--json', 'isArchived'], '.')]
+
+
+def test_a_pull_request_removed_before_its_first_read_cleans_the_persisted_branch_alert(tmp_path, monkeypatch):
+    # The first gh call after a restart may already answer not-found: the branch identity comes from the alert an
+    # earlier shepherd persisted, so `me/os|pull request|feature` and the push alert of that branch go with the
+    # stand-in (AC-05).
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    monkeypatch.setattr(ci_watch, 'notify', lambda alert: pytest.fail(f'alerted: {alert}'))
+    worktree = tmp_path/'worktree'
+    worktree.mkdir()
+    ci_watch.update(lambda beats: beats.__setitem__(f'{worktree}#9', {
+        'repo_dir': str(worktree), 'number': 9, 'repo': 'me/os', 'session': None, 'at': 0}), 'shepherds.json')
+    ci_watch.update(lambda alerts: alerts.update({
+        'me/os|pull request|feature': ci_alert('me/os', 'pull request', 'feature', '#9 CI failed: t'),
+        'me/os|CI|feature': ci_alert('me/os', 'CI', 'feature')}))  # a push run of the same branch
+
+    def gh(args, cwd):
+        if args[:2] == ['repo', 'view']:
+            return json.dumps({'isArchived': False})
+        raise subprocess.CalledProcessError(1, ['gh', *args],
+            stderr='GraphQL: Could not resolve to a PullRequest with the number of 9.\n')
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+    assert ci_watch.shepherd(worktree, 9, sleep=lambda s: pytest.fail('it waited another round')) == 'GONE'
+    assert ci_watch.read('shepherds.json') == {} and ci_watch.read() == {}
+
+
+def test_a_transient_github_failure_is_not_taken_for_a_gone_subject(tmp_path, monkeypatch):
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    monkeypatch.setattr(ci_watch, 'notify', lambda alert: None)
+    rounds = iter(['fail'] * 3 + ['MERGED'])
+
+    def gh(args, cwd):
+        if args[:2] == ['repo', 'view']:
+            return json.dumps({'nameWithOwner': 'me/os'})
+        if args[:2] == ['run', 'list']:
+            return '[]'
+        now = next(rounds)
+        if now == 'fail':
+            raise subprocess.CalledProcessError(1, ['gh'], stderr='HTTP 401: Bad credentials\n')
+        return json.dumps({'state': 'MERGED', 'autoMergeRequest': {'mergeMethod': 'MERGE'}, 'headRefName': 'feature',
+                           'headRefOid': 'h', 'url': 'u', 'title': 't'})
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+    assert ci_watch.shepherd('repo', 9, sleep=lambda s: None) == 'MERGED'
+    assert ci_watch.read('shepherds.json') == {} and ci_watch.read() == {}
+
+
+def test_revive_retires_a_beat_with_neither_checkout_nor_repository(tmp_path, monkeypatch):
+    # ADR-072: a beat whose worktree is gone and that never recorded its repository has nothing left to follow.
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    started = []
+    monkeypatch.setattr(ci_watch, 'detached', lambda *args, session=None: started.append((*args, session)))
+    removed, kept = str(tmp_path/'removed'), str(tmp_path/'kept')
+    ci_watch.update(lambda beats: beats.update({
+        f'{removed}#1': {'repo_dir': removed, 'number': 1, 'repo': None, 'session': None, 'at': 1000.0},
+        f'{kept}#2': {'repo_dir': kept, 'number': 2, 'repo': 'me/os', 'session': 's', 'at': 1000.0}}),
+        'shepherds.json')
+    ci_watch.update(lambda alerts: alerts.update({
+        f'{removed}|pull request|#1': ci_alert(removed, 'pull request', '#1', '#1 shepherd stuck: removed'),
+        'me/os|CI|main': ci_alert('me/os')}))
+    now = 1001.0 + ci_watch.SHEPHERD_SILENCE
+    assert ci_watch.revive(now) == [2] and started == [('shepherd', kept, 2, 's')]
+    assert list(ci_watch.read('shepherds.json')) == [f'{kept}#2']
+    assert list(ci_watch.read()) == ['me/os|CI|main']  # the orphan's stand-in alert went with its beat
+
+
+def test_a_failure_after_the_subject_was_read_does_not_end_the_shepherd_gone(tmp_path, monkeypatch):
+    # Only the queries about the pull request and its repository may end it as GONE. The run listing failing with
+    # HTTP 404 says nothing about the subject: the pull request stays monitored, with its alert and beat.
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    monkeypatch.setattr(ci_watch, 'notify', lambda alert: pytest.fail(f'alerted: {alert}'))
+    worktree = tmp_path/'worktree'
+    worktree.mkdir()
+    ci_watch.update(lambda beats: beats.__setitem__(f'{worktree}#9', {'repo_dir': str(worktree), 'number': 9,
+                                                                     'repo': 'me/os', 'session': None, 'at': 0}),
+                    'shepherds.json')
+    ci_watch.update(lambda alerts: alerts.__setitem__(
+        'me/os|pull request|feature', ci_alert('me/os', 'pull request', 'feature', '#9 CI failed: t')))
+    steps = iter(['OPEN', 'runs-gone', 'OPEN', '[]', 'MERGED', '[]'])
+
+    def gh(args, cwd):
+        if args[:2] == ['repo', 'view']:
+            return json.dumps({'nameWithOwner': 'me/os', 'isArchived': False})
+        step = next(steps)
+        if step == 'runs-gone':  # the pull request was read: only listing its runs failed
+            raise subprocess.CalledProcessError(1, ['gh', *args],
+                                               stderr='HTTP 404: Not Found (https://api.github.com)\n')
+        if args[:2] == ['run', 'list']:
+            return step
+        return json.dumps({'state': step, 'mergeStateStatus': 'CLEAN', 'autoMergeRequest': {'mergeMethod': 'MERGE'},
+                           'headRefName': 'feature', 'headRefOid': 'h', 'url': 'u', 'title': 't'})
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+    seen = []
+    assert ci_watch.shepherd(worktree, 9, sleep=lambda s: seen.append(
+        ('me/os|pull request|feature' in ci_watch.read(), f'{worktree}#9' in ci_watch.read('shepherds.json')))) == 'MERGED'
+    assert seen[0] == (True, True)  # the round that failed kept monitoring: not retired as GONE
+    assert ci_watch.read() == {} and ci_watch.read('shepherds.json') == {}
+
+
+def test_revive_retires_an_orphan_whose_relative_checkout_is_gone(tmp_path, monkeypatch):
+    # The repository is unknown and the checkout is not there: a relative `repo_dir` proves nothing either.
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    monkeypatch.chdir(tmp_path)
+    started = []
+    monkeypatch.setattr(ci_watch, 'detached', lambda *args, session=None: started.append((*args, session)))
+    ci_watch.update(lambda beats: beats.__setitem__(
+        'gone#1', {'repo_dir': 'gone', 'number': 1, 'session': None, 'at': 1000.0}), 'shepherds.json')
+    ci_watch.update(lambda alerts: alerts.__setitem__(
+        'gone|pull request|#1', ci_alert('gone', 'pull request', '#1', '#1 shepherd stuck: gone')))
+    assert ci_watch.revive(1001.0 + ci_watch.SHEPHERD_SILENCE) == [] and started == []
+    assert ci_watch.read('shepherds.json') == {} and ci_watch.read() == {}
+
+
+def test_tare_ci_dismiss_drops_one_alert_and_refuses_an_unknown_key(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    monkeypatch.setattr(ci_watch, 'detached', lambda *args, session=None: pytest.fail('dismiss started a shepherd'))
+    ci_watch.update(lambda alerts: alerts.update({'me/os|CI|main': ci_alert('me/os'),
+                                                  'me/other|CI|main': ci_alert('me/other')}))
+    assert ci_watch.main(['dismiss', 'me/os|CI|main']) == 0
+    assert list(ci_watch.read()) == ['me/other|CI|main'] and 'me/os / CI (main)' in capsys.readouterr().out
+    assert ci_watch.main(['dismiss', 'gone/os|CI|main']) == 1
+    assert 'tare ci dismiss: no alert gone/os|CI|main' in capsys.readouterr().err
+    assert list(ci_watch.read()) == ['me/other|CI|main']
+
+
+def test_tare_ci_check_prune_removes_the_alerts_whose_subject_is_gone(tmp_path, monkeypatch, capsys):
+    # AC-06: the subjects gh proves gone go, with their shepherd beats; the one gh could not resolve stays.
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    monkeypatch.setattr(ci_watch, 'detached', lambda *args, session=None: pytest.fail('check started a shepherd'))
+    worktree = tmp_path/'worktree'
+    worktree.mkdir()
+    ci_watch.update(lambda alerts: alerts.update({
+        'me/os|pull request|feature': ci_alert('me/os', 'pull request', 'feature', '#9 CI failed: t'),
+        'gone/os|CI|main': ci_alert('gone/os'),
+        'old/os|CI|main': ci_alert('old/os'),
+        'busy/os|CI|main': ci_alert('busy/os'),
+        'open/os|pull request|main': ci_alert('open/os', 'pull request', 'main', '#12 CI failed: t')}))
+    ci_watch.update(lambda beats: beats.update({
+        f'{worktree}#9': {'repo_dir': str(worktree), 'number': 9, 'repo': 'me/os', 'session': None,
+                          'at': ci_watch.time.time()},
+        'old/os#7': {'repo_dir': 'old', 'number': 7, 'repo': 'old/os', 'session': None,
+                     'at': ci_watch.time.time()}}), 'shepherds.json')
+
+    def gh(args, cwd):
+        if args[:2] == ['repo', 'view']:
+            assert args[3:] == ['--json', 'isArchived'], args  # `gh repo view` takes the repository positionally
+            repo = args[2]
+            if repo == 'gone/os':
+                raise subprocess.CalledProcessError(1, ['gh', *args],
+                                                    stderr='HTTP 404: Not Found (https://api.github.com)\n')
+            if repo == 'busy/os':
+                raise subprocess.CalledProcessError(1, ['gh', *args], stderr='HTTP 500: Internal Server Error\n')
+            return json.dumps({'isArchived': repo == 'old/os'})
+        if args[:2] == ['pr', 'view']:
+            return json.dumps({'state': 'MERGED' if args[2] == '9' else 'OPEN'})
+        raise AssertionError(args)
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+    assert ci_watch.main(['check']) == 1 and len(ci_watch.read()) == 5  # without --prune nothing goes
+    capsys.readouterr()
+    assert ci_watch.main(['check', '--prune']) == 1 and 'pruned 3' in capsys.readouterr().out
+    assert sorted(ci_watch.read()) == ['busy/os|CI|main', 'open/os|pull request|main']
+    assert ci_watch.read('shepherds.json') == {}
+    capsys.readouterr()
+    assert ci_watch.main(['check', '--prune']) == 1 and 'pruned 0' in capsys.readouterr().out
+
+
+def test_tare_ci_check_prune_takes_the_branch_alerts_with_their_pull_request(tmp_path, monkeypatch, capsys):
+    # AC-06: a pull request gh proves gone takes the push alerts of its branch with it. The alert that named the
+    # branch goes too, so nothing would ever find them again: both are pruned and both are counted.
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    monkeypatch.setattr(ci_watch, 'detached', lambda *args, session=None: pytest.fail('check started a shepherd'))
+    worktree = tmp_path/'worktree'
+    worktree.mkdir()
+    ci_watch.update(lambda alerts: alerts.update({
+        'me/os|pull request|feature': ci_alert('me/os', 'pull request', 'feature', '#9 CI failed: t'),
+        'me/os|CI|feature': ci_alert('me/os', 'CI', 'feature'),  # a push run of the same branch
+        'me/os|CI|main': ci_alert('me/os', 'CI', 'main')}))  # another branch's alert stays
+    ci_watch.update(lambda beats: beats.__setitem__(f'{worktree}#9', {
+        'repo_dir': str(worktree), 'number': 9, 'repo': 'me/os', 'session': None, 'at': ci_watch.time.time()}),
+        'shepherds.json')
+
+    def gh(args, cwd):
+        if args[:2] == ['repo', 'view']:
+            return json.dumps({'isArchived': False})
+        if args[:2] == ['pr', 'view']:
+            raise subprocess.CalledProcessError(
+                1, ['gh', *args],
+                stderr='GraphQL: Could not resolve to a PullRequest with the number of 9.\n')
+        raise AssertionError(args)
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+    assert ci_watch.main(['check', '--prune']) == 1 and 'pruned 2' in capsys.readouterr().out
+    assert list(ci_watch.read()) == ['me/os|CI|main']
+    assert ci_watch.read('shepherds.json') == {}
+
+
+def test_a_restart_remembers_the_head_branch_so_the_gone_round_cleans_its_push_alert(tmp_path, monkeypatch):
+    # An earlier shepherd read the pull request and keeps its head branch in the beat before it waits. A restart
+    # whose very next `gh pr view` already answers not-found has no view and no pull request alert left to name the
+    # branch, so without it the push alert of that branch would outlive its pull request (AC-05).
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    monkeypatch.setattr(ci_watch, 'notify', lambda alert: pytest.fail(f'alerted: {alert}'))
+    worktree = tmp_path/'worktree'
+    worktree.mkdir()
+    name = f'{worktree}#9'
+    ci_watch.update(lambda beats: beats.__setitem__(name, {
+        'repo_dir': str(worktree), 'number': 9, 'repo': 'me/os', 'session': None, 'at': 0}), 'shepherds.json')
+    ci_watch.update(lambda alerts: alerts.__setitem__('me/os|CI|feature', ci_alert('me/os', 'CI', 'feature')))
+
+    def first(args, cwd):  # the shepherd that read the pull request, before the machine stopped
+        if args[:2] == ['repo', 'view']:
+            return json.dumps({'isArchived': False})
+        if args[:2] == ['run', 'list']:
+            return '[]'
+        return json.dumps({'state': 'OPEN', 'mergeStateStatus': 'CLEAN', 'autoMergeRequest': {'mergeMethod': 'MERGE'},
+                           'headRefName': 'feature', 'headRefOid': 'h', 'url': 'u', 'title': 't'})
+    monkeypatch.setattr(ci_watch, 'gh', first)
+
+    class Stopped(Exception):
+        pass
+
+    def stopped(_seconds):  # the process died while it waited for its next round
+        raise Stopped
+    with pytest.raises(Stopped):
+        ci_watch.shepherd(worktree, 9, sleep=stopped)
+    assert ci_watch.read('shepherds.json')[name]['branch'] == 'feature'  # persisted before it waited
+
+    def restarted(args, cwd):  # the first query about the pull request after the restart answers not-found
+        if args[:2] == ['repo', 'view']:
+            return json.dumps({'isArchived': False})
+        raise subprocess.CalledProcessError(1, ['gh', *args],
+                                            stderr='HTTP 404: Not Found (https://api.github.com)\n')
+    monkeypatch.setattr(ci_watch, 'gh', restarted)
+    assert ci_watch.shepherd(worktree, 9, sleep=lambda s: pytest.fail('it waited another round')) == 'GONE'
+    assert ci_watch.read('shepherds.json') == {} and ci_watch.read() == {}

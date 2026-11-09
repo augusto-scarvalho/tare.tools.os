@@ -11,7 +11,10 @@ Windows scheduled task (Tare-CI-Nightly, like the other Tare-* tasks) covers the
   "$env:LOCALAPPDATA/tare.tools/product/tare.cmd" + '" ci nightly')) -Trigger (New-ScheduledTaskTrigger -Daily
   -At 10am), (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME) -Settings (New-ScheduledTaskSettingsSet
   -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 10))
-`tare ci check`: prints the open alerts, exit 1 when any (tare frontends read `open_alerts()`).
+`tare ci check [--prune]`: prints the open alerts, exit 1 when any (tare frontends read `open_alerts()`);
+`--prune` first removes the alerts whose subject is gone -- its pull request merged or closed, its repository
+removed or archived -- with the shepherd beats they left, and keeps the ones gh could not resolve.
+`tare ci dismiss KEY`: drops one alert, given the key `tare ci check` prints, once the operator decided not to fix it.
 `tare ci pr [--body TEXT]`: main is protected and takes changes only through pull requests that merge themselves
 (a merge commit) once CI is green: this pushes the current branch, opens its pull request (or reuses the open one),
 turns on auto-merge and brings the branch up to date when main moved. CI on main then skips a merge whose bytes
@@ -22,7 +25,9 @@ closes. Every pull request adds its CHANGELOG entry on top, so it merges here, w
 (.gitattributes), not with GitHub's update, which would conflict. Any other conflict becomes an alert. A failed CI
 run on the pull request becomes an alert immediately; tests are never automatically retried to obtain green.
 An alert lasts while its problem does: the shepherd clears it once the pull request merges again
-cleanly, passes, merges or closes, and keeps following the pull request meanwhile. Pull requests behind main are
+cleanly, passes, merges or closes, and keeps following the pull request meanwhile. A pull request or its repository
+removed or archived ends the shepherd with `GONE` in that round, taking its beat and that pull request's alerts
+with it: nothing is left to fix. Pull requests behind main are
 brought up to date one at a time, oldest first (a merge queue by hand): every merge leaves every other open pull
 request behind, and updating them all at once restarted every CI run and starved the oldest (six runs cancelled in
 three hours on 2026-10-06). The others keep their own green run and wait; a stuck pull request holds the queue
@@ -83,8 +88,13 @@ def update(change, name='alerts.json'):
     raise TimeoutError('ci alerts store stayed locked')
 
 
+def alert_entries():
+    """The open alerts with their store keys, oldest first; `tare ci dismiss` takes the key."""
+    return sorted(read().items(), key=lambda item: item[1].get('created_at') or '')
+
+
 def open_alerts():
-    return sorted(read().values(), key=lambda a: a.get('created_at') or '')
+    return [alert for _, alert in alert_entries()]
 
 
 def fresh_alerts(seen):
@@ -228,10 +238,13 @@ def watch(repo_dir, sha, *, session=None, appear=180, limit=5400, every=30, slee
     return opened
 
 
-def describe(alerts):
+def describe(alerts, keys=None):
+    """One line per alert, then its error lines; `keys` names each alert's store key, the `tare ci dismiss`
+    argument, where the caller knows it."""
     lines = []
-    for a in alerts:
-        lines.append(f"- {a['repo']} / {a['workflow']} ({a['branch']}): \"{a['commit']}\" {a['url']}")
+    for i, a in enumerate(alerts):
+        lines.append(f"- {a['repo']} / {a['workflow']} ({a['branch']}): \"{a['commit']}\" {a['url']}"
+                     + (f" [{keys[i]}]" if keys else ''))
         lines.extend('    ' + e for e in a['errors'][-8:])
     return '\n'.join(lines)
 
@@ -411,18 +424,73 @@ def pr_alert(repo, number, view, what, errors, session):
 SHEPHERD_SILENCE = 900  # a shepherd beats once a round (a minute, a few with a catch-up); this long silent, it is gone
 STUCK_ROUNDS = 10  # rounds failing in a row (some 10 minutes): longer than GitHub's usual blips
 
+NOT_FOUND = ('http 404', 'could not resolve to a', 'not found')
+
+
+def not_found(error):
+    """gh answered that its subject is gone (a removed pull request or repository), not that it was unreachable:
+    the two must not share a path, or a deleted pull request only alerted as "shepherd stuck" ten rounds later."""
+    return any(marker in f"{getattr(error, 'stderr', None) or ''} {error}".lower() for marker in NOT_FOUND)
+
+
+def orphan(beat):
+    """A stale beat whose checkout is gone and that records no repository has nothing left to follow (ADR-072):
+    starting its shepherd again could only fail. The repository is unknown, so a `repo_dir` that is not there is a
+    checkout that is gone, relative or not: a relative path proves nothing from the directory a check runs in."""
+    return not beat.get('repo') and not Path(beat['repo_dir']).is_dir()
+
+
+def recorded_branch(repo, number):
+    """The head branch of a pull request an earlier shepherd read, from the alert it left: a first round answered
+    not-found has no view, and the push alerts of that branch are found by its name alone (AC-05)."""
+    if not repo:
+        return None
+    named = re.compile(rf'#{number}(?!\d)')
+    for alert in read().values():
+        if (alert.get('repo') == repo and alert.get('workflow') == 'pull request'
+                and named.search(alert.get('commit') or '')):
+            return alert.get('branch')
+    return None
+
+
+def retire(name, repo_dir, number, repo=None, branch=None):
+    """End a shepherd's subject: its beat, the stand-in alert of a pull request it never read and -- once it read
+    one -- its alert and every alert of that repository and head branch, a push run's included. A pull request the
+    shepherd never read is still found by the number its alert names, so a first round answered not-found leaves
+    nothing behind."""
+    stand_in = f'{repo_dir}|pull request|#{number}'
+
+    def forget(alerts):
+        alerts.pop(stand_in, None)
+        if repo and branch:
+            alerts.pop(f'{repo}|pull request|{branch}', None)
+        if repo:
+            named = re.compile(rf'#{number}(?!\d)')
+            for key in [k for k, alert in alerts.items()
+                        if alert.get('repo') == repo
+                        and (named.search(alert.get('commit') or '') or branch and alert.get('branch') == branch)]:
+                del alerts[key]
+    update(forget)
+    update(lambda beats: beats.pop(name, None), 'shepherds.json')
+
 
 def revive(now=None):
     """Start again each shepherd that stopped beating (the machine restarted or the process died):
-    a pull request's CI alerts only through its shepherd, so without one a red pull request waits unseen. Returns
-    the pull request numbers started."""
-    now, stale = now or time.time(), []
+    a pull request's CI alerts only through its shepherd, so without one a red pull request waits unseen. A beat
+    whose checkout and repository are both gone is retired instead (ADR-072). Returns the numbers started."""
+    now, stale, retired = now or time.time(), [], []
     def take(beats):
-        for beat in beats.values():
-            if now - beat['at'] > SHEPHERD_SILENCE:
-                beat['at'] = now  # one revival per silence
-                stale.append(beat)
+        for name, beat in list(beats.items()):
+            if now - beat['at'] <= SHEPHERD_SILENCE:
+                continue
+            if orphan(beat):
+                retired.append(beats.pop(name))
+                continue
+            beat['at'] = now  # one revival per silence
+            stale.append(beat)
     update(take, 'shepherds.json')
+    for beat in retired:
+        update(lambda alerts: alerts.pop(f"{beat['repo_dir']}|pull request|#{beat['number']}", None))
     for beat in stale:
         detached('shepherd', beat['repo_dir'], beat['number'], session=beat.get('session'))
     return [beat['number'] for beat in stale]
@@ -438,19 +506,52 @@ def shepherd(repo_dir, number, *, session=None, every=60, limit=None, sleep=time
     pull request's last state.
     Its worktree is usually parked or deleted once the pull request merges, and `gh` run there failed with "no git
     remotes found": the shepherd never saw MERGED and ended as "shepherd stuck". So it resolves owner/repo once,
-    keeps it in its beat for a revived shepherd, and names it (-R) in every gh call; only a catch-up needs the
-    checkout."""
+    keeps it, with the head branch it read, in its beat before it waits for the next round -- so a restart answered
+    not-found still finds the push alerts of that branch -- and names it (-R) in every gh call; only a catch-up needs
+    the checkout. A pull request or repository that was removed or archived ends it with 'GONE' in that round, without
+    an alert of its own: its beat and that pull request's alerts go with it."""
     started, state, alerted, settled = time.monotonic(), None, None, set()
     name, view, failing = f'{repo_dir}#{number}', None, 0
-    repo = read('shepherds.json').get(name, {}).get('repo')
-    while limit is None or time.monotonic() - started < limit:
+    stored = read('shepherds.json').get(name, {})
+    repo, branch = stored.get('repo'), stored.get('branch')  # a revive keeps the head branch it read
+
+    def beat():  # written before it waits, so a restart answered not-found still knows the branch it read
         update(lambda beats: beats.__setitem__(name, {'repo_dir': str(repo_dir), 'number': number, 'repo': repo,
-                                                       'session': session, 'at': time.time()}), 'shepherds.json')
+                                                       'branch': branch, 'session': session,
+                                                       'at': time.time()}), 'shepherds.json')
+
+    while limit is None or time.monotonic() - started < limit:
+        beat()
         try:
-            repo = repo or json.loads(gh(['repo', 'view', '--json', 'nameWithOwner'], repo_dir))['nameWithOwner']
-            view = json.loads(gh(['pr', 'view', str(number), '-R', repo, '--json',
-                                  'state,mergeStateStatus,autoMergeRequest,headRefName,headRefOid,url,title'], repo_dir))
-            key, head, state = f"{repo}|pull request|{view['headRefName']}", view['headRefOid'], view['state']
+            try:  # only the queries about the subject itself end it; a later failure of the round is a retry
+                if not repo:
+                    recorded = json.loads(gh(['repo', 'view', '--json', 'nameWithOwner,isArchived'], repo_dir))
+                    repo = recorded['nameWithOwner']
+                else:  # archived after the first round, or revived from a beat: still ends, nothing merges there
+                    recorded = repository_view(repo)
+                if recorded.get('isArchived'):
+                    read_branch = None
+                    try:
+                        read_branch = json.loads(gh(['pr', 'view', str(number), '-R', repo, '--json', 'headRefName'],
+                                                    repo_dir))['headRefName']
+                    except (OSError, subprocess.SubprocessError, ValueError, KeyError):
+                        pass  # nothing left to read: its beat and the stand-in alert still go
+                    retire(name, str(repo_dir), number, repo,
+                           read_branch or branch or recorded_branch(repo, number))
+                    return 'GONE'
+                view = json.loads(gh(['pr', 'view', str(number), '-R', repo, '--json',
+                                      'state,mergeStateStatus,autoMergeRequest,headRefName,headRefOid,url,title'], repo_dir))
+            except (OSError, subprocess.SubprocessError, ValueError, KeyError) as error:
+                if not not_found(error):
+                    raise  # unreachable, not gone: the round's own handler below counts it
+                # The pull request or its repository was removed: nothing is left to fix, so no alert of its own,
+                # and the stand-in alert of a pull request it never read goes too (SPEC-OS-SHIP-001 AC-05).
+                retire(name, str(repo_dir), number, repo,
+                       (view or {}).get('headRefName') or branch or recorded_branch(repo, number))
+                return 'GONE'
+            branch = view['headRefName']  # the beat keeps it, so a later restart's not-found still finds its pushes
+            beat()  # persisted now, before the wait: a restart answered not-found still finds its pushes
+            key, head, state = f"{repo}|pull request|{branch}", view['headRefOid'], view['state']
             for run in runs_for(repo_dir, head, repo) or []:  # the pushes it made had no watcher
                 if run['status'] == 'completed' and attempt(run) not in settled:
                     settled.add(attempt(run))
@@ -480,6 +581,8 @@ def shepherd(repo_dir, number, *, session=None, every=60, limit=None, sleep=time
         except (OSError, subprocess.SubprocessError, ValueError, KeyError) as error:
             # GitHub unreachable for a moment, or main moved again while merging: the next round retries. Failing
             # round after round (a refused push, an expired login) the queue waits behind it: 2 hours on 2026-10-08.
+            # Only a not-found answer to a query about the pull request or its repository (above) ends it as GONE: a
+            # run listing or a catch-up that failed says nothing about the subject, which may still be open.
             failing += 1
             if failing == STUCK_ROUNDS:
                 shown = view or {'headRefName': f'#{number}', 'title': str(repo_dir), 'url': ''}
@@ -611,6 +714,91 @@ def forget_pushing_worktree():
         os.environ.pop(name, None)
 
 
+REPOSITORY_NAME = re.compile(r'[^/\s:\\]+/[^/\s:\\]+')
+
+
+def repo_name(value):
+    """`owner/name` when the value names a repository gh can be asked about; a local path names none."""
+    return value if isinstance(value, str) and REPOSITORY_NAME.fullmatch(value) else None
+
+
+def repository_view(repo):
+    """`gh repo view` takes the repository as its positional argument: `-R` is not one of its flags, so a check
+    that named it that way failed every round and no archived repository was ever noticed (AC-05)."""
+    return json.loads(gh(['repo', 'view', repo, '--json', 'isArchived'], '.'))
+
+
+def pull_request_state(repo, number):
+    return json.loads(gh(['pr', 'view', str(number), '-R', repo, '--json', 'state'], '.'))
+
+
+def ended(alert, beats):
+    """The names of the shepherd beats an alert leaves behind once its subject ended: its pull request merged or
+    closed, its repository removed or archived. None while the subject stands; raises where gh failed without a
+    not-found answer, so an alert gh could not resolve is never removed."""
+    found = re.search(r'#([1-9][0-9]*)', alert.get('commit') or '')
+    number = int(found.group(1)) if found else None
+    named = [name for name, beat in beats.items()
+             if number is not None and beat.get('number') == number
+             and (beat.get('repo') == alert.get('repo') or str(beat.get('repo_dir')) == alert.get('repo'))]
+    repo = next((beats[name]['repo'] for name in named if beats[name].get('repo')), None) or repo_name(alert.get('repo'))
+    if repo is None:
+        return None  # its repository was never recorded: nothing to ask GitHub about
+    every = sorted(set(named) | {name for name, beat in beats.items() if beat.get('repo') == repo})
+    try:
+        archived = repository_view(repo).get('isArchived')
+    except subprocess.CalledProcessError as error:
+        if not_found(error):
+            return every  # the repository itself is gone, with every beat its shepherds left
+        raise
+    if archived:
+        return every
+    if alert.get('workflow') == 'pull request':
+        if number is None:
+            return None  # the alert does not name its pull request: gh cannot be asked about it
+        try:
+            if pull_request_state(repo, number).get('state') != 'OPEN':
+                return named
+        except subprocess.CalledProcessError as error:
+            if not_found(error):
+                return named  # its pull request is gone
+            raise
+    return None
+
+
+def prune():
+    """Remove the alerts whose subject is gone and the shepherd beats they left; an alert gh could not resolve
+    stays (fail closed: only a not-found answer proves a subject gone). The alerts of the same repository and
+    branch go with a pull request's alert: a push run's alert of that branch outlives its pull request otherwise,
+    and the alert that named the branch is gone with it. Returns how many alerts it removed."""
+    beats, keys, names, removed = read('shepherds.json'), [], set(), []
+    for key, alert in list(read().items()):
+        try:
+            retired = ended(alert, beats)
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError):
+            continue  # gh could not tell: the alert stays
+        if retired is not None:
+            keys.append(key)
+            names.update(retired)
+    if keys:
+        def forget(alerts):
+            for key in keys:
+                alert = alerts.pop(key, None)
+                if alert is None:
+                    continue  # an earlier alert of the same branch already took it
+                removed.append(key)
+                if not alert.get('branch'):
+                    continue
+                for other in [k for k, a in alerts.items()
+                              if a.get('repo') == alert.get('repo') and a.get('branch') == alert.get('branch')]:
+                    del alerts[other]
+                    removed.append(other)
+        update(forget)
+    if names:
+        update(lambda store: [store.pop(name, None) for name in names], 'shepherds.json')
+    return len(removed)
+
+
 def main(argv=None):
     if hasattr(sys.stdout, 'reconfigure'):  # a Windows console's code page cannot print every log character
         sys.stdout.reconfigure(errors='replace')
@@ -623,7 +811,11 @@ def main(argv=None):
     follow.add_argument('sha')
     full = sub.add_parser('nightly')
     full.add_argument('repo_dirs', type=Path, nargs='*')
-    sub.add_parser('check')
+    check = sub.add_parser('check')
+    check.add_argument('--prune', action='store_true',
+                       help='remove the alerts whose pull request or repository is gone, with their shepherd beats')
+    dismiss = sub.add_parser('dismiss', help='drop one alert, by the key check prints')
+    dismiss.add_argument('key')
     sub.add_parser('stop-hook')
     pr = sub.add_parser('pr', help='push this branch and open (or update) its pull request into main, auto-merged '
                                    'once CI is green')
@@ -671,9 +863,21 @@ def main(argv=None):
         print(json.dumps({'opened': len(opened)}))
         return 0
     if args.action == 'check':
-        alerts = open_alerts()
-        print(describe(alerts) if alerts else 'CI: no open alerts')
-        return 1 if alerts else 0
+        if args.prune:
+            print(f'CI: pruned {prune()} alert(s) whose subject is gone')
+        entries = alert_entries()
+        print(describe([alert for _, alert in entries], [key for key, _ in entries]) if entries else 'CI: no open alerts')
+        return 1 if entries else 0
+    if args.action == 'dismiss':
+        removed = []
+        def drop(alerts):
+            removed.append(alerts.pop(args.key, None))
+        update(drop)
+        if removed[0] is None:
+            print(f'tare ci dismiss: no alert {args.key}', file=sys.stderr)
+            return 1
+        print(describe([removed[0]]))
+        return 0
     return stop_hook(sys.stdin.read())
 
 
