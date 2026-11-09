@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- A refused tool row whose host gave only an error type (an unexpected exception before dispatch) shows that type as its reason, and a sentence reason is cut to leave the path visible at 80 columns.
 - A refused tool row names why in its title ("Read · Refused · COORDINATOR_ROUTING_REQUIRED") and still stays collapsed: the host's `reason` is kept on the row (also on reopen), where before it showed only inside the expanded JSON.
 - The kernel pin moves to 0d0cf6c (tare.tools.kernel#10): a vendor CLI release the adapter has not seen is probed once per model before the first real request, so the verdict record above has something to keep.
 - CLI qualification verdicts are kept per release and model, and saving one is best effort: a store another host is writing at the same moment, or read-only storage, loses the verdict (probed again next session), never the call. A probe cut short is explained as not sent, with Resume; the failure explanation is found whichever call carried the probe (a summary too).
