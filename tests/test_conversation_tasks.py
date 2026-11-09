@@ -426,7 +426,7 @@ def test_exhausted_scope_blocks_without_changing_ledger(tmp_path, kind, same_key
     if same_key:
         assert ('same host contract' if kind == 'checks' else 'independent audit refused') in str(exc.value)
     else:
-        assert all(text in str(exc.value) for text in ('blocked', 'a.py', 'plain words', 'No implementer started'))
+        assert all(text in str(exc.value) for text in ('blocked', 'a.py', 'plain words', 'No implementer starts until the user answers'))
     assert (tmp_path/work_units.LEDGER).read_bytes() == before
 
 
@@ -1882,6 +1882,30 @@ def test_journal_retry_passes_both_guards_once(host, monkeypatch, kind, reply):
     assert attempt('used').status == 'refused'
     assert calls == [True]
     assert retry_decision(tools.root, task, unit) is False
+
+
+def test_a_run_that_reaches_the_limit_asks_the_retry_question_at_once(host, monkeypatch):
+    from relay import consent_decisions as consent
+    tools, execution, _, _ = host
+    intake(host); task = planned(host)
+    unit = task['plan']['unit']
+    for _ in range(work_units.MAX_FAILURES - 1):
+        work_units.record(tools.root, unit, {'verdict': 'NOT_VERIFIED'})
+    calls = []
+    def run(custody, state, *args, **kwargs):
+        calls.append(state.get('operator_delivery_retry', False))
+        work_units.record(custody, unit, {'verdict': 'NOT_VERIFIED'})  # this run's failure reaches the limit
+        return {'verdict': 'NOT_VERIFIED'}
+    monkeypatch.setattr(work_units, 'run_unit', run)
+    last = tools.execute(effect('implement', {}, 'last'), execution)
+    assert last.status == 'succeeded' and 'plain words' in json.loads(last.output_json)['next']
+    # Without it, the coordinator asked in its own words, the user's yes found no question, and the next
+    # correction was refused and asked again.
+    q = consent.pending(tools.root, tools.session_id)[0]
+    consent.record(tools.root, tools.session_id, q['question_id'], choice='allow')
+    intake(host, relation='continue')
+    assert tools.execute(effect('implement', {}, 'released'), execution).status == 'succeeded'
+    assert calls == [False, True]
 
 
 def test_non_yes_first_journal_reply_cannot_be_revived_by_later_yes(host, monkeypatch):
