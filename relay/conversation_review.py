@@ -75,13 +75,13 @@ def paired_satellite_references():
 
 def satellite_context(config, unit, tree):
     """Derive source selection from host repositories, never a candidate-authored report."""
-    from .challenger_workspace import submodule_inventory, _offline_git
+    from .challenger_workspace import cached_inventory, _offline_git
     repositories = config.get('repositories') or {}
     project = repositories.get(unit.get('repository')) or next(iter(repositories.values()), None)
     rows = []
     if project and (Path(project)/'.git').exists():
         try:
-            rows = submodule_inventory(project)
+            rows = cached_inventory(project)
         except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
             return {'branch': 'unavailable-pins', 'sources': [],
                     'remaining': ['Local submodule inventory unavailable: '+str(exc)[:300]]}

@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- An audit reuses the project's satellite inventory while its submodule pins stay the same: building the candidate tree keeps it, and the review, its continuations and cached-decision lookups read it instead of listing every satellite object again; a moved pin reads it anew. Each implement on the OS repository paid seconds for this, even when the audit decision was cached.
 - A coverage continuation counts as progress only when its session read something (a file or range) that no earlier review of its chain had read, taken from its journal; the auditor's list of what remains is no longer the measure. Comparing that list's text let a reworded item pass as progress, so the chain might never stop by itself. Continuations recorded with the list measure end the chain.
 - An audit finding whose claim is identical (case and spacing aside) to one of the previous refused audit of the same unit counts as repeated even when the auditor did not mark it, so the delivery stops and asks instead of paying for another correction. The auditor's own mark is never removed and nothing fuzzy is compared; the ledger keeps claim digests, and a run recorded before this change only starts the comparison.
 - The heads-up tells the user's queued messages from the host's by the session's operator inbox, which keeps every message the user queued, instead of by the shape of a message id: a message queued with any id (tare native) counts, and a host message with a uuid-like id does not.

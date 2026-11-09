@@ -1198,3 +1198,29 @@ def test_submodule_owned_partial_output_is_cleaned(project, tmp_path, monkeypatc
     for name in ('../escape', '/absolute', 'C:/drive', '.git/config', 'dir\\escape'):
         with pytest.raises(ValueError):
             workspace.safe(destination, name)
+
+
+def test_the_review_inventory_is_read_once_until_a_pin_moves(project, tmp_path, monkeypatch):
+    monkeypatch.setattr(workspace, '_INVENTORY', None)
+    dependency = tmp_path/'dependency'; dependency.mkdir()
+    c.git(dependency, 'init')
+    for key, value in (('user.name', 'Test'), ('user.email', 'test@localhost'), ('commit.gpgsign', 'false')):
+        c.git(dependency, 'config', key, value)
+    (dependency/'data').write_bytes(b'local dependency\n')
+    c.git(dependency, 'add', '.'); c.git(dependency, 'commit', '-m', 'Dependency')
+    c.git(project, '-c', 'protocol.file.allow=always', 'submodule', 'add', str(dependency), 'one')
+    c.git(project, '-c', 'commit.gpgsign=false', 'commit', '-m', 'Pins')
+    calls, actual = [], workspace.submodule_inventory
+    monkeypatch.setattr(workspace, 'submodule_inventory', lambda *a, **kw: calls.append(a) or actual(*a, **kw))
+    first = workspace.cached_inventory(project)
+    first[0]['available'] = False  # a caller's change does not reach the next caller
+    assert workspace.cached_inventory(project)[0]['available'] and len(calls) == 1
+    (project/'one'/'data').write_bytes(b'moved\n')
+    c.git(project/'one', '-c', 'user.name=Test', '-c', 'user.email=test@localhost', '-c', 'commit.gpgsign=false',
+          'commit', '-am', 'Move')
+    c.git(project, 'add', 'one'); c.git(project, '-c', 'commit.gpgsign=false', 'commit', '-m', 'Move the pin')
+    moved = workspace.cached_inventory(project)
+    assert moved[0]['commit'] != first[0]['commit'] and len(calls) == 2
+    monkeypatch.setattr(workspace, '_INVENTORY', None)
+    workspace.snapshot(project, tmp_path/'candidate')  # building the candidate tree primes the review's inventory
+    assert workspace.cached_inventory(project) == moved and len(calls) == 3
