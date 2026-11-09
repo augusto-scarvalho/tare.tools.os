@@ -211,6 +211,42 @@ def diff_text(root, path):
     return text or 'No change since the last commit.'
 
 
+OPERATIONS = (('rebase-merge', 'rebase'), ('rebase-apply', 'rebase'), ('MERGE_HEAD', 'merge'),
+              ('CHERRY_PICK_HEAD', 'cherry-pick'), ('REVERT_HEAD', 'revert'), ('BISECT_LOG', 'bisect'))
+
+
+def git_state(root):
+    """{'ahead', 'behind'} against the branch's upstream (None without one or on a detached HEAD) and the operation
+    in progress ('' when none): read-only, from rev-list and the markers git leaves in its folder."""
+    from .console_header import run_git
+    counts = run_git(root, 'rev-list', '--left-right', '--count', '@{upstream}...HEAD', '--', timeout=GIT_SECONDS)
+    behind, ahead = ([int(n) for n in counts.stdout.split()] if counts.returncode == 0 and len(counts.stdout.split()) == 2
+                     else (None, None))
+    marks = run_git(root, 'rev-parse', *[arg for name, _ in OPERATIONS for arg in ('--git-path', name)],
+                    timeout=GIT_SECONDS)
+    found = marks.stdout.splitlines() if marks.returncode == 0 else []
+    operation = next((label for (_, label), path in zip(OPERATIONS, found) if (Path(root)/path).exists()), '')
+    return {'ahead': ahead, 'behind': behind, 'operation': operation}
+
+
+def git_line(status, truncated=False):
+    """The pane's Git line: ↑ahead ↓behind, changes, an operation in progress and its conflicts."""
+    if status is None:
+        return 'Not a Git repository'
+    state = status.get('state') or {}
+    parts = [f"↑{state['ahead']} ↓{state['behind']}"] if state.get('ahead') or state.get('behind') else []
+    parts.append(f"{status['count']}{'+' if status['count'] >= STATUS_LIMIT else ''} changed"
+                 if status['count'] else 'No changes')
+    if state.get('operation'):
+        parts.append(state['operation']+' in progress')
+    conflicts = sum(mark == '!' for mark in status['marks'].values())
+    if conflicts:
+        parts.append(f'!{conflicts} conflict'+('s' if conflicts > 1 else ''))
+    if truncated:
+        parts.append('list cut at 100 000')
+    return ' · '.join(parts)
+
+
 def listing(root):
     """list_paths with its index, both built in the worker thread."""
     paths, truncated = list_paths(root)
@@ -425,6 +461,8 @@ class FilesPane(Vertical):
         started = time.monotonic()
         try:
             status = await asyncio.to_thread(git_status, root)
+            if status is not None:
+                status['state'] = await asyncio.to_thread(git_state, root)
             known = self.paths
             missing = status and any(path not in known for path, mark in status['marks'].items() if mark != 'D')
             dirs_changed = status and self.status is not None and status['dirs'] != self.status['dirs']
@@ -456,10 +494,9 @@ class FilesPane(Vertical):
         if status != self.status:
             self.revision += 1  # the touched rows show the new counts and applied edits
         self.status = status
-        count = '' if status is None else (f"{status['count']}{'+' if status['count'] >= STATUS_LIMIT else ''} changed"
-                                           if status['count'] else 'No changes')
-        self.query_one('#files-git', Static).update(
-            'Not a Git repository' if status is None else count+(' · list cut at 100 000' if self.truncated else ''))
+        line = self.query_one('#files-git', Static)
+        if line.content != (text := git_line(status, self.truncated)):  # an update is a layout pass
+            line.update(text)
 
     def load_tree(self):
         tree = self.query_one(FileTree)

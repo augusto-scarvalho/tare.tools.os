@@ -4371,8 +4371,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 26131,
-      "sha256": "ed301e2cc18a5ce4edd04701bd9a9a057ea0b4adae1c103e3db637e9650deb5b"
+      "size_bytes": 28058,
+      "sha256": "68a9fee899b22dbbe7ad1ed629dbdf45f1adaca4fd32a3d2f6b65214abaa7b18"
     }
   ]
 }
