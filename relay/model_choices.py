@@ -115,7 +115,7 @@ def describe(name, value):
         from .execution_scope import current
         scope=current()
         if scope.only or scope.prefer=='local':
-            connection={'subscription':'CLI policy','api':'API policy','local':'Local policy'}[scope.only or 'local']
+            connection={'subscription':'Subscription policy','api':'API policy','local':'Local policy'}[scope.only or 'local']
         effort, supported = '', []
     elif 'native_host_modes' in value:
         # Resolved when a new session starts: Swift Flash-Next while the host PC is idle, else Qwen3.8.
