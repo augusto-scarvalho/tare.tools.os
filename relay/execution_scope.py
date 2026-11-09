@@ -16,12 +16,12 @@ PIN_ROLES=('planner','implementer','explorer','researcher','auditor')
 FLAGS=('subscription_only','local_only','api_only','pro_planner','prefer_api',
        'prefer_subscription','prefer_local','disable_judge')
 HELP={
-    'subscription_only':'Use only subscriptions: Codex, Claude and AGY CLIs and OpenCode; keep the Jev helper.',
+    'subscription_only':'Use only subscriptions: Codex, Claude and AGY CLIs and the OpenCode subscription; keep the Jev helper.',
     'local_only':'Use only local models and the local judge; keep search APIs.',
     'api_only':'Use only inference APIs; keep search APIs and Jev.',
     'pro_planner':'Use OpenAI PRO via API for the separate planner only.',
     'prefer_api':'Prefer available inference APIs for planner and auditors.',
-    'prefer_subscription':'Prefer available subscriptions (CLIs, OpenCode) for planner and auditors.',
+    'prefer_subscription':'Prefer available subscriptions (CLIs, the OpenCode subscription) for planner and auditors.',
     'prefer_local':'Use local models; delegate planner and auditors to external providers.',
     'disable_judge':'Disable Jev and the local judge; use human approval unless the project is in YOLO.',
 }
@@ -200,8 +200,8 @@ def kind(deployment):
     profile=deployment.get('native_profile') or {}
     if profile.get('protocol')=='vendor-cli':return 'subscription'
     if profile.get('protocol')=='openai-codex-responses':return 'subscription_direct'
-    # OpenCode is both a plan and a balance; it counts as a subscription until its two halves are told apart.
-    if deployment.get('native_opencode'):return 'subscription'
+    # OpenCode's subscription profiles draw on a plan; its API profiles are paid per token and stay 'api'.
+    if (deployment.get('native_opencode') or {}).get('plan')=='sub':return 'subscription'
     if deployment.get('native_credential_env') or str(profile.get('protocol','')).startswith('bedrock'):
         return 'api'
     from .challenger import local

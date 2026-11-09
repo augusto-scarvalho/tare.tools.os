@@ -1,12 +1,12 @@
 {
-  "id": "opencode-go-deepseek-v4-1-flash",
+  "id": "opencode-sub-glm-5-3-flash",
   "runner": "native-http",
-  "model": "deepseek-v4.1-flash",
+  "model": "glm-5.3-flash",
   "native_credential_env": "OPENCODE_API_KEY",
   "native_counter_protocol": "utf8-envelope-estimate-v1",
   "native_profile": {
     "protocol": "openai-chat",
-    "model": "deepseek-v4.1-flash",
+    "model": "glm-5.3-flash",
     "endpoint": "https://opencode.ai/inference/go/openai/v1",
     "context_window": 1000000,
     "output_tokens": 16384,
@@ -24,14 +24,11 @@
     "max"
   ],
   "native_opencode": {
-    "plan": "go",
-    "label": "DeepSeek V4.1 Flash",
+    "plan": "sub",
+    "label": "GLM-5.3-Flash",
     "family": "chat-completions",
     "tool_choice": [
-      "auto",
-      "none",
-      "required",
-      "tool"
+      "auto"
     ],
     "source": "https://opencode.ai/inference/go/v1/models",
     "observed_at": "2026-11-09"

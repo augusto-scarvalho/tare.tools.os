@@ -12,8 +12,18 @@ def is_route(value):
     return bool(value.get('native_opencode'))
 
 
+def subscription(value):
+    """An OpenCode subscription profile (Go, Go Plus, ...: the reply's billing_source says which); the others are
+    the pay-per-token API, charged to the account balance."""
+    return (value.get('native_opencode') or {}).get('plan') == 'sub'
+
+
+def provider(value):
+    return 'opencode-sub' if subscription(value) else 'opencode-api'
+
+
 def connection(value):
-    return 'OpenCode Go' if value['native_opencode'].get('plan') == 'go' else 'OpenCode Console'
+    return 'OpenCode Subscription' if subscription(value) else 'OpenCode API'
 
 
 def user_agent():

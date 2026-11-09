@@ -62,12 +62,12 @@ preferences and conversation prompts are not replaced by these switches.
 
 | Switch | Effect |
 | --- | --- |
-| `--subscription_only` | Use subscriptions: Codex, Claude and AGY CLIs and OpenCode. Hosted Jev stays available. |
+| `--subscription_only` | Use subscriptions: Codex, Claude and AGY CLIs and the OpenCode subscription. Hosted Jev stays available. |
 | `--local_only` | Use local models; replace hosted Jev with the local judge. Search APIs stay available. |
 | `--api_only` | Use inference APIs. Hosted Jev and search APIs stay available. |
 | `--pro_planner` | Use OpenAI Sol PRO, then Astra PRO if available, for the separate planner only, with at least high reasoning. Requires an API key. |
 | `--prefer_api` | Prefer available inference APIs for planner and auditors; fall back to other allowed connections. |
-| `--prefer_subscription` | Prefer available subscriptions (CLIs, OpenCode) for planner and auditors; fall back to other allowed connections. |
+| `--prefer_subscription` | Prefer available subscriptions (CLIs, the OpenCode subscription) for planner and auditors; fall back to other allowed connections. |
 | `--prefer_local` | Keep coordinator, explorer, implementer and researcher on local inference; use qualified external planner and auditors. Hosted Jev stays available. |
 | `--disable_judge` | Disable hosted Jev and the local judge. Protected commands require human approval when necessary; YOLO skips those questions. Checks, final audits, sandbox and native Codex Auto-review remain. |
 

@@ -69,8 +69,8 @@ documents are the reference.
   native agent loop, and its qualification.
 - [HTTP providers](guides/HTTP_API_PROVIDERS.md): models in the picker, keys and connections, sessions, usage
   and cache for HTTP API providers.
-- [OpenCode: models through the Go subscription](guides/OPENCODE.md): the OpenCode Go profiles, key setup, what tare
-  sends and records, and how the profiles are refreshed.
+- [OpenCode: subscription and pay-per-token API](guides/OPENCODE.md): the two OpenCode providers, the operator's model
+  list, key setup, what tare sends and records, and how the profiles are refreshed.
 - [OpenRouter models and routes per role](guides/OPENROUTER_MODELS.md): the operator-approved OpenRouter
   connection contracts.
 - [Internal Amazon Bedrock catalog](guides/BEDROCK_CATALOG.md): why each Bedrock model was selected; the live

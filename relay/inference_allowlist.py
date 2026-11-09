@@ -3,7 +3,8 @@ import re
 
 LEVELS = ('low', 'medium', 'high', 'xhigh', 'max', 'default')
 PROVIDERS = {'openai': 'openai', 'anthropic': 'anthropic', 'claude': 'anthropic',
-             'google': 'google', 'gemini': 'google', 'openrouter': 'openrouter', 'opencode': 'opencode',
+             'google': 'google', 'gemini': 'google', 'openrouter': 'openrouter',
+             'opencode-sub': 'opencode-sub', 'opencode-api': 'opencode-api',
              'bedrock': 'bedrock', 'aws': 'bedrock', 'local': 'local', 'api': 'api',
              'ninfer': 'ninfer', 'strata': 'strata'}
 
@@ -59,6 +60,9 @@ def identities(name, deployment):
     group = item['group'].lower()
     provider = {'aws bedrock': 'bedrock', 'local': {'qwen38-gsq': 'ninfer',
                 'swift27b': 'ninfer', 'swift-next': 'strata'}.get(profile['model'], 'local')}.get(group, group)
+    if deployment.get('native_opencode'):
+        from .opencode import provider as opencode_provider
+        provider = opencode_provider(deployment)
     models = {name.lower(), profile['model'].lower(), item['key'].lower(),
               str((deployment.get('native_model_choice') or {}).get('connection','')).lower(),
               str(deployment.get('model', '')).lower()}

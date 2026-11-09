@@ -12,9 +12,24 @@ from test_native_agent import Client, setup, steps
 from test_model_choices import catalog
 
 ROSTER = Path(__file__).parents[1]/'relay/round_table_roster.json'
-FAMILIES = {'opencode-go-glm-5-3': ('/chat/completions', lambda p: p['reasoning_effort']),
-            'opencode-go-gpt-6-luna': ('/responses', lambda p: p['reasoning']['effort']),
-            'opencode-go-claude-haiku-5-5': ('/messages', lambda p: p['output_config']['effort'])}
+FAMILIES = {'opencode-sub-glm-5-3-flash': ('/chat/completions', lambda p: p['reasoning_effort']),
+            'opencode-sub-gpt-6-luna': ('/responses', lambda p: p['reasoning']['effort']),
+            'opencode-sub-claude-haiku-5-5': ('/messages', lambda p: p['output_config']['effort'])}
+SUBSCRIPTION = ['claude-haiku-5-5', 'deepseek-v4-1-flash', 'glm-5-3-flash', 'gpt-6-luna', 'grok-4-7', 'kimi-k3',
+                'mimo-v2-6-flash']  # the operator's list; Gemini 4 Argon waits for a Gemini API codec
+
+
+def api_profile(name='opencode-sub-glm-5-3-flash'):
+    """The same model as a pay-per-token API profile (none ships until the account has a balance)."""
+    value = native_catalog.select(name)
+    value['id'] = name.replace('opencode-sub-', 'opencode-api-')
+    value['native_opencode'] = {**value['native_opencode'], 'plan': 'api'}
+    value['native_profile']['endpoint'] = value['native_profile']['endpoint'].replace('/inference/go/', '/inference/')
+    return value
+
+
+def test_only_the_operators_models_have_profiles():
+    assert sorted(n for n in native_catalog.LOCAL if n.startswith('opencode-')) == ['opencode-sub-' + n for n in SUBSCRIPTION]
 
 
 @pytest.mark.parametrize('name', FAMILIES)
@@ -22,7 +37,7 @@ def test_picker_writes_each_family_reasoning_key_and_keeps_the_gateway(name, mon
     base = native_catalog.select(name)
     original = deepcopy(base)
     item, = catalog(monkeypatch, {name: base})
-    assert item['group'] == 'OpenCode' and item['routes'][0]['label'] == 'OpenCode Go'
+    assert item['group'] == item['routes'][0]['label'] == 'OpenCode Subscription'
     levels = item['routes'][0]['efforts']
     assert 'high' in levels and levels == base['native_reasoning_levels']
     for effort in levels:
@@ -36,20 +51,18 @@ def test_picker_writes_each_family_reasoning_key_and_keeps_the_gateway(name, mon
 
 
 def test_a_model_without_listed_levels_offers_only_its_default(monkeypatch):
-    name = 'opencode-go-kimi-k2-7-code'
+    name = 'opencode-sub-mimo-v2-6-flash'
     base = native_catalog.select(name)
     item, = catalog(monkeypatch, {name: base})
     assert item['routes'][0]['efforts'] == []
     value = model_choices.realization([item], {'key': item['key'], 'connection': name, 'reasoning': 'default'})
     assert json.loads(value['native_profile']['parameters_json']) == {}
-    assert model_choices.projection(provider='opencode', role='implementer')[0]['provider'] == 'opencode'
 
 
-@pytest.mark.parametrize('wire,counterpart', [('glm-5.3', 'z-ai/glm-5.3'), ('kimi-k3.1-pro', 'moonshotai/kimi-k3.1-pro'),
+@pytest.mark.parametrize('wire,counterpart', [('glm-5.3-flash', 'z-ai/glm-5.3-flash'), ('kimi-k3', 'moonshotai/kimi-k3.1-pro'),
                                               ('gpt-6-luna', 'gpt-6-luna'), ('grok-4.7', 'x-ai/grok-4.7')])
 def test_author_is_the_family_not_the_gateway(wire, counterpart):
-    name = 'opencode-go-' + wire.replace('.', '-')
-    value = native_catalog.select(name)
+    value = native_catalog.select('opencode-sub-' + wire.replace('.', '-'))
     assert model_id_for_runtime(ROSTER, 'native', wire) == value['model']
     roster = json.loads(ROSTER.read_text(encoding='utf-8'))['models']
     other = next(m for m in roster.values() if (m.get('runtime') or {}).get('native') == counterpart)
@@ -58,47 +71,50 @@ def test_author_is_the_family_not_the_gateway(wire, counterpart):
 
 
 def test_last_call_names_the_delivery_tool_only_where_opencode_lists_it():
-    assert opencode.names_delivery_tool(native_catalog.select('opencode-go-gpt-6-luna'))
-    assert not opencode.names_delivery_tool(native_catalog.select('opencode-go-glm-5-3'))  # tool_choice: auto only
-    assert not opencode.names_delivery_tool(native_catalog.select('opencode-go-hy3'))  # not listed: unknown
+    assert opencode.names_delivery_tool(native_catalog.select('opencode-sub-gpt-6-luna'))
+    glm = native_catalog.select('opencode-sub-glm-5-3-flash')
+    assert not opencode.names_delivery_tool(glm)  # tool_choice: auto only
+    glm['native_opencode']['tool_choice'] = []
+    assert not opencode.names_delivery_tool(glm)  # not listed: unknown
     assert opencode.names_delivery_tool(native_catalog.select('openrouter-glm-5-3'))  # other gateways keep it
 
 
 def test_contributor_models_wait_for_the_data_use_choice():
     from relay.openrouter import allowed
-    contributor = native_catalog.select('opencode-go-muse-spark-1-3-contributor')
+    contributor = native_catalog.select('opencode-sub-glm-5-3-flash')
+    contributor['native_opencode']['data_use'] = 'meta-contributor'
     assert not allowed(contributor, {})[0]
     assert allowed(contributor, {'model_data_use': {'meta_contributor': True}})[0]
-    assert allowed(native_catalog.select('opencode-go-glm-5-3'), {})[0]
+    assert allowed(native_catalog.select('opencode-sub-glm-5-3-flash'), {})[0]
 
 
 def test_client_names_tare_and_charges_are_provider_reported():
     from relay.native_generation import deployment_profile, inference_client
     from relay.native_profiles import describe
     from relay.provider_prices import quote
-    value = native_catalog.select('opencode-go-glm-5-3')
+    value = native_catalog.select('opencode-sub-glm-5-3-flash')
     client = inference_client(value, deployment_profile(value, value['native_profile']['model']), credential=lambda: 'k')
     assert client.request_headers()['User-Agent'].startswith('tare/')
-    haiku = native_catalog.select('opencode-go-claude-haiku-5-5')
+    haiku = native_catalog.select('opencode-sub-claude-haiku-5-5')
     messages = inference_client(haiku, deployment_profile(haiku, 'claude-haiku-5-5'), credential=lambda: 'k')
     assert messages.request_headers()['anthropic-version'] == '2023-06-01'
-    assert describe('opencode-go-glm-5-3', value)['cost_accounting'] == 'provider_reported'
+    assert describe('opencode-sub-glm-5-3-flash', value)['cost_accounting'] == 'provider_reported'
     assert quote(value)['source'] == 'opencode.usage.cost'
 
 
 def test_chat_profile_runs_the_native_loop_with_the_opencode_wire_id(setup):
     config, custody, root = setup
     config['capabilities'] = ['read', 'edit', 'verify']
-    deployment = native_catalog.select('opencode-go-glm-5-3')
+    deployment = native_catalog.select('opencode-sub-glm-5-3-flash')
 
     class OpenCodeFixture(Client):
         endpoint = deployment['native_profile']['endpoint']
 
         def post(self, path, body, control):
-            assert path == '/chat/completions' and body['model'] == 'glm-5.3'
+            assert path == '/chat/completions' and body['model'] == 'glm-5.3-flash'
             assert body['reasoning_effort'] == 'high' and body['tool_choice'] == 'auto'
             response = super().post(path, body, control)
-            response['model'] = 'glm-5.3'
+            response['model'] = 'glm-5.3-flash'
             response['usage'] = {'prompt_tokens': 80, 'completion_tokens': 5, 'cost': 0,
                                  'opencode': {'billing_source': 'go', 'allowance': 0.0001,
                                               'tokens': {'input': 80, 'output': 5, 'reasoning': 0, 'cache_read': 0,
@@ -110,36 +126,41 @@ def test_chat_profile_runs_the_native_loop_with_the_opencode_wire_id(setup):
     assert result['status'] == 'PROPOSED' and (root/'a.py').read_text() == 'value = 2\n'
 
 
-def test_go_is_a_subscription_on_its_own_plan_account():
+def test_the_subscription_is_a_plan_and_the_api_is_paid_per_token():
     from relay import execution_scope
     from relay.challenger_variants import accounting
+    from relay.inference_allowlist import identities
     from relay.turn_engine import usage_keys
     from relay.work_units import bill
-    go = native_catalog.select('opencode-go-glm-5-3')
-    assert execution_scope.kind(go) == 'subscription'
-    assert execution_scope.Scope(only='subscription').allows(go, 'implementer')[0]
-    assert not execution_scope.Scope(only='api').allows(go, 'implementer')[0]
-    assert accounting(go) == 'quota' and bill(go) == ('quota', 'opencode')
-    assert usage_keys(go) == ('opencode-go', 'opencode-go:glm-5.3')
-    listed = model_choices.projection(provider='opencode', role='implementer', include_unconfigured=True)
-    assert {row['via'] for row in listed} == {'api'}
+    sub, api = native_catalog.select('opencode-sub-glm-5-3-flash'), api_profile()
+    assert execution_scope.kind(sub) == 'subscription' and execution_scope.kind(api) == 'api'
+    assert execution_scope.Scope(only='subscription').allows(sub, 'implementer')[0]
+    assert not execution_scope.Scope(only='subscription').allows(api, 'implementer')[0]
+    assert not execution_scope.Scope(only='api').allows(sub, 'implementer')[0]
+    assert execution_scope.Scope(only='api').allows(api, 'implementer')[0]
+    assert accounting(sub) == 'quota' and bill(sub) == ('quota', 'opencode') and accounting(api) == 'usd'
+    assert usage_keys(sub) == ('opencode-sub', 'opencode-sub:glm-5.3-flash') and usage_keys(api) == ()
+    assert identities(sub['id'], sub)[0] == 'opencode-sub' and identities(api['id'], api)[0] == 'opencode-api'
+    assert model_choices.describe(api['id'], api)['route']['label'] == 'OpenCode API'
+    listed = model_choices.projection(provider='opencode-sub', role='implementer', include_unconfigured=True)
+    assert {row['via'] for row in listed} == {'api'} and len(listed) == len(SUBSCRIPTION)
 
 
-def test_every_go_model_is_a_pinnable_reserve_until_qualified():
+def test_every_subscription_model_is_a_pinnable_reserve_until_qualified():
     from relay.inference_allowlist import exact, matches
     from relay.native_routes import configured
-    rows = [r for r in configured()['deployments'] if r['id'].startswith('opencode-go-')]
-    assert len(rows) == len([n for n in native_catalog.LOCAL if n.startswith('opencode-go-')]) == 26
+    rows = [r for r in configured()['deployments'] if r['id'].startswith('opencode-')]
+    assert sorted(r['id'] for r in rows) == ['opencode-sub-' + n for n in SUBSCRIPTION]
     assert {(tuple(r['roles']), r['kind'], r['cost_tier'], r['quota_domain'], r['qualified']) for r in rows} == {
-        (('implementer', 'explorer'), 'reserve', 'flat', 'opencode-go', False)}
-    pin = exact('opencode/opencode-go-glm-5-3@high')
-    assert matches(pin, 'opencode-go-glm-5-3', native_catalog.select('opencode-go-glm-5-3'))
+        (('implementer', 'explorer'), 'reserve', 'flat', 'opencode-sub', False)}
+    pin = exact('opencode-sub/opencode-sub-glm-5-3-flash@high')
+    assert matches(pin, 'opencode-sub-glm-5-3-flash', native_catalog.select('opencode-sub-glm-5-3-flash'))
 
 
-def test_a_go_limit_parks_only_that_model(tmp_path, monkeypatch):
+def test_a_subscription_limit_parks_only_that_model(tmp_path, monkeypatch):
     from relay import turn_engine
     monkeypatch.setattr(turn_engine, 'usage_limits_path', lambda: tmp_path/'usage-limits.json')
-    glm, kimi = native_catalog.select('opencode-go-glm-5-3'), native_catalog.select('opencode-go-kimi-k3')
+    glm, kimi = native_catalog.select('opencode-sub-glm-5-3-flash'), native_catalog.select('opencode-sub-kimi-k3')
     until = turn_engine.note_usage_limit(glm, now=1000.0)  # the generic callers pass no kind
     assert turn_engine.usage_limited(glm, now=1001.0) == until and turn_engine.usage_limited(kimi, now=1001.0) is None
 
@@ -148,5 +169,5 @@ def test_unqualified_rows_are_pinned_never_chosen_automatically(monkeypatch):
     from relay import native_routes
     monkeypatch.setattr(native_routes, 'credential_available', lambda name: True)
     _, selection = native_routes.ranked('explorer')
-    reasons = {c['deployment']: c['reason'] for c in selection['candidates'] if c['deployment'].startswith('opencode-go-')}
-    assert len(reasons) == 26 and set(reasons.values()) == {'NOT_QUALIFIED_PIN_ONLY'}
+    reasons = {c['deployment']: c['reason'] for c in selection['candidates'] if c['deployment'].startswith('opencode-')}
+    assert len(reasons) == len(SUBSCRIPTION) and set(reasons.values()) == {'NOT_QUALIFIED_PIN_ONLY'}

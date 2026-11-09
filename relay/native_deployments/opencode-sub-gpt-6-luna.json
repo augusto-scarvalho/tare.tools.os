@@ -1,16 +1,16 @@
 {
-  "id": "opencode-go-hy4",
+  "id": "opencode-sub-gpt-6-luna",
   "runner": "native-http",
-  "model": "hy4",
+  "model": "gpt-6-luna",
   "native_credential_env": "OPENCODE_API_KEY",
   "native_counter_protocol": "utf8-envelope-estimate-v1",
   "native_profile": {
-    "protocol": "openai-chat",
-    "model": "hy4",
+    "protocol": "openai-responses",
+    "model": "gpt-6-luna",
     "endpoint": "https://opencode.ai/inference/go/openai/v1",
-    "context_window": 1048576,
+    "context_window": 1050000,
     "output_tokens": 16384,
-    "parameters_json": "{\"reasoning_effort\": \"high\"}",
+    "parameters_json": "{\"reasoning\": {\"effort\": \"high\"}}",
     "session_header": "x-opencode-session",
     "source": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
   },
@@ -19,13 +19,22 @@
     "source": "https://opencode.ai/docs/console/api/inference (usage.opencode.tokens, cost)"
   },
   "native_reasoning_levels": [
-    "high"
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
   ],
   "native_opencode": {
-    "plan": "go",
-    "label": "Hy4",
-    "family": "chat-completions",
-    "tool_choice": [],
+    "plan": "sub",
+    "label": "GPT-6 Luna",
+    "family": "responses",
+    "tool_choice": [
+      "auto",
+      "none",
+      "required",
+      "tool"
+    ],
     "source": "https://opencode.ai/inference/go/v1/models",
     "observed_at": "2026-11-09"
   }

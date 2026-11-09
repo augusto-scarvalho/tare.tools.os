@@ -1,5 +1,5 @@
 {
-  "id": "opencode-go-mimo-v2-6-flash",
+  "id": "opencode-sub-mimo-v2-6-flash",
   "runner": "native-http",
   "model": "mimo-v2.6-flash",
   "native_credential_env": "OPENCODE_API_KEY",
@@ -20,7 +20,7 @@
   },
   "native_reasoning_levels": [],
   "native_opencode": {
-    "plan": "go",
+    "plan": "sub",
     "label": "MiMo-V2.6-Flash",
     "family": "chat-completions",
     "tool_choice": [
