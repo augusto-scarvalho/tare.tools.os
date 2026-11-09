@@ -208,6 +208,11 @@ def step(tool, args, status, output):
         value['reason'] = str(output.get('reason') or output.get('error') or _last_line(output.get('output')))[:200]
     elif tool in DELEGATED:  # its reads and checks are not this turn's steps, and 'succeeded' is only the call
         said = [f'{key} {output[key]}' for key in ('verdict', 'status', 'reason') if isinstance(output.get(key), str)]
+        if output.get('files') and isinstance(output.get('files_scope'), str):  # without it, a refused candidate read as applied
+            said.append(f"files {output['files_scope']}")
+        stop = output.get('implementation_stop')
+        if isinstance(stop, dict) and isinstance(stop.get('reason'), str):  # an attempt that changed nothing
+            said.append(f"implementer stopped {stop['reason']}")
         cited = ', '.join(dict.fromkeys(_paths(output, [])))
         value['summary'] = '; '.join(said + (['cited ' + cited] if cited else []))[:240]
     elif tool in ('verify', 'terminal_read') or status == 'returned':
@@ -388,14 +393,16 @@ def parse(answer, seen):
 def write(text, seen):
     """(notes, attempts): the first available `heads_up` route that answers writes them; one handover on failure."""
     from .native_generation import generate_text, vault_secret
-    from .turn_engine import DEFAULT_POLICY, available, policy
+    from .turn_engine import DEFAULT_POLICY, available, policy, with_effort
     prompt = ('Notes already shown to the user (never repeat these):\n' + ('\n'.join('- ' + s for s in seen) or 'none')
               + '\n\nTurn record (JSON):\n' + text)
-    attempts = []
+    attempts, effort = [], policy().get('heads_up_effort')  # unset: each route's own default
     for name in policy().get('heads_up') or DEFAULT_POLICY['heads_up']:
         deployment, _ = available(name)
         if deployment is None:
             continue
+        if effort:
+            deployment = with_effort(deployment, effort)
         started = time.monotonic()
         try:
             ok, answer, receipt = generate_text(deployment, deployment['native_profile']['model'], prompt,

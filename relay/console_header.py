@@ -172,6 +172,9 @@ class ConversationHeader:
     def header_key(self):
         if self.assistant_session:
             return (self.workspace_root, self.assistant_session, '', '', False)
+        if getattr(self, 'conversation_coordinator', ''):
+            # A new conversation runs the pinned coordinator (--coordinator), not the saved model preference.
+            return (self.workspace_root, '', '', self.conversation_coordinator, False)
         return (self.workspace_root, self.assistant_session or '',
                 self.query_one('#profile', Input).value.strip(),
                 str(self.query_one('#model', Select).value),
@@ -211,7 +214,10 @@ class ConversationHeader:
         observation = self.connection_observation
         health = ('Checking connection…' if self.connection_loading else
                   observation.summary() if observation else 'Connection unchecked')
-        disk = getattr(self, '_storage_warning', '')
+        # A project's AGENTS.md reaches agents only once adopted in /permissions; unsaid, a planner broke its rules.
+        unread = ('AGENTS.md not loaded · /permissions' if (getattr(self, 'project_admission', None) or {}).get('mode')
+                  != 'adopted' and (Path(root)/'AGENTS.md').is_file() else '')
+        disk = '  ·  '.join(note for note in (getattr(self, '_storage_warning', ''), unread) if note)
         suffix = '  ·  '+health+('  ·  '+disk if disk else '')
         value = Text(model, no_wrap=True, overflow='ellipsis')
         value.truncate(max(8, context.size.width-len(suffix)), overflow='ellipsis')

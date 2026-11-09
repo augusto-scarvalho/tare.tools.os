@@ -148,7 +148,9 @@ class Scope:
         if self.pro_planner:parts.append('Planner: OpenAI PRO')
         if self.disable_judge:parts.append('Jev/local judge: off')
         if self.coordinator:parts.append('Coordinator: '+self.coordinator)
-        for role,pin in self.pins:parts.append(role+': '+pin)
+        grouped={}  # roles sharing one pin are named once: 'explorer, implementer: provider/route@level'
+        for role,pin in self.pins:grouped.setdefault(pin,[]).append(role)
+        parts.extend(', '.join(roles)+': '+pin for pin,roles in grouped.items())
         for family,allowed in self.restrictions:parts.append(family+': '+allowed)
         if self.unlimited:parts.append('Unlimited: '+', '.join(self.unlimited))
         return ' · '.join(parts)

@@ -116,7 +116,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 ('f6', 'next_step', 'Next step'), Binding('ctrl+end', 'latest', 'Latest', priority=True),
                 ('ctrl+enter', 'start', 'Send / Start')]
     CSS = '''
-    #execution-scope { height: auto; max-height: 2; color: $warning; }
+    #execution-scope { height: auto; max-height: 3; color: $warning; }
     Screen { background: $surface; }
     #layout { height: 1fr; }
     #selection { width: 34; min-width: 28; padding: 0 1; border-right: solid $primary; }
@@ -607,8 +607,9 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 with Horizontal(id='connection-row'):
                     yield Static('', id='session-context', markup=False)
                     yield Button('Check', id='connection-check', tooltip='Check the model connection without generation or model switching')
+                from dataclasses import replace
                 from .execution_scope import current
-                scope=current()
+                scope=replace(current(),coordinator=self.conversation_coordinator)  # new conversations' coordinator
                 banner=Static('This TUI only: '+scope.label(),id='execution-scope',markup=False)
                 banner.display=scope.active
                 yield banner
@@ -830,6 +831,10 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         self.push_screen(ChangesPanel(session,self.workspace_root, commenter=comment, provider_sessions=providers))
 
     def check_action(self, action, parameters):
+        if action in {'focus_next', 'focus_previous'} and not getattr(self.screen, 'keyboard', False):
+            # Tab is app.focus_next: the panel guards below keep app shortcuts out, not keyboard navigation
+            # (with Tab blocked, /permissions could not reach its own controls).
+            return super().check_action(action, parameters)
         if self.is_running and isinstance(self.screen, WorkbenchPanel):
             return action in {'quit'}
         from .model_picker import ModelPicker

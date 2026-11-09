@@ -186,3 +186,26 @@ def test_corrupt_defaults_block_new_session_without_overwriting_file(tmp_path, m
             assert not backend.launches and not app.assistant_session
             assert path.read_text() == '{corrupt'
     asyncio.run(scenario())
+
+
+def test_tab_moves_through_the_permissions_panel_to_the_instructions_checkbox(tmp_path, monkeypatch):
+    # 2026-11-09 dogfood: Tab is app.focus_next and the panel guard allowed only quit, so focus stayed on Back
+    # and the AGENTS.md checkbox could not be reached from the keyboard.
+    state, control = tmp_path/'state', tmp_path/'control'
+    project = tmp_path/'project'; project.mkdir(); (project/'AGENTS.md').write_text('Rules.\n')
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(state))
+    monkeypatch.setattr(relay_mesh, 'RELAY_ROOT', control)
+    save_defaults(state/'console', project, control, {'mode': 'read', 'write_paths': []}, 'missing')
+    async def scenario():
+        app = WorkConsole(project, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(150, 52)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one('#prompt', TextArea).load_text('/permissions')
+            app.execute(False)
+            await pilot.pause(); await app.screen.workers.wait_for_complete(); await pilot.pause()
+            assert isinstance(app.screen, PermissionsPanel) and app.focused.id == 'permissions-back'
+            seen = []
+            for _ in range(12):
+                await pilot.press('tab'); seen.append(app.focused.id)
+            assert 'permissions-root' in seen, seen
+    asyncio.run(scenario())
