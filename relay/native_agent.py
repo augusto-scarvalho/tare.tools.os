@@ -1662,8 +1662,9 @@ def main(argv=None):
             terminal_client = TerminalClient(descriptor)
         execution_entered = True
         emit = None
-        repositories = [Path(path).resolve() for path in terminal_config['repositories'].values()]
-        if args.activity_events and repositories:
+        repositories = ([Path(path).resolve() for path in (terminal_config.get('repositories') or {}).values()]
+                        if args.activity_events else [])
+        if repositories:
             # Sessions this conversation delegates to (implementer, explorers, auditor) find this stream through
             # flow_activity.observer and show in the TUI as stage-prefixed rows, as /work and /plan flows do.
             # The project is the one the TUI opened (--root), so Full output resolves against it.
