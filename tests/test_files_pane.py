@@ -275,10 +275,12 @@ def test_open_diff_mention_and_copy_send_nothing_to_a_model(repo, tmp_path, monk
             await pilot.press('enter')
             await until(pilot, lambda: isinstance(app.screen, FileViewer))
             assert app.screen.content == 'b = 2\n'
+            assert str(app.screen.query_one('#file-viewer-heading').content) == 'File · b.py'
             await pilot.press('escape'); await pilot.pause()
             await pilot.press('d')
             await until(pilot, lambda: isinstance(app.screen, FileViewer))
             assert '+b = 2' in app.screen.content and 'What changed' in app.screen.notice
+            assert str(app.screen.query_one('#file-viewer-heading').content) == 'Diff · b.py'
             await pilot.press('escape'); await pilot.pause()
             await pilot.press('a'); await pilot.pause()
             assert app.context_paths == ['b.py'] and app.context_root == str(repo)
@@ -397,6 +399,7 @@ def test_h_opens_the_history_and_enter_opens_a_commit(repo, tmp_path, monkeypatc
             await pilot.press('enter')  # the newest commit
             await until(pilot, lambda: isinstance(app.screen, FileViewer))
             assert '+b = 2' in app.screen.content and 'change b' in app.screen.content
+            assert str(app.screen.query_one('#file-viewer-heading').content).startswith('Commit ')
             await pilot.press('escape'); await pilot.pause()
             await pilot.press('escape'); await pilot.pause()
             assert app.screen is app.screen_stack[0] and not app.backend.launches
