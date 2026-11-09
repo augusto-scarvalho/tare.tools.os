@@ -4,6 +4,9 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The conversation activity stream reads the session's repositories only when `--activity-events` is on, so resuming a session whose saved configuration names none works as before.
+- A conversation's delegated rows resolve Full output against the project the TUI opened (`--root`) when the session names several repositories, and against an absolute conversation custody even when `--session` was given as a relative path.
+- A conversation shows what its delegated sessions do: the implementer's, explorers' and auditor's tool calls stream to the TUI as collapsed rows named by their stage (`Implement · Edit relay/x.py · Done`), as `/work` and `/plan` flows already did, with Full output limited to sessions inside the conversation's custody. Before, a delegation showed as one "Delegate implementation" row. Delegated rows keep a budget of their own (100), so they never evict the coordinator's rows, and they are saved in a shape the previous release reopens.
 - A refused tool row whose host gave only an error type (an unexpected exception before dispatch) shows that type as its reason, and a sentence reason is cut to leave the path visible at 80 columns.
 - A refused tool row names why in its title ("Read · Refused · COORDINATOR_ROUTING_REQUIRED") and still stays collapsed: the host's `reason` is kept on the row (also on reopen), where before it showed only inside the expanded JSON.
 - The kernel pin moves to 0d0cf6c (tare.tools.kernel#10): a vendor CLI release the adapter has not seen is probed once per model before the first real request, so the verdict record above has something to keep.

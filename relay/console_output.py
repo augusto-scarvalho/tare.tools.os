@@ -560,10 +560,12 @@ class Transcript(VerticalScroll):
         self.items.append(widget)
         self.query_one('.transcript-body', Vertical).mount(widget)
         def category(item):
-            return 'tool' if isinstance(item, ToolActivity) else 'delivery' if isinstance(item, MessageDelivery) else 'message'
+            if isinstance(item, ToolActivity):  # a delegated session's rows have a budget of their own
+                return 'delegated' if item.value.get('source') else 'tool'
+            return 'delivery' if isinstance(item, MessageDelivery) else 'message'
         kind = category(widget)
         matching = [item for item in self.items if category(item) == kind]
-        if len(matching) > {'tool': 100, 'delivery': 50, 'message': 120}[kind]:
+        if len(matching) > {'tool': 100, 'delegated': 100, 'delivery': 50, 'message': 120}[kind]:
             old = matching[0]
             self.items.remove(old)
             if isinstance(old, ToolActivity):

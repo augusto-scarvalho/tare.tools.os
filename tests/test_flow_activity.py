@@ -222,3 +222,97 @@ def test_long_stage_keeps_failure_and_timing_visible(tmp_path, monkeypatch):
             visible = ''.join(title.render_line(n).text for n in range(title.size.height))
             assert 'Failed' in visible and '1.2s' in visible and 'Check' in visible
     asyncio.run(scenario())
+
+
+def test_conversation_delegations_stream_their_rows_and_full_output_stays_in_the_conversation(setup, tmp_path):
+    from relay.native_agent import run_session
+    from test_native_agent import Client, deployment, steps
+    config, _, root = setup
+    owner = tmp_path/'conversation'; owner.mkdir()
+    (owner/'native-agent.json').write_text(json.dumps({'config': {'repositories': {'workspace': str(root)}}}))
+    events, client = [], Client(steps=steps())
+    with flow_activity.stream('conversation', owner, root, events.append) as emit:
+        assert emit is not None
+        result = run_session(config, deployment(), owner/'units'/'u1'/'session-1', 'Change the value and verify.',
+                             client=client, local_counter=client)
+    assert result['status'] == 'PROPOSED', result
+    rows = [e['activity'] for e in events if e['activity']['state'] == 'succeeded'
+            and e['activity']['operation'] in {'read', 'edit', 'verify'}]
+    assert [row['operation'] for row in rows] == ['read', 'edit', 'verify']
+    assert all(row['source']['mode'] == 'conversation' and row['source']['stage'] == 'Implement' for row in rows)
+    agents = [e['activity'] for e in events if e['activity']['operation'] == 'agent_run']
+    assert agents and all(agent['source']['mode'] == 'conversation' for agent in agents)  # its team row too
+    assert 'value = 1' in full_output(None, root, rows[0])
+    from relay.native_activity import saved_history
+    assert 'value = 1' in full_output(None, root, saved_history([rows[0]])[0])  # also after a reopen
+    with pytest.raises(ValueError, match='another project'):
+        full_output(None, root.parent, rows[0])
+    (tmp_path/'elsewhere').mkdir()
+    for session in (tmp_path/'elsewhere', owner):  # outside the conversation, or the conversation itself
+        with pytest.raises(ValueError, match='does not belong to this conversation'):
+            full_output(None, root, {**rows[0], 'source': {**rows[0]['source'], 'session': str(session)}})
+
+
+def test_conversation_stream_crosses_copied_contexts_not_plain_threads_and_keeps_lines_whole(tmp_path):
+    import contextvars, io, threading
+    from concurrent.futures import ThreadPoolExecutor
+    lines = io.StringIO()
+    def write(event):  # two writes, as print() does: only the stream's lock keeps them together
+        lines.write(json.dumps(event)); lines.write('\n')
+    child = tmp_path/'delegations'/'x'/'session'
+    with flow_activity.stream('conversation', tmp_path, tmp_path, write) as emit:
+        assert flow_activity.observer(child, 'explorer')[1]['stage'] == 'Explore'
+        with ThreadPoolExecutor(4) as pool:
+            copied = pool.submit(contextvars.copy_context().run, flow_activity.observer, child, 'explorer').result()
+            assert copied[1]['mode'] == 'conversation'
+            list(pool.map(lambda n: [emit({'n': n, 'i': i}) for i in range(200)], range(4)))
+        seen = []
+        thread = threading.Thread(target=lambda: seen.append(flow_activity.observer(child, 'explorer')))
+        thread.start(); thread.join()
+        assert seen == [(None, None)]  # a plain thread runs no delegated session; nothing is passed there
+    assert len([json.loads(line) for line in lines.getvalue().splitlines()]) == 800
+    assert flow_activity.observer(child, 'explorer') == (None, None)
+
+
+def test_conversation_rows_are_saved_in_a_shape_the_previous_release_reopens(tmp_path):
+    from relay import relay_mesh
+    from relay.native_activity import activity_view, saved_history
+    source = {'session': str(tmp_path/'c'/'units'/'u'/'session-1'), 'kind': 'session', 'mode': 'conversation',
+              'owner': str(tmp_path/'c'), 'project': str(tmp_path.resolve()),
+              'control_root': str(Path(relay_mesh.RELAY_ROOT).resolve()), 'stage': 'Implement', 'work': ''}
+    rows = [activity_view({'kind': 'tool-activity', 'id': f's/effect/{n}', 'operation': operation,
+                           'state': 'succeeded', 'target': 'a.py', 'source': source})
+            for n, operation in enumerate(('edit', 'folder_read'))]
+    saved = saved_history(rows)
+    for row in saved:  # the previous release's validator: a Work source, which needs no absolute owner
+        assert row['source']['mode'] == 'work' and row['source']['work'] == '#conversation'
+    assert saved[1]['operation'] == 'read' and saved[1]['target'] == 'folder_read: a.py'
+    assert [activity_view(row) for row in saved] == rows  # this release restores both
+    with pytest.raises(ValueError, match='another Work'):  # the previous release's Full output fails closed
+        flow_activity.validate_source(saved[0]['source'], tmp_path)
+
+
+@pytest.mark.parametrize('events', [True, False])
+def test_conversation_subprocess_streams_its_delegations(tmp_path, monkeypatch, capsys, events):
+    from relay import native_agent
+    from test_native_agent import deployment
+    profile = tmp_path/'profile.json'; profile.write_text(json.dumps(deployment()))
+    seen = []
+    def run(config, *args, on_activity=None, **kwargs):
+        seen.append(flow_activity.observer(tmp_path/'session'/'units'/'u'/'session-1', 'implementer'))
+        if on_activity is not None:
+            on_activity({'channel': 'activity', 'probe': True})
+        return {'status': 'PROPOSED', 'summary': 'No inference in this fixture.'}
+    monkeypatch.setattr(native_agent, 'run_session', run)
+    assert native_agent.main(['--native-deployment', str(profile), '--root', str(tmp_path), '--role', 'explorer',
+        '--conversation', '--instruction', 'Look', '--session', str(tmp_path/'session'),
+        *(['--activity-events'] if events else [])]) == 0
+    callback, source = seen[0]
+    if events:
+        assert source['mode'] == 'conversation' and source['stage'] == 'Implement'
+        assert source['owner'] == str((tmp_path/'session').resolve()) and source['project'] == str(tmp_path.resolve())
+        err = [line for line in capsys.readouterr().err.splitlines() if line.startswith('{')]
+        assert {'channel': 'activity', 'probe': True} in [json.loads(line) for line in err]
+    else:
+        assert (callback, source) == (None, None)
+    assert flow_activity._stream.get() is None  # the stream ends with the command

@@ -680,6 +680,10 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             from .native_activity import ActivityJournal
             from .flow_activity import observer
             flow_callback, flow_source = observer(root, config['role'])
+            # The session that owns the callback (the conversation) is unprefixed; the sessions it delegates to find
+            # the stream and carry their source.
+            if on_activity is not None:
+                flow_source = None
             journal = ActivityJournal(NativeJournal(root / 'journal.jsonl'),
                 on_activity if on_activity is not None else flow_callback, source=flow_source,
                 narrate=on_activity is not None and bool(state.get('conversation_flow')))
@@ -1407,6 +1411,11 @@ def main(argv=None):
     previous = native_signals.install(cancel)
     owned_terminal = None
     execution_entered = False
+    # The TUI reads activity and progress from stderr: one lock keeps every JSON line whole, also when a delegated
+    # session (explorers in a thread pool) writes while another writes.
+    from threading import Lock
+    stderr_lock = Lock()
+    activity_scope = ExitStack()
     try:
         if args.last:
             if args.session is not None:
@@ -1566,6 +1575,9 @@ def main(argv=None):
                 deployment = {**deployment,'native_streaming':True}
         last_progress_key = None
         def progress(event):
+            with stderr_lock:
+                write_progress(event)
+        def write_progress(event):
             nonlocal last_progress_key
             key = (event.get('call_id'),event.get('channel'))
             if output_format == 'text':
@@ -1649,6 +1661,18 @@ def main(argv=None):
                 descriptor = owned_terminal.connection(custody,terminal_config['repositories'])
             terminal_client = TerminalClient(descriptor)
         execution_entered = True
+        emit = None
+        repositories = ([Path(path).resolve() for path in (terminal_config.get('repositories') or {}).values()]
+                        if args.activity_events else [])
+        if repositories:
+            # Sessions this conversation delegates to (implementer, explorers, auditor) find this stream through
+            # flow_activity.observer and show in the TUI as stage-prefixed rows, as /work and /plan flows do.
+            # The project is the one the TUI opened (--root), so Full output resolves against it.
+            from .flow_activity import stream
+            project = next((path for path in repositories if args.root and path == args.root.resolve()), repositories[0])
+            emit = activity_scope.enter_context(stream(
+                'conversation', Path(custody).resolve(), project,
+                callback=lambda event: print(encode(event), file=sys.stderr, flush=True), lock=stderr_lock))
         from .execution_scope import current
         result = run_session(config, deployment, custody, prompt,
             unlimited_resources=current().unlimited,
@@ -1664,7 +1688,7 @@ def main(argv=None):
             permission_directory=args.execution_permissions,
             **({'active_time_budget':args.active_time_budget} if args.active_time_budget is not None else {}),
             **({'active_call_budget':args.active_call_budget} if args.active_call_budget is not None else {}),
-            on_activity=(lambda event: print(encode(event), file=sys.stderr, flush=True)) if args.activity_events else None)
+            on_activity=emit)
         present(result)
         while args.interactive and result['status'] == 'PROPOSED' and not cancel.is_cancelled():
             state = read_json(custody / 'native-agent.json', 1024*1024)
@@ -1683,7 +1707,7 @@ def main(argv=None):
                 message_id=next_id, cancellation=cancel, on_progress=progress if args.stream else None,
                 refresh=args.refresh,terminal_client=terminal_client,
                 permission_directory=args.execution_permissions,
-                on_activity=(lambda event: print(encode(event), file=sys.stderr, flush=True)) if args.activity_events else None)
+                on_activity=emit)
             present(result)
         return 0 if result['status'] == 'PROPOSED' else 2
     except KeyboardInterrupt:
@@ -1706,6 +1730,7 @@ def main(argv=None):
         return 2
     finally:
         try:
+            activity_scope.close()
             if owned_terminal is not None:
                 owned_terminal.close()
         finally:

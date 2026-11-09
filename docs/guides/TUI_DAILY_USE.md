@@ -160,6 +160,10 @@ Type your request and press **Enter** to send. **Shift+Enter** or **Ctrl+J** ins
 a newline; **Ctrl+Enter** also sends. Completion menus use Enter to accept the
 selected command or file first. The coordinator delegates planning to the configured
 planner routes, then implementation, host verification and independent review.
+The tool calls of each delegated session appear in the conversation as collapsed
+rows named by their stage, for example `Implement · Edit relay/x.py · Done` or
+`Explore · Read a.py · Done`, with **Full output** for each; the coordinator's own
+rows have no prefix.
 
 Text pasted into the composer remains an editable draft. The field grows up to
 eight rows. Drafts of at least 1 KiB or more than eight lines show a byte/line

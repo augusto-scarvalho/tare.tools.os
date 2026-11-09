@@ -182,3 +182,28 @@ def test_a_refused_tool_row_stays_closed_and_a_failed_one_opens(tmp_path, monkey
             sentence = app.query(ToolActivity)[-1]
             assert 'Refused · Interrupted' in sentence.title and 'native_console.py' in sentence.title  # path kept
     asyncio.run(scenario())
+
+
+def test_delegated_rows_are_prefixed_and_do_not_evict_the_conversations_own_rows(tmp_path, monkeypatch):
+    from pathlib import Path
+    from relay import relay_mesh
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'state'))
+    root = tmp_path/'project'; root.mkdir()
+    source = {'session': str(tmp_path/'c'/'units'/'u'/'session-1'), 'kind': 'session', 'mode': 'conversation',
+              'owner': str(tmp_path/'c'), 'project': str(root.resolve()),
+              'control_root': str(Path(relay_mesh.RELAY_ROOT).resolve()), 'stage': 'Implement', 'work': ''}
+    async def scenario():
+        app = WorkConsole(root, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(100, 30)) as pilot:
+            await app.workers.wait_for_complete()
+            app.assistant_activity({'channel': 'activity', 'activity': activity('succeeded', identity='own/effect/1')})
+            for n in range(101):
+                app.assistant_activity({'channel': 'activity', 'activity': activity(
+                    'succeeded', identity=f'child/effect/{n}', source=source)})
+            await pilot.pause()
+            rows = list(app.query(ToolActivity))
+            own = [row for row in rows if 'source' not in row.value]
+            delegated = [row for row in rows if 'source' in row.value]
+            assert [row.value['id'] for row in own] == ['own/effect/1'] and len(delegated) == 100
+            assert delegated[-1].title.startswith('Implement · ') and delegated[-1].collapsed
+    asyncio.run(scenario())

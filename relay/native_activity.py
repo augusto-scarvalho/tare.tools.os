@@ -23,12 +23,25 @@ def saved_history(values):
     """Keep display checkpoints readable by the previous installed product.
 
     Tool identities and receipts remain exact in the owning execution journal.
-    New backlog operations use existing display categories only on disk.
+    New backlog operations use existing display categories only on disk, and a conversation's delegated rows are
+    saved as a Work no graph can name (`#conversation`), which the previous product accepts and whose Full output
+    it refuses.
     """
-    return [dict(value, operation=ALIASES[value['operation']],
-                 target=safe(value['operation'] + ': ' + value.get('target', ''), 2048))
-            if isinstance(value, dict) and value.get('kind') == 'tool-activity'
-            and value.get('operation') in ALIASES else value for value in values]
+    return [saved(value) if isinstance(value, dict) and value.get('kind') == 'tool-activity' else value
+            for value in values]
+
+
+def saved(value):
+    if value.get('operation') in ALIASES:
+        value = dict(value, operation=ALIASES[value['operation']],
+                     target=safe(value['operation'] + ': ' + value.get('target', ''), 2048))
+    source = value.get('source')
+    if isinstance(source, dict) and source.get('mode') == 'conversation':
+        value = dict(value, source={**source, 'mode': 'work', 'work': CONVERSATION_WORK})
+    return value
+
+
+CONVERSATION_WORK = '#conversation'  # graph Work ids never start with '#'
 
 
 ALIASES = {'backlog_read': 'read', 'backlog_record': 'edit', 'explore': 'search', 'plan': 'edit', 'implement': 'edit',
@@ -37,7 +50,11 @@ ALIASES = {'backlog_read': 'read', 'backlog_record': 'edit', 'explore': 'search'
 
 
 def restored(value):
-    """The richer operation a saved checkpoint stored under an older category ("Edit implement: ...")."""
+    """The richer operation a saved checkpoint stored under an older category ("Edit implement: ..."), and the
+    conversation source saved as a Work (saved())."""
+    source = value.get('source')
+    if isinstance(source, dict) and source.get('mode') == 'work' and source.get('work') == CONVERSATION_WORK:
+        value = {**value, 'source': {**source, 'mode': 'conversation', 'work': ''}}
     target = value.get('target', '')
     for name, alias in ALIASES.items():
         if value.get('operation') == alias and isinstance(target, str) and target.startswith(name + ': '):
@@ -46,11 +63,13 @@ def restored(value):
 
 
 def retained_history(values):
-    """Tool chatter must not consume the existing 50-message history allowance."""
-    remaining = {'message': 50, 'tool': 100}
+    """Tool chatter must not consume the existing 50-message history allowance, and a chatty delegated session
+    (rows with a source) must not evict the conversation's own tool rows."""
+    remaining = {'message': 50, 'tool': 100, 'delegated': 100}
     kept = []
     for value in reversed(values):
-        kind = 'tool' if isinstance(value, dict) and value.get('kind') == 'tool-activity' else 'message'
+        kind = (('delegated' if value.get('source') else 'tool')
+                if isinstance(value, dict) and value.get('kind') == 'tool-activity' else 'message')
         if remaining[kind]:
             kept.append(value)
             remaining[kind] -= 1
@@ -72,6 +91,7 @@ def activity_view(value):
     duration = value.get('duration_ms')
     if duration is not None and (type(duration) not in (int, float) or not math.isfinite(duration) or duration < 0):
         raise ValueError('invalid_tool_activity_duration')
+    value = restored(value)  # previous releases read the checkpoint; this one restores its labels and sources
     source = value.get('source')
     extra = {}
     actor = value.get('actor')
@@ -81,7 +101,6 @@ def activity_view(value):
                 any(not isinstance(v, str) or not 0 < len(v) <= 256 for v in actor.values())):
             raise ValueError('invalid_tool_activity_actor')
         extra['actor'] = {k: ' '.join(safe(v, 256).split()) for k, v in actor.items()}
-    value = restored(value)  # previous releases read the checkpoint; this one restores its labels
     if 'agent_status' in value:
         if value['operation'] != 'agent_run' or value['agent_status'] not in {
                 'RUNNING', 'PROPOSED', 'PAUSED', 'CANCELLED', 'BLOCKED', 'EXHAUSTED', 'UNCONFIRMED'}:
@@ -92,7 +111,7 @@ def activity_view(value):
         if (not isinstance(source, dict) or set(source) not in (fields, fields | {'graph_path'})
                 or any(not isinstance(source[key], str) or len(source[key]) > 4096 for key in fields)
                 or source['kind'] not in {'session', 'attempt'}
-                or source['mode'] not in {'parallel', 'research', 'plan', 'work', 'sequence'}):
+                or source['mode'] not in {'parallel', 'research', 'plan', 'work', 'sequence', 'conversation'}):
             raise ValueError('invalid_tool_activity_source')
         from pathlib import Path
         if any(not Path(source[key]).is_absolute() for key in ('session', 'project', 'control_root')):

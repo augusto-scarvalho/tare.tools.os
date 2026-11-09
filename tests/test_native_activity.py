@@ -160,3 +160,23 @@ def test_a_refused_row_carries_its_reason():
     observer.append({'kind': 'effect_returned', 'result': {'effect_id': 'tool/3', 'status': 'refused',
         'output_json': json.dumps({'error_type': 'TypeError'})}})
     assert observer.presentation()['items'][-1]['reason'] == 'TypeError'
+
+
+def test_delegated_rows_have_their_own_history_budget():
+    from relay.native_activity import retained_history
+    own = [{'kind': 'tool-activity', 'id': f'o/{i}'} for i in range(120)]
+    delegated = [{'kind': 'tool-activity', 'id': f'd/{i}', 'source': {'mode': 'conversation'}} for i in range(150)]
+    kept = retained_history(own[:60] + delegated + own[60:] + ['last words'])
+    assert sum('source' in row for row in kept[:-1]) == 100 and sum('source' not in row for row in kept[:-1]) == 100
+    assert kept[-1] == 'last words' and [row['id'] for row in kept if 'source' in row][0] == 'd/50'
+    assert [row['id'] for row in kept[:-1] if 'source' not in row][0] == 'o/20'
+
+
+def test_the_session_that_owns_the_callback_is_not_prefixed(setup, tmp_path):
+    from relay import flow_activity
+    config, custody, root = setup
+    events, client = [], Client(steps=steps())
+    with flow_activity.stream('conversation', tmp_path, root, lambda event: None):
+        run_session(config, deployment(), custody, 'Change and verify.', client=client, local_counter=client,
+                    on_activity=events.append)
+    assert events and all('source' not in event['activity'] for event in events)
