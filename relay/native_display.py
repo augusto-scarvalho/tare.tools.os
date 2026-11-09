@@ -74,6 +74,14 @@ def provider_limit_guidance(result):
         limit = result.get('usage_limit') or {}
         until = limit.get('until')
         when = f" until {time.strftime('%H:%M', time.localtime(until))}" if type(until) in (int, float) else ''
+        if limit.get('cause') == 'unknown_billing_source':
+            return (f"OpenCode billed this call to '{limit.get('billing_source')}', which the subscription profiles do "
+                    f"not accept, so the session stopped and tare leaves this model{when}. If you changed plans, add "
+                    "that name to BILLING in scripts/ops/opencode_profiles.py and regenerate the profiles.")
+        if limit.get('cause') == 'billed_to_balance':
+            return (f"OpenCode charged this call to the account {limit.get('billing_source')} because the plan's "
+                    f"allowance for this model is spent and Extra Usage is on; the session stopped and tare leaves "
+                    f"this model{when}. Turn Extra Usage off in the OpenCode Console to stop such charges.")
         return (f"The {limit.get('account') or 'provider'} account behind this model has no usage left{when}; "
                 'tare auto and tare serve skip its routes until then. Choose another model, or use Model → '
                 'Continue task to move this conversation to another provider with a compact brief.')

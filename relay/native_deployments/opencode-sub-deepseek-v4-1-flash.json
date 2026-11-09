@@ -13,6 +13,7 @@
     "parameters_json": "{\"reasoning_effort\": \"high\"}",
     "session_header": "x-opencode-session",
     "billing_sources": [
+      "free",
       "go",
       "go-plus"
     ],

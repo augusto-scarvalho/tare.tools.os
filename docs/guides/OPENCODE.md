@@ -9,8 +9,9 @@ app, as two providers:
 | OpenCode Subscription | a plan (Go, Go Plus, ...): each model has a monthly dollar allowance, at most 20% of it in any 5 hours and 50% in a week | `opencode-sub-<model>` | `opencode-sub/<profile>@<level>` | a subscription: `--subscription_only`, `--prefer_subscription` |
 | OpenCode API | the account balance, per token | `opencode-api-<model>` | `opencode-api/<profile>@<level>` | an API: `--api_only`, spend caps |
 
-The plan in use is read from each reply (`billing_source`: `go`, `go-plus`, ...), so changing plans needs no change
-to tare.
+Each reply says which plan it was billed to (`billing_source`). The subscription profiles accept `go`, `go-plus` and
+`free`; a plan that reports another name (OpenCode does not document one for Teams) stops the session after one call
+with a notice naming it: add that name to `BILLING` in `scripts/ops/opencode_profiles.py` and regenerate.
 
 ## Set it up
 
@@ -62,8 +63,9 @@ When a model's allowance window is spent, OpenCode refuses with HTTP 429 `GoUsag
 hours. Tare then leaves that model, and only that model, until the Retry-After time (`PLAN_USAGE_LIMIT`: "The
 opencode-sub account behind this model has no usage left until HH:MM"); `tare auto` and `tare serve` skip it and an
 audit falls back to its next route. The subscription profiles declare the billing sources they may be charged to
-(`go`, `go-plus`): if Extra Usage is on and a reply is billed to the balance anyway, that one call is charged, the
-session stops there, and the model is left for five hours, the shortest allowance window. API profiles will carry the list price as a
+(`free`, `go`, `go-plus`): if Extra Usage is on and a reply is billed to the balance anyway, that one call is charged,
+the session stops there, and the model is left for five hours, the shortest allowance window. This holds for a context
+summary as for any model call. API profiles will carry the list price as a
 tariff when they ship, so spend caps can reserve dollars for them.
 
 Sessions saved on the earlier `opencode-go-*` profiles cannot be resumed (their author records are gone and they

@@ -45,9 +45,13 @@ def plan_limit(deployment, failed, observations, now):
     Usage charged the balance once). Returns {'kind': 'model', 'resets_at', 'cause'} for note_usage_limit, else None."""
     if not subscription(deployment) or not failed:
         return None
-    if failed.get('code') == 'BILLING_SOURCE_REFUSED':
-        return {'kind': 'model', 'resets_at': now + BILLED_PAUSE, 'cause': 'billed_to_balance'}
-    if failed.get('code') != 'HTTP_429':
+    code = failed.get('code') or failed.get('reason')  # a model call says code; a context summary says reason
+    if code == 'BILLING_SOURCE_REFUSED':
+        source = next((row.get('billing_source') for row in reversed(observations)
+                       if row.get('call_id') == failed.get('call_id') and row.get('billing_source')), None)
+        return {'kind': 'model', 'resets_at': now + BILLED_PAUSE, 'billing_source': source,
+                'cause': 'billed_to_balance' if source in ('balance', 'byok') else 'unknown_billing_source'}
+    if code != 'HTTP_429':
         return None
     receipt = next((call for row in reversed(observations) if row.get('call_id') == failed.get('call_id')
                     for call in reversed(row.get('transport_calls') or [])

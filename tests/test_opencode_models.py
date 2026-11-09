@@ -179,11 +179,21 @@ def test_a_spent_plan_or_a_balance_charge_is_a_limit_on_that_model_only():
     spent = [{'call_id': 'c1', 'transport_calls': [{'provider_error': {'type': 'GoUsageLimitError'}, 'retry_after': 14921}]}]
     assert opencode.plan_limit(sub, {'code': 'HTTP_429', 'call_id': 'c1'}, spent, 1000.0) == {
         'kind': 'model', 'resets_at': 15921.0, 'cause': 'allowance_spent'}
+    summary = {'kind': 'context_summary_failed', 'call_id': 'c1', 'reason': 'HTTP_429'}  # a summary says reason
+    assert opencode.plan_limit(sub, summary, spent, 1000.0)['cause'] == 'allowance_spent'
     passing = [{'call_id': 'c1', 'transport_calls': [{'provider_error': {'type': 'rate_limit_error'}, 'retry_after': 3}]}]
     assert opencode.plan_limit(sub, {'code': 'HTTP_429', 'call_id': 'c1'}, passing, 1000.0) is None
-    assert opencode.plan_limit(sub, {'code': 'BILLING_SOURCE_REFUSED', 'call_id': 'c1'}, [], 1000.0)['resets_at'] == 1000.0 + 5 * 3600
+    billed = [{'call_id': 'c1', 'billing_source': 'balance'}]
+    limit = opencode.plan_limit(sub, {'code': 'BILLING_SOURCE_REFUSED', 'call_id': 'c1'}, billed, 1000.0)
+    assert limit == {'kind': 'model', 'resets_at': 1000.0 + 5 * 3600, 'billing_source': 'balance', 'cause': 'billed_to_balance'}
+    teams = opencode.plan_limit(sub, {'code': 'BILLING_SOURCE_REFUSED', 'call_id': 'c1'},
+                                [{'call_id': 'c1', 'billing_source': 'go-teams'}], 1000.0)
+    assert teams['cause'] == 'unknown_billing_source'
+    from relay.native_display import provider_limit_guidance
+    notice = provider_limit_guidance({'failure_code': 'PLAN_USAGE_LIMIT', 'usage_limit': {**teams, 'until': 1000.0}})
+    assert "'go-teams'" in notice and 'BILLING in scripts/ops/opencode_profiles.py' in notice
     assert opencode.plan_limit(api, {'code': 'HTTP_429', 'call_id': 'c1'}, spent, 1000.0) is None  # the balance has no allowance
-    assert json.loads(sub['native_profile'].get('parameters_json')) is not None and sub['native_profile']['billing_sources'] == ['go', 'go-plus']
+    assert json.loads(sub['native_profile'].get('parameters_json')) is not None and sub['native_profile']['billing_sources'] == ['free', 'go', 'go-plus']
 
 
 def test_a_session_on_a_spent_model_parks_it_until_retry_after(setup, tmp_path, monkeypatch):

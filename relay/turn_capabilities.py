@@ -51,7 +51,7 @@ CAPABILITIES = {
     'one tier up when a completed turn only announced the work (turn_engine.unanswered, a cheap judge)': {
         'serve': SHARED, 'copilot': SHARED,
         'tui': SHARED},  # the TUI: tare auto conversations, on turns that changed no files (the audit covers those)
-    'leaving a vendor account whose usage ran out until it resets (kernel CLI_USAGE_LIMIT, turn_engine.note_usage_limit)': {
+    'leaving a vendor account whose usage ran out until it resets (kernel CLI_USAGE_LIMIT, OpenCode PLAN_USAGE_LIMIT, turn_engine.note_usage_limit)': {
         'serve': SHARED, 'tui': SHARED,
         'copilot': "n/a: tare-copilot relays only HTTP routes, never the CLIs; available() still skips the "
                    "codex-native routes of a spent ChatGPT account"},
