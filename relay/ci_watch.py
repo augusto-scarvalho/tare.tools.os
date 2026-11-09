@@ -433,6 +433,22 @@ def not_found(error):
     return any(marker in f"{getattr(error, 'stderr', None) or ''} {error}".lower() for marker in NOT_FOUND)
 
 
+def logged_in():
+    """gh's login works. A private repository answers 404 to a login without access (an expired token) to hide
+    that it exists, so a not-found from a broken login must stay a visible "shepherd stuck", not read as gone."""
+    try:
+        gh(['api', 'user', '--jq', '.login'], '.')
+        return True
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return False
+
+
+def gone(error):
+    """A not-found answer from a working login. A valid login without access to a private repository still reads
+    as gone: GitHub answers both the same way."""
+    return not_found(error) and logged_in()
+
+
 def orphan(beat):
     """A stale beat whose checkout is gone and that records no repository has nothing left to follow (ADR-072):
     starting its shepherd again could only fail. The repository is unknown, so a `repo_dir` that is not there is a
@@ -542,7 +558,7 @@ def shepherd(repo_dir, number, *, session=None, every=60, limit=None, sleep=time
                 view = json.loads(gh(['pr', 'view', str(number), '-R', repo, '--json',
                                       'state,mergeStateStatus,autoMergeRequest,headRefName,headRefOid,url,title'], repo_dir))
             except (OSError, subprocess.SubprocessError, ValueError, KeyError) as error:
-                if not not_found(error):
+                if not gone(error):
                     raise  # unreachable, not gone: the round's own handler below counts it
                 # The pull request or its repository was removed: nothing is left to fix, so no alert of its own,
                 # and the stand-in alert of a pull request it never read goes too (SPEC-OS-SHIP-001 AC-05).
@@ -748,7 +764,7 @@ def ended(alert, beats):
     try:
         archived = repository_view(repo).get('isArchived')
     except subprocess.CalledProcessError as error:
-        if not_found(error):
+        if gone(error):
             return every  # the repository itself is gone, with every beat its shepherds left
         raise
     if archived:
@@ -760,7 +776,7 @@ def ended(alert, beats):
             if pull_request_state(repo, number).get('state') != 'OPEN':
                 return named
         except subprocess.CalledProcessError as error:
-            if not_found(error):
+            if gone(error):
                 return named  # its pull request is gone
             raise
     return None

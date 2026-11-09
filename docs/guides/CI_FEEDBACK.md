@@ -117,7 +117,8 @@ request never waits unseen. It has no time limit and stops when the pull request
 A pull request or its repository removed or archived ends it at once: the shepherd returns `GONE`, and its beat and
 that pull request's alerts go with it instead of a "shepherd stuck" alert after ten failed rounds. Only the two
 queries about the subject itself (`gh repo view` and `gh pr view`) can end it that way, so a run listing or a
-catch-up that failed keeps the pull request monitored. The beat records the repository and the head branch the
+catch-up that failed keeps the pull request monitored, and so does a not-found while `gh`'s login does not work: a
+private repository answers 404 to a login without access, so an expired token stays a "shepherd stuck" alert. The beat records the repository and the head branch the
 shepherd read before it waits for the next round, so a restart whose first `gh pr view` already answers not-found
 still clears that branch's push alerts along with the pull request's own. A revival skips and retires a beat whose
 checkout is gone and that records no repository (nothing is left to follow); a beat that recorded its repository is

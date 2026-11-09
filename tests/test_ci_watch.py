@@ -9,6 +9,12 @@ from relay import ci_watch
 REAL_GH = ci_watch.gh  # before the fixture replaces it
 
 
+@pytest.fixture(autouse=True)
+def working_login(monkeypatch):
+    """gh's login works unless a test says otherwise: a not-found then proves its subject gone."""
+    monkeypatch.setattr(ci_watch, 'logged_in', lambda: True)
+
+
 @pytest.fixture
 def github(tmp_path, monkeypatch):
     """A scripted `gh`: each runs_for call returns the next snapshot of the commit's runs."""
@@ -857,6 +863,29 @@ def test_a_removed_repository_ends_the_shepherd_gone_with_its_stand_in_alert(tmp
     monkeypatch.setattr(ci_watch, 'gh', gh)
     assert ci_watch.shepherd('repo', 9, sleep=lambda s: pytest.fail('it waited another round')) == 'GONE'
     assert ci_watch.read() == {} and ci_watch.read('shepherds.json') == {}
+
+
+def test_a_not_found_from_a_broken_login_stays_a_visible_stuck_shepherd(tmp_path, monkeypatch):
+    # A private repository answers 404 to a login without access (an expired token): that is no subject gone, and
+    # its alerts must not vanish silently. It keeps the "shepherd stuck" path until the login works again.
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    monkeypatch.setattr(ci_watch, 'logged_in', lambda: False)
+    notified = []
+    monkeypatch.setattr(ci_watch, 'notify', notified.append)
+    failing = iter(range(ci_watch.STUCK_ROUNDS))
+    def gh(args, cwd):
+        if next(failing, None) is not None:
+            raise subprocess.CalledProcessError(1, ['gh', *args], stderr="GraphQL: Could not resolve to a Repository "
+                                                                       "with the name 'me/os'. (repository)\n")
+        if args[:2] == ['repo', 'view']:
+            return json.dumps({'nameWithOwner': 'me/os', 'isArchived': False})
+        if args[:2] == ['run', 'list']:
+            return '[]'
+        return json.dumps({'state': 'MERGED', 'mergeStateStatus': 'CLEAN', 'autoMergeRequest': None,
+                           'headRefName': 'feature', 'headRefOid': 'h', 'url': 'u', 'title': 't'})
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+    assert ci_watch.shepherd('repo', 9, sleep=lambda s: None) == 'MERGED'
+    assert len(notified) == 1 and 'stuck' in json.dumps(notified[0])
 
 
 def test_an_archived_repository_ends_the_shepherd_gone_in_one_round(tmp_path, monkeypatch):
