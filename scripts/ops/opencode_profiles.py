@@ -38,7 +38,9 @@ VENDORS = {'deepseek': ('DeepSeek', 'deepseek/deepseek'), 'zhipuai': ('Z.ai', 'z
 def author(row):
     vendor = row['canonical_id'].split('/', 1)[0]
     if vendor == 'anthropic':
-        family = next(f for f in ('haiku', 'sonnet', 'opus', 'fable') if f in row['id'])
+        family = next((f for f in ('haiku', 'sonnet', 'opus', 'fable') if f in row['id']), None)
+        if family is None:
+            raise SystemExit(f"{row['id']}: Anthropic family unknown; add its roster record by hand")
         return 'Anthropic', 'anthropic/' + family
     if vendor not in VENDORS:
         raise SystemExit(f"{row['id']}: vendor {vendor!r} has no roster family yet; add it to VENDORS")
@@ -52,7 +54,10 @@ def roster_key(models, row):
     if found:
         return found[0]
     if wire in models:
-        models[wire]['runtime'].update({'native': wire, 'native-http': wire})
+        runtime = models[wire].setdefault('runtime', {})
+        if runtime.get('native', wire) != wire:  # another gateway's model id: its identity is not ours to move
+            raise SystemExit(f"{wire}: roster record already serves {runtime['native']!r}; add a record by hand")
+        runtime.update({'native': wire, 'native-http': wire})
         return wire
     vendor, domain = author(row)
     models[wire] = {'display_name': row['name'], 'vendor': vendor, 'bias_domain': domain,
