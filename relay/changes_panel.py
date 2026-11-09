@@ -27,17 +27,19 @@ class FileViewer(SupportPanel):
     #file-viewer-actions Button { min-width: 12; margin-left: 1; }
     '''
 
-    def __init__(self, *, path, content, sha256=None, notice='Current file content on disk · captured when opened'):
+    def __init__(self, *, path, content, sha256=None, notice='Current file content on disk · captured when opened',
+                 kind='File'):
         super().__init__()
         self.file_path = str(path)
         self.content = str(content)
         self.sha256 = sha256
         self.notice = notice
+        self.kind = kind  # what the panel shows: 'File', 'Diff', 'Commit <sha>'
 
     def compose(self):
         with Vertical(id='file-viewer-body', classes='support-body'):
             with Horizontal(classes='panel-header'):
-                yield Static('File · ' + plain(self.file_path.replace('\\', '/').rsplit('/', 1)[-1]), id='file-viewer-heading', classes='panel-title', markup=False)
+                yield Static(self.kind + ' · ' + plain(self.file_path.replace('\\', '/').rsplit('/', 1)[-1]), id='file-viewer-heading', classes='panel-title', markup=False)
                 yield Button('Back · Esc', id='file-viewer-close')
             yield Static(self.notice+'\n'+plain(self.file_path), id='file-viewer-notice', markup=False)
             with VerticalScroll(id='file-viewer-scroll'):

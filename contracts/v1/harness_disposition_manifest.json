@@ -3081,8 +3081,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS presents confirmed edit snapshots and composes explicit operator restoration through Kernel.",
-      "size_bytes": 28904,
-      "sha256": "3b208d036f90cfe566abdb9e36d422f0941f6c0e46f63fd188c5c82514bb9417"
+      "size_bytes": 29023,
+      "sha256": "b6afb2d562c695b277a355a0511da74fdf9f7398dbf0b1535c0f4b05512ab13d"
     },
     {
       "name": "console_context.py",
@@ -4371,8 +4371,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 32662,
-      "sha256": "0599cc1bbcf1d21f37e869c8915f861331e41a9a585eb3ed348ac9b3ef16742a"
+      "size_bytes": 32742,
+      "sha256": "0f872ac6b6a9444552377c8c0cfbaaef3ab03296e44abfd006e8c44fdea8a081"
     }
   ]
 }

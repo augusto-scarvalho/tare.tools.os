@@ -275,10 +275,14 @@ def test_open_diff_mention_and_copy_send_nothing_to_a_model(repo, tmp_path, monk
             await pilot.press('enter')
             await until(pilot, lambda: isinstance(app.screen, FileViewer))
             assert app.screen.content == 'b = 2\n'
+            await until(pilot, lambda: app.screen.query('#file-viewer-heading'))
+            assert str(app.screen.query_one('#file-viewer-heading').content) == 'File · b.py'
             await pilot.press('escape'); await pilot.pause()
             await pilot.press('d')
             await until(pilot, lambda: isinstance(app.screen, FileViewer))
             assert '+b = 2' in app.screen.content and 'What changed' in app.screen.notice
+            await until(pilot, lambda: app.screen.query('#file-viewer-heading'))
+            assert str(app.screen.query_one('#file-viewer-heading').content) == 'Diff · b.py'
             await pilot.press('escape'); await pilot.pause()
             await pilot.press('a'); await pilot.pause()
             assert app.context_paths == ['b.py'] and app.context_root == str(repo)
@@ -325,10 +329,10 @@ def test_mention_keeps_the_composer_rules_and_tree_enter_opens_files(repo, tmp_p
             assert notices == ['Remove the context from the previous project first.']
             app.context_paths = [f'f{n}.py' for n in range(16)]
             assert not app.add_context(str(repo), '.gitignore')  # the 16-path cap
-            tree.focus(); tree.move_cursor(tree.nodes['src']); await pilot.pause()
+            tree.focus(); tree.reveal('src'); await until(pilot, lambda: tree.cursor_node is tree.nodes['src'])
             await pilot.press('enter'); await pilot.pause()
             assert tree.nodes['src'].is_expanded and not isinstance(app.screen, FileViewer)  # a folder toggles
-            tree.move_cursor(tree.nodes['src/a.py']); await pilot.pause()
+            tree.reveal('src/a.py'); await until(pilot, lambda: tree.cursor_node is tree.nodes['src/a.py'])
             await pilot.press('enter')
             await until(pilot, lambda: isinstance(app.screen, FileViewer))
             assert app.screen.content == 'a = 1\n' and not app.backend.launches
@@ -390,13 +394,16 @@ def test_h_opens_the_history_and_enter_opens_a_commit(repo, tmp_path, monkeypatc
             await pilot.press('f8')
             pane, tree = app.query_one(FilesPane), app.query_one(FileTree)
             await until(pilot, lambda: pane.paths)
-            tree.focus(); tree.move_cursor(tree.nodes['b.py']); await pilot.pause()
+            tree.focus(); tree.reveal('b.py'); await until(pilot, lambda: tree.cursor_node is tree.nodes['b.py'])
             await pilot.press('h')
             await until(pilot, lambda: isinstance(app.screen, FileHistory))
             assert len(app.screen.commits) == 2
+            newest = app.screen.commits[0][1].split(' ', 1)[0]
             await pilot.press('enter')  # the newest commit
             await until(pilot, lambda: isinstance(app.screen, FileViewer))
             assert '+b = 2' in app.screen.content and 'change b' in app.screen.content
+            await until(pilot, lambda: app.screen.query('#file-viewer-heading'))
+            assert str(app.screen.query_one('#file-viewer-heading').content) == f'Commit {newest} · b.py'
             await pilot.press('escape'); await pilot.pause()
             await pilot.press('escape'); await pilot.pause()
             assert app.screen is app.screen_stack[0] and not app.backend.launches

@@ -449,7 +449,8 @@ class FileHistory(SupportPanel):
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
             self.app.notify(str(exc), severity='warning')
             return
-        self.app.push_screen(FileViewer(path=name, content=content, notice='What '+line.split(' ', 1)[0]+' changed'))
+        commit = line.split(' ', 1)[0]
+        self.app.push_screen(FileViewer(path=name, content=content, notice='What '+commit+' changed', kind='Commit '+commit))
 
     def action_close(self):
         self.dismiss()
@@ -646,7 +647,7 @@ class FilesPane(Vertical):
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
             self.app.notify(str(exc), severity='warning')
             return
-        self.app.push_screen(FileViewer(path=path, content=content, notice=(
+        self.app.push_screen(FileViewer(path=path, content=content, kind='Diff' if diff else 'File', notice=(
             'What changed since the last commit · captured when opened' if diff else
             'Current file content on disk · captured when opened')))
 
