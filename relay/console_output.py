@@ -290,8 +290,11 @@ class ToolActivity(Collapsible):
                     f' · ~{time.monotonic()-self.observed_at:.0f}s' if value['state'] == 'running' else '')
         if value.get('reason'):
             # Why the host refused (COORDINATOR_ROUTING_REQUIRED, an argument to fix); the row stays collapsed.
+            # A sentence must not squeeze the path out at 80 columns: it gets what the path (up to 24) leaves.
+            left = ((self.size.width or 80)-cell_len(OPERATIONS[value['operation']]+state+' · '+duration)-8
+                    - min(24, cell_len(value['target'])))
             reason = Text(value['reason'])
-            reason.truncate(48, overflow='ellipsis')
+            reason.truncate(max(16, min(48, left)), overflow='ellipsis')
             state += ' · '+reason.plain
         target = ' '.join(value['target'].split())
         operation = OPERATIONS[value['operation']]

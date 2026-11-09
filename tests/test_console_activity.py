@@ -156,12 +156,13 @@ def test_a_long_exploration_question_reads_from_its_start(tmp_path, monkeypatch)
     asyncio.run(scenario())
 
 
-def test_a_refused_tool_row_stays_closed_and_a_failed_one_opens(tmp_path, monkeypatch):
+@pytest.mark.parametrize('width', [80, 100])
+def test_a_refused_tool_row_stays_closed_and_a_failed_one_opens(tmp_path, monkeypatch, width):
     monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'state'))
     root = tmp_path/'project'; root.mkdir()
     async def scenario():
         app = WorkConsole(root, backend=FakeBackend(), initial_mode='assistant')
-        async with app.run_test(size=(100, 30)) as pilot:
+        async with app.run_test(size=(width, 30)) as pilot:
             await app.workers.wait_for_complete()
             for identity in ('s/effect/1', 's/effect/2'):
                 app.assistant_activity({'channel': 'activity', 'activity': activity(identity=identity)})
@@ -174,4 +175,10 @@ def test_a_refused_tool_row_stays_closed_and_a_failed_one_opens(tmp_path, monkey
             # Routing guidance for the model stays closed, but its title says why.
             assert refused.collapsed and 'Refused · COORDINATOR_ROUTING_REQUIRED' in refused.title
             assert not failed.collapsed
+            app.assistant_activity({'channel': 'activity', 'activity': activity(
+                'refused', identity='s/effect/3', target='relay/native_console.py',
+                reason='Interrupted observation has no saved result. Read the file again before deciding.')})
+            await pilot.pause()
+            sentence = app.query(ToolActivity)[-1]
+            assert 'Refused · Interrupted' in sentence.title and 'native_console.py' in sentence.title  # path kept
     asyncio.run(scenario())

@@ -154,3 +154,9 @@ def test_a_refused_row_carries_its_reason():
     assert '"route": "plan"' in refused['detail']  # the detail stays the exact preview
     assert activity_view({**refused, 'reason': '\x1b[31mred\x1b[0m  and\nsplit'})['reason'] == 'red and split'
     assert 'reason' not in activity_view({**refused, 'state': 'failed'})
+    assert activity_view({**refused, 'reason': 'x'*300})['reason'] == 'x'*256
+    assert 'reason' not in activity_view({**refused, 'reason': '\x1b[31m\x1b[0m '})
+    observer.append(request('tool/3', path='a.py'))
+    observer.append({'kind': 'effect_returned', 'result': {'effect_id': 'tool/3', 'status': 'refused',
+        'output_json': json.dumps({'error_type': 'TypeError'})}})
+    assert observer.presentation()['items'][-1]['reason'] == 'TypeError'
