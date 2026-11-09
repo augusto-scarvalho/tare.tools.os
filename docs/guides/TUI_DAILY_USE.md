@@ -253,11 +253,25 @@ Use `/diff` (or F3) to inspect confirmed file-tool changes, their diffs and reco
 checks. The panel also supports explicit undo and rerunning recorded checks. Shell-made
 edits are not automatically file-tool snapshots; inspect those with Git or file tools.
 
+## 10. See what the agents read and edit (F8)
+
+F8, the **Files** button or `/files` opens a compact pane on the right: the files the
+agents read and edited this turn (**t** switches to the whole session), whichever
+model or vendor runs each role. Each row starts with what happened (`r` read, `e`
+edited, `p` edited by a delegated session in its candidate tree, `x` deleted, `!`
+refused or failed, `⟳` in progress) and ends with who did it when it was a delegated
+session (`impl`, `expl`, `audit`). A refused row shows its reason when selected.
+Below 100 columns the pane takes the whole screen, like F1 and F2; from 140
+columns it stays beside them. F8 or Esc returns to the message. The pane only
+reads what the conversation already shows: it calls no model, and it opens closed
+on a new machine and then as you left it.
+
 ## Other useful keys
 
 - F4 / `/terminal` — inspect session processes. `/attach` adds file or image context.
 - F6 — next step; Ctrl+End — jump to the latest output.
 - F2 — workspace settings on small terminals.
+- F8 / `/files` — the files the agents read and edit (section 10).
 
 ## Optional flows (not required for daily use)
 

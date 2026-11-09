@@ -246,12 +246,12 @@ class ConversationNavigation:
     def dispatch_conversation_command(self, name, arguments):
         """Handle UI commands without passing them to the model or flow router."""
         workbench = {'/artifacts', '/tasks', '/team', '/usage', '/tools', '/skills'}
-        if name not in {'/new', '/model', '/reasoning', '/diff', '/sessions', '/terminal', '/project', '/permissions', '/backlog', '/delivery', '/challenger', '/storage', '/delegation', '/routes', '/fleet', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up'} | workbench:
+        if name not in {'/new', '/model', '/reasoning', '/diff', '/sessions', '/terminal', '/files', '/project', '/permissions', '/backlog', '/delivery', '/challenger', '/storage', '/delegation', '/routes', '/fleet', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up'} | workbench:
             return False
         if arguments:
             self.set_status(name+' takes no arguments. Your draft has been kept.')
             return True
-        if (self.sending_message or self.busy) and name not in {'/terminal', '/tasks', '/team', '/usage', '/challenger', '/storage'}:
+        if (self.sending_message or self.busy) and name not in {'/terminal', '/files', '/tasks', '/team', '/usage', '/challenger', '/storage'}:
             self.set_status('Wait for the current operation before using '+name+'.')
             return True
         if Path(self.selection().root).resolve() != Path(self.workspace_root).resolve():
@@ -275,6 +275,10 @@ class ConversationNavigation:
                 prompt.load_text(ask(last))
                 prompt.focus()
                 asked(self.assistant_session)  # the operator found it worth asking: a label for calibration
+        elif name == '/files':  # read-only: it opens the pane, never closes it
+            prompt.clear()
+            if not self.files_open:
+                self.action_files()
         elif name == '/delegation':
             prompt.clear()
             self.action_delegation()
