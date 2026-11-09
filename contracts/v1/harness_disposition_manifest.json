@@ -2681,8 +2681,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 176025,
-      "sha256": "a3aa29d7640b268c03d2b1355bd1df5151a0c56b4ff2e130244a8412fe00e532"
+      "size_bytes": 176377,
+      "sha256": "e5e6bed396d7054cb4265189aee0a0b2d47ca155840025a343561f7bcddb62a8"
     },
     {
       "name": "native_display.py",
