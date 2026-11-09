@@ -95,6 +95,15 @@ def agents_edit(root):
         return None
 
 
+def agents_change(root):
+    """The root AGENTS.md's recent committed change (project_admission.recent_change), or None."""
+    from .project_admission import recent_change
+    try:
+        return recent_change(root)
+    except Exception:
+        return None
+
+
 def read_details(key):
     root, session, profile, deployment, automatic = key
     branch = git_branch(root)
@@ -233,7 +242,16 @@ class ConversationHeader:
                   'AGENTS.md has uncommitted changes that are not loaded (the committed version is). Review them in '
                   '/permissions to load them.' if policy.get('mode') == 'trusted' and edit
                   and edit != (policy.get('root_sha256') or 'absent') else '')
-        if (welcome := self.query_one_optional('#welcome', Static)) and getattr(self, '_unread_note', None) != unread:
+        welcome = self.query_one_optional('#welcome', Static)
+        change = getattr(self, '_agents_change', None)
+        # Committed rules load unreviewed, and agents commit and merge here too: every new conversation's welcome
+        # says a recent change, so the operator sees it even when an agent drove the TUI first.
+        changed = (f"AGENTS.md changed {change['when']} in {change['commit'][:8]} \"{change['subject']}\" "
+                   f"(+{change['added']} -{change['removed']} lines), and new conversations follow it; "
+                   'git log -p -1 -- AGENTS.md shows the change.'
+                   if policy.get('mode') == 'trusted' and change else '')
+        unread = '\n\n'.join(n for n in (unread, changed) if n)
+        if welcome is not None and getattr(self, '_unread_note', None) != unread:
             from .console_output import welcome_text
             self._unread_note = unread
             welcome.update(welcome_text(unread))
@@ -273,6 +291,7 @@ class ConversationHeader:
                     await asyncio.sleep(.1)
                 details = await asyncio.to_thread(read_details, key)
                 self._agents_edit = await asyncio.to_thread(agents_edit, key[0])
+                self._agents_change = await asyncio.to_thread(agents_change, key[0])
                 if pending and self.busy and details.identity is None:
                     details = HeaderDetails(details.branch, 'Reading saved model…', 'Saved model')
                 if (self.connection_closing or not self.is_mounted or not self.query_one_optional('#session-context')

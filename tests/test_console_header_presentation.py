@@ -306,3 +306,26 @@ def test_a_trusted_repository_says_when_an_uncommitted_agents_md_edit_is_held_ba
             app.render_header(); await pilot.pause()
             assert 'AGENTS.md' not in welcome()  # that edit was reviewed: it loads
     asyncio.run(scenario())
+
+
+def test_a_recent_committed_agents_md_change_is_said_in_every_new_conversations_welcome(tmp_path, monkeypatch):
+    # Agents commit and merge here too: the welcome says a recent change; nothing marks it seen, so an agent driving
+    # the TUI first cannot hide it from the operator.
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'history'))
+
+    async def scenario():
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(130, 44)) as pilot:
+            await app.workers.wait_for_complete(); await pilot.pause()
+            welcome = lambda: str(app.query_one('#welcome', Static).render())
+            app.project_admission = {'mode': 'trusted', 'root_sha256': None, 'nested': False}
+            app._agents_change = {'commit': 'c'*40, 'when': '2 hours ago', 'subject': 'An agent added a rule',
+                                  'added': '1', 'removed': '0'}
+            app.render_header(); await pilot.pause()
+            assert 'AGENTS.md changed 2 hours ago' in welcome() and 'An agent added a rule' in welcome()
+            app.render_header(); await pilot.pause()
+            assert 'An agent added a rule' in welcome()  # said again: no state consumed it
+            app.project_admission = {'mode': 'quarantine', 'root_sha256': None, 'nested': False}
+            app.render_header(); await pilot.pause()
+            assert 'An agent added a rule' not in welcome()  # untrusted: its rules do not load at all
+    asyncio.run(scenario())

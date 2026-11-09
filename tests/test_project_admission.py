@@ -367,3 +367,17 @@ def test_trust_covers_every_worktree_and_untrusting_one_untrusts_them_all(tmp_pa
     save_defaults(storage, other, control, configure_admission(inherited, other), other_revision)
     assert read_defaults(storage, root, control)[0]['project_admission']['mode'] == 'quarantine'
     assert read_defaults(storage, other, control)[0]['project_admission']['mode'] == 'quarantine'
+
+
+def test_a_recent_committed_agents_md_change_is_reported_even_though_it_needs_no_review(tmp_path, monkeypatch):
+    # Agents commit and merge here too, so "committed" alone is no review: a recent change is said, with no "seen"
+    # state an agent driving the TUI could consume first.
+    root = tmp_path/'repo'
+    committed_repository(root, 'Rules v1.\n')
+    (root/'AGENTS.md').write_bytes(b'Rules v1.\nNever run the whole suite.\n')
+    git(root, 'commit', '-qam', 'An agent added a rule')
+    change = admission.recent_change(root)
+    assert change['subject'] == 'An agent added a rule' and (change['added'], change['removed']) == ('1', '0')
+    assert admission.recent_change(root) == change  # asked again, said again
+    monkeypatch.setattr(admission, 'RECENT_CHANGE', '2099-01-01T00:00:00')
+    assert admission.recent_change(root) is None  # older than the window: nothing to say

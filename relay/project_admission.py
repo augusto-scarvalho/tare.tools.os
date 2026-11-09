@@ -93,6 +93,27 @@ def local_edit(project):
     return bool(status.stdout.strip())
 
 
+RECENT_CHANGE = '7 days ago'
+
+
+def recent_change(project):
+    """The last commit at HEAD, within RECENT_CHANGE, that changed the root AGENTS.md: {'commit', 'when', 'subject',
+    'added', 'removed'}; None outside Git or when none did. Agents commit and merge here too, so a trusted
+    repository's new rules are said in every new conversation's welcome while recent. No "seen" state: whoever
+    drives the TUI (an agent in a dogfood run) could not consume it before the operator saw it."""
+    try:
+        result = _git(project, 'log', '-1', '--since='+RECENT_CHANGE, '--format=%H%x09%cr%x09%s', '--numstat', '--',
+                      'AGENTS.md')
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+    lines = [line for line in result.stdout.decode('utf-8', 'replace').splitlines() if line] if not result.returncode else []
+    if not lines:
+        return None
+    commit, when, subject = (lines[0].split('\t', 2)+['', ''])[:3]
+    added, removed = (next((line.split('\t') for line in lines[1:] if line.count('\t') >= 2), ['?', '?']))[:2]
+    return {'commit': commit, 'when': when, 'subject': subject, 'added': added, 'removed': removed}
+
+
 def committed(project):
     """The root AGENTS.md as HEAD has it, in the preview's shape; text None when HEAD has none."""
     result = _git(project, 'cat-file', 'blob', 'HEAD:./AGENTS.md')
