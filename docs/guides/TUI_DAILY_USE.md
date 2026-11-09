@@ -266,7 +266,10 @@ from `p` to `e` once it reaches the project. Below the list, the project tree ma
 what Git sees (`M` modified, `A` added, `D` deleted, `U` untracked, `!` conflict,
 `•` a folder holding a change) and opens at each file an agent edits; **c** shows
 only the changed files. Git is read every few seconds and only while the pane
-shows, so changes made in an editor or a terminal appear too.
+shows, so changes made in an editor or a terminal appear too. On a file, **Enter**
+opens it (a row of the list also opens it in the tree), **d** shows what changed
+since the last commit, **a** attaches it to your next message as an `@` reference
+(the only way the pane reaches a model), and **y** copies its path.
 Below 100 columns the pane takes the whole screen, like F1 and F2; from 140
 columns it stays beside them. F8 or Esc returns to the message. The pane only
 reads what the conversation already shows: it calls no model, and it opens closed

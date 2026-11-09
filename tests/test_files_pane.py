@@ -237,3 +237,99 @@ def test_tree_reads_git_only_while_shown_follows_edits_and_filters_changes(repo,
             await pilot.pause(4)
             assert len(calls) == seen and not app.backend.launches  # hidden again: no more git
     asyncio.run(scenario())
+
+
+def test_read_and_diff_text_are_bounded_and_refuse_outside_paths(repo, tmp_path):
+    from relay.files_pane import VIEW_BYTES, diff_text, read_text
+    (repo/'b.py').write_bytes(b'b = 2\r\nc = 3\r\n'); (repo/'new.py').write_text('fresh\n')
+    (repo/'big.txt').write_bytes(b'x'*(VIEW_BYTES+1)); (repo/'bin.dat').write_bytes(b'\0\1')
+    assert read_text(repo, 'b.py') == 'b = 2\nc = 3\n'
+    assert 'limit' in read_text(repo, 'big.txt') and 'Binary' in read_text(repo, 'bin.dat')
+    assert '-b = 1' in diff_text(repo, 'b.py') and '+c = 3' in diff_text(repo, 'b.py')
+    assert diff_text(repo, 'new.py') == 'New file, not in Git yet:\n\nfresh\n'
+    assert diff_text(repo, '.gitignore') == 'No change since the last commit.'
+    for outside in ('../elsewhere.py', str(tmp_path/'x.py')):
+        with pytest.raises(ValueError):
+            read_text(repo, outside)
+    with pytest.raises(ValueError):
+        read_text(repo, 'src')  # a folder
+    plain = tmp_path/'plain'; plain.mkdir(); (plain/'p.py').write_text('p\n')
+    assert diff_text(plain, 'p.py') == 'Not a Git repository: no diff.'
+
+
+def test_open_diff_mention_and_copy_send_nothing_to_a_model(repo, tmp_path, monkeypatch):
+    from relay import files_pane
+    from relay.changes_panel import FileViewer
+    monkeypatch.setattr(files_pane, 'SLOW_SECONDS', 60)
+    (repo/'b.py').write_text('b = 2\n')
+    async def scenario():
+        app = WorkConsole(repo, backend=FakeBackend(), initial_mode='assistant', storage_preferred=tmp_path/'state')
+        copies = []; app.copy_to_clipboard = copies.append
+        async with app.run_test(size=(150, 52)) as pilot:
+            await app.workers.wait_for_complete()
+            prompt = app.query_one('#prompt', TextArea); prompt.load_text('Keep this draft')
+            app.assistant_activity({'channel': 'activity', 'activity': row('edit', 'b.py')})
+            await pilot.press('f8')
+            pane = app.query_one(FilesPane)
+            await until(pilot, lambda: pane.paths and pane.found)
+            await pilot.press('enter')
+            await until(pilot, lambda: isinstance(app.screen, FileViewer))
+            assert app.screen.content == 'b = 2\n'
+            await pilot.press('escape'); await pilot.pause()
+            await pilot.press('d')
+            await until(pilot, lambda: isinstance(app.screen, FileViewer))
+            assert '+b = 2' in app.screen.content and 'What changed' in app.screen.notice
+            await pilot.press('escape'); await pilot.pause()
+            await pilot.press('a'); await pilot.pause()
+            assert app.context_paths == ['b.py'] and app.context_root == str(repo)
+            await pilot.press('y'); await pilot.pause()
+            assert copies == ['b.py']
+            assert prompt.text == 'Keep this draft' and not app.backend.launches  # nothing was sent
+    asyncio.run(scenario())
+
+
+def test_diff_is_literal_runs_no_textconv_and_shows_deletions(repo, tmp_path):
+    from relay.files_pane import diff_text
+    (repo/'a1.py').write_text('one\n'); (repo/'gone.py').write_text('bye\n')
+    (repo/'.gitattributes').write_text('*.py diff=conv\n')
+    git(repo, 'add', '.'); git(repo, 'commit', '-m', 'more')
+    git(repo, 'config', 'diff.conv.textconv', 'echo CONVERTED')
+    (repo/'a1.py').write_text('two\n'); (repo/'a[1].py').write_text('glob\n'); (repo/'gone.py').unlink()
+    assert diff_text(repo, 'a[1].py') == 'New file, not in Git yet:\n\nglob\n'  # not a1.py's diff
+    changed = diff_text(repo, 'a1.py')
+    assert '+two' in changed and 'CONVERTED' not in changed
+    assert '-bye' in diff_text(repo, 'gone.py')
+    with pytest.raises(ValueError):
+        diff_text(repo, '../gone.py')
+    unborn = tmp_path/'unborn'; unborn.mkdir(); git(unborn, 'init'); (unborn/'n.py').write_text('n\n')
+    git(unborn, 'add', 'n.py')
+    assert diff_text(unborn, 'n.py') == 'No commit yet:\n\nn\n'
+
+
+def test_mention_keeps_the_composer_rules_and_tree_enter_opens_files(repo, tmp_path, monkeypatch):
+    from relay import files_pane
+    from relay.changes_panel import FileViewer
+    from relay.files_pane import FileTree
+    monkeypatch.setattr(files_pane, 'SLOW_SECONDS', 60)
+    async def scenario():
+        app = WorkConsole(repo, backend=FakeBackend(), initial_mode='assistant', storage_preferred=tmp_path/'state')
+        async with app.run_test(size=(150, 52)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.press('f8')
+            pane, tree = app.query_one(FilesPane), app.query_one(FileTree)
+            await until(pilot, lambda: pane.paths)
+            assert not app.add_context(str(repo), '../outside.py') and app.context_paths == []
+            (tmp_path/'b.py').write_text('x\n')  # exists in the other project, so only the one-project rule refuses
+            notices = []; app.notify = lambda message, **kwargs: notices.append(message)
+            assert app.add_context(str(repo), 'b.py') and not app.add_context(str(tmp_path), 'b.py')
+            assert notices == ['Remove the context from the previous project first.']
+            app.context_paths = [f'f{n}.py' for n in range(16)]
+            assert not app.add_context(str(repo), '.gitignore')  # the 16-path cap
+            tree.focus(); tree.move_cursor(tree.nodes['src']); await pilot.pause()
+            await pilot.press('enter'); await pilot.pause()
+            assert tree.nodes['src'].is_expanded and not isinstance(app.screen, FileViewer)  # a folder toggles
+            tree.move_cursor(tree.nodes['src/a.py']); await pilot.pause()
+            await pilot.press('enter')
+            await until(pilot, lambda: isinstance(app.screen, FileViewer))
+            assert app.screen.content == 'a = 1\n' and not app.backend.launches
+    asyncio.run(scenario())

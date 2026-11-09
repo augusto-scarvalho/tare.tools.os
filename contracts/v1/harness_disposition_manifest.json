@@ -3081,8 +3081,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS presents confirmed edit snapshots and composes explicit operator restoration through Kernel.",
-      "size_bytes": 28852,
-      "sha256": "f25a4434546fab9c5d8b9d842eb5e57caaa4f94f6c63fd5c620c491d7b94af06"
+      "size_bytes": 28904,
+      "sha256": "3b208d036f90cfe566abdb9e36d422f0941f6c0e46f63fd188c5c82514bb9417"
     },
     {
       "name": "console_context.py",
@@ -3091,8 +3091,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns selected context presentation and conversation composition; file reads and execution stay in Kernel and Runtime.",
-      "size_bytes": 10555,
-      "sha256": "2cc754c3e08da5cd3eaea344d40d5beab648308ba917738391b449bf9e2b88ee"
+      "size_bytes": 11398,
+      "sha256": "fdf3fefd02e54973f63fe29f65c166807cce11b9df94f631979be7539699abaa"
     },
     {
       "name": "console_navigation.py",
@@ -4371,8 +4371,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 20889,
-      "sha256": "743a95000453c5373e75a1ad77ff8457fb52ff8fe580072bb68ce2a6253de805"
+      "size_bytes": 26131,
+      "sha256": "ed301e2cc18a5ce4edd04701bd9a9a057ea0b4adae1c103e3db637e9650deb5b"
     }
   ]
 }
