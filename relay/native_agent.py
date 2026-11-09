@@ -1171,6 +1171,14 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                                     and call.get('provider_rate_limit_observed') is True
                                     for call in observation.get('transport_calls', []))):
                         result['provider_rate_limit_observed'] = True
+            if outcome.reason in ('CLI_QUALIFICATION_FAILED', 'CLI_QUALIFICATION_INTERRUPTED'):
+                # A CLI release failed its one probe before the request was sent: the probe's verdict says why.
+                # The last probe receipt, whichever call carried it (a model call or a summary, sent or not).
+                probe = next((call['qualification'] for row in reversed(raw_observations)
+                              for call in reversed(row.get('transport_calls') or [])
+                              if isinstance(call.get('qualification'), dict)), None)
+                if probe:
+                    result['qualification'] = probe
             if outcome.reason in ('MODEL_FAILURE', 'SUMMARY_FAILED'):
                 # The CLI's account ran out of usage (kernel CLI_USAGE_LIMIT), in a model call or a summary:
                 # every route on that account is left until it resets, or only this model when the CLI

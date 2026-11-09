@@ -81,7 +81,8 @@ RECOVERABLE_ERRORS = frozenset({
 
 CLI_PREFLIGHT_ERRORS = frozenset({'CLI_VERSION_CHANGED', 'CLI_VERSION_UNAVAILABLE',
                                  'CLI_INCOMPATIBLE_VERSION', 'CLI_CAPABILITY_UNAVAILABLE',
-                                 'CLI_USER_INSTRUCTIONS_PRESENT'})
+                                 'CLI_USER_INSTRUCTIONS_PRESENT', 'CLI_QUALIFICATION_FAILED',
+                                 'CLI_QUALIFICATION_INTERRUPTED'})
 
 
 def model_call_ceiling(journal, initial):

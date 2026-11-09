@@ -87,6 +87,17 @@ authorizes one new attempt only when the failed call was recorded as not sent.
 The original failure, prior effects, history and cumulative budgets remain.
 Uncertain dispatched calls and tool effects do not use this recovery path.
 
+A CLI release the adapter has not seen (AGY, Claude Code and Codex update
+themselves) first answers one small probe per model before the first real
+request: the same request with its conversation replaced by one short line. If
+the release no longer answers in the shape tare decodes, the call stops with
+`CLI_QUALIFICATION_FAILED` before your request is sent, and the failure says which
+check failed; later calls stop at once without another probe. Quota, provider and
+network failures of the probe are no verdict (a cut probe says to resume). Each machine records the verdicts in
+`cli-qualification.json` under the storage root, so a release is probed once, not
+once per session. `tare setup --prove cli:NAME` forgets a failed verdict, so the
+next call probes that release again.
+
 Live development TUI checks on 2026-09-25 passed at 80x24 with Claude 2.1.282
 (Opus 5.5) and AGY 1.2.11, using the unchanged 2.1.280/1.2.7 profiles. The reported
 blocked Claude session resumed in place; no file tools ran in any of these checks.

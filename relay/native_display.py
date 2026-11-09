@@ -59,6 +59,17 @@ def render_failure(result):
 
 
 def provider_limit_guidance(result):
+    probe = result.get('qualification') or {}
+    cli = (result.get('runtime_observation') or {}).get('deployment_id') or 'this CLI'
+    if 'CLI_QUALIFICATION_FAILED' in (result.get('reason'), result.get('failure_code')):
+        release = ' '.join(str(probe[k]) for k in ('version', 'model') if probe.get(k))
+        return (f"{cli} was updated{' to ' + release if release else ''} and no longer answers in the shape tare "
+                f"decodes ({probe.get('probe_code') or 'shape check'} on a one-call probe"
+                + (f": {probe['detail']}" if probe.get('detail') else '') + '). Your request was not sent. '
+                'Choose another model or CLI, or run tare setup --prove for this CLI to check it again.')
+    if 'CLI_QUALIFICATION_INTERRUPTED' in (result.get('reason'), result.get('failure_code')):
+        return (f'The check of {cli}\'s new release was cut short, so your request was not sent. Resume to '
+                'check it again and continue.')
     if result.get('failure_code') == 'CLI_USAGE_LIMIT':
         limit = result.get('usage_limit') or {}
         until = limit.get('until')
