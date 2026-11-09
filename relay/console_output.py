@@ -288,6 +288,11 @@ class ToolActivity(Collapsible):
                  'unconfirmed': 'Result unconfirmed', 'not_started': 'Not started'}[value['state']]
         duration = (f" · {value['duration_ms']/1000:.1f}s" if value['duration_ms'] is not None else
                     f' · ~{time.monotonic()-self.observed_at:.0f}s' if value['state'] == 'running' else '')
+        if value.get('reason'):
+            # Why the host refused (COORDINATOR_ROUTING_REQUIRED, an argument to fix); the row stays collapsed.
+            reason = Text(value['reason'])
+            reason.truncate(48, overflow='ellipsis')
+            state += ' · '+reason.plain
         target = ' '.join(value['target'].split())
         operation = OPERATIONS[value['operation']]
         if value['operation'] == 'agent_run' and value.get('actor'):

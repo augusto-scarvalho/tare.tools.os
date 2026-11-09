@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- A refused tool row names why in its title ("Read · Refused · COORDINATOR_ROUTING_REQUIRED") and still stays collapsed: the host's `reason` is kept on the row (also on reopen), where before it showed only inside the expanded JSON.
 - The kernel pin moves to 0d0cf6c (tare.tools.kernel#10): a vendor CLI release the adapter has not seen is probed once per model before the first real request, so the verdict record above has something to keep.
 - CLI qualification verdicts are kept per release and model, and saving one is best effort: a store another host is writing at the same moment, or read-only storage, loses the verdict (probed again next session), never the call. A probe cut short is explained as not sent, with Resume; the failure explanation is found whichever call carried the probe (a summary too).
 - An updated vendor CLI is checked before it can block a session: the kernel probes a release it has not seen once, and this machine keeps the verdict in `cli-qualification.json` (every host builds its CLI client with that record), so each release is probed once, not per session. A release that no longer answers in the shape tare decodes stops with CLI_QUALIFICATION_FAILED before the request is sent, explained with the version and the failed check; `tare setup --prove cli:NAME` forgets the failed verdict. AGY updated from 1.2.7 to 1.5.3 on 2026-11-07 and receipts only noted it until a TUI session blocked on 2026-11-09.

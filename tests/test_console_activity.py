@@ -166,10 +166,12 @@ def test_a_refused_tool_row_stays_closed_and_a_failed_one_opens(tmp_path, monkey
             for identity in ('s/effect/1', 's/effect/2'):
                 app.assistant_activity({'channel': 'activity', 'activity': activity(identity=identity)})
             await pilot.pause()
-            app.assistant_activity({'channel': 'activity', 'activity': activity('refused', identity='s/effect/1')})
+            app.assistant_activity({'channel': 'activity', 'activity': activity(
+                'refused', identity='s/effect/1', reason='COORDINATOR_ROUTING_REQUIRED')})
             app.assistant_activity({'channel': 'activity', 'activity': activity('failed', identity='s/effect/2')})
             await pilot.pause()
             refused, failed = app.query(ToolActivity)
-            assert refused.collapsed and 'Refused' in refused.title  # routing guidance for the model, not the user
+            # Routing guidance for the model stays closed, but its title says why.
+            assert refused.collapsed and 'Refused · COORDINATOR_ROUTING_REQUIRED' in refused.title
             assert not failed.collapsed
     asyncio.run(scenario())
