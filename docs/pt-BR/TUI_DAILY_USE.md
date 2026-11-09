@@ -263,7 +263,13 @@ qualquer que seja o modelo ou o fornecedor de cada papel. Cada linha começa pel
 aconteceu (`r` lido, `e` editado, `p` editado por uma sessão delegada na sua árvore
 candidata, `x` apagado, `!` recusado ou com falha, `⟳` em andamento) e termina com
 quem fez, quando foi uma sessão delegada (`impl`, `expl`, `audit`). Uma linha
-recusada mostra o motivo quando selecionada. Abaixo de 100 colunas o painel ocupa a
+recusada mostra o motivo quando selecionada. Um arquivo editado também mostra as linhas
+acrescentadas e removidas, e uma edição delegada passa de `p` para `e` quando chega ao
+projeto. Abaixo da lista, a árvore do projeto marca o que o Git vê (`M` modificado,
+`A` acrescentado, `D` apagado, `U` não rastreado, `!` conflito, `•` pasta com mudança)
+e abre em cada arquivo que um agente edita; **c** mostra só os arquivos alterados. O Git
+é lido a cada poucos segundos e só enquanto o painel aparece, então mudanças feitas num
+editor ou num terminal também aparecem. Abaixo de 100 colunas o painel ocupa a
 tela inteira, como o F1 e o F2; a partir de 140 colunas fica ao lado deles. O F8 ou o
 Esc voltam para a mensagem. O painel só lê o que a conversa já mostra: não chama
 nenhum modelo, começa fechado numa máquina nova e depois abre como você deixou.

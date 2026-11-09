@@ -261,6 +261,12 @@ model or vendor runs each role. Each row starts with what happened (`r` read, `e
 edited, `p` edited by a delegated session in its candidate tree, `x` deleted, `!`
 refused or failed, `⟳` in progress) and ends with who did it when it was a delegated
 session (`impl`, `expl`, `audit`). A refused row shows its reason when selected.
+An edited file also shows its lines added and removed, and a delegated edit turns
+from `p` to `e` once it reaches the project. Below the list, the project tree marks
+what Git sees (`M` modified, `A` added, `D` deleted, `U` untracked, `!` conflict,
+`•` a folder holding a change) and opens at each file an agent edits; **c** shows
+only the changed files. Git is read every few seconds and only while the pane
+shows, so changes made in an editor or a terminal appear too.
 Below 100 columns the pane takes the whole screen, like F1 and F2; from 140
 columns it stays beside them. F8 or Esc returns to the message. The pane only
 reads what the conversation already shows: it calls no model, and it opens closed
