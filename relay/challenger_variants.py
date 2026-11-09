@@ -15,7 +15,7 @@ def accounting(deployment):
     protocol = deployment['native_profile']['protocol']
     if local(deployment):
         return 'local'
-    if protocol in {'vendor-cli', 'openai-codex-responses'}:
+    if protocol in {'vendor-cli', 'openai-codex-responses'} or (deployment.get('native_opencode') or {}).get('plan') == 'go':
         return 'quota'
     return 'usd'
 

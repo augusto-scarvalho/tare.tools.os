@@ -207,7 +207,8 @@ def projection(*, role=None, via=None, vendor=None, provider=None, include_uncon
             roles.append('coordinator')
         if name in researchers and value['native_profile']['protocol'] == 'vendor-cli':
             roles.append('researcher')
-        access = {'subscription': 'cli', 'subscription_direct': 'api'}.get(kind(value), kind(value))
+        access = ('cli' if value['native_profile']['protocol'] == 'vendor-cli'
+                  else {'subscription': 'api', 'subscription_direct': 'api'}.get(kind(value), kind(value)))
         author = model_author(value)
         if role and role not in roles or via and via != access or vendor and vendor.casefold() != author.casefold() or provider and provider != connection:
             continue

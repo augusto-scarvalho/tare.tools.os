@@ -43,6 +43,13 @@ Left out for now:
   (`tare setup --meta-contributor on`), as on OpenRouter: Meta may use prompts, code and responses to improve its
   products. OpenCode also blocks them until its own privacy setting allows endpoints that train on request data.
 
+## Subscription or API
+
+OpenCode is a plan and a balance at once. For now tare counts it as a subscription: `--subscription_only` and
+`--prefer_subscription` include it, and `--api_only` leaves it out. The Go models draw on one plan account,
+`opencode-go`, so a session on Go delegates within Go and quotes a minimal call as plan usage, not dollars. A limit
+recorded for one model leaves the other Go models usable, since each has its own allowance.
+
 ## What tare sends and records
 
 Each request carries `x-opencode-session`, the tare session's opaque key, so OpenCode can route and cache by

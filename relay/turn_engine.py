@@ -287,7 +287,10 @@ USAGE_LIMIT_DEFAULT_SECONDS = 30 * 60  # when the CLI does not say when the acco
 
 def usage_account(deployment):
     """The subscription account a route draws on: all Claude CLI routes share one, the Codex CLI and Codex native
-    routes share the ChatGPT one, AGY has its own. API-key and local routes have none."""
+    routes share the ChatGPT one, AGY has its own, and the OpenCode Go models share the Go plan. Other API-key and
+    local routes have none."""
+    if (deployment.get('native_opencode') or {}).get('plan') == 'go':
+        return 'opencode-go'
     profile = deployment.get('native_profile') or {}
     endpoint = str(profile.get('endpoint', ''))
     if endpoint.startswith('cli://'):

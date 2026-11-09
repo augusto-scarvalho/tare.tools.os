@@ -105,3 +105,18 @@ def test_chat_profile_runs_the_native_loop_with_the_opencode_wire_id(setup):
     result = native_agent.run_session(config, deployment, custody, 'Change and verify a.py',
                                       client=OpenCodeFixture(steps=steps()))
     assert result['status'] == 'PROPOSED' and (root/'a.py').read_text() == 'value = 2\n'
+
+
+def test_go_is_a_subscription_on_its_own_plan_account():
+    from relay import execution_scope
+    from relay.challenger_variants import accounting
+    from relay.turn_engine import usage_keys
+    from relay.work_units import bill
+    go = native_catalog.select('opencode-go-glm-5-3')
+    assert execution_scope.kind(go) == 'subscription'
+    assert execution_scope.Scope(only='subscription').allows(go, 'implementer')[0]
+    assert not execution_scope.Scope(only='api').allows(go, 'implementer')[0]
+    assert accounting(go) == 'quota' and bill(go) == ('quota', 'opencode')
+    assert usage_keys(go) == ('opencode-go', 'opencode-go:glm-5.3')  # a model's own limit leaves its siblings usable
+    listed = model_choices.projection(provider='opencode', role='implementer', include_unconfigured=True)
+    assert {row['via'] for row in listed} == {'api'}
