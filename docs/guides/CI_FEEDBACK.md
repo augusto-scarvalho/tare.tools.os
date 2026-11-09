@@ -113,7 +113,20 @@ the required checks pass; the command does not change repository settings.
 The watcher leaves pull request alerts to the shepherd. A shepherd beats in
 `shepherds.json` every round; the end of an agent's turn (the stop hook), `tare ci check`, every push's watcher and
 the daily check start again one silent for 15 minutes (the machine restarted or the process died), so a red pull
-request never waits unseen. It has no time limit and stops when the pull request merges, closes or loses auto-merge. Pull requests behind main are
+request never waits unseen. It has no time limit and stops when the pull request merges, closes or loses auto-merge.
+A pull request or its repository removed or archived ends it at once: the shepherd returns `GONE`, and its beat and
+that pull request's alerts go with it instead of a "shepherd stuck" alert after ten failed rounds. Only the two
+queries about the subject itself (`gh repo view` and `gh pr view`) can end it that way, so a run listing or a
+catch-up that failed keeps the pull request monitored, and so does a not-found while `gh`'s login does not work: a
+private repository answers 404 to a login without access, so an expired token stays a "shepherd stuck" alert. The beat records the repository and the head branch the
+shepherd read before it waits for the next round, so a restart whose first `gh pr view` already answers not-found
+still clears that branch's push alerts along with the pull request's own. A revival skips and retires a beat whose
+checkout is gone and that records no repository (nothing is left to follow); a beat that recorded its repository is
+still started, since its pull request may be open. `tare ci check --prune` removes the
+alerts whose pull request merged or closed or whose repository was removed or archived, with the shepherd beats they
+left; the push alerts of that pull request's branch go with it, since the alert that named the branch goes too. It
+keeps one GitHub could not resolve (a non-not-found error proves nothing). `tare ci dismiss KEY` drops one
+alert by the key `tare ci check` prints beside it, for a problem you decided not to fix. Pull requests behind main are
 brought up to date one at a time, oldest first: the others keep their green run and wait, so a merge restarts
 one CI run, not every open one. A stuck pull request holds the queue until its auto-merge is turned off. A conflict in the disposition manifest alone
 is resolved by regenerating it from the merged tree (`scripts/sync_disposition_manifest.py`).
