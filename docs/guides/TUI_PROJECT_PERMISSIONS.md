@@ -89,6 +89,9 @@ pull that changes it needs no new review. An uncommitted change to it (modified,
 staged, deleted or untracked, as an agent's edit would be) is not loaded; the
 committed version is, and a new conversation's welcome says so. Saving the panel
 with the box checked reviews that edit and loads it while it stays as reviewed.
+Agents commit and merge here too, so a committed change
+is no review: while the last commit that changed `AGENTS.md` is under seven days old,
+every new conversation's welcome names it (commit, subject, lines added and removed).
 Unchecking it in any worktree untrusts the repository in all of them. Outside Git
 the reviewed bytes are pinned as before (an absent file is pinned as absent), so a
 change needs a new review. Policies saved as `adopted` keep their pin until saved again.

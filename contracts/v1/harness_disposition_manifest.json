@@ -3141,8 +3141,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns console presentation and project/session selection; observations never authorize execution.",
-      "size_bytes": 17572,
-      "sha256": "0f501acc154aacec76175cbd3e328b24a68b8fbf2f04021d20d7d8fb78850909"
+      "size_bytes": 18625,
+      "sha256": "61132e65bb0833c7a44bfa7df07b4a109b3f5b0ac7047db979c42363db530fd2"
     },
     {
       "name": "cli_discovery.py",
@@ -3981,8 +3981,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 6144,
-      "sha256": "c1d0942683bdad39e7574c22d0fe98732f99f66e71ac05cb0487ec58ddb728e9"
+      "size_bytes": 7323,
+      "sha256": "28c6d06f1240463bde8595ca6bae016f50eb20479572e3132702719babc004e2"
     },
     {
       "name": "work_control.py",
