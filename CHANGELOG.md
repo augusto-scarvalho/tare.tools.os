@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- Coverage progress counts only reads of code and references: the packet tare builds for the auditor (request and diff) is rebuilt for every continuation, so rereading it at other lines no longer counts as reading something new and keeping the chain going.
 - The side agent's reasoning level is the owner's: `heads_up_effort` in the routing policy (routing.json) applies to its writer routes, as `planner_effort` and `auditor_effort` do for theirs; unset, each route keeps its own default. Saving routes (/routes) keeps the owner's reasoning levels instead of dropping them.
 - An audit reuses the project's satellite inventory while its submodule pins stay the same: building the candidate tree keeps it, and the review, its continuations and cached-decision lookups read it instead of listing every satellite object again; a moved pin reads it anew. Each implement on the OS repository paid seconds for this, even when the audit decision was cached.
 - A coverage continuation counts as progress only when its session read something (a file or range) that no earlier review of its chain had read, taken from its journal; the auditor's list of what remains is no longer the measure. Comparing that list's text let a reworded item pass as progress, so the chain might never stop by itself. Continuations recorded with the list measure end the chain.
