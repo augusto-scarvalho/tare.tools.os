@@ -10,7 +10,7 @@ can select another available model or review setup, then send it again.
 | Policy | `MACHINE_POLICY`, `LOCAL_GPU_DISABLED` | The saved machine or conversation choices exclude the route |
 | Dependency | `CLI_UNAVAILABLE`, `CREDENTIAL_UNAVAILABLE`, `GATEWAY_UNREACHABLE` | A required executable, credential or service is unavailable |
 | Resource | `GPU_BUSY`, `GPU_RESERVED`, `QUOTA_EXHAUSTED` | An observed holder or usage limit prevents dispatch now |
-| Configuration | `PROFILE_UNAVAILABLE`, `ROLE_NOT_CONFIGURED` | The selected profile or role needs configuration |
+| Configuration | `PROFILE_UNAVAILABLE`, `ROLE_NOT_CONFIGURED`, `NOT_QUALIFIED_PIN_ONLY` | The selected profile or role needs configuration, or the route is reached only by an exact pin until qualified |
 | Unknown | `GPU_STATUS_UNKNOWN`, `RESOURCE_OBSERVATION_INVALID` | Available evidence does not establish a specific cause |
 
 An image job waiting for the shared GPU is resource contention; it is distinct
