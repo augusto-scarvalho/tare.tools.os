@@ -70,7 +70,7 @@ def provider_limit_guidance(result):
     if 'CLI_QUALIFICATION_INTERRUPTED' in (result.get('reason'), result.get('failure_code')):
         return (f'The check of {cli}\'s new release was cut short, so your request was not sent. Resume to '
                 'check it again and continue.')
-    if result.get('failure_code') == 'CLI_USAGE_LIMIT':
+    if result.get('failure_code') in ('CLI_USAGE_LIMIT', 'PLAN_USAGE_LIMIT'):
         limit = result.get('usage_limit') or {}
         until = limit.get('until')
         when = f" until {time.strftime('%H:%M', time.localtime(until))}" if type(until) in (int, float) else ''
@@ -258,7 +258,8 @@ def conversation_result(result, *, exit_code=None):
         notices.insert(0, limit_guidance)
     elif status != 'PROPOSED':
         meanings = {'GPU_STATUS_UNKNOWN': 'the local model is unavailable',
-                    'CLI_USAGE_LIMIT': 'the quota or usage limit is exhausted'}
+                    'CLI_USAGE_LIMIT': 'the quota or usage limit is exhausted',
+                    'PLAN_USAGE_LIMIT': "this model's plan allowance is exhausted"}
         recorded = list(dict.fromkeys(str(value) for value in (
             result.get('reason'), result.get('failure_code')) if value))
         reason = '; '.join(meanings.get(value, '('+value+')') for value in recorded)

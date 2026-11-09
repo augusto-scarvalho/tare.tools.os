@@ -11,7 +11,7 @@ from .blocker_rubric import BLOCKER_RUBRIC
 from .landing_policy import attest_identity, read_identity, write_identity
 
 # Only operational failures may advance the explicitly selected read-only routes.
-FALLBACK_CODES = {'HTTP_429', 'HTTP_502', 'HTTP_503', 'HTTP_504'}
+FALLBACK_CODES = {'HTTP_429', 'HTTP_502', 'HTTP_503', 'HTTP_504', 'PLAN_USAGE_LIMIT'}
 
 
 def identity(deployment, role):

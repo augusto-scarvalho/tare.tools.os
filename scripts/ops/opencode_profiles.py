@@ -96,6 +96,8 @@ def profile(row, family, api, key, plan, today):
             'context_window': row['limit']['context'], 'output_tokens': min(row['limit']['output'], OUTPUT_CAP),
             'parameters_json': json.dumps(parameters(protocol, levels), sort_keys=True),
             'session_header': 'x-opencode-session',
+            # A subscription reply billed elsewhere (balance, with Extra Usage on) ends the session after that call.
+            **({'billing_sources': ['go', 'go-plus']} if plan == 'sub' else {}),
             'source': 'OpenCode model list ' + source + '; metadata admission, not measured delivery quality.'},
         'native_usage_contract': {'layout': 'opencode-exclusive',
                                   'source': 'https://opencode.ai/docs/console/api/inference (usage.opencode.tokens, cost)'},

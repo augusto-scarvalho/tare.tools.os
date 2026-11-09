@@ -56,8 +56,14 @@ API, "Model is unavailable" from the subscription endpoint). Their paid versions
 The subscription models draw on one plan account, `opencode-sub`, so a session on the subscription delegates within
 it and quotes a minimal call as plan usage, not dollars. A limit recorded for one model leaves the others usable,
 since each has its own allowance. Plan usage takes no dollar reservation under tare's spend caps, which holds only
-with Extra Usage off. Tare does not yet recognize OpenCode's refusal when a model's allowance is spent (a later
-change), so a pinned model whose allowance is spent fails its session. API profiles will carry the list price as a
+with Extra Usage off.
+
+When a model's allowance window is spent, OpenCode refuses with HTTP 429 `GoUsageLimitError` and a Retry-After of
+hours. Tare then leaves that model, and only that model, until the Retry-After time (`PLAN_USAGE_LIMIT`: "The
+opencode-sub account behind this model has no usage left until HH:MM"); `tare auto` and `tare serve` skip it and an
+audit falls back to its next route. The subscription profiles declare the billing sources they may be charged to
+(`go`, `go-plus`): if Extra Usage is on and a reply is billed to the balance anyway, that one call is charged, the
+session stops there, and the model is left for five hours, the shortest allowance window. API profiles will carry the list price as a
 tariff when they ship, so spend caps can reserve dollars for them.
 
 Sessions saved on the earlier `opencode-go-*` profiles cannot be resumed (their author records are gone and they

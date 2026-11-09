@@ -410,7 +410,8 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
         if step:
             tier = state['sessions'][-1]['tier']
             # An account out of usage: another route of the same tier first (available() skips that account).
-            limited = result.get('failure_code') == 'CLI_USAGE_LIMIT'
+            from .turn_engine import USAGE_LIMIT_CODES
+            limited = result.get('failure_code') in USAGE_LIMIT_CODES
             why = gpu_cause(result.get('gpu_busy')) or result.get('reason')
             emit(f"\n_tare: {result.get('status')} ({result.get('failure_code') if limited else why});"
                  f" moving to the next route._\n")

@@ -67,7 +67,7 @@ def audit(row, job, variant, cancellation):
     outcome = execute(config, row['reviewer'], row['review_variant'], session, instruction, row, cancellation)
     if outcome['status'] != 'PROPOSED' or not (session/'artifact.json').exists():
         public = {'CLI_UNEXPECTED_TOOL', 'CLI_UNEXPECTED_INVOCATION', 'CLI_BOUNDARY_UNCONFIRMED',
-                  'CLI_USAGE_LIMIT', 'CLI_INCOMPLETE_EXCHANGE', 'CLI_TURN_LIMIT_REACHED',
+                  'CLI_USAGE_LIMIT', 'PLAN_USAGE_LIMIT', 'CLI_INCOMPLETE_EXCHANGE', 'CLI_TURN_LIMIT_REACHED',
                   'CLI_GENERATION_FAILED', 'CLI_INVALID_RESPONSE', 'CLI_ACTION_LIMIT_EXCEEDED'}
         code = outcome.get('failure_code')
         return 'unknown', 'Review did not complete'+(' ('+code+')' if code in public else '')+'. Inspect its execution receipt before retrying.'

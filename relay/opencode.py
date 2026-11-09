@@ -31,6 +31,33 @@ def user_agent():
     return 'tare/' + (os.environ.get('TARE_RELEASE_ID') or 'dev')[:16]
 
 
+# OpenCode's 429 type for a subscription model whose allowance window is spent (observed 2026-11-09, with Retry-After).
+SPENT = frozenset({'GoUsageLimitError'})
+# ponytail: a reply billed to the balance gives no reset time; pause for the shortest allowance window (5 hours). A
+# spent weekly or monthly allowance then costs one more paid call per pause; a ledger of usage.opencode.allowance
+# would know the real reset.
+BILLED_PAUSE = 5 * 3600
+
+
+def plan_limit(deployment, failed, observations, now):
+    """When a subscription model's own allowance is gone: the kernel's model_failed event `failed` was OpenCode's
+    spent-plan 429 (its Retry-After is the reset) or a reply billed outside the plan (BILLING_SOURCE_REFUSED: Extra
+    Usage charged the balance once). Returns {'kind': 'model', 'resets_at', 'cause'} for note_usage_limit, else None."""
+    if not subscription(deployment) or not failed:
+        return None
+    if failed.get('code') == 'BILLING_SOURCE_REFUSED':
+        return {'kind': 'model', 'resets_at': now + BILLED_PAUSE, 'cause': 'billed_to_balance'}
+    if failed.get('code') != 'HTTP_429':
+        return None
+    receipt = next((call for row in reversed(observations) if row.get('call_id') == failed.get('call_id')
+                    for call in reversed(row.get('transport_calls') or [])
+                    if (call.get('provider_error') or {}).get('type') in SPENT), None)
+    if receipt is None:
+        return None  # a passing rate limit, not a spent plan
+    after = receipt.get('retry_after')
+    return {'kind': 'model', 'resets_at': now + after if type(after) is int else None, 'cause': 'allowance_spent'}
+
+
 def names_delivery_tool(value):
     """Whether the last call may name the delivery tool: OpenCode lists the tool_choice values each model accepts,
     and an empty list is unknown, so those models keep automatic choice and rely on the budget notice."""
