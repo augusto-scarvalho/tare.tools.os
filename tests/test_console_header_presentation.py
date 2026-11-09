@@ -261,3 +261,24 @@ def test_draft_and_status_preserved_during_presentation_updates(tmp_path, monkey
             assert 'Running test battery · 12s' in str(status.render())
 
     asyncio.run(scenario())
+
+
+def test_the_header_says_when_the_projects_agents_md_is_not_loaded(tmp_path, monkeypatch):
+    # 2026-11-09: AGENTS.md was quarantined by default and nothing said so; the planner wrote a criterion it forbids.
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'history'))
+    (tmp_path/'AGENTS.md').write_text('Never run the whole suite on a laptop.\n')
+
+    async def scenario():
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(130, 44)) as pilot:
+            await app.workers.wait_for_complete(); await pilot.pause()
+            header = lambda: str(app.query_one('#session-context', Static).render())
+            assert 'AGENTS.md not loaded · /permissions' in header()
+            app.project_admission = {'mode': 'adopted', 'root_sha256': 'a'*64, 'nested': False}
+            app.render_header(); await pilot.pause()
+            assert 'AGENTS.md' not in header()
+            (tmp_path/'AGENTS.md').unlink()
+            app.project_admission = {'mode': 'quarantine', 'root_sha256': None, 'nested': False}
+            app.render_header(); await pilot.pause()
+            assert 'AGENTS.md' not in header()  # nothing to load, nothing to say
+    asyncio.run(scenario())
