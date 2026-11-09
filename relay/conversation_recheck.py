@@ -91,10 +91,13 @@ def retry_decision(root, task, unit, *, register=False, explicit=False):
         session = read_json(state_path, 1024*1024)['session_id'] if state_path.exists() else 'parent'
     scope = {'task': task['id'], 'repository': unit['repository'], 'key': unit['key']}
     if register:
+        from .work_units import MAX_PROGRESSING_REFUSALS
         rule = consent.select_rule()
+        # Say what a yes allows: the correction loop resumes under its usual stops, not a single attempt.
         question = consent.register(root, session, 'retry', scope, rule=rule,
-            question='Execution stopped after repeated failures. Allow one more attempt for this task? '
-                     + consent.guidance(rule) + '.')
+            question='Execution stopped after repeated failures. Let this task go on correcting? Corrections continue '
+                     'while the independent audit finds new defects and stop again when it repeats a defect or has '
+                     f'refused {MAX_PROGRESSING_REFUSALS} candidates in a row. ' + consent.guidance(rule) + '.')
         folder = regular(root/'conversation-retry')
         folder.mkdir(exist_ok=True)
         path = regular(folder/'request.json')
