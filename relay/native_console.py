@@ -831,6 +831,10 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         self.push_screen(ChangesPanel(session,self.workspace_root, commenter=comment, provider_sessions=providers))
 
     def check_action(self, action, parameters):
+        if action in {'focus_next', 'focus_previous'} and not getattr(self.screen, 'keyboard', False):
+            # Tab is app.focus_next: the panel guards below keep app shortcuts out, not keyboard navigation
+            # (with Tab blocked, /permissions could not reach its own controls).
+            return super().check_action(action, parameters)
         if self.is_running and isinstance(self.screen, WorkbenchPanel):
             return action in {'quit'}
         from .model_picker import ModelPicker
