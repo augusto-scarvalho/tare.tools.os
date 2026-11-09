@@ -27,6 +27,8 @@ FAILED = {'failed', 'refused', 'unknown', 'unconfirmed', 'not_started'}
 LIST_LIMIT = 100_000
 STATUS_LIMIT = 5000
 POLL_TICKS = 6  # git status every 3 s while the pane shows (0.5 s ticks)
+SLOW_SECONDS = 1  # a read slower than this polls every 10 s instead
+GIT_SECONDS = 30  # off the UI thread, so a cold status of a large repository may take its time
 CONFLICTS = {'DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'}
 ROLES = {'Implement': 'impl', 'Explore': 'expl', 'Code review': 'audit', 'Plan draft': 'plan',
          'Plan review': 'plan audit', 'Research': 'research', 'Candidate verification': 'check'}
@@ -126,29 +128,41 @@ def list_paths(root, limit=LIST_LIMIT):
 
 
 def git_status(root, limit=STATUS_LIMIT):
-    """{'marks': {path: M A D U !}, 'dirs': [untracked folders 'a/'], 'count': n, 'numstat': {path: (added,
-    removed)}}, or None outside a repository. Read-only; `count` counts as `git status` does."""
+    """{'marks': {path: M A D U !}, 'dirs': (untracked folders 'a/',), 'count': n, 'numstat': {path: (added,
+    removed)}}, or None outside a repository. Read-only; `count` counts as `git status` does. Paths are relative
+    to `root`, also when it is a folder inside the repository (git status names them from the repository's top)."""
     from .console_header import run_git
-    status = run_git(root, 'status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=normal', timeout=5)
+    top = run_git(root, 'rev-parse', '--show-prefix', timeout=GIT_SECONDS)
+    if top.returncode != 0:
+        return None
+    prefix = top.stdout.strip()
+    status = run_git(root, 'status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=normal', '--', '.',
+                     timeout=GIT_SECONDS)
     if status.returncode != 0:
         return None
-    entries = [entry for entry in status.stdout.split('\0') if len(entry) > 3]
+    entries = [(entry[:2], entry[3+len(prefix):]) for entry in status.stdout.split('\0')
+               if len(entry) > 3 and entry[3:].startswith(prefix)]
     marks, dirs = {}, []
-    for entry in entries[:limit]:
-        code, path = entry[:2], entry[3:]
+    for code, path in entries[:limit]:
         if code == '??' and path.endswith('/'):
             dirs.append(path)
         else:
             marks[path] = ('U' if code == '??' else '!' if code in CONFLICTS else
                            'D' if 'D' in code else 'A' if 'A' in code else 'M')
     numstat = {}
-    if entries:
-        diff = run_git(root, 'diff', '--numstat', '--no-renames', 'HEAD', timeout=5)
-        for line in diff.stdout.splitlines() if diff.returncode == 0 else ():
-            added, removed, path = (line.split('\t', 2)+['', ''])[:3]
+    if entries:  # -z keeps unusual names unquoted; --relative names them from root
+        diff = run_git(root, 'diff', '--numstat', '-z', '--no-renames', '--relative', 'HEAD', timeout=GIT_SECONDS)
+        for record in diff.stdout.split('\0') if diff.returncode == 0 else ():
+            added, removed, path = (record.split('\t', 2)+['', ''])[:3]
             if added.isdigit() and removed.isdigit():
                 numstat[path] = (int(added), int(removed))
-    return {'marks': marks, 'dirs': dirs, 'count': len(entries), 'numstat': numstat}
+    return {'marks': marks, 'dirs': tuple(dirs), 'count': len(entries), 'numstat': numstat}
+
+
+def listing(root):
+    """list_paths with its index, both built in the worker thread."""
+    paths, truncated = list_paths(root)
+    return paths, truncated, index(paths)
 
 
 def index(paths):
@@ -165,9 +179,9 @@ def mark_of(status, path, is_dir=False):
     """A file's git mark, '•' for a folder holding a change, '' when clean or outside git."""
     if not status:
         return ''
-    if is_dir:
-        return 'U' if path+'/' in status['dirs'] else '•' if path in status['changed_dirs'] else ''
-    return status['marks'].get(path) or ('U' if any(path.startswith(folder) for folder in status['dirs']) else '')
+    if is_dir:  # dirs is a tuple: str.startswith takes it at once
+        return 'U' if (path+'/').startswith(status['dirs']) else '•' if path in status['changed_dirs'] else ''
+    return status['marks'].get(path) or ('U' if path.startswith(status['dirs']) else '')
 
 
 def changed_dirs(status):
@@ -254,8 +268,15 @@ class FileTree(Tree):
         folder = path.rsplit('/', 1)[0] if '/' in path else ''
         if (folder and not self.open_folder(folder)) or path not in self.nodes:
             return False
-        self.call_after_refresh(self.move_cursor, self.nodes[path])  # its line is known once the tree redraws
+        self.call_after_refresh(self.place, self.nodes[path])
         return True
+
+    def place(self, node, tries=5):
+        """Move the cursor to a node added since the last redraw: its line is known once the tree is built again."""
+        if node.line == -1 and tries:
+            self.call_after_refresh(self.place, node, tries-1)
+        else:
+            self.move_cursor(node)
 
     def mark(self, status, edited_style):
         """New git marks: only the labels whose text changes are set (set_label redraws)."""
@@ -281,6 +302,7 @@ class FilesPane(Vertical):
         self.found = []
         self.root = None  # the project the tree lists
         self.paths, self.truncated, self.status, self.revision = set(), False, None, 0
+        self.children_of = {}  # the index of self.paths, built in the worker
         self.changed_only = False
         self.followed = set()
         self.ticks, self.wait, self.failures = 0, 0, 0
@@ -312,6 +334,7 @@ class FilesPane(Vertical):
         root = str(app.workspace_root)
         if root != self.root:  # another project: list it again, follow from scratch
             self.root, self.paths, self.status, self.followed, self.wait = root, set(), None, set(), 0
+            self.children_of, self.failures = {}, 0
             self.query_one(FileTree).load({})
         self.ticks += 1
         if self.ticks >= self.wait and self.failures < 3 and not self.polling:
@@ -337,7 +360,7 @@ class FilesPane(Vertical):
 
     def follow(self, found):
         """The tree opens at the newest file an agent edited (reads do not move it)."""
-        edited = [touch.path.replace('\\', '/') for touch in found if touch.edited and not touch.outside]
+        edited = [touch.path.replace('\\', '/').removeprefix('./') for touch in found if touch.edited and not touch.outside]
         new = [path for path in edited if path not in self.followed and path in self.paths]
         if new:
             self.followed.update(new)
@@ -359,16 +382,18 @@ class FilesPane(Vertical):
             missing = status and any(path not in known for path, mark in status['marks'].items() if mark != 'D')
             dirs_changed = status and self.status is not None and status['dirs'] != self.status['dirs']
             # A new file shows in git status first (untracked or added): only then is the project listed again.
-            listed = await asyncio.to_thread(list_paths, root) if relist or missing or dirs_changed else None
+            listed = await asyncio.to_thread(listing, root) if relist or missing or dirs_changed else None
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
             self.failures += 1
             if self.failures >= 3:  # stop polling until the pane is opened again
-                self.query_one('#files-git', Static).update('Git unavailable: '+str(exc)[:120])
+                self.query_one('#files-git', Static).update(
+                    'Git did not answer in time; F8 twice reads it again' if isinstance(exc, subprocess.TimeoutExpired)
+                    else 'Git unavailable: '+str(exc)[:120])
             return
         if root != self.root:
             return  # the project changed while git ran
         self.failures = 0
-        if time.monotonic()-started > 1:
+        if time.monotonic()-started > SLOW_SECONDS:
             self.wait = 20  # a slow repository: every 10 s
         if status is not None:
             status['changed_dirs'] = changed_dirs(status)
@@ -376,30 +401,32 @@ class FilesPane(Vertical):
         edited_style = self.app.theme_variables.get('warning') or 'yellow'
         tree.status, tree.edited_style = status, edited_style
         if listed is not None:
-            self.paths, self.truncated = set(listed[0]), listed[1]
-            self.load_tree(listed[0])
+            self.paths, self.truncated, self.children_of = set(listed[0]), listed[1], listed[2]
+            self.load_tree()
             self.followed &= self.paths
         else:
             tree.mark(status, edited_style)
+        if status != self.status:
+            self.revision += 1  # the touched rows show the new counts and applied edits
         self.status = status
-        self.revision += 1
         count = '' if status is None else (f"{status['count']}{'+' if status['count'] >= STATUS_LIMIT else ''} changed"
                                            if status['count'] else 'No changes')
         self.query_one('#files-git', Static).update(
             'Not a Git repository' if status is None else count+(' · list cut at 100 000' if self.truncated else ''))
 
-    def load_tree(self, paths):
+    def load_tree(self):
         tree = self.query_one(FileTree)
         if self.changed_only and self.status is not None:
             changed = {*self.status['marks'], *(touch.path for touch in self.found if touch.edited)}
-            shown = [path for path in paths if path in changed or any(path.startswith(d) for d in self.status['dirs'])]
-            tree.load(index(shown), expand_all=True)
+            dirs = self.status['dirs']
+            tree.load(index(sorted(path for path in self.paths if path in changed or path.startswith(dirs))),
+                      expand_all=True)
         else:
-            tree.load(index(paths))
+            tree.load(self.children_of)
 
     def action_changed(self):
         self.changed_only = not self.changed_only
-        self.load_tree(sorted(self.paths))
+        self.load_tree()
 
     def on_option_list_option_highlighted(self, event):
         index = event.option_index

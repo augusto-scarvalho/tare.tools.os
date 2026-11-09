@@ -172,13 +172,28 @@ def test_git_status_marks_numstat_and_untracked_folders(repo, tmp_path):
     (repo/'added.py').write_text('x\n'); git(repo, 'add', 'added.py')
     (repo/'fresh').mkdir(); (repo/'fresh'/'one.py').write_text('')
     status = git_status(repo)
-    assert status['marks'] == {'b.py': 'M', 'src/a.py': 'D', 'added.py': 'A'} and status['dirs'] == ['fresh/']
+    assert status['marks'] == {'b.py': 'M', 'src/a.py': 'D', 'added.py': 'A'} and status['dirs'] == ('fresh/',)
     assert status['count'] == 4 and status['numstat']['b.py'] == (2, 1)
     status['changed_dirs'] = changed_dirs(status)
     assert mark_of(status, 'fresh/one.py') == 'U' and mark_of(status, 'fresh', True) == 'U'
     assert mark_of(status, 'src', True) == '•' and mark_of(status, '.gitignore') == ''
+    (repo/'fresh'/'sub').mkdir(); (repo/'fresh'/'sub'/'two.py').write_text('')
+    assert mark_of(status, 'fresh/sub', True) == 'U'  # a folder inside an untracked folder
     (tmp_path/'plain').mkdir()
     assert git_status(tmp_path/'plain') is None
+
+
+def test_a_project_inside_a_repository_and_unusual_names(repo, tmp_path):
+    from relay.files_pane import git_status, list_paths
+    package = repo/'pkg'/'sub'; package.mkdir(parents=True)
+    (package/'x y.py').write_text('x = 1\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'package')
+    (package/'x y.py').write_text('x = 2\n'); (package/'ação.py').write_text(''); (repo/'b.py').write_text('outside\n')
+    status = git_status(repo/'pkg')  # paths from the opened folder, not from the repository's top
+    assert status['marks'] == {'sub/x y.py': 'M', 'sub/ação.py': 'U'} and status['count'] == 2
+    assert status['numstat'] == {'sub/x y.py': (1, 1)}
+    assert list_paths(repo/'pkg') == (['sub/ação.py', 'sub/x y.py'], False)
+    unborn = tmp_path/'unborn'; unborn.mkdir(); git(unborn, 'init'); (unborn/'n.py').write_text('n\n')
+    assert git_status(unborn) == {'marks': {'n.py': 'U'}, 'dirs': (), 'count': 1, 'numstat': {}}
 
 
 def test_a_merge_conflict_is_marked(repo):
@@ -194,6 +209,7 @@ def test_tree_reads_git_only_while_shown_follows_edits_and_filters_changes(repo,
     from relay.files_pane import FileTree
     calls, real = [], files_pane.git_status
     monkeypatch.setattr(files_pane, 'git_status', lambda root, *args: calls.append(root) or real(root, *args))
+    monkeypatch.setattr(files_pane, 'SLOW_SECONDS', 60)  # a loaded CI runner must not switch to the 10 s back-off
     async def scenario():
         app = WorkConsole(repo, backend=FakeBackend(), initial_mode='assistant', storage_preferred=tmp_path/'state')
         async with app.run_test(size=(150, 52)) as pilot:
@@ -211,7 +227,7 @@ def test_tree_reads_git_only_while_shown_follows_edits_and_filters_changes(repo,
             assert tree.nodes['src'].is_expanded and tree.labels['src'] == 'src  •'
             await pilot.press('c'); await pilot.pause()
             assert set(tree.nodes) == {'b.py', 'src', 'src/new.py'}  # changed only, expanded
-            await pilot.press('f8'); await pilot.pause()
+            await pilot.press('f8'); await pilot.pause(1)  # a read started on the last tick may still finish
             seen = len(calls)
             await pilot.pause(4)
             assert len(calls) == seen and not app.backend.launches  # hidden again: no more git
