@@ -175,6 +175,11 @@ class FileContext:
     def add_context(self, root, name):
         """Attach a project path as a context chip: a reference the model may read, never the file's content.
         False (and a notice) when it is refused."""
+        mode = self.query_one('#mode', Select).value
+        if mode not in {'assistant', 'session'} or (self.busy and mode != 'assistant'):
+            # Chips go with a conversation message; a flow refuses them, and a running task cannot take them.
+            self.notify('File context goes with a conversation message: switch to the conversation, or wait '
+                        'for this task to stop.'); return False
         try:
             context_path(root, name)
         except (ValueError, OSError) as exc:

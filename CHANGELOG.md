@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The files pane's diff takes file names literally (`a[1].py` is not a glob for `a1.py`), runs no textconv program the repository configures, shows a deleted file's deletion and a repository without commits whole; `a` adds a reference only where a message can carry it (a conversation, and not a running direct task).
 - In the files pane, Enter opens a file in the viewer F3 uses (a row of the list also opens it in the tree), `d` shows what changed since the last commit (a new file whole), `a` attaches it as an `@` reference of the next message through the composer's own context chips, and `y` copies its path; linked and outside paths are refused as in `@` completion, and files are read in a worker with the viewer's 256 KiB bound.
 - A project folder that Git does not track at all, inside a repository, shows its files as untracked in the files pane instead of being listed again every 3 s.
 - The files pane's Git marks also work when the project is a folder inside a repository (status names paths from the repository's top), count lines of unusual file names (`numstat -z`), give a large repository 30 s to answer, build the file index in the worker, and mark folders inside an untracked folder.

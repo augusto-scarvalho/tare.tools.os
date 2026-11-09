@@ -3091,8 +3091,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns selected context presentation and conversation composition; file reads and execution stay in Kernel and Runtime.",
-      "size_bytes": 10973,
-      "sha256": "aeb74635d305ec9810ccebf75a357d5f5ab4edd398fa07927fc0d9ed538b0590"
+      "size_bytes": 11398,
+      "sha256": "fdf3fefd02e54973f63fe29f65c166807cce11b9df94f631979be7539699abaa"
     },
     {
       "name": "console_navigation.py",
@@ -4371,8 +4371,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 25479,
-      "sha256": "c8d77cf04298892f8b6eccfc7a2e2ce4d35fbe4750632a92b7578e33e44cb49e"
+      "size_bytes": 26131,
+      "sha256": "ed301e2cc18a5ce4edd04701bd9a9a057ea0b4adae1c103e3db637e9650deb5b"
     }
   ]
 }

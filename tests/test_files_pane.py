@@ -286,3 +286,50 @@ def test_open_diff_mention_and_copy_send_nothing_to_a_model(repo, tmp_path, monk
             assert copies == ['b.py']
             assert prompt.text == 'Keep this draft' and not app.backend.launches  # nothing was sent
     asyncio.run(scenario())
+
+
+def test_diff_is_literal_runs_no_textconv_and_shows_deletions(repo, tmp_path):
+    from relay.files_pane import diff_text
+    (repo/'a1.py').write_text('one\n'); (repo/'gone.py').write_text('bye\n')
+    (repo/'.gitattributes').write_text('*.py diff=conv\n')
+    git(repo, 'add', '.'); git(repo, 'commit', '-m', 'more')
+    git(repo, 'config', 'diff.conv.textconv', 'echo CONVERTED')
+    (repo/'a1.py').write_text('two\n'); (repo/'a[1].py').write_text('glob\n'); (repo/'gone.py').unlink()
+    assert diff_text(repo, 'a[1].py') == 'New file, not in Git yet:\n\nglob\n'  # not a1.py's diff
+    changed = diff_text(repo, 'a1.py')
+    assert '+two' in changed and 'CONVERTED' not in changed
+    assert '-bye' in diff_text(repo, 'gone.py')
+    with pytest.raises(ValueError):
+        diff_text(repo, '../gone.py')
+    unborn = tmp_path/'unborn'; unborn.mkdir(); git(unborn, 'init'); (unborn/'n.py').write_text('n\n')
+    git(unborn, 'add', 'n.py')
+    assert diff_text(unborn, 'n.py') == 'No commit yet:\n\nn\n'
+
+
+def test_mention_keeps_the_composer_rules_and_tree_enter_opens_files(repo, tmp_path, monkeypatch):
+    from relay import files_pane
+    from relay.changes_panel import FileViewer
+    from relay.files_pane import FileTree
+    monkeypatch.setattr(files_pane, 'SLOW_SECONDS', 60)
+    async def scenario():
+        app = WorkConsole(repo, backend=FakeBackend(), initial_mode='assistant', storage_preferred=tmp_path/'state')
+        async with app.run_test(size=(150, 52)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.press('f8')
+            pane, tree = app.query_one(FilesPane), app.query_one(FileTree)
+            await until(pilot, lambda: pane.paths)
+            assert not app.add_context(str(repo), '../outside.py') and app.context_paths == []
+            (tmp_path/'b.py').write_text('x\n')  # exists in the other project, so only the one-project rule refuses
+            notices = []; app.notify = lambda message, **kwargs: notices.append(message)
+            assert app.add_context(str(repo), 'b.py') and not app.add_context(str(tmp_path), 'b.py')
+            assert notices == ['Remove the context from the previous project first.']
+            app.context_paths = [f'f{n}.py' for n in range(16)]
+            assert not app.add_context(str(repo), '.gitignore')  # the 16-path cap
+            tree.focus(); tree.move_cursor(tree.nodes['src']); await pilot.pause()
+            await pilot.press('enter'); await pilot.pause()
+            assert tree.nodes['src'].is_expanded and not isinstance(app.screen, FileViewer)  # a folder toggles
+            tree.move_cursor(tree.nodes['src/a.py']); await pilot.pause()
+            await pilot.press('enter')
+            await until(pilot, lambda: isinstance(app.screen, FileViewer))
+            assert app.screen.content == 'a = 1\n' and not app.backend.launches
+    asyncio.run(scenario())

@@ -70,6 +70,11 @@ class Touch:
     role: str = ''
     outside: bool = False  # a granted folder outside the project
 
+    @property
+    def project_path(self):
+        """The path as the tree and git name it ('/'-separated, no leading './')."""
+        return self.path.replace('\\', '/').removeprefix('./')
+
 
 def role_label(row):
     stage = (row.get('source') or {}).get('stage', '')
@@ -152,7 +157,8 @@ def git_status(root, limit=STATUS_LIMIT):
                            'D' if 'D' in code else 'A' if 'A' in code else 'M')
     numstat = {}
     if entries:  # -z keeps unusual names unquoted; --relative names them from root
-        diff = run_git(root, 'diff', '--numstat', '-z', '--no-renames', '--relative', 'HEAD', timeout=GIT_SECONDS)
+        diff = run_git(root, 'diff', '--numstat', '-z', '--no-renames', '--no-textconv', '--relative', 'HEAD',
+                       timeout=GIT_SECONDS)
         for record in diff.stdout.split('\0') if diff.returncode == 0 else ():
             added, removed, path = (record.split('\t', 2)+['', ''])[:3]
             if added.isdigit() and removed.isdigit():
@@ -181,15 +187,24 @@ def diff_text(root, path):
     does not track it yet."""
     from .console_context import context_path
     from .console_header import run_git
-    _, name = context_path(root, path)
-    if run_git(root, 'rev-parse', '--show-prefix', timeout=GIT_SECONDS).returncode != 0:
+    try:
+        _, name = context_path(root, path)
+    except ValueError:
+        # A deleted file is gone from disk, and its deletion is the diff worth seeing: a missing path cannot be a
+        # link, so a project-relative name without '..' or '.git' is enough.
+        name = path.replace('\\', '/').removeprefix('./')
+        parts = name.split('/')
+        if Path(name).is_absolute() or '..' in parts or '.git' in parts or (Path(root)/name).exists():
+            raise
+    def git(*args):  # names are literal (a[1].py is not a glob) and no textconv program runs
+        return run_git(root, '--literal-pathspecs', *args, timeout=GIT_SECONDS)
+    if git('rev-parse', '--show-prefix').returncode != 0:
         return 'Not a Git repository: no diff.'
-    tracked = run_git(root, 'ls-files', '--error-unmatch', '--', name, timeout=GIT_SECONDS).returncode == 0
-    if not tracked:
+    if git('ls-files', '--error-unmatch', '--', name).returncode != 0:
         return 'New file, not in Git yet:\n\n'+read_text(root, name)
-    diff = run_git(root, 'diff', '--no-ext-diff', '--no-color', 'HEAD', '--', name, timeout=GIT_SECONDS)
-    if diff.returncode != 0:  # no commit yet: what is staged
-        diff = run_git(root, 'diff', '--no-ext-diff', '--no-color', '--cached', '--', name, timeout=GIT_SECONDS)
+    if git('rev-parse', '--verify', '--quiet', 'HEAD').returncode != 0:
+        return 'No commit yet:\n\n'+read_text(root, name)
+    diff = git('diff', '--no-ext-diff', '--no-textconv', '--no-color', 'HEAD', '--', name)
     text = diff.stdout.replace('\r\n', '\n')
     if len(text.encode('utf-8')) > VIEW_BYTES:
         return 'Diff exceeds the interactive preview limit.'
@@ -392,7 +407,7 @@ class FilesPane(Vertical):
 
     def follow(self, found):
         """The tree opens at the newest file an agent edited (reads do not move it)."""
-        edited = [touch.path.replace('\\', '/').removeprefix('./') for touch in found if touch.edited and not touch.outside]
+        edited = [touch.project_path for touch in found if touch.edited and not touch.outside]
         new = [path for path in edited if path not in self.followed and path in self.paths]
         if new:
             self.followed.update(new)
@@ -480,14 +495,14 @@ class FilesPane(Vertical):
         listing = self.query_one('#files-touched', OptionList)
         index = listing.highlighted
         touch = self.found[index] if index is not None and 0 <= index < len(self.found) else None
-        return touch.path.replace('\\', '/').removeprefix('./') if touch is not None and not touch.outside else None
+        return touch.project_path if touch is not None and not touch.outside else None
 
     def on_option_list_option_selected(self, event):
         event.stop()
         touch = self.found[event.option_index] if 0 <= event.option_index < len(self.found) else None
         if touch is not None and not touch.outside:
-            self.query_one(FileTree).reveal(touch.path)
-            self.open_file(touch.path, diff=False)
+            self.query_one(FileTree).reveal(touch.project_path)
+            self.open_file(touch.project_path, diff=False)
 
     def on_tree_node_selected(self, event):
         path, is_dir = event.node.data or (None, True)
