@@ -254,8 +254,10 @@ def test_coverage_continues_each_turn_while_it_reads_something_new(reviewed):
     unread=['Read b.py.','Read c.py.','Read d.py.']
     first=run('INCONCLUSIVE',with_findings=False,remaining=unread)
     more=[('read',{'repository':'candidate','path':'a.py','start':1,'end':1})]  # a range no review had read
-    # The second continuation rewrites its list but reads nothing new: its words are not progress.
-    for turn,(left,reads,calls) in enumerate([(unread[1:],more,2),(['Read c.py again.','Read d.py.'],more,3)]):
+    # The second continuation rewrites its list and rereads tare's packet at new lines, but reads no new code or
+    # reference: neither its words nor the packet it was handed are progress.
+    packet=[('read',{'repository':'review','path':'request.json','start':1,'end':3})]
+    for turn,(left,reads,calls) in enumerate([(unread[1:],more,2),(['Read c.py again.','Read d.py.'],more+packet,3)]):
         user_reply(host,'segue')
         tools.invocation_id=f'coverage-{turn}'
         result=run('INCONCLUSIVE',with_findings=False,remaining=left,extra_reads=reads,expected_calls=calls)
