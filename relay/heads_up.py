@@ -388,14 +388,16 @@ def parse(answer, seen):
 def write(text, seen):
     """(notes, attempts): the first available `heads_up` route that answers writes them; one handover on failure."""
     from .native_generation import generate_text, vault_secret
-    from .turn_engine import DEFAULT_POLICY, available, policy
+    from .turn_engine import DEFAULT_POLICY, available, policy, with_effort
     prompt = ('Notes already shown to the user (never repeat these):\n' + ('\n'.join('- ' + s for s in seen) or 'none')
               + '\n\nTurn record (JSON):\n' + text)
-    attempts = []
+    attempts, effort = [], policy().get('heads_up_effort')  # unset: each route's own default
     for name in policy().get('heads_up') or DEFAULT_POLICY['heads_up']:
         deployment, _ = available(name)
         if deployment is None:
             continue
+        if effort:
+            deployment = with_effort(deployment, effort)
         started = time.monotonic()
         try:
             ok, answer, receipt = generate_text(deployment, deployment['native_profile']['model'], prompt,

@@ -264,3 +264,20 @@ def test_a_message_queued_during_the_turn_reaches_the_heads_up_but_host_messages
     turn = heads_up.from_journal([(folder, 'inv')], 'Add the endpoint')
     assert turn['request'] == ('Add the endpoint\n\nLater message from the user:\nAlso log every refusal'
                                '\n\nLater message from the user:\nAnd keep the old route')
+
+
+def test_the_writer_uses_the_owners_heads_up_effort(monkeypatch, tmp_path):
+    monkeypatch.setattr(turn_engine, 'policy', lambda: {'heads_up': ['opus'], 'heads_up_effort': 'high'})
+    monkeypatch.setattr(turn_engine, 'available', lambda name: ({'id': name, 'native_profile': {'model': name}}, None))
+    monkeypatch.setattr(turn_engine, 'with_effort', lambda deployment, effort: {**deployment, 'effort': effort})
+    seen = []
+    monkeypatch.setattr('relay.native_generation.generate_text',
+                        lambda deployment, *a, **kw: seen.append(deployment.get('effort')) or (True, 'NONE', {}))
+    heads_up.write('{}', [])
+    assert seen == ['high']
+    # A change of routes keeps the owner's reasoning levels.
+    monkeypatch.undo()  # the real policy and routes
+    monkeypatch.setattr(turn_engine, 'policy_path', lambda: tmp_path/'routing.json')
+    (tmp_path/'routing.json').write_text(json.dumps({'heads_up': ['claude-sonnet-5-5-cli'], 'heads_up_effort': 'high'}))
+    saved = turn_engine.save_policy({'heads_up': [['codex-cli-gpt-6-1-sol']]})
+    assert saved['heads_up'] == ['codex-cli-gpt-6-1-sol'] and saved['heads_up_effort'] == 'high'
