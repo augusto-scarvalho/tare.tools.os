@@ -184,7 +184,7 @@ def test_git_status_marks_numstat_and_untracked_folders(repo, tmp_path):
 
 
 def test_a_project_inside_a_repository_and_unusual_names(repo, tmp_path):
-    from relay.files_pane import git_status, list_paths
+    from relay.files_pane import changed_dirs, git_status, list_paths, mark_of
     package = repo/'pkg'/'sub'; package.mkdir(parents=True)
     (package/'x y.py').write_text('x = 1\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'package')
     (package/'x y.py').write_text('x = 2\n'); (package/'ação.py').write_text(''); (repo/'b.py').write_text('outside\n')
@@ -192,6 +192,11 @@ def test_a_project_inside_a_repository_and_unusual_names(repo, tmp_path):
     assert status['marks'] == {'sub/x y.py': 'M', 'sub/ação.py': 'U'} and status['count'] == 2
     assert status['numstat'] == {'sub/x y.py': (1, 1)}
     assert list_paths(repo/'pkg') == (['sub/ação.py', 'sub/x y.py'], False)
+    loose = repo/'loose'/'inner'; loose.mkdir(parents=True); (loose/'l.py').write_text('')
+    status = git_status(loose)  # the opened folder is wholly untracked: git names it as one folder
+    assert status['marks'] == {} and status['dirs'] == ('',)
+    status['changed_dirs'] = changed_dirs(status)
+    assert mark_of(status, 'l.py') == 'U' and '' not in status['changed_dirs']
     unborn = tmp_path/'unborn'; unborn.mkdir(); git(unborn, 'init'); (unborn/'n.py').write_text('n\n')
     assert git_status(unborn) == {'marks': {'n.py': 'U'}, 'dirs': (), 'count': 1, 'numstat': {}}
 

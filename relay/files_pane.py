@@ -144,7 +144,7 @@ def git_status(root, limit=STATUS_LIMIT):
                if len(entry) > 3 and entry[3:].startswith(prefix)]
     marks, dirs = {}, []
     for code, path in entries[:limit]:
-        if code == '??' and path.endswith('/'):
+        if code == '??' and (path == '' or path.endswith('/')):  # '' is the opened folder itself, wholly untracked
             dirs.append(path)
         else:
             marks[path] = ('U' if code == '??' else '!' if code in CONFLICTS else
@@ -268,15 +268,9 @@ class FileTree(Tree):
         folder = path.rsplit('/', 1)[0] if '/' in path else ''
         if (folder and not self.open_folder(folder)) or path not in self.nodes:
             return False
-        self.call_after_refresh(self.place, self.nodes[path])
+        self.last_line  # builds the tree's lines, so a node added since the last redraw has its line
+        self.move_cursor(self.nodes[path])
         return True
-
-    def place(self, node, tries=5):
-        """Move the cursor to a node added since the last redraw: its line is known once the tree is built again."""
-        if node.line == -1 and tries:
-            self.call_after_refresh(self.place, node, tries-1)
-        else:
-            self.move_cursor(node)
 
     def mark(self, status, edited_style):
         """New git marks: only the labels whose text changes are set (set_label redraws)."""
