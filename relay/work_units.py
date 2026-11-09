@@ -806,13 +806,13 @@ def check_failures(custody, unit, *, conversation=False, operator_retry=False):
     failed, refused = thresholds(entries.get(unit['key']) or {})
     if refused and not (conversation and operator_retry):
         raise GuardRefusal(f"{refused} for unit {unit['key']}. "
-            'No implementer started. Tell the user what the latest audit found and ask how to go on: what the '
+            'No implementer starts until the user answers. Tell the user what the latest audit found and ask how to go on: what the '
             'implementer could not fix needs them. Changing notes, routes or task names does not reset this limit.'
             + (RETRY_QUESTION if conversation else ''))
     if failed and not (conversation and operator_retry):
         if conversation:
             raise GuardRefusal(f"Unit {unit['key']} failed its checks {MAX_FAILURES} times with the same host contract. "
-                'No implementer started. Preserve the goal and candidate; diagnose the verifier or request intervention. '
+                'No implementer starts until the user answers. Preserve the goal and candidate; diagnose the verifier or request intervention. '
                 'Changing notes, routes or task names does not reset this limit.' + RETRY_QUESTION)
         raise ValueError(f"Unit {unit['key']} failed its checks {MAX_FAILURES} times: rethink it (plan) or edit directly.")
     if conversation and operator_retry:
@@ -824,7 +824,7 @@ def check_failures(custody, unit, *, conversation=False, operator_retry=False):
         shared = targets.intersection(entry.get('paths') or [])
         if shared and any(thresholds(entry)):
             raise GuardRefusal(f"Unit {unit['key']} overlaps blocked unit {key} on scope: {', '.join(sorted(shared))}. "
-                'No implementer started. Changing objective wording or demand keys does not reset this limit.'
+                'No implementer starts until the user answers. Changing objective wording or demand keys does not reset this limit.'
                 + (RETRY_QUESTION if conversation else ' Tell the user to use /retry_delivery to retry the blocked scope.'))
 
 
