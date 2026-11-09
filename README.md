@@ -18,7 +18,7 @@ runs your checks, has an independent model review the result, and only then appl
   checks, and an auditor from a different model family reviews it. You approve project writes once per task. See
   [one chat and its execution roles](docs/guides/CONVERSATION_ROLES.md).
 - **Your models, your accounts.** Local models through an OpenAI-compatible gateway, the official Claude, Codex and
-  AGY command-line tools with your own logins, or HTTP APIs (OpenRouter, Bedrock, OpenAI). Tare owns the agent
+  AGY command-line tools with your own logins, or HTTP APIs (OpenRouter, OpenCode, Bedrock, OpenAI). Tare owns the agent
   loop, tools and permissions in every case. See [vendor CLI inference](docs/guides/VENDOR_CLI_INFERENCE.md) and
   [HTTP API providers](docs/guides/HTTP_API_PROVIDERS.md).
 - **Evidence, not claims.** Every model call, tool effect, check and review is journaled. A change is applied only
@@ -32,7 +32,7 @@ You need Windows 10 or 11 (Linux works too; see [product installation](docs/guid
 64-bit Python 3.12, Git, and access to at least one model:
 
 - a signed-in [Claude Code](https://docs.anthropic.com/en/docs/claude-code), Codex or AGY command-line tool;
-- an API key for Anthropic, OpenAI, Google, OpenRouter or Amazon Bedrock; or
+- an API key for Anthropic, OpenAI, Google, OpenRouter, OpenCode or Amazon Bedrock; or
 - a local server with an OpenAI-compatible API (llama.cpp, vLLM, LM Studio and similar).
 
 Install from source into a virtual environment:
@@ -90,7 +90,7 @@ tare.tools.os/
 ├── docs/                                     # Guides, decisions (ADRs) and specifications
 ├── node/                                     # GPU node service: model gateway, shared GPU lease (Linux)
 ├── satellites/
-│   ├── tare.tools.kernel/        (@ 0d0cf6c) # Execution boundaries, journals, terminal sessions
+│   ├── tare.tools.kernel/        (@ af38959) # Execution boundaries, journals, terminal sessions
 │   ├── tare.tools.agent-runtime/ (@ bbbe120) # Bounded agent loop
 │   ├── tare.tools.specgraph/     (@ cce9edd) # Project specification and code graph
 │   ├── tare.tools.backlog-graph/ (@ 0fd1e7c) # Task graph with compare-and-swap updates

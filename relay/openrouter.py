@@ -18,7 +18,9 @@ def is_route(value):
 
 
 def allowed(value, settings):
-    if is_route(value) and value['native_profile'].get('model') == CONTRIBUTOR:
+    # The same Meta Contributor terms apply through OpenCode, whose profiles declare them.
+    if (is_route(value) and value['native_profile'].get('model') == CONTRIBUTOR
+            or (value.get('native_opencode') or {}).get('data_use') == 'meta-contributor'):
         if (settings.get('model_data_use') or {}).get('meta_contributor') is not True:
             return False, NOTICE+' Enable Contributor in Settings > Connections to use this model.'
     return True, None

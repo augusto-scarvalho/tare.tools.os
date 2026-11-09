@@ -87,6 +87,14 @@ def describe(name, value):
             # Custom endpoints need their own declared levels; a lookalike URL is no evidence.
             known = endpoint.rstrip('/') == 'https://api.anthropic.com/v1' and model in CLAUDE_MODELS
             supported = list(EFFORTS) if known else [e for e in value.get('native_reasoning_levels', []) if e in EFFORTS]
+    elif value.get('native_opencode'):
+        from .opencode import connection as opencode_connection
+        group, connection = 'OpenCode', opencode_connection(value)
+        label = value['native_opencode'].get('label', label)
+        effort = {'openai-chat': params.get('reasoning_effort'),
+                  'openai-responses': params.get('reasoning', {}).get('effort'),
+                  'anthropic-messages': params.get('output_config', {}).get('effort')}.get(protocol) or ''
+        supported = [e for e in value.get('native_reasoning_levels', []) if e in EFFORTS]
     elif protocol == 'bedrock-converse':
         group, connection = 'AWS Bedrock', 'AWS Bedrock'
     elif protocol in {'openai-chat', 'openai-responses'} and endpoint.rstrip('/') == OPENROUTER_ENDPOINT:
@@ -206,7 +214,7 @@ def projection(*, role=None, via=None, vendor=None, provider=None, include_uncon
         by_role = {}
         for selected_role in ([role] if role else sorted(set(roles) & set(ROLES))):
             allowed = []
-            levels = route['efforts'] or (['default'] if value.get('native_openrouter') else [])
+            levels = route['efforts'] or (['default'] if value.get('native_openrouter') or value.get('native_opencode') else [])
             for level in levels:
                 if selected_role == 'planner' and level not in ('high', 'xhigh', 'max'):
                     continue
@@ -388,7 +396,8 @@ def reasoning_parameters(value, effort):
     elif effort and (protocol in {'openai-codex-responses', 'openai-responses'}
                     or protocol == 'openai-chat' and profile['endpoint'].rstrip('/') == OPENROUTER_ENDPOINT):
         params.setdefault('reasoning', {})['effort'] = effort
-    elif effort and protocol == 'openai-chat' and value.get('native_credential_env') == 'GEMINI_API_KEY':
+    elif effort and protocol == 'openai-chat' and (value.get('native_credential_env') == 'GEMINI_API_KEY'
+                                                   or value.get('native_opencode')):
         params['reasoning_effort'] = effort
     elif effort and protocol == 'openai-chat' and local(value) and value.get('native_reasoning_levels'):
         if effort not in value['native_reasoning_levels']:

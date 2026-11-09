@@ -3,7 +3,7 @@ import re
 
 LEVELS = ('low', 'medium', 'high', 'xhigh', 'max', 'default')
 PROVIDERS = {'openai': 'openai', 'anthropic': 'anthropic', 'claude': 'anthropic',
-             'google': 'google', 'gemini': 'google', 'openrouter': 'openrouter',
+             'google': 'google', 'gemini': 'google', 'openrouter': 'openrouter', 'opencode': 'opencode',
              'bedrock': 'bedrock', 'aws': 'bedrock', 'local': 'local', 'api': 'api',
              'ninfer': 'ninfer', 'strata': 'strata'}
 
@@ -66,7 +66,7 @@ def identities(name, deployment):
     aliases = {'qwen38-gsq': {'qwen3.8-gsq'}, 'swift-next': {'qwen-next'},
                'claude-opus-5-5': {'opus'}}
     models.update(aliases.get(item['key'], set()))
-    if deployment.get('native_openrouter') and not route['efforts']:
+    if (deployment.get('native_openrouter') or deployment.get('native_opencode')) and not route['efforts']:
         route = {**route, 'efforts': ['default'], 'default_effort': 'default'}
     return provider, models, route
 

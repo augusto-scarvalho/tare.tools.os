@@ -19,7 +19,7 @@ do TUI têm versão em português em [docs/pt-BR](docs/pt-BR/).
   checks do projeto e um auditor de outra família de modelos revisa. Você aprova a escrita no projeto uma vez por
   tarefa. Veja [uma conversa e seus papéis](docs/guides/CONVERSATION_ROLES.md).
 - **Seus modelos, suas contas.** Modelos locais por um gateway compatível com OpenAI, as CLIs oficiais do Claude,
-  do Codex e do AGY com o seu login, ou APIs HTTP (OpenRouter, Bedrock, OpenAI). Em todos os casos, o Tare controla
+  do Codex e do AGY com o seu login, ou APIs HTTP (OpenRouter, OpenCode, Bedrock, OpenAI). Em todos os casos, o Tare controla
   o loop do agente, as ferramentas e as permissões. Veja [inferência por CLI](docs/guides/VENDOR_CLI_INFERENCE.md)
   e [provedores HTTP](docs/guides/HTTP_API_PROVIDERS.md).
 - **Evidência, não promessa.** Cada chamada de modelo, efeito de ferramenta, check e revisão fica registrado. Uma
@@ -34,7 +34,7 @@ Você precisa de Windows 10 ou 11 (Linux também funciona; veja a [instalação 
 Python 3.12 de 64 bits, Git e acesso a pelo menos um modelo:
 
 - uma CLI logada: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), Codex ou AGY;
-- uma chave de API da Anthropic, OpenAI, Google, OpenRouter ou Amazon Bedrock; ou
+- uma chave de API da Anthropic, OpenAI, Google, OpenRouter, OpenCode ou Amazon Bedrock; ou
 - um servidor local com API compatível com OpenAI (llama.cpp, vLLM, LM Studio e similares).
 
 Instale a partir do código num ambiente virtual:
@@ -93,7 +93,7 @@ tare.tools.os/
 ├── docs/                                     # Guias, decisões (ADRs) e especificações
 ├── node/                                     # Serviço do nó de GPU: gateway de modelos, lease da GPU (Linux)
 ├── satellites/
-│   ├── tare.tools.kernel/        (@ 0d0cf6c) # Fronteiras de execução, journals, sessões de terminal
+│   ├── tare.tools.kernel/        (@ af38959) # Fronteiras de execução, journals, sessões de terminal
 │   ├── tare.tools.agent-runtime/ (@ bbbe120) # Loop de agente com limites
 │   ├── tare.tools.specgraph/     (@ cce9edd) # Grafo de especificação e código do projeto
 │   ├── tare.tools.backlog-graph/ (@ 0fd1e7c) # Grafo de tarefas com atualização compare-and-swap

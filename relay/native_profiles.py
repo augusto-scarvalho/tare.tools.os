@@ -62,7 +62,8 @@ def describe(name, deployment=None):
             'executable_present': Path(cli['executable']).is_file() if cli else None,
             'effective_limits': resolve(value), 'availability': 'not_checked',
             'usage_accounting': 'contract_configured' if contract else 'unknown',
-            'cost_accounting': ('provider_reported' if contract.get('layout') in {'openrouter-inclusive', 'openrouter-responses-inclusive'}
+            'cost_accounting': ('provider_reported' if contract.get('layout') in {'openrouter-inclusive', 'openrouter-responses-inclusive',
+                                                                               'opencode-exclusive'}
                 else 'tariff_configured' if value.get('native_usage_tariff') else 'unknown'),
             'cost_estimate': 'client_reported' if contract.get('layout') == 'claude-cli-exclusive' else 'unknown',
             'subscription_quota': 'unknown'}
