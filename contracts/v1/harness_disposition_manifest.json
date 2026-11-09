@@ -2,7 +2,7 @@
   "$schema": "https://tare.tools/schemas/v1/disposition-manifest.json",
   "version": "1.0.0",
   "generated_at": "2026-10-04T03:10:28.054735+00:00",
-  "total_modules": 435,
+  "total_modules": 436,
   "modules": [
     {
       "name": "consent_decisions.py",
@@ -2151,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 120067,
-      "sha256": "fd8f0b5204c3233f6d082b4286c2c7b8db7d16de52dbb00db3d3d40460e0224d"
+      "size_bytes": 120982,
+      "sha256": "4e8acd9ada397698de19c4c72fe911ee12211e45b2bac85996d6649b44916c36"
     },
     {
       "name": "native_artifacts.py",
@@ -2231,8 +2231,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 21260,
-      "sha256": "cda9a5f40f2cccb8c2b25aaaf71ba248b8c095f3d8ee0b1cc1bb55f39a386720"
+      "size_bytes": 21439,
+      "sha256": "df44c10ac39fd3ecda0be7836be03a97266b990db4665fd282067dcb46b1bf0a"
     },
     {
       "name": "native_installation.py",
@@ -2691,8 +2691,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 15164,
-      "sha256": "f44c550abfe9712ec444f6fd8c0d7637ff3c7dde16731033949d582c1bbfdc19"
+      "size_bytes": 15800,
+      "sha256": "3b824aad05c3707f8c79bdfebc8e2466623e8a9a5cb15d7dabe6db2625baabca"
     },
     {
       "name": "native_plan.py",
@@ -3541,8 +3541,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator interaction, workflow composition and evidence inspection; execution ports remain in Kernel and Runtime.",
-      "size_bytes": 9234,
-      "sha256": "6388db7ef23835916c7edb8e6bb396d8f6949bbaa11d89b453989795464dfe08"
+      "size_bytes": 9328,
+      "sha256": "63daa757ae35ca66b3eaa83bc332b71b141e9d40c4a96c1fb2bf43ca65239dc3"
     },
     {
       "name": "native_product.py",
@@ -3821,8 +3821,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 35405,
-      "sha256": "c4f3e92444ebf97bb543044bdd52c3447265c7508688bec0f4afb454d403000c"
+      "size_bytes": 35569,
+      "sha256": "c95c53973cf7fa081e52ccb9fa73971767d5ccc70e1a0ae0d3e05ffab923d2f7"
     },
     {
       "name": "console_setup.py",
@@ -4353,6 +4353,16 @@
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
       "size_bytes": 32327,
       "sha256": "93c412980cab35efb92bb897319ba07c2502380a4e96467079f7eb885a82bb08"
+    },
+    {
+      "name": "cli_qualification.py",
+      "path": "tare.tools.os/relay/cli_qualification.py",
+      "summary": "Keep this machine's verdicts on vendor CLI releases the kernel probed, so each release is probed once.",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
+      "size_bytes": 2087,
+      "sha256": "c742f5e93ca2182895adde6b713b89fbccd66f84f83dc92ab7ce5574c9215bee"
     }
   ]
 }

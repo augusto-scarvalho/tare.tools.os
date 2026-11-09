@@ -59,6 +59,13 @@ def render_failure(result):
 
 
 def provider_limit_guidance(result):
+    if 'CLI_QUALIFICATION_FAILED' in (result.get('reason'), result.get('failure_code')):
+        probe = result.get('qualification') or {}
+        cli = (result.get('runtime_observation') or {}).get('deployment_id') or 'This CLI'
+        return (f"{cli} {probe.get('version') or ''} was updated and no longer answers in the shape tare decodes "
+                f"({probe.get('probe_code') or 'shape check'} on a one-call probe"
+                + (f": {probe['detail']}" if probe.get('detail') else '') + '). Your request was not sent. '
+                'Choose another model, or run tare setup --prove for this CLI to check it again.')
     if result.get('failure_code') == 'CLI_USAGE_LIMIT':
         limit = result.get('usage_limit') or {}
         until = limit.get('until')

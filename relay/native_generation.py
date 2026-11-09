@@ -161,7 +161,9 @@ def inference_client(deployment, profile, *, credential, metadata_only=False, **
         return client(**deployment['native_codex_auth'], **transport)
     if profile.protocol == 'vendor-cli':
         from compute_plane.native_cli import VendorCliClient
-        return VendorCliClient(profile.endpoint, **deployment['native_cli'], **transport)
+        from .cli_qualification import Store  # each machine probes a new CLI release once, not each session
+        return VendorCliClient(profile.endpoint, **deployment['native_cli'], qualification=Store(profile.endpoint),
+                               **transport)
     from compute_plane.native_models import NativeHttpClient
     from .challenger import client_headers
     headers = client_headers(deployment)

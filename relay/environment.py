@@ -548,6 +548,8 @@ def prove(name, confirm):
         return {'ok': None, 'reason': 'not confirmed', 'cost': line}
     if deployment['native_profile']['protocol'] == 'vendor-cli':
         from .cli_discovery import acknowledge, proven
+        from .cli_qualification import forget_failed
+        forget_failed(deployment['native_profile']['endpoint'])  # the explicit retry: probe the release again
         ok, reason = acknowledge(deployment)
         if ok:
             proven(deployment['native_profile']['endpoint'], deployment['native_cli']['executable'])
