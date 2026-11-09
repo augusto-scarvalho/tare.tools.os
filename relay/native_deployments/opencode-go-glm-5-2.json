@@ -1,0 +1,35 @@
+{
+  "id": "opencode-go-glm-5-2",
+  "runner": "native-http",
+  "model": "glm-5.2",
+  "native_credential_env": "OPENCODE_API_KEY",
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_profile": {
+    "protocol": "openai-chat",
+    "model": "glm-5.2",
+    "endpoint": "https://opencode.ai/inference/go/openai/v1",
+    "context_window": 1000000,
+    "output_tokens": 16384,
+    "parameters_json": "{\"reasoning_effort\": \"high\"}",
+    "session_header": "x-opencode-session",
+    "source": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
+  },
+  "native_usage_contract": {
+    "layout": "opencode-exclusive",
+    "source": "https://opencode.ai/docs/console/api/inference (usage.opencode.tokens, cost)"
+  },
+  "native_reasoning_levels": [
+    "high",
+    "max"
+  ],
+  "native_opencode": {
+    "plan": "go",
+    "label": "GLM-5.2",
+    "family": "chat-completions",
+    "tool_choice": [
+      "auto"
+    ],
+    "source": "https://opencode.ai/inference/go/v1/models",
+    "observed_at": "2026-11-09"
+  }
+}

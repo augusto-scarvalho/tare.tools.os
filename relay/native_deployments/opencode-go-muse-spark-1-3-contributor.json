@@ -1,0 +1,36 @@
+{
+  "id": "opencode-go-muse-spark-1-3-contributor",
+  "runner": "native-http",
+  "model": "muse-spark-1.3-contributor",
+  "native_credential_env": "OPENCODE_API_KEY",
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_profile": {
+    "protocol": "openai-responses",
+    "model": "muse-spark-1.3-contributor",
+    "endpoint": "https://opencode.ai/inference/go/openai/v1",
+    "context_window": 1048576,
+    "output_tokens": 16384,
+    "parameters_json": "{\"reasoning\": {\"effort\": \"high\"}}",
+    "session_header": "x-opencode-session",
+    "source": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
+  },
+  "native_usage_contract": {
+    "layout": "opencode-exclusive",
+    "source": "https://opencode.ai/docs/console/api/inference (usage.opencode.tokens, cost)"
+  },
+  "native_reasoning_levels": [
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+  ],
+  "native_opencode": {
+    "plan": "go",
+    "label": "Muse Spark 1.3 Contributor",
+    "family": "responses",
+    "tool_choice": [],
+    "data_use": "meta-contributor",
+    "source": "https://opencode.ai/inference/go/v1/models",
+    "observed_at": "2026-11-09"
+  }
+}

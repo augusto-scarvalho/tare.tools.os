@@ -1,0 +1,33 @@
+{
+  "id": "opencode-go-kimi-k2-7-code",
+  "runner": "native-http",
+  "model": "kimi-k2.7-code",
+  "native_credential_env": "OPENCODE_API_KEY",
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_profile": {
+    "protocol": "openai-chat",
+    "model": "kimi-k2.7-code",
+    "endpoint": "https://opencode.ai/inference/go/openai/v1",
+    "context_window": 262144,
+    "output_tokens": 16384,
+    "parameters_json": "{}",
+    "session_header": "x-opencode-session",
+    "source": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
+  },
+  "native_usage_contract": {
+    "layout": "opencode-exclusive",
+    "source": "https://opencode.ai/docs/console/api/inference (usage.opencode.tokens, cost)"
+  },
+  "native_reasoning_levels": [],
+  "native_opencode": {
+    "plan": "go",
+    "label": "Kimi K2.7 Code",
+    "family": "chat-completions",
+    "tool_choice": [
+      "auto",
+      "none"
+    ],
+    "source": "https://opencode.ai/inference/go/v1/models",
+    "observed_at": "2026-11-09"
+  }
+}

@@ -33,6 +33,8 @@ LOCAL = {'openai-api': 'openai-api', 'gemini-api': 'gemini-api', 'claude-api': '
          'openrouter-grok-4-7': 'openrouter-grok-4-7',
          'openrouter-ling-3-1-flash': 'openrouter-ling-3-1-flash',
          'openrouter-qwen3-8-omni-flash': 'openrouter-qwen3-8-omni-flash'}
+# OpenCode profiles are generated (scripts/ops/opencode_profiles.py); each file is its own name.
+LOCAL.update({path.stem: path.stem for path in PROFILES.glob('opencode-*.json')})
 
 
 # Shipped local profiles name this origin; each machine resolves it to its own model gateway.

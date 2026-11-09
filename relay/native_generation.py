@@ -76,11 +76,11 @@ def deployment_profile(deployment, requested_model):
             expected = deployment_contract({k: v for k, v in deployment.items() if k != 'native_usage_contract'})
             if not expected or contract.layout != expected['layout']:
                 raise ValueError('usage contract requires a qualified matching vendor CLI version')
-        if contract.layout not in {'openai-chat': {'chat-inclusive', 'gemini-chat', 'openrouter-inclusive'},
+        if contract.layout not in {'openai-chat': {'chat-inclusive', 'gemini-chat', 'openrouter-inclusive', 'opencode-exclusive'},
                                   'bedrock-converse': {'converse-exclusive'},
                                   'openai-codex-responses': {'responses-inclusive'},
-                                  'openai-responses': {'responses-inclusive', 'openrouter-responses-inclusive'},
-                                  'anthropic-messages': {'anthropic-exclusive'},
+                                  'openai-responses': {'responses-inclusive', 'openrouter-responses-inclusive', 'opencode-exclusive'},
+                                  'anthropic-messages': {'anthropic-exclusive', 'opencode-exclusive'},
                                   'vendor-cli': {'claude-cli-exclusive', 'codex-cli-inclusive', 'agy-cli-exclusive'}}[profile.protocol]:
             raise ValueError('native usage contract must match the wire protocol')
     if profile.model != requested_model:
@@ -167,6 +167,9 @@ def inference_client(deployment, profile, *, credential, metadata_only=False, **
     from compute_plane.native_models import NativeHttpClient
     from .challenger import client_headers
     headers = client_headers(deployment)
+    if deployment.get('native_opencode'):
+        from .opencode import user_agent
+        headers['User-Agent'] = user_agent()
     if profile.protocol == 'anthropic-messages':
         headers['anthropic-version'] = '2023-06-01'
         workspace = deployment.get('native_anthropic_workspace')

@@ -156,7 +156,8 @@ class SpendModel:
             return self._deny(request, 'SPEND_COUNT_UNAVAILABLE')
         rates = json.loads(self.tariff.rates_json)
         input_fields = BILLABLE[:3] if self.contract.layout in {
-            'converse-exclusive', 'anthropic-exclusive', 'openrouter-inclusive', 'openrouter-responses-inclusive', 'responses-inclusive'
+            'converse-exclusive', 'anthropic-exclusive', 'openrouter-inclusive', 'openrouter-responses-inclusive', 'responses-inclusive',
+            'opencode-exclusive'
         } else BILLABLE[:2]
         priced = all(rates[k] is not None for k in (*input_fields, 'output_tokens'))
         if capped and not priced:

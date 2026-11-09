@@ -46,6 +46,9 @@ def actor(state):
     if connection is None:
         connection = {'OPENAI_API_KEY': 'OpenAI API', 'ANTHROPIC_API_KEY': 'Claude API',
                       'GEMINI_API_KEY': 'Gemini API', 'OPENROUTER_API_KEY': 'OpenRouter API'}.get(deployment.get('native_credential_env'))
+    if deployment.get('native_opencode'):
+        from .opencode import connection as opencode_connection
+        connection = opencode_connection(deployment)
     if connection is None:
         connection = {'openai-codex-responses': 'Codex Direct', 'openai-chat': 'HTTP · OpenAI-compatible',
                       'openai-responses': 'HTTP · Responses', 'anthropic-messages': 'HTTP · Anthropic',

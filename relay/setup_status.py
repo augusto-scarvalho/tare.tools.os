@@ -8,6 +8,7 @@ PROVIDERS = {'OPENAI_API_KEY': ('OpenAI API', 'openai-api'),
              'GEMINI_API_KEY': ('Gemini API', 'gemini-api'),
              'AWS_BEARER_TOKEN_BEDROCK': ('Amazon Bedrock API', 'bedrock-opus'),
              'OPENROUTER_API_KEY': ('OpenRouter API', 'openrouter-deepseek-v4-1-flash'),
+             'OPENCODE_API_KEY': ('OpenCode API (Go and Console)', 'opencode-go-glm-5-3'),
              'TYPESAFE_API_KEY': ('Jev online (TypeSafe)', None)}
 PROVIDERS.update({p['key']: (p['label'], None) for p in SEARCH_PROVIDERS.values()})
 CLI_LABELS = {'cli://codex': 'Codex CLI · ChatGPT subscription',

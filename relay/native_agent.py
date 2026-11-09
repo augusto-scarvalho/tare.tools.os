@@ -823,7 +823,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             if (config['role'] in {'explorer', 'auditor', 'planner'} or state.get('conversation')
                     or state.get('delegated_leaf') and config['role']=='implementer'):
                 from .challenger import local
-                if not local(deployment):
+                from .opencode import names_delivery_tool
+                if not local(deployment) and names_delivery_tool(deployment):
                     # Remote conversations and delegated roles reserve their last finite call for delivery.
                     # Eliding older explorer outputs
                     # (elide_outputs_after) saved 11% of input tokens but left 3 of 10 answers incomplete on
