@@ -104,6 +104,9 @@ def activity_view(value):
         if source['mode'] != 'work' and not Path(source['owner']).is_absolute():
             raise ValueError('invalid_tool_activity_owner_path')
         extra['source'] = {**source, 'stage': safe(source['stage'], 80)}
+    reason = ' '.join(safe(value['reason'], 256).split()) if isinstance(value.get('reason'), str) else ''
+    if value['state'] == 'refused' and reason:
+        extra['reason'] = reason  # why the host refused, for the row's title
     return {'kind': 'tool-activity', 'id': value['id'], 'operation': value['operation'],
             'state': value['state'], 'target': safe(value.get('target', ''), 2048),
             'detail': safe(value.get('detail', ''), 8000), 'duration_ms': duration,
@@ -320,6 +323,11 @@ class ActivityJournal:
                     summary += '\n'+stage+' usage: '+('not reported' if usage is None else json.dumps(usage, ensure_ascii=False))
                 detail = summary+('\n\n'+detail if detail else '')
             began = self.started.pop(result['effect_id'], None)
+            if result['status'] == 'refused' and isinstance(output, dict):
+                # An unexpected exception before dispatch is refused with its type only.
+                reason = output.get('reason') or output.get('error_type')
+                if isinstance(reason, str):
+                    previous = {**previous, 'reason': reason}
             self.publish({**previous, 'state': result['status'], 'detail': detail,
                           'duration_ms': round((self.clock()-began)*1000, 3) if began is not None else None,
                           'receipt': f'{record.sequence} · {record.sha256}', 'truncated': len(detail) > 8000})

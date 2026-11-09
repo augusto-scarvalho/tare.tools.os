@@ -3031,8 +3031,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS presents native output; Kernel and Runtime retain execution ownership.",
-      "size_bytes": 37162,
-      "sha256": "1901d11183f0105b233a3385d5944f86746d501f06e602f812207e2ba120b96d"
+      "size_bytes": 37741,
+      "sha256": "01da9ed8cf129f0998ff3b6d2f2ef0fa51f1e7fa5640a0fa9b4c71b364459136"
     },
     {
       "name": "console_terminal.py",
@@ -3161,8 +3161,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS projects recorded activity; Runtime and Kernel retain execution ownership.",
-      "size_bytes": 19565,
-      "sha256": "80679265510bfd095f5f06a50bf69085dcfec2b7b2590acbc112b60c3eed0b0a"
+      "size_bytes": 20140,
+      "sha256": "77738c72559f3db55208ccfc018948935dce49af138d5258a0b48c81bf262b0f"
     },
     {
       "name": "console_panels.py",

@@ -141,3 +141,22 @@ def test_deletion_activity_never_claims_unconfirmed_success(delete, status):
         'status': status, 'output_json': json.dumps({'sha256': None})}})
     detail = observer.presentation()['items'][0]['detail']
     assert ('Deleted file.' in detail) is (delete in (True, 'true') and status == 'succeeded')
+
+
+def test_a_refused_row_carries_its_reason():
+    observer = ActivityJournal(Journal())
+    for identity, status in (('tool/1', 'refused'), ('tool/2', 'succeeded')):
+        observer.append(request(identity, path='a.py'))
+        observer.append({'kind': 'effect_returned', 'result': {'effect_id': identity, 'status': status,
+            'output_json': json.dumps({'reason': 'COORDINATOR_ROUTING_REQUIRED', 'route': 'plan'})}})
+    refused, returned = observer.presentation()['items']
+    assert refused['reason'] == 'COORDINATOR_ROUTING_REQUIRED' and 'reason' not in returned
+    assert '"route": "plan"' in refused['detail']  # the detail stays the exact preview
+    assert activity_view({**refused, 'reason': '\x1b[31mred\x1b[0m  and\nsplit'})['reason'] == 'red and split'
+    assert 'reason' not in activity_view({**refused, 'state': 'failed'})
+    assert activity_view({**refused, 'reason': 'x'*300})['reason'] == 'x'*256
+    assert 'reason' not in activity_view({**refused, 'reason': '\x1b[31m\x1b[0m '})
+    observer.append(request('tool/3', path='a.py'))
+    observer.append({'kind': 'effect_returned', 'result': {'effect_id': 'tool/3', 'status': 'refused',
+        'output_json': json.dumps({'error_type': 'TypeError'})}})
+    assert observer.presentation()['items'][-1]['reason'] == 'TypeError'
