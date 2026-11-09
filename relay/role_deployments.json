@@ -898,6 +898,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-deepseek-v4-1-flash",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -916,6 +917,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-deepseek-v4-pro",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -934,6 +936,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-glm-5-2",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -952,6 +955,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-glm-5-3",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -970,6 +974,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-grok-4-7",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -988,6 +993,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-muse-spark-1-2-contributor",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1006,6 +1012,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-muse-spark-1-3-contributor",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1024,6 +1031,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-glm-5-3-flash",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1042,6 +1050,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-gpt-5-6-luna",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1060,6 +1069,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-gpt-6-luna",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1078,6 +1088,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-claude-haiku-5-5",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1096,6 +1107,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-hy3",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1114,6 +1126,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-hy4-preview",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1132,6 +1145,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-kimi-k2-7-code",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1150,6 +1164,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-kimi-k3",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1168,6 +1183,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-mimo-v2-6-flash",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1186,6 +1202,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-mimo-v2-6-pro",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1204,6 +1221,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-minimax-m3",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1222,6 +1240,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-minimax-m3-1-flash",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1240,6 +1259,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-longcat-2-0",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1258,6 +1278,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-step-5-preview",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1276,6 +1297,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-qwen3-8-max",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1294,6 +1316,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-qwen3-8-flash",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1312,6 +1335,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-qwen3-7-plus",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1330,6 +1354,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-kimi-k3-1-pro",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
@@ -1348,6 +1373,7 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
+      "qualified": false,
       "native_catalog": "opencode-go-hy4",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     }

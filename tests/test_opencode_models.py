@@ -130,8 +130,8 @@ def test_every_go_model_is_a_pinnable_reserve_until_qualified():
     from relay.native_routes import configured
     rows = [r for r in configured()['deployments'] if r['id'].startswith('opencode-go-')]
     assert len(rows) == len([n for n in native_catalog.LOCAL if n.startswith('opencode-go-')]) == 26
-    assert {(tuple(r['roles']), r['kind'], r['cost_tier'], r['quota_domain']) for r in rows} == {
-        (('implementer', 'explorer'), 'reserve', 'flat', 'opencode-go')}
+    assert {(tuple(r['roles']), r['kind'], r['cost_tier'], r['quota_domain'], r['qualified']) for r in rows} == {
+        (('implementer', 'explorer'), 'reserve', 'flat', 'opencode-go', False)}
     pin = exact('opencode/opencode-go-glm-5-3@high')
     assert matches(pin, 'opencode-go-glm-5-3', native_catalog.select('opencode-go-glm-5-3'))
 
@@ -142,4 +142,12 @@ def test_a_go_limit_parks_only_that_model(tmp_path, monkeypatch):
     glm, kimi = native_catalog.select('opencode-go-glm-5-3'), native_catalog.select('opencode-go-kimi-k3')
     until = turn_engine.note_usage_limit(glm, now=1000.0)  # the generic callers pass no kind
     assert turn_engine.usage_limited(glm, now=1001.0) == until and turn_engine.usage_limited(kimi, now=1001.0) is None
+
+
+def test_unqualified_rows_are_pinned_never_chosen_automatically(monkeypatch):
+    from relay import native_routes
+    monkeypatch.setattr(native_routes, 'credential_available', lambda name: True)
+    _, selection = native_routes.ranked('explorer')
+    reasons = {c['deployment']: c['reason'] for c in selection['candidates'] if c['deployment'].startswith('opencode-go-')}
+    assert len(reasons) == 26 and set(reasons.values()) == {'NOT_QUALIFIED_PIN_ONLY'}
 

@@ -2427,8 +2427,8 @@
     {
       "name": "round_table_roster.py",
       "path": "tare.tools.os/relay/round_table_roster.py",
-      "size_bytes": 19537,
-      "sha256": "84fd9c137e1c36a71c0d84282f508217a5b2fa12e8ac16215fd28efe7e6bac3b",
+      "size_bytes": 19691,
+      "sha256": "4c360dc1806612d1f08d09d62cb246830c601c543ddc06fe65ff0f7ba0bc1977",
       "summary": "Round Table roster validation and Markdown matrix projection.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -2981,8 +2981,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS selects configured eligible role routes and persists the rationale; existing native Work owner executes and recovers them.",
-      "size_bytes": 17275,
-      "sha256": "22a5b1f216190105dfac2ce613e7017137a9e98d72d65f27db2302412cfa98b3"
+      "size_bytes": 17542,
+      "sha256": "debc4fe7b50f3a978ad5e71a77637ec48a597be45e907686a3209147f709b8a0"
     },
     {
       "name": "native_serve.py",

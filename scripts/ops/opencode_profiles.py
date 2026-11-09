@@ -6,8 +6,8 @@ Each model OpenCode serves with tools on a family the Kernel speaks gets relay/n
 (Console models: opencode-<id>.json). Its author identity comes from the roster record whose native runtime is the
 OpenCode model id; a record without one gets it, and a model with none gets a new record from its canonical vendor.
 Free models are left out (OpenCode refuses them to other clients). A model without a row in
-relay/role_deployments.json gets one as an implementer and explorer reserve; planner and auditor rows wait for a
-live qualification, and an edited row is kept. Rerun after OpenCode changes its list and review the diff: a profile
+relay/role_deployments.json gets one as an implementer and explorer reserve marked `qualified: false`: an exact pin
+reaches it, automatic selection does not until a live qualification flips the mark. An edited row is kept. Rerun after OpenCode changes its list and review the diff: a profile
 is metadata admission, not measured delivery quality.
 """
 import argparse
@@ -102,7 +102,8 @@ def role_row(value, plan):
             'transport': 'API', 'runner': 'native-http',
             'quota_domain': 'opencode-go' if plan == 'go' else 'opencode-balance',
             'endpoint_domain': 'opencode-' + family, 'effort': None, 'roles': ['implementer', 'explorer'],
-            'kind': 'reserve', 'cost_tier': 'flat' if plan == 'go' else 'metered', 'native_catalog': value['id'],
+            'kind': 'reserve', 'cost_tier': 'flat' if plan == 'go' else 'metered', 'qualified': False,
+            'native_catalog': value['id'],
             'note': value['native_profile']['source']}
 
 
