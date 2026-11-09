@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The kernel pin moves to 4984499: CI's test-tool download (ripgrep) waits out about three minutes of GitHub 5xx or timeouts instead of failing every shard on one 504, as it did for several runs on 2026-11-09.
 - The terminal panel's pipe test waits for the process to exit before reading its exit code: the output can arrive first, and Windows CI saw `None` (PR #69).
 - Tab and Shift+Tab move focus inside the TUI's panels again (/permissions, the model and project pickers, Changes, the workbench): the guard that keeps app shortcuts out of an open panel also blocked `app.focus_next`, so in /permissions focus stayed on Back and the AGENTS.md checkbox could not be reached from the keyboard. The direct terminal keeps Tab for the terminal.
 - The TUI header says "AGENTS.md not loaded · /permissions" when the project has a root AGENTS.md that was not adopted. Project instructions are quarantined until the user adopts them, and nothing said so: in the dogfood the planner never saw tare.tools.os's rules and made "the full pytest suite passes" a criterion, which the project forbids running on a laptop, so a defect-free candidate could not be accepted.
