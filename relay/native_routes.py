@@ -46,6 +46,10 @@ def _ranked(role, producer=None, *, check_resources=False):
         decisions.append(decision)
         if role not in row.get('roles', []):
             decision['reason'] = 'ROLE_NOT_CONFIGURED'; continue
+        if row.get('qualified') is False:
+            # Registered from a provider's metadata: an exact pin reaches it, automatic selection waits for a live
+            # qualification through tare.
+            decision['reason'] = 'NOT_QUALIFIED_PIN_ONLY'; continue
         if row.get('runner') != 'native-http':
             decision['reason'] = 'RUNNER_NOT_SUPPORTED_BY_NATIVE_WORK' if role == 'auditor' else 'RUNNER_NOT_SUPPORTED_BY_NATIVE_FLOW'; continue
         if row.get('cost_tier') not in COST or row.get('kind') not in {'primary', 'reserve'}:

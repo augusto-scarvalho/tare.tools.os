@@ -202,6 +202,8 @@ def validate_role_deployments(data: dict[str, Any], roster: dict[str, Any]) -> N
             raise ValueError(f"role deployment {entry['id']} kind must be primary or reserve")
         if entry.get("cost_tier") not in {"free", "flat", "free-credit", "metered"}:
             raise ValueError(f"role deployment {entry['id']} cost_tier must be free, flat, free-credit or metered")
+        if type(entry.get('qualified', True)) is not bool:
+            raise ValueError(f"role deployment {entry['id']} qualified must be true or false")
         priority = entry.get('review_priority', 1000)
         if type(priority) is not int or not 0 <= priority <= 1000:
             raise ValueError('REVIEW_PRIORITY_INVALID')

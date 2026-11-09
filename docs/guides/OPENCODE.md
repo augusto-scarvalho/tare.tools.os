@@ -33,9 +33,9 @@ reserve. Planner and auditor roles wait for a live qualification of the model th
 are the ones OpenCode lists for that model. A profile starts at `high` when the model lists it; otherwise it runs at
 the provider's default until you choose a level.
 
-Once the key is stored, automatic selection ranks these reserves with the other flat-rate subscriptions: after the
-subscription CLIs and before metered APIs. Tare does not yet recognize OpenCode's refusal when a model's allowance is
-spent (a later change), so such a model fails its session instead of being skipped until its window resets.
+Until that qualification, the profiles are reached only by an exact pin: automatic selection skips them
+(`NOT_QUALIFIED_PIN_ONLY`). Tare does not yet recognize OpenCode's refusal when a model's allowance is spent (a later
+change), so a pinned model whose allowance is spent fails its session.
 
 The author is the model's vendor, not the gateway. GLM 5.3 through OpenCode has the same author identity as GLM 5.3
 through OpenRouter, so one never audits the other as an independent reviewer.
