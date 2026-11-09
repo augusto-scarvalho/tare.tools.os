@@ -231,6 +231,8 @@ def test_retry_fallback_contract_is_preserved_and_final(host, monkeypatch, words
     original = consent.load(tools.root)['questions'][-1]
     assert original['rule'] == 'fallback'
     assert consent.guidance('fallback') in original['question']
+    # a yes resumes the correction loop under its stops, so the question names them instead of "one more attempt"
+    assert 'stop again when it repeats a defect or has refused 6 candidates' in original['question']
     monkeypatch.setattr(consent, 'select_rule', lambda: 'judge')
     decide(tools.root, task, unit, register=True)
     assert consent.load(tools.root)['questions'][-1] == original
