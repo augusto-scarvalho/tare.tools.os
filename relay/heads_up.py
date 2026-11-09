@@ -227,6 +227,7 @@ def from_journal(runs, request=None):
     request, the user's own words for the turn, replaces only its opening message: messages the user queued while
     the turn ran stay (a side agent without them called a requirement the user had asked for invented)."""
     from .native_agent import read_json
+    from .native_messages import operator_ids
     requests, steps, reply, earlier = [], [], '', None
     for session, invocation_id in runs:
         session = Path(session)
@@ -234,13 +235,13 @@ def from_journal(runs, request=None):
         lines = (session/'journal.jsonl').read_text(encoding='utf-8').splitlines()
         if earlier is None:  # the conversation before the turn: its first session's earlier exchanges
             earlier = _exchanges(json.loads(line)['event'] for line in lines[:row.get('journal_start') or 0])
-        asked = {}
+        asked, queued = {}, operator_ids(session)
         for line in lines[row.get('journal_start') or 0:row.get('journal_end')]:
             event = json.loads(line)['event']
             kind = event.get('kind')
             if kind in ('user_message', 'session_started') and (event.get('text') or event.get('instruction')):
-                if requests and not re.fullmatch('[0-9a-f]{32}', str(event.get('message_id'))):
-                    continue  # the host's own messages (consent choices, recoveries) carry prefixed ids
+                if requests and event.get('message_id') not in queued:
+                    continue  # not from the operator's inbox: the host's own (consent choices, recoveries)
                 requests.append(event.get('text') or event.get('instruction'))
             elif kind == 'effect_requested':
                 asked[event['effect_id']] = event.get('tool_call') or {}

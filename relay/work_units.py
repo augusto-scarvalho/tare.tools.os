@@ -827,6 +827,14 @@ def check_failures(custody, unit, *, conversation=False, operator_retry=False):
                 + (RETRY_QUESTION if conversation else ' Tell the user to use /retry_delivery to retry the blocked scope.'))
 
 
+MAX_LEDGER_CLAIMS = 32  # claim digests kept per refused run; the ledger keeps three runs
+
+
+def claim_digest(claim):
+    """The claim as native_artifacts compares findings (case and whitespace aside); no fuzzy matching."""
+    return hashlib.sha256(' '.join(str(claim).casefold().split()).encode('utf-8')).hexdigest()[:16]
+
+
 def audit_refusal(entry):
     return entry['verdict'] == 'NOT_REVIEWED' and entry.get('reason') == AUDIT_REFUSED
 
@@ -1499,7 +1507,11 @@ def write_record(custody, unit, result):
         **({'verification_contract_digest': unit['verification_contract_digest']} if unit.get('verification_contract_digest') else {})}
     if audit_refusal(run) and result.get('audit'):
         last = (entry.get('history') or [{'verdict': None}])[-1]
-        run.update(repeated=any(f.get('repeated') is True for f in result['audit'].get('findings') or []),
+        findings = result['audit'].get('findings') or []
+        claims = sorted({claim_digest(f['claim']) for f in findings if f.get('claim')})[:MAX_LEDGER_CLAIMS]
+        before = set(last.get('claims') or ()) if audit_refusal(last) else set()
+        # The auditor's mark, or a claim identical to one of the previous refused audit: never un-marked.
+        run.update(claims=claims, repeated=any(f.get('repeated') is True for f in findings) or bool(before & set(claims)),
                    refusals=(last.get('refusals', 1) if audit_refusal(last) else 0) + 1)
     history = (entry.get('history') or []) + [run]
     ledger['units'][unit['key']] = {'state': state, 'history': history[-3:], 'paths': sorted(unit.get('target_paths') or [])}

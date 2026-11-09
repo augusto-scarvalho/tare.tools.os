@@ -1819,9 +1819,11 @@ def test_audit_refusals_stop_on_a_repeated_finding_and_continue_while_each_finds
     assert validate('auditor', review)['findings'][0]['repeated'] is True
     assert 'repeated' not in validate('auditor', {**review, 'findings': [{'claim': 'New.', 'sources': [source]}]})['findings'][0]
 
+    found = iter(range(1000))  # each audit's defects are new ones, never the same claim twice
+
     def refused(*repeated):
         return {'verdict': 'NOT_REVIEWED', 'reason': work_units.AUDIT_REFUSED, 'audit': {'verdict': 'REVISE',
-                'findings': [{'claim': str(i), 'repeated': r} for i, r in enumerate(repeated)]}}
+                'findings': [{'claim': f'defect {next(found)}', 'repeated': r} for r in repeated]}}
     unit = {'key': 'progress', 'target_paths': ['a.py']}
     work_units.record(tmp_path, unit, refused(False))
     work_units.record(tmp_path, unit, {'verdict': 'NOT_VERIFIED'})  # anything else ends the streak
@@ -2176,3 +2178,27 @@ def test_a_turn_with_an_unapplied_delivery_ends_with_the_host_status(host, monke
     else:
         assert 'Not applied' in notice and 'candidate is preserved' in notice
         assert tasks.delivery_notice(tools.root, 'a-later-turn') is None  # only the turn that delivered
+
+
+def test_an_identical_unmarked_claim_counts_as_repeated(tmp_path):
+    def refused(*claims):
+        return {'verdict': 'NOT_REVIEWED', 'reason': work_units.AUDIT_REFUSED,
+                'audit': {'verdict': 'REVISE', 'findings': [{'claim': c} for c in claims]}}
+    unit = {'key': 'same', 'target_paths': ['a.py']}
+    work_units.record(tmp_path, unit, refused('Missing  null check in parse().'))
+    work_units.record(tmp_path, unit, refused('A different defect.'))  # not identical: progress
+    work_units.check_failures(tmp_path, unit, conversation=True)
+    work_units.record(tmp_path, unit, refused('New.', 'a different   defect.'))  # identical, case and spaces aside
+    with pytest.raises(ValueError, match='same defect again'):
+        work_units.check_failures(tmp_path, unit, conversation=True)
+    other = {'key': 'reset', 'target_paths': ['b.py']}  # anything else between two refusals ends the comparison
+    work_units.record(tmp_path, other, refused('Same.'))
+    work_units.record(tmp_path, other, {'verdict': 'NOT_VERIFIED'})
+    work_units.record(tmp_path, other, refused('Same.'))
+    work_units.check_failures(tmp_path, other, conversation=True)
+    ledger = work_units.read_ledger(tmp_path)  # a run recorded before claims existed only starts the comparison
+    ledger['units']['reset']['history'][-1].pop('claims')
+    save_json(tmp_path/work_units.LEDGER, ledger)
+    work_units.record(tmp_path, other, refused('Same.'))
+    work_units.check_failures(tmp_path, other, conversation=True)
+    assert work_units.read_ledger(tmp_path)['units']['reset']['history'][-1]['claims']
