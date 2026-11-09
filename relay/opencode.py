@@ -42,14 +42,16 @@ BILLED_PAUSE = 5 * 3600
 def plan_limit(deployment, failed, observations, now):
     """When a subscription model's own allowance is gone: the kernel's model_failed event `failed` was OpenCode's
     spent-plan 429 (its Retry-After is the reset) or a reply billed outside the plan (BILLING_SOURCE_REFUSED: Extra
-    Usage charged the balance once). Returns {'kind': 'model', 'resets_at', 'cause'} for note_usage_limit, else None."""
+    Usage charged the balance once). Returns {'kind': 'account', 'resets_at', 'cause'} for note_usage_limit, else None:
+    the 5-hour window is the plan's, not one model's (live 2026-11-09: once it was spent, every paid model answered the
+    same 429 with the same Retry-After, and only free models still worked)."""
     if not subscription(deployment) or not failed:
         return None
     code = failed.get('code') or failed.get('reason')  # a model call says code; a context summary says reason
     if code == 'BILLING_SOURCE_REFUSED':
         source = next((row.get('billing_source') for row in reversed(observations)
                        if row.get('call_id') == failed.get('call_id') and row.get('billing_source')), None)
-        return {'kind': 'model', 'resets_at': now + BILLED_PAUSE, 'billing_source': source,
+        return {'kind': 'account', 'resets_at': now + BILLED_PAUSE, 'billing_source': source,
                 'cause': 'billed_to_balance' if source in ('balance', 'byok') else 'unknown_billing_source'}
     if code != 'HTTP_429':
         return None
@@ -59,7 +61,7 @@ def plan_limit(deployment, failed, observations, now):
     if receipt is None:
         return None  # a passing rate limit, not a spent plan
     after = receipt.get('retry_after')
-    return {'kind': 'model', 'resets_at': now + after if type(after) is int else None, 'cause': 'allowance_spent'}
+    return {'kind': 'account', 'resets_at': now + after if type(after) is int else None, 'cause': 'allowance_spent'}
 
 
 def names_delivery_tool(value):

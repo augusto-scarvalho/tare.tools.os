@@ -55,16 +55,17 @@ API, "Model is unavailable" from the subscription endpoint). Their paid versions
 ## Subscription accounting
 
 The subscription models draw on one plan account, `opencode-sub`, so a session on the subscription delegates within
-it and quotes a minimal call as plan usage, not dollars. A limit recorded for one model leaves the others usable,
-since each has its own allowance. Plan usage takes no dollar reservation under tare's spend caps, which holds only
-with Extra Usage off.
+it and quotes a minimal call as plan usage, not dollars. OpenCode documents a dollar allowance per model, but its
+5-hour window is the plan's: once it was spent on one model, every paid model answered the same refusal with the same
+reset, and only free models still worked (observed 2026-11-09). Plan usage takes no dollar reservation under tare's
+spend caps, which holds only with Extra Usage off.
 
-When a model's allowance window is spent, OpenCode refuses with HTTP 429 `GoUsageLimitError` and a Retry-After of
-hours. Tare then leaves that model, and only that model, until the Retry-After time (`PLAN_USAGE_LIMIT`: "The
-opencode-sub account behind this model has no usage left until HH:MM"); `tare auto` and `tare serve` skip it and an
-audit falls back to its next route. The subscription profiles declare the billing sources they may be charged to
+When the window is spent, OpenCode refuses with HTTP 429 `GoUsageLimitError` and a Retry-After of hours. Tare then
+leaves every subscription model until the Retry-After time (`PLAN_USAGE_LIMIT`: "The opencode-sub account behind this
+model has no usage left until HH:MM"); `tare auto` and `tare serve` skip them and an audit falls back to its next
+route. The subscription profiles declare the billing sources they may be charged to
 (`free`, `go`, `go-plus`): if Extra Usage is on and a reply is billed to the balance anyway, that one call is charged,
-the session stops there, and the model is left for five hours, the shortest allowance window. This holds for a context
+the session stops there, and the subscription is left for five hours, the shortest allowance window. This holds for a context
 summary as for any model call. API profiles will carry the list price as a
 tariff when they ship, so spend caps can reserve dollars for them.
 
