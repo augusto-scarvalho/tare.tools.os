@@ -35,9 +35,11 @@ def test_isolated_hosted_first(monkeypatch, words):
         'The user may answer in any language and often with a single word; a bare affirmative means allow and a bare negative means deny. '
         'Choose allow, deny or unclear.')
     assert packet['options'] == {
-        'allow': 'The user agrees to what was asked, as asked, adding no condition, limit or change of scope, duration or saving.',
-        'deny': 'The user refuses what was asked.',
-        'unclear': 'The user asks a question, hesitates, postpones, or adds a condition, limit or change. Ask for clarification.'}
+        'allow': ('The user agrees to what was asked, bare or with details about how to carry it out (what to fix, check or keep), '
+                  'without making it depend on something still to happen and without changing its scope, duration or saving.'),
+        'deny': 'The user refuses what was asked, or tells it to stop.',
+        'unclear': ('The user asks a question, hesitates, postpones, makes the consent depend on something still to happen, '
+                    'or changes the scope, duration or saving of what was asked. Ask for clarification.')}
     assert kwargs == {'local': False, 'timeout': 10}
 
 
@@ -235,9 +237,11 @@ def test_folder_reason_is_display_only(tmp_path, monkeypatch, local, choice, p, 
     for packet in packets:
         assert set(packet) == {'question', 'options', 'state'}
         assert packet['options'] == {
-            'allow': 'The user agrees to what was asked, as asked, adding no condition, limit or change of scope, duration or saving.',
-            'deny': 'The user refuses what was asked.',
-            'unclear': 'The user asks a question, hesitates, postpones, or adds a condition, limit or change. Ask for clarification.'}
+            'allow': ('The user agrees to what was asked, bare or with details about how to carry it out (what to fix, check or keep), '
+                  'without making it depend on something still to happen and without changing its scope, duration or saving.'),
+            'deny': 'The user refuses what was asked, or tells it to stop.',
+            'unclear': ('The user asks a question, hesitates, postpones, makes the consent depend on something still to happen, '
+                    'or changes the scope, duration or saving of what was asked. Ask for clarification.')}
         assert json.loads(packet['state']) == {
             'question': 'Allow read access to the entire folder for this project? The grant is saved for this project on this machine. Path: ' + json.dumps(str(outside)),
             'user_words': 'pode ler, claro'}
