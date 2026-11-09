@@ -30,6 +30,7 @@ MAX_FAILURES = 2                # NOT_VERIFIED runs of the same unit before tare
 MAX_REFUSALS = 3                # at most the three runs the ledger keeps (runs recorded before `repeated`)
 MAX_PROGRESSING_REFUSALS = 6    # a cost backstop: an audit repeating a finding stops the unit at once
 AUDIT_REFUSED = 'The independent audit did not accept this candidate.'  # only these count toward MAX_REFUSALS
+AUDIT_INCOMPLETE = 'The independent audit reached no verdict.'  # a coverage gap or failed review: no defect to count
 CHILD_LIMITS = {'max_model_calls': 30, 'max_seconds': 900}
 # ponytail: from the phase 3 comparison (2026-10-06), children that finished a unit used 12 and 16 calls, and one
 # given 7 ran out without changing anything; below this the session edits directly. Revisit with more units.
@@ -1296,8 +1297,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     **({'observed_named_checks':observed} if observed else {})})
                 result['audit'] = row['audit'] = assessment
                 if assessment.get('verdict') != 'ACCEPT':
-                    result.update(verdict='NOT_REVIEWED', reason=AUDIT_REFUSED,
-                                  patch=row.get('patch'))
+                    result.update(verdict='NOT_REVIEWED', patch=row.get('patch'), reason=AUDIT_INCOMPLETE
+                                  if assessment.get('verdict') == 'INCONCLUSIVE' else AUDIT_REFUSED)
                     break
                 from .conversation_review import reference_sources_current
                 if not reference_sources_current(config,assessment.get('reference_sources',[])):

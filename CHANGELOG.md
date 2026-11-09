@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- An audit that reaches no verdict (a partial review with unread obligations, or a failed review) no longer counts as a refusal toward the 6-refusal stop: in the TUI dogfood a partial review with no findings became the sixth "refusal" and left the task one step from stopping for good. Only an audit that refuses the candidate counts.
 - A delivery run that reaches the failure limit (a repeated audit defect, the refusal cap or failed checks) asks the retry question as it ends, so the user's answer to the coordinator is the consent. Before, the question existed only after the next correction was refused: the coordinator asked in its own words, the user's "pode tentar de novo" found no question, and the TUI asked again.
 - The retry question after an audit stop says what a yes allows: "Let this task go on correcting?", with corrections continuing while the audit finds new defects and stopping again on a repeated defect or 6 refusals in a row. It asked for "one more attempt", and a yes ran three correction rounds (about 48 minutes).
 - The kernel pin moves to 08851e4: a read with `start_column: 1` returns a page instead of one line, so an implementer that fills that default (DeepSeek did) no longer stalls into a NO_PROGRESS stop.
