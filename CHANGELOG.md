@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The files pane reads a reopened conversation's rows as the transcript does (a delegation saved as an edit is no file), the chat comes back when a compact screen widens with the pane open, F8 brings forward a pane covered by F1/F2 instead of closing it, a new row no longer scrolls the list to the top, and edited files take the theme's warning colour.
 - F8 (also `/files` and a Files button) opens a compact pane on the right listing the files the agents read and edited this turn or this session (`t`), for every model and vendor: `r` read, `e` edited, `p` edited by a delegated session in its candidate tree, `x` deleted, `!` refused or failed (its reason when selected), `⟳` in progress, and the delegated role (`impl`, `expl`, `audit`). It reads only the conversation's own retained activity, calls no model, takes the whole screen below 100 columns like F1/F2, stays beside them from 140, and opens closed on a new machine and then as it was left.
 - The conversation activity stream reads the session's repositories only when `--activity-events` is on, so resuming a session whose saved configuration names none works as before.
 - A conversation's delegated rows resolve Full output against the project the TUI opened (`--root`) when the session names several repositories, and against an absolute conversation custody even when `--session` was given as a relative path.

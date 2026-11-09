@@ -91,17 +91,42 @@ def test_touched_rows_follow_activity_for_every_role_and_survive_reopen(tmp_path
             app.assistant_activity({'channel': 'activity', 'activity': row('read', 'parser.py')})
             app.assistant_activity({'channel': 'activity', 'activity': row(
                 'edit', 'parser.py', identity='child/effect/1', source=source(project))})
+            for operation, target in (('implement', 'W-1 unit'), ('folder_read', 'docs: guide.md')):
+                app.assistant_activity({'channel': 'activity', 'activity': row(operation, target)})
             await pilot.pause(.6)
             listing = app.query_one('#files-touched', OptionList)
             labels = [str(listing.get_option_at_index(i).prompt) for i in range(listing.option_count)]
-            assert labels == ['p parser.py · impl']
-            assert 'This turn · read 0 · edited 1' in str(app.query_one('#files-summary').render())
+            assert labels == ['p parser.py · impl', 'r docs: guide.md']  # a delegation is no file
+            assert 'This turn · read 1 · edited 1' in str(app.query_one('#files-summary').render())
             app.checkpoint('draft_saved'); saved_id = app.demand_id
             app.new_demand(); await pilot.pause(.6)
             assert listing.option_count == 0
             await app.list_demands().wait()
             app.query_one('#saved-demand', Select).value = saved_id
             app.open_demand(); await app.workers.wait_for_complete(); await pilot.pause(.6)
+            # The reopened history is saved_history(): implement saved as an edit, folder_read as a read.
             assert [str(listing.get_option_at_index(i).prompt) for i in range(listing.option_count)] == labels
+            assert app.query_one(FilesPane).found[-1].outside
+            assert not app.backend.launches
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('width', [80, 120, 150])
+def test_the_chat_comes_back_when_the_screen_widens_and_f8_brings_a_covered_pane_forward(tmp_path, width):
+    project = tmp_path/'project'; project.mkdir()
+    async def scenario():
+        app = WorkConsole(project, backend=FakeBackend(), initial_mode='assistant', storage_preferred=tmp_path/'state')
+        async with app.run_test(size=(80, 24)) as pilot:
+            await app.workers.wait_for_complete()
+            pane, detail = app.query_one(FilesPane), app.query_one('#detail')
+            await pilot.press('f8'); await pilot.pause()
+            assert pane.display and not detail.display
+            await pilot.resize_terminal(width, 40); await pilot.pause()
+            assert pane.display and detail.display is (width >= 100)
+            await pilot.press('f1'); await pilot.pause()
+            assert pane.display is (width >= 140) and detail.display is (width >= 100)
+            if not pane.display:  # covered by F1: F8 brings it forward instead of closing it
+                await pilot.press('f8'); await pilot.pause()
+                assert pane.display and app.panel is None and app.files_open
             assert not app.backend.launches
     asyncio.run(scenario())

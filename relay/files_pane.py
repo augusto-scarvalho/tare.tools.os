@@ -67,8 +67,10 @@ def role_label(row):
 
 def touches(history, *, turn_only):
     """One entry per file the agents read or edited, first touch first; an edit outranks a read and the latest row
-    gives the state. A turn starts at the operator's message ('You: ...')."""
-    rows = list(history)
+    gives the state. A turn starts at the operator's message ('You: ...'): a resume without a message stays in the
+    previous turn, and once the history no longer holds the last message, "this turn" is all it kept."""
+    from .native_activity import restored
+    rows = [restored(row) if isinstance(row, dict) else row for row in history]  # a reopened history is saved_history()
     if turn_only:
         starts = [index for index, value in enumerate(rows) if isinstance(value, str) and value.startswith('You: ')]
         rows = rows[starts[-1]+1:] if starts else rows
@@ -102,12 +104,12 @@ def summary_text(found, *, turn_only):
     return f"{'This turn' if turn_only else 'Session'} · read {len(found)-edited} · edited {edited}"
 
 
-def label(touch, width):
+def label(touch, width, edited_style='yellow'):
     suffix = ' · '+touch.role if touch.role else ''
     room = max(8, width-4-len(suffix))
     path = touch.path if len(touch.path) <= room else '…'+touch.path[-(room-1):]
     text = Text(glyph(touch)+' ', style='bold' if touch.edited else '')
-    text.append(path, style='dim' if touch.outside else 'yellow' if touch.edited and not touch.proposed else '')
+    text.append(path, style='dim' if touch.outside else edited_style if touch.edited and not touch.proposed else '')
     text.append(suffix, style='dim')
     return text
 
@@ -140,20 +142,25 @@ class FilesPane(Vertical):
             self.timer.pause()
 
     def tick(self):
+        """Every half second while shown; widgets are updated only when what they show changed (an update is a
+        layout pass)."""
         app = self.app
-        self.query_one('#files-title', Static).update('Files · '+Path(str(app.workspace_root)).name)
         found = touches(getattr(app, 'assistant_history', ()), turn_only=self.turn_only)
         width = max(16, self.size.width or 36)
-        if (found, width, self.turn_only) == self.shown:
+        title = 'Files · '+Path(str(app.workspace_root)).name
+        edited = app.theme_variables.get('warning') or 'yellow'  # follows the light and high-contrast themes
+        if (found, width, self.turn_only, title, edited) == self.shown:
             return
-        self.shown, self.found = (found, width, self.turn_only), found
+        self.shown, self.found = (found, width, self.turn_only, title, edited), found
+        self.query_one('#files-title', Static).update(title)
         self.query_one('#files-summary', Static).update(summary_text(found, turn_only=self.turn_only))
         listing = self.query_one('#files-touched', OptionList)
-        highlighted = listing.highlighted
+        highlighted, scrolled = listing.highlighted, listing.scroll_y  # a new row must not jump the view
         listing.clear_options()
-        listing.add_options([Option(label(touch, width), id=touch.path) for touch in found])
+        listing.add_options([Option(label(touch, width, edited), id=touch.path) for touch in found])
         if found:
             listing.highlighted = min(highlighted or 0, len(found)-1)
+            listing.scroll_to(y=scrolled, animate=False)
 
     def on_option_list_option_highlighted(self, event):
         index = event.option_index

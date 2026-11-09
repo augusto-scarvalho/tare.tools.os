@@ -787,31 +787,32 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         self.panel = panel
         self.query_one('#selection').display = panel == 'workspace'
         self.query_one('#navigation').display = panel == 'navigation'
-        self.query_one('#detail').display = not (panel and self.screen.has_class('compact'))
         self.sync_files_pane()
 
     def sync_files_pane(self):
         """The right pane shows while open and there is room: beside the chat on a wide screen, alone in compact
-        (F1/F2 cover it while they are open, as they cover the chat), beside F1/F2 from 140 columns."""
-        pane = self.query_one_optional('#files-pane')
-        if pane is None:
-            return
+        (F1/F2 cover it while they are open, as they cover the chat), beside F1/F2 from 140 columns. The one place
+        that decides whether the chat (#detail) shows: in compact, any open panel takes the whole screen."""
         compact = self.screen.has_class('compact')
         shown = self.files_open and (self.panel is None or (not compact and self.size.width >= 140))
-        pane.display = shown
-        if compact:
-            self.query_one('#detail').display = not (self.panel or shown)
-        pane.set_visible_state(shown)
+        self.query_one('#detail').display = not (compact and (self.panel or shown))
+        pane = self.query_one_optional('#files-pane')
+        if pane is not None:
+            pane.display = shown
+            pane.set_visible_state(shown)
 
     def action_files(self):
-        self.files_open = not self.files_open
-        try:
-            if (root := self.appearance_root()) is not None:
-                from .files_pane import save_open
-                save_open(root, self.files_open)
-        except (OSError, ValueError) as exc:
-            self.notify('Could not save the files pane preference: '+str(exc), severity='warning')
-        self.sync_files_pane()
+        if self.files_open and not self.query_one('#files-pane').display:
+            self.show_panel(None)  # open but covered by F1/F2: F8 brings it forward instead of closing it
+        else:
+            self.files_open = not self.files_open
+            try:
+                if (root := self.appearance_root()) is not None:
+                    from .files_pane import save_open
+                    save_open(root, self.files_open)
+            except (OSError, ValueError) as exc:
+                self.notify('Could not save the files pane preference: '+str(exc), severity='warning')
+            self.sync_files_pane()
         if self.files_open and self.query_one('#files-pane').display:
             self.query_one('#files-touched').focus()
         else:
