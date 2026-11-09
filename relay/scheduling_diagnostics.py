@@ -37,6 +37,7 @@ _CATALOG = {
     'GPU_IMAGE_WAITING': ('resource', 'An image job is waiting for the shared GPU.', 'Wait for queued image work or choose another permitted route.', True),
     'GPU_LEASE_HELD': ('resource', 'The GPU lease is held by another owner.', 'Wait for lease release or choose another permitted route.', True),
     'ROLE_NOT_CONFIGURED': ('configuration', 'This route is not configured for the requested role.', 'Choose a configured route or review role setup.', False),
+    'NOT_QUALIFIED_PIN_ONLY': ('configuration', 'This route is registered from provider metadata and not yet qualified.', 'Pin it exactly (tare models --role ROLE) or qualify it through tare.', False),
     'RUNNER_NOT_SUPPORTED_BY_NATIVE_WORK': ('configuration', 'This runner is not supported by native Work.', 'Choose a supported native Work runner or review setup.', False),
     'RUNNER_NOT_SUPPORTED_BY_NATIVE_FLOW': ('configuration', 'This runner is not supported by native flow.', 'Choose a supported native flow runner or review setup.', False),
     'COST_OR_PREFERENCE_UNKNOWN': ('configuration', 'The route cost tier or preference is unknown.', 'Review the configured cost tier and route preference.', False),

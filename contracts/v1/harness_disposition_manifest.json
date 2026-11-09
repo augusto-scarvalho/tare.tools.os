@@ -4001,8 +4001,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns routing explanations and their frontend projection; existing owners retain admission, resource observations and execution.",
-      "size_bytes": 8703,
-      "sha256": "52dc11076a1f6a375febdfdfef0b6e71c454f96239b517ac5274828efcfb1b42"
+      "size_bytes": 8905,
+      "sha256": "3f7a1c37c69482a252502358802244c9d5767eba76fb270fde60106c97b03ab9"
     },
     {
       "name": "workflow_ir.py",

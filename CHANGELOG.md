@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- A scheduling failure names `NOT_QUALIFIED_PIN_ONLY` as configuration: the route is registered from provider metadata and needs an exact pin or a qualification, where it read as an unavailable route for an unspecified reason.
 - Correction to the entries below: the OpenCode Go reserves stay out of automatic selection. A role row may say `qualified: false`, and every automatic selector then skips it (`NOT_QUALIFIED_PIN_ONLY`) while an exact pin still reaches it; the generator writes the mark and a live qualification will flip it. Without it, an unqualified Go reserve outranked qualified metered routes such as Bedrock Opus as soon as a key was stored.
 - `tare --list-models` and the model listing leave out the OpenCode Muse Spark Contributor profiles until the Meta data-use choice is made, as they already did for OpenRouter's.
 - With an OpenCode key stored, automatic selection ranks the Go reserves after the subscription CLIs and before metered APIs; until OpenCode's quota refusal is recognized, a model whose allowance is spent fails its session. The profile generator refuses to move a roster record that already serves another gateway's model id, and names an unknown Anthropic family instead of crashing. Like any roster change (this one and the vendor unification before it), identity receipts and plan reviews saved earlier are refused as stale and must be regenerated.
