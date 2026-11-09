@@ -18,9 +18,11 @@ def lock(root):
 
 
 FILE = 'consent-questions.json'
-OPTIONS = {'allow': 'The user agrees to what was asked, as asked, adding no condition, limit or change of scope, duration or saving.',
-           'deny': 'The user refuses what was asked.',
-           'unclear': 'The user asks a question, hesitates, postpones, or adds a condition, limit or change. Ask for clarification.'}
+OPTIONS = {'allow': ('The user agrees to what was asked, bare or with details about how to carry it out (what to fix, check or keep), '
+                     'without making it depend on something still to happen and without changing its scope, duration or saving.'),
+           'deny': 'The user refuses what was asked, or tells it to stop.',
+           'unclear': ('The user asks a question, hesitates, postpones, makes the consent depend on something still to happen, '
+                       'or changes the scope, duration or saving of what was asked. Ask for clarification.')}
 REASK = 'Consent is still pending. Explain what the requested authorization does and ask again plainly for a plain yes or no; do not proceed.'
 
 
