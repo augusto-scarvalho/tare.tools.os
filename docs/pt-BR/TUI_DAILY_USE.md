@@ -255,11 +255,25 @@ Use `/diff` (ou F3) para inspecionar as mudanças confirmadas das ferramentas de
 registradas. O painel também permite desfazer explicitamente e rodar de novo as verificações registradas. Edições
 feitas pelo shell não viram snapshots automáticos das ferramentas de arquivo; inspecione-as com Git ou com as ferramentas de arquivo.
 
+## 10. Ver o que os agentes leem e editam (F8)
+
+O F8, o botão **Files** ou `/files` abre um painel compacto à direita: os arquivos que
+os agentes leram e editaram neste turno (**t** alterna para a sessão inteira),
+qualquer que seja o modelo ou o fornecedor de cada papel. Cada linha começa pelo que
+aconteceu (`r` lido, `e` editado, `p` editado por uma sessão delegada na sua árvore
+candidata, `x` apagado, `!` recusado ou com falha, `⟳` em andamento) e termina com
+quem fez, quando foi uma sessão delegada (`impl`, `expl`, `audit`). Uma linha
+recusada mostra o motivo quando selecionada. Abaixo de 100 colunas o painel ocupa a
+tela inteira, como o F1 e o F2; a partir de 140 colunas fica ao lado deles. O F8 ou o
+Esc voltam para a mensagem. O painel só lê o que a conversa já mostra: não chama
+nenhum modelo, começa fechado numa máquina nova e depois abre como você deixou.
+
 ## Outras teclas úteis
 
 - F4 / `/terminal` — inspeciona os processos da sessão. `/attach` acrescenta um arquivo ou imagem como contexto.
 - F6 — próximo passo; Ctrl+End — pula para a saída mais recente.
 - F2 — configurações do workspace em terminais pequenos.
+- F8 / `/files` — os arquivos que os agentes leem e editam (seção 10).
 
 ## Flows opcionais (não necessários no uso diário)
 

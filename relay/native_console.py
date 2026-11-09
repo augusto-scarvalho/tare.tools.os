@@ -113,6 +113,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 Binding('f3','changes','Changes',priority=True),
                 Binding('f4','processes','Processes',priority=True),
                 Binding('f5','projects','Projects',priority=True),
+                Binding('f8', 'files', 'Files', priority=True),
                 ('f6', 'next_step', 'Next step'), Binding('ctrl+end', 'latest', 'Latest', priority=True),
                 ('ctrl+enter', 'start', 'Send / Start')]
     CSS = '''
@@ -218,6 +219,13 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
     Screen #selection #appearance { margin-bottom: 1; }
     Screen.compact #detail { padding: 0 1; }
     Screen.compact #composer { margin-bottom: 0; }
+    #files-pane { display: none; width: 36; min-width: 30; height: 1fr; padding: 0 1; background: $panel;
+                  border-left: solid $primary 25%; }
+    Screen.compact #files-pane { width: 1fr; border: none; }
+    #files-title { height: 1; text-style: bold; }
+    #files-summary, #files-hint { height: auto; max-height: 2; color: $text-muted; }
+    #files-touched { height: 1fr; border: none; padding: 0; background: transparent; }
+    #files-touched > .option-list--option { padding: 0; }
     #navigation { display: none; width: 32; min-width: 26; height: 1fr; padding: 1; background: $panel; border-right: solid $primary 25%; }
     #navigation-project { height: 1; text-style: bold; color: $foreground; }
     #navigation-heading { height: 1; margin-top: 1; color: $text-muted; }
@@ -341,6 +349,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         self.last_sent_message = None
         self.initial_mode = initial_mode
         self.panel = None  # the open side panel: show_panel()
+        self.files_open = False  # the right files pane (F8), remembered per machine: sync_files_pane()
         self.initial_guided = guided
         self.entry_proposal = None
         self.entry_history = ()
@@ -604,6 +613,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                     yield Button('Sessions', id='toolbar-conversations', tooltip='Saved conversations · F1')
                     yield Button('Team', id='toolbar-team', tooltip='Who executed each role, with model and reasoning · /team')
                     yield Button('Settings', id='toolbar-settings', tooltip='Project, model and optional flows · F2')
+                    yield Button('Files', id='toolbar-files', tooltip='What the agents read and edit · F8')
                 with Horizontal(id='connection-row'):
                     yield Static('', id='session-context', markup=False)
                     yield Button('Check', id='connection-check', tooltip='Check the model connection without generation or model switching')
@@ -676,6 +686,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                         yield Button('Approve implementation', id='approve-decision', disabled=True)
                         yield Button('Decline implementation', id='decline-decision', disabled=True)
                         yield Button('Reconsider decision', id='reconsider-decision', disabled=True)
+            from .files_pane import FilesPane
+            yield FilesPane(id='files-pane')
         yield Footer()
 
     def on_mount(self):
@@ -685,6 +697,13 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 self.theme = read_appearance(root)
         except (OSError, ValueError) as exc:
             self.notify('Could not load appearance: '+str(exc), severity='warning')
+        try:
+            if (root := self.appearance_root()) is not None:
+                from .files_pane import read_open
+                self.files_open = read_open(root)
+        except (OSError, ValueError) as exc:
+            self.notify('Could not load the files pane preference: '+str(exc), severity='warning')
+        self.call_after_refresh(self.sync_files_pane)
         # Branch and model labels only change from outside the TUI here; each refresh runs git.
         self.set_interval(30, lambda: self.sync_header(force=True))
         self.set_interval(60, self.check_storage_space)
@@ -758,6 +777,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         self.screen.set_class(event.size.width < 100, 'compact')
         if self.panel:
             self.show_panel(self.panel)
+        else:
+            self.sync_files_pane()
         self.call_after_refresh(self.sync_header)
 
     def show_panel(self, panel):
@@ -767,6 +788,39 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         self.query_one('#selection').display = panel == 'workspace'
         self.query_one('#navigation').display = panel == 'navigation'
         self.query_one('#detail').display = not (panel and self.screen.has_class('compact'))
+        self.sync_files_pane()
+
+    def sync_files_pane(self):
+        """The right pane shows while open and there is room: beside the chat on a wide screen, alone in compact
+        (F1/F2 cover it while they are open, as they cover the chat), beside F1/F2 from 140 columns."""
+        pane = self.query_one_optional('#files-pane')
+        if pane is None:
+            return
+        compact = self.screen.has_class('compact')
+        shown = self.files_open and (self.panel is None or (not compact and self.size.width >= 140))
+        pane.display = shown
+        if compact:
+            self.query_one('#detail').display = not (self.panel or shown)
+        pane.set_visible_state(shown)
+
+    def action_files(self):
+        self.files_open = not self.files_open
+        try:
+            if (root := self.appearance_root()) is not None:
+                from .files_pane import save_open
+                save_open(root, self.files_open)
+        except (OSError, ValueError) as exc:
+            self.notify('Could not save the files pane preference: '+str(exc), severity='warning')
+        self.sync_files_pane()
+        if self.files_open and self.query_one('#files-pane').display:
+            self.query_one('#files-touched').focus()
+        else:
+            self.focus_composer()
+
+    def focus_composer(self):
+        prompt = self.query_one('#prompt', TextArea)
+        (prompt if prompt.display and not prompt.disabled else
+         self.query_one('#cancel' if self.busy else '#start', Button)).focus()
 
     def resize_composer(self):
         prompt = self.query_one_optional('#prompt')
@@ -785,9 +839,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         if self.panel:
             self.query_one('#root', Input).focus()
         else:
-            prompt = self.query_one('#prompt', TextArea)
-            (prompt if prompt.display and not prompt.disabled else
-             self.query_one('#cancel' if self.busy else '#start', Button)).focus()
+            self.focus_composer()
 
     def action_latest(self):
         self.query_one('#output', Transcript).scroll_end(animate=False)
@@ -864,6 +916,9 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         if (self.is_running and self.screen.has_class('assistant', 'compact') and self.panel == 'workspace'
                 and action == 'start'):
             return False
+        from textual.screen import ModalScreen
+        if self.is_running and action == 'files' and isinstance(self.screen, ModalScreen):
+            return False  # F8 toggles the pane of the main screen only
         if action == 'cancel':
             # A busy composer must not consume Cancel as TextArea's cut. Idle
             # and direct terminal/modal bindings retain their normal handling.
@@ -883,6 +938,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         yield SystemCommand('Project skills', 'Preview a project skill and add it to your draft', self.action_skills)
         yield SystemCommand('Available tools', 'Inspect effective conversation tools and project instructions', self.action_tools)
         yield SystemCommand('Conversations', 'Search and reopen saved conversations · F1', self.action_conversations)
+        yield SystemCommand('Files pane', 'What the agents read and edit, this turn or this session · F8', self.action_files)
         yield SystemCommand('Switch project', 'Browse folders and recent projects · F5', self.action_projects)
         yield SystemCommand('Project permissions', 'Inspect saved scope, instructions and defaults for new conversations', self.action_permissions)
         yield SystemCommand('Project backlog', 'Bind and inspect the selected project’s backlog graph', self.action_backlog)
@@ -1014,7 +1070,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         for button in self.query('#attachment-chips Button, #context-chips Button'):
             button.disabled = self.busy and mode!='assistant'
         self.query_one('#send-message', Button).disabled = not session or self.sending_message
-        for name in ('toolbar-conversations', 'toolbar-settings', 'settings-close', 'conversation-close', 'conversation-search', 'conversation-list', 'appearance', 'connection-check', 'conversation-rename'):
+        for name in ('toolbar-conversations', 'toolbar-settings', 'toolbar-files', 'settings-close', 'conversation-close', 'conversation-search', 'conversation-list', 'appearance', 'connection-check', 'conversation-rename'):
             self.query_one('#'+name).disabled = False
         self.query_one('#conversation-new').disabled = self.busy or self.sending_message
         self.query_one('#conversation-rename').disabled = self.busy or self.sending_message
@@ -1498,7 +1554,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         if event.button.id and event.button.id.startswith(('attachment-preview-','attachment-remove-')):
             event.stop();self.attachment_button(event.button);return
         navigation = {'toolbar-conversations': self.action_conversations, 'toolbar-team': self.action_team,
-                      'toolbar-settings': self.action_workspace,
+                      'toolbar-settings': self.action_workspace, 'toolbar-files': self.action_files,
                       'navigation-projects': self.action_projects, 'settings-projects': self.action_projects,
                       'settings-permissions': self.action_permissions,
                       'settings-backlog': self.action_backlog,
