@@ -64,6 +64,9 @@ def test_tare_states_the_facts_it_can_check_without_a_model(tmp_path):
     assert explored['summary'] == 'cited docs/a.md, run.gd'  # what explorers read is not a step of the turn
     implemented = heads_up.step('implement', {}, 'succeeded', {'verdict': 'INCONCLUSIVE', 'reason': 'check refused'})
     assert implemented['summary'] == 'verdict INCONCLUSIVE; reason check refused'  # the call succeeded, not the work
+    unapplied = heads_up.step('implement', {}, 'succeeded', {'verdict': 'NOT_REVIEWED', 'files': ['a.py'],
+                                                             'files_scope': 'unapplied candidate, not project files'})
+    assert unapplied['summary'] == 'verdict NOT_REVIEWED; files unapplied candidate, not project files'
     # What a step did reaches the writer, from what tare already recorded: no tools, no calls of its own.
     edited = heads_up.step('edit', {'path': 'a.py', 'changes': [{'search': 'x = 1', 'replace': 'x = 2'}]}, 'succeeded', {})
     assert edited['detail'] == '- x = 1\n+ x = 2' and heads_up._line(edited) == 'edit a.py -> succeeded :: - x = 1\n+ x = 2'
