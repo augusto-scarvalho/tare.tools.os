@@ -121,7 +121,7 @@ def reviewed(host,monkeypatch,tmp_path):
     actual=native_agent.run_session
     calls=[]
     def run(verdict,*,after=None,with_findings=True,expected_calls=1,continuation=False,observed_checks=None,changed_files=None,
-            inspect=None,runtime_citations=False,candidate_tree=None,remaining=None):
+            inspect=None,runtime_citations=False,candidate_tree=None,remaining=None,extra_reads=()):
         if changed_files is not None:
             candidate['sha256']=hashlib.sha256(changed_files['a.py']).hexdigest()
         payload={'verdict':verdict,'summary':'Observed source and evidence.',
@@ -155,7 +155,7 @@ def reviewed(host,monkeypatch,tmp_path):
                     'sha256':hashlib.sha256((Path(r['root'])/'__init__.py').read_bytes()).hexdigest()}
                     for r in request['satellite_sources']['sources'] if 'root' in r)
             client=Client(steps=[('read',{'repository':'candidate','path':'a.py'}),
-                ('read',{'repository':'reference-1','path':'facts.txt'}),*runtime_reads,('tare_deliver',payload)])
+                ('read',{'repository':'reference-1','path':'facts.txt'}),*runtime_reads,*extra_reads,('tare_deliver',payload)])
             result=actual(config,dep,session,instruction,client=client,local_counter=client,**kw)
             if after:after(facts,store)
             return result
@@ -248,25 +248,26 @@ def test_fresh_human_can_continue_one_completed_unreviewed_audit_without_impleme
     assert not conversation_review.coverage_recovery_available(tools.root,run.task)
 
 
-def test_coverage_continues_each_turn_while_it_settles_unread_obligations(reviewed):
+def test_coverage_continues_each_turn_while_it_reads_something_new(reviewed):
     host,run,*_=reviewed;tools,*_=host
     run.task['attempt_input']=tools.input_id()
     unread=['Read b.py.','Read c.py.','Read d.py.']
-    found=['Read d.py.','Read e.py.','Read f.py.']  # b.py and c.py read, and they led to two more files
     first=run('INCONCLUSIVE',with_findings=False,remaining=unread)
-    for turn,(left,calls) in enumerate([(found,2),(found,3)]):
+    more=[('read',{'repository':'candidate','path':'a.py','start':1,'end':1})]  # a range no review had read
+    # The second continuation rewrites its list but reads nothing new: its words are not progress.
+    for turn,(left,reads,calls) in enumerate([(unread[1:],more,2),(['Read c.py again.','Read d.py.'],more,3)]):
         user_reply(host,'segue')
         tools.invocation_id=f'coverage-{turn}'
-        result=run('INCONCLUSIVE',with_findings=False,remaining=left,expected_calls=calls)
+        result=run('INCONCLUSIVE',with_findings=False,remaining=left,extra_reads=reads,expected_calls=calls)
         assert result['remaining']==left
         run.task['delivery']={'audit':result}
-        # the first continuation settled b.py and c.py; the second settled nothing and ends the chain
         assert conversation_review.coverage_recovery_available(tools.root,run.task)==(turn==0)
     user_reply(host,'segue')
     tools.invocation_id='no-progress'
     assert run('ACCEPT',expected_calls=3)==result
     rows=conversation_review.records(tools.root)
-    assert [r.get('coverage_unread_before') for r in rows if r.get('coverage_continuation_of')]==[unread,found]
+    before=[r['coverage_read_before'] for r in rows if r.get('coverage_continuation_of')]
+    assert len(before)==2 and 'candidate:a.py:1:1' not in before[0] and 'candidate:a.py:1:1' in before[1]
     assert first['remaining']==unread
 
 

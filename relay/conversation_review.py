@@ -185,14 +185,30 @@ def uncovered_review(result):
         and not result.get('failure_code') and not result.get('reason'))
 
 
+def review_reads(job):
+    """What a review session read, from its journal: 'repository:path:start:end' of each successful read."""
+    from compute_plane.native_journal import NativeJournal
+    path = Path(job)/'session'/'journal.jsonl'
+    asked, found = {}, set()
+    for record in (NativeJournal(path).snapshot().records if path.is_file() else ()):
+        event = record.event()
+        if event['kind'] == 'effect_requested' and event['tool_call']['name'] == 'read':
+            arguments = json.loads(event['tool_call']['arguments_json'])
+            asked[event['effect_id']] = ':'.join(str(arguments.get(k)) for k in ('repository', 'path', 'start', 'end'))
+        elif (event['kind'] == 'effect_returned' and event['result']['status'] == 'succeeded'
+              and event['result']['effect_id'] in asked):
+            found.add(asked[event['result']['effect_id']])
+    return found
+
+
 def coverage_progressed(row):
-    """A coverage continuation that settled at least one obligation its predecessor left unread may continue
-    again, even when its reading found new ones; one that settled none is where the chain stops."""
-    before = row.get('coverage_unread_before')
-    if not row.get('coverage_continuation_of') or not isinstance(before, list):
-        return False  # an earlier count-only record ends the chain, as before
-    after = {' '.join(str(item).casefold().split()) for item in (row.get('result') or {}).get('remaining') or []}
-    return any(' '.join(str(item).casefold().split()) not in after for item in before)
+    """A coverage continuation that read something no earlier review of its chain had read may continue again;
+    one that read nothing new is where the chain stops. Its own words (remaining) are not the measure."""
+    before = row.get('coverage_read_before')
+    session = (row.get('result') or {}).get('session')
+    if not row.get('coverage_continuation_of') or not isinstance(before, list) or not isinstance(session, str):
+        return False  # a record without the chain's reads ends the chain
+    return bool(review_reads(Path(session).parent) - set(before))
 
 
 def next_coverage(job):
@@ -764,6 +780,7 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
 
     pinned = None
     coverage_previous = None
+    coverage_reads = None  # what the chain read before this continuation
     context_previous = None
     if path.exists():
         previous = read_json(path, MAX_RECEIPT_BYTES)
@@ -787,14 +804,16 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
         # format failure. An accepted/rejected verdict is never resampled, and
         # unknown dispatches never authorize another charge.
         if uncovered_review(result) and (fresh_coverage or has_coverage):
-            # Each later user turn continues the chain while its unread obligations shrink.
-            continuation=next_coverage(job)
+            # Each later user turn continues the chain while each continuation reads something new.
+            continuation,chain=next_coverage(job),[job]
             while (continuation/'receipt.json').exists():
                 row=read_json(continuation/'receipt.json',MAX_RECEIPT_BYTES)
                 if not (row.get('status')=='FINISHED' and uncovered_review(row.get('result')) and coverage_progressed(row)):
                     return row.get('result') or {
                         'verdict':'INCONCLUSIVE','reason':'Coverage continuation requires reconciliation.'}
                 previous,result,continuation=row,row['result'],next_coverage(continuation)
+                chain.append(Path(row['result']['session']).parent)
+            coverage_reads=sorted(set().union(*(review_reads(j) for j in chain)))
             target=continuation/'receipt.json'
             if (not fresh_coverage or previous.get('status')!='FINISHED'
                     or previous.get('invocation')==owner.invocation_id):
@@ -885,7 +904,7 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
            'request_sha256': identity, 'invocation': owner.invocation_id,
            'calls_reserved': calls, 'amount_committed': allowance, 'context_contract': contract}
     if coverage_previous:
-        row.update(coverage_continuation_of=identity,coverage_unread_before=list(coverage_previous.get('remaining') or []))
+        row.update(coverage_continuation_of=identity,**({'coverage_read_before':coverage_reads} if coverage_reads is not None else {}))
     save_json(path, row, max_bytes=MAX_RECEIPT_BYTES)  # durable intent, not evidence of dispatch
     try:
         inputs = job/'input'; inputs.mkdir()

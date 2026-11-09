@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- A coverage continuation counts as progress only when its session read something (a file or range) that no earlier review of its chain had read, taken from its journal; the auditor's list of what remains is no longer the measure. Comparing that list's text let a reworded item pass as progress, so the chain might never stop by itself. Continuations recorded with the list measure end the chain.
 - The heads-up tells the user's queued messages from the host's by the session's operator inbox, which keeps every message the user queued, instead of by the shape of a message id: a message queued with any id (tare native) counts, and a host message with a uuid-like id does not.
 - A refused model request says why: the kernel pin moves to ad897e4, which keeps a 4xx reply's error type and message without request headers or keys, and the turn's result, its failure lines ("Provider said: ...") and an audit's result carry it to the user and the coordinator. An HTTP 400 showed only its code.
 - An HTTP model request whose cleanup was unconfirmed is recoverable in the TUI that made it, once the HTTP worker the kernel recorded for it is gone; the user no longer has to close and reopen tare. A process that took a recorded PID later (created after the owner's invocation started, or after a worker's invocation ended) no longer counts as that process still running. A worker the kernel left without a PID still needs its owner to end.
