@@ -28,6 +28,7 @@ LIST_LIMIT = 100_000
 STATUS_LIMIT = 5000
 POLL_TICKS = 6  # git status every 3 s while the pane shows (0.5 s ticks)
 SLOW_SECONDS = 1  # a read slower than this polls every 10 s instead
+VIEW_BYTES = 256*1024  # the interactive preview bound of read_edit_file
 GIT_SECONDS = 30  # off the UI thread, so a cold status of a large repository may take its time
 CONFLICTS = {'DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'}
 ROLES = {'Implement': 'impl', 'Explore': 'expl', 'Code review': 'audit', 'Plan draft': 'plan',
@@ -159,6 +160,42 @@ def git_status(root, limit=STATUS_LIMIT):
     return {'marks': marks, 'dirs': tuple(dirs), 'count': len(entries), 'numstat': numstat}
 
 
+def read_text(root, path):
+    """A project file's text for the viewer: linked or outside paths refused (console_context.context_path),
+    bounded, CRLF shown as LF, a binary file named as such."""
+    from .console_context import context_path
+    target, _ = context_path(root, path)
+    if not target.is_file():
+        raise ValueError('Choose a file, not a folder.')
+    with target.open('rb') as stream:
+        raw = stream.read(VIEW_BYTES+1)
+    if len(raw) > VIEW_BYTES:
+        return 'File exceeds the interactive preview limit.'
+    if b'\0' in raw[:4096]:
+        return 'Binary file; no text preview.'
+    return raw.decode('utf-8', 'replace').replace('\r\n', '\n')
+
+
+def diff_text(root, path):
+    """What changed in a project file since the last commit (staged and not), or the whole new file when Git
+    does not track it yet."""
+    from .console_context import context_path
+    from .console_header import run_git
+    _, name = context_path(root, path)
+    if run_git(root, 'rev-parse', '--show-prefix', timeout=GIT_SECONDS).returncode != 0:
+        return 'Not a Git repository: no diff.'
+    tracked = run_git(root, 'ls-files', '--error-unmatch', '--', name, timeout=GIT_SECONDS).returncode == 0
+    if not tracked:
+        return 'New file, not in Git yet:\n\n'+read_text(root, name)
+    diff = run_git(root, 'diff', '--no-ext-diff', '--no-color', 'HEAD', '--', name, timeout=GIT_SECONDS)
+    if diff.returncode != 0:  # no commit yet: what is staged
+        diff = run_git(root, 'diff', '--no-ext-diff', '--no-color', '--cached', '--', name, timeout=GIT_SECONDS)
+    text = diff.stdout.replace('\r\n', '\n')
+    if len(text.encode('utf-8')) > VIEW_BYTES:
+        return 'Diff exceeds the interactive preview limit.'
+    return text or 'No change since the last commit.'
+
+
 def listing(root):
     """list_paths with its index, both built in the worker thread."""
     paths, truncated = list_paths(root)
@@ -286,8 +323,9 @@ class FilesPane(Vertical):
     """The right pane. Display is set on it only (never a screen class); its tick runs only while shown."""
 
     BINDINGS = [Binding('t', 'scope', 'Turn/session', show=False), Binding('c', 'changed', 'Changed only', show=False),
-                Binding('escape', 'leave', 'Back', show=False)]
-    HINT = 't turn/session · c changed · Esc back'
+                Binding('d', 'diff', 'Diff', show=False), Binding('a', 'mention', '@-mention', show=False),
+                Binding('y', 'copy_path', 'Copy path', show=False), Binding('escape', 'leave', 'Back', show=False)]
+    HINT = 'Enter open · d diff · a @ · y copy · t turn · c changed · Esc'
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -433,6 +471,57 @@ class FilesPane(Vertical):
     def action_scope(self):
         self.turn_only = not self.turn_only
         self.tick()
+
+    def selected(self):
+        """The project path under the cursor of the focused list, or None."""
+        focused = self.app.focused
+        if isinstance(focused, FileTree):
+            return (focused.cursor_node.data or (None,))[0] if focused.cursor_node is not None else None
+        listing = self.query_one('#files-touched', OptionList)
+        index = listing.highlighted
+        touch = self.found[index] if index is not None and 0 <= index < len(self.found) else None
+        return touch.path.replace('\\', '/').removeprefix('./') if touch is not None and not touch.outside else None
+
+    def on_option_list_option_selected(self, event):
+        event.stop()
+        touch = self.found[event.option_index] if 0 <= event.option_index < len(self.found) else None
+        if touch is not None and not touch.outside:
+            self.query_one(FileTree).reveal(touch.path)
+            self.open_file(touch.path, diff=False)
+
+    def on_tree_node_selected(self, event):
+        path, is_dir = event.node.data or (None, True)
+        if path and not is_dir:
+            event.stop()
+            self.open_file(path, diff=False)
+
+    def action_diff(self):
+        if (path := self.selected()) is not None:
+            self.open_file(path, diff=True)
+
+    @work(group='files-open', exclusive=True)
+    async def open_file(self, path, *, diff):
+        """The file, or what changed in it, in the viewer F3 uses. Read in a thread; nothing reaches a model."""
+        from .changes_panel import FileViewer
+        try:
+            content = await asyncio.to_thread(diff_text if diff else read_text, self.root, path)
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            self.app.notify(str(exc), severity='warning')
+            return
+        self.app.push_screen(FileViewer(path=path, content=content, notice=(
+            'What changed since the last commit · captured when opened' if diff else
+            'Current file content on disk · captured when opened')))
+
+    def action_mention(self):
+        """Attach the path as a context chip of the next message (the only way the pane reaches a model, and only
+        as a reference the model may read)."""
+        if (path := self.selected()) is not None and self.app.add_context(self.root, path):
+            self.app.notify('@'+path+' will go with your next message.')
+
+    def action_copy_path(self):
+        if (path := self.selected()) is not None:
+            self.app.copy_to_clipboard(path)
+            self.app.notify('Copied '+path)
 
     def action_leave(self):
         self.app.focus_composer()

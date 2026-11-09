@@ -172,6 +172,23 @@ class FileContext:
             self.accept_context(self.query_one('#context-menu',OptionList).highlighted or 0, descend=key=='tab')
         return True
 
+    def add_context(self, root, name):
+        """Attach a project path as a context chip: a reference the model may read, never the file's content.
+        False (and a notice) when it is refused."""
+        try:
+            context_path(root, name)
+        except (ValueError, OSError) as exc:
+            self.notify(str(exc)); return False
+        if self.context_paths and Path(self.context_root) != Path(root):
+            self.notify('Remove the context from the previous project first.'); return False
+        if name not in self.context_paths:
+            if len(self.context_paths) == 16:
+                self.notify('Select at most 16 context paths.'); return False
+            self.context_paths.append(name)
+        self.context_root = root
+        self.refresh_context_chips()
+        return True
+
     def accept_context(self,index,*,descend=False):
         state=self.context_state()
         if state is None or state!=self.context_query or not 0<=index<len(self.context_choices):
@@ -187,15 +204,9 @@ class FileContext:
             value=name+'/'
             replacement='@'+(json.dumps(value,ensure_ascii=False)[:-1] if any(c.isspace() or c=='"' for c in value) else value)
         else:
-            if self.context_paths and Path(self.context_root)!=Path(state[0]):
-                self.notify('Remove the context from the previous project first.'); return
-            if name not in self.context_paths:
-                if len(self.context_paths)==16:
-                    self.notify('Select at most 16 context paths.'); return
-                self.context_paths.append(name)
-            self.context_root=state[0]
+            if not self.add_context(state[0],name):
+                return
             replacement=''
-            self.refresh_context_chips()
         prompt.replace(replacement,(row,start),(row,end))
         prompt.move_cursor((row,start+len(replacement)))
         self.query_one('#context-box').display=False
