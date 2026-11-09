@@ -2481,8 +2481,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns the product turn coordination shared by its frontends; the agent loop stays in the runtime.",
-      "size_bytes": 92333,
-      "sha256": "3bf09bd7ca377aec4bd94a5fd87f1611788ac97d0072b18c1e9982b2fa736ede"
+      "size_bytes": 92604,
+      "sha256": "792e9c7eb197212c4be2a87cb1c48cfaad2a06d6dc38af7b4ebc947942b41c58"
     },
     {
       "name": "audit_report.py",
@@ -3361,8 +3361,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator model selection; Runtime retains session execution.",
-      "size_bytes": 28929,
-      "sha256": "1942f78734bf668b747e6b626b44de88521146b4176daf05107f9497de53d10c"
+      "size_bytes": 29024,
+      "sha256": "213bfdcb31d1646b979427d56fd36f059cffd5a5faec09983211840030cc1a3a"
     },
     {
       "name": "model_picker.py",
@@ -3651,8 +3651,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded experiment scheduling, evidence comparison and operator controls; execution ports remain in Kernel and Runtime.",
-      "size_bytes": 8566,
-      "sha256": "97620a93126de5c9c732159bdc7dfd22ebbe3a7fcc86c95554508409df49301a"
+      "size_bytes": 8631,
+      "sha256": "0cd5b9cf55212cdf7a5459fef5152b0241ebf0b3990724779de8b0ab00604bf1"
     },
     {
       "name": "challenger_worker.py",
@@ -4231,8 +4231,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 23824,
-      "sha256": "89d428ec545ac27af05edbead7d5043629eb40070647c68866a887d578515d09"
+      "size_bytes": 24058,
+      "sha256": "83d59b86aaa819425ab2f83b938598e6c19e2863bf9febc5dc91db9da36e8860"
     },
     {
       "name": "command_permission.py",

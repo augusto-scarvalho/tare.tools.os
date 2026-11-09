@@ -110,6 +110,21 @@ def test_chat_profile_runs_the_native_loop_with_the_opencode_wire_id(setup):
     assert result['status'] == 'PROPOSED' and (root/'a.py').read_text() == 'value = 2\n'
 
 
+def test_go_is_a_subscription_on_its_own_plan_account():
+    from relay import execution_scope
+    from relay.challenger_variants import accounting
+    from relay.turn_engine import usage_keys
+    from relay.work_units import bill
+    go = native_catalog.select('opencode-go-glm-5-3')
+    assert execution_scope.kind(go) == 'subscription'
+    assert execution_scope.Scope(only='subscription').allows(go, 'implementer')[0]
+    assert not execution_scope.Scope(only='api').allows(go, 'implementer')[0]
+    assert accounting(go) == 'quota' and bill(go) == ('quota', 'opencode')
+    assert usage_keys(go) == ('opencode-go', 'opencode-go:glm-5.3')
+    listed = model_choices.projection(provider='opencode', role='implementer', include_unconfigured=True)
+    assert {row['via'] for row in listed} == {'api'}
+
+
 def test_every_go_model_is_a_pinnable_reserve_until_qualified():
     from relay.inference_allowlist import exact, matches
     from relay.native_routes import configured
@@ -119,6 +134,14 @@ def test_every_go_model_is_a_pinnable_reserve_until_qualified():
         (('implementer', 'explorer'), 'reserve', 'flat', 'opencode-go', False)}
     pin = exact('opencode/opencode-go-glm-5-3@high')
     assert matches(pin, 'opencode-go-glm-5-3', native_catalog.select('opencode-go-glm-5-3'))
+
+
+def test_a_go_limit_parks_only_that_model(tmp_path, monkeypatch):
+    from relay import turn_engine
+    monkeypatch.setattr(turn_engine, 'usage_limits_path', lambda: tmp_path/'usage-limits.json')
+    glm, kimi = native_catalog.select('opencode-go-glm-5-3'), native_catalog.select('opencode-go-kimi-k3')
+    until = turn_engine.note_usage_limit(glm, now=1000.0)  # the generic callers pass no kind
+    assert turn_engine.usage_limited(glm, now=1001.0) == until and turn_engine.usage_limited(kimi, now=1001.0) is None
 
 
 def test_unqualified_rows_are_pinned_never_chosen_automatically(monkeypatch):

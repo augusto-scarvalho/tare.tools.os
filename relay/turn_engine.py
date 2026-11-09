@@ -287,7 +287,10 @@ USAGE_LIMIT_DEFAULT_SECONDS = 30 * 60  # when the CLI does not say when the acco
 
 def usage_account(deployment):
     """The subscription account a route draws on: all Claude CLI routes share one, the Codex CLI and Codex native
-    routes share the ChatGPT one, AGY has its own. API-key and local routes have none."""
+    routes share the ChatGPT one, AGY has its own, and the OpenCode Go models share the Go plan. Other API-key and
+    local routes have none."""
+    if (deployment.get('native_opencode') or {}).get('plan') == 'go':
+        return 'opencode-go'
     profile = deployment.get('native_profile') or {}
     endpoint = str(profile.get('endpoint', ''))
     if endpoint.startswith('cli://'):
@@ -316,7 +319,8 @@ def note_usage_limit(deployment, resets_at=None, now=None, kind=None):
     keys = usage_keys(deployment)
     if not keys:
         return None
-    account = keys[-1] if kind == 'model' else keys[0]
+    # Each OpenCode Go model has its own allowance: a limit never parks the whole plan.
+    account = keys[-1] if kind == 'model' or keys[0] == 'opencode-go' else keys[0]
     now = datetime.now(timezone.utc).timestamp() if now is None else now
     until = (resets_at if type(resets_at) in (int, float) and now < resets_at <= now + 7*86400
              else now + USAGE_LIMIT_DEFAULT_SECONDS)

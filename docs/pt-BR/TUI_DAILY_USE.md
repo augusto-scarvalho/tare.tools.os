@@ -64,12 +64,12 @@ de modelo e os prompts das conversas não são substituídos por essas opções.
 
 | Opção | Efeito |
 | --- | --- |
-| `--subscription_only` | Usa as CLIs do Codex, Claude e AGY. O Jev hospedado continua disponível. |
+| `--subscription_only` | Usa as assinaturas: as CLIs do Codex, Claude e AGY e o OpenCode. O Jev hospedado continua disponível. |
 | `--local_only` | Usa modelos locais; troca o Jev hospedado pelo juiz local. As APIs de busca continuam disponíveis. |
 | `--api_only` | Usa APIs de inferência. O Jev hospedado e as APIs de busca continuam disponíveis. |
 | `--pro_planner` | Usa o OpenAI Sol PRO, depois o Astra PRO se disponível, só para o planejador separado, com raciocínio no mínimo alto. Exige uma chave de API. |
 | `--prefer_api` | Prefere as APIs de inferência disponíveis para o planejador e os auditores; recorre a outras conexões permitidas. |
-| `--prefer_subscription` | Prefere as CLIs de assinatura disponíveis para o planejador e os auditores; recorre a outras conexões permitidas. |
+| `--prefer_subscription` | Prefere as assinaturas disponíveis (CLIs, OpenCode) para o planejador e os auditores; recorre a outras conexões permitidas. |
 | `--prefer_local` | Mantém coordenador, explorador, implementador e pesquisador na inferência local; usa planejador e auditores externos qualificados. O Jev hospedado continua disponível. |
 | `--disable_judge` | Desliga o Jev hospedado e o juiz local. Comandos protegidos exigem aprovação humana quando necessário; o YOLO pula essas perguntas. Verificações, auditorias finais, sandbox e o Auto-review nativo do Codex continuam. |
 
