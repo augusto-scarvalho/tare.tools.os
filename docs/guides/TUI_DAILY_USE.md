@@ -266,7 +266,9 @@ from `p` to `e` once it reaches the project. Below the list, the project tree ma
 what Git sees (`M` modified, `A` added, `D` deleted, `U` untracked, `!` conflict,
 `•` a folder holding a change) and opens at each file an agent edits; **c** shows
 only the changed files. Git is read every few seconds and only while the pane
-shows, so changes made in an editor or a terminal appear too. On a file, **Enter**
+shows, so changes made in an editor or a terminal appear too. The line under the
+title counts the changes and, when there are, the commits ahead (↑) and behind (↓)
+the branch's upstream, a rebase or merge in progress and its conflicts. On a file, **Enter**
 opens it (a row of the list also opens it in the tree), **d** shows what changed
 since the last commit, **a** attaches it to your next message as an `@` reference
 (the only way the pane reaches a model), and **y** copies its path.

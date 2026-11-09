@@ -333,3 +333,29 @@ def test_mention_keeps_the_composer_rules_and_tree_enter_opens_files(repo, tmp_p
             await until(pilot, lambda: isinstance(app.screen, FileViewer))
             assert app.screen.content == 'a = 1\n' and not app.backend.launches
     asyncio.run(scenario())
+
+
+def test_git_line_says_ahead_behind_an_operation_in_progress_and_conflicts(repo, tmp_path):
+    from relay.files_pane import git_line, git_state, git_status
+    assert git_state(repo) == {'ahead': None, 'behind': None, 'operation': ''}  # no upstream
+    origin = tmp_path/'origin.git'
+    git(tmp_path, 'init', '--bare', str(origin))
+    git(repo, 'remote', 'add', 'origin', str(origin)); git(repo, 'push', '-u', 'origin', 'main')
+    (repo/'b.py').write_text('b = 2\n'); git(repo, 'commit', '-am', 'local')
+    other = tmp_path/'other'; git(tmp_path, 'clone', '-b', 'main', str(origin), str(other))
+    (other/'b.py').write_text('b = 3\n'); git(other, 'commit', '-am', 'remote'); git(other, 'push')
+    git(repo, 'fetch')
+    assert git_state(repo) == {'ahead': 1, 'behind': 1, 'operation': ''}
+    git(repo, 'merge', 'origin/main')  # conflicts on b.py
+    status = git_status(repo); status['state'] = git_state(repo)
+    assert status['state']['operation'] == 'merge'
+    assert git_line(status) == '↑1 ↓1 · 1 changed · merge in progress · !1 conflict'
+    assert git_line(None) == 'Not a Git repository'
+    git(repo, 'merge', '--abort'); git(repo, 'reset', '--hard', 'origin/main')
+    assert git_state(repo/'src') == {'ahead': 0, 'behind': 0, 'operation': ''}  # from a folder inside the repository
+    status = git_status(repo); status['state'] = git_state(repo)
+    assert git_line(status) == 'No changes'  # in sync: no arrows
+    linked = tmp_path/'linked'; git(repo, 'worktree', 'add', '-b', 'side', str(linked), 'HEAD~1')
+    (linked/'b.py').write_text('b = 4\n'); git(linked, 'commit', '-am', 'side')
+    git(linked, 'rebase', 'main')  # stops on the conflict, in the linked worktree only
+    assert git_state(linked)['operation'] == 'rebase' and git_state(repo)['operation'] == ''

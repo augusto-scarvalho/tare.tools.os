@@ -269,7 +269,9 @@ projeto. Abaixo da lista, a árvore do projeto marca o que o Git vê (`M` modifi
 `A` acrescentado, `D` apagado, `U` não rastreado, `!` conflito, `•` pasta com mudança)
 e abre em cada arquivo que um agente edita; **c** mostra só os arquivos alterados. O Git
 é lido a cada poucos segundos e só enquanto o painel aparece, então mudanças feitas num
-editor ou num terminal também aparecem. Num arquivo, **Enter** abre o arquivo (uma
+editor ou num terminal também aparecem. A linha sob o título conta as mudanças e, quando
+houver, os commits à frente (↑) e atrás (↓) do upstream da branch, um rebase ou merge em
+andamento e os conflitos. Num arquivo, **Enter** abre o arquivo (uma
 linha da lista também o abre na árvore), **d** mostra o que mudou desde o último commit,
 **a** anexa o arquivo à próxima mensagem como referência `@` (o único jeito de o painel
 chegar a um modelo) e **y** copia o caminho. Abaixo de 100 colunas o painel ocupa a
