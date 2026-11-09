@@ -30,7 +30,12 @@ tare . --explorer opencode/opencode-go-deepseek-v4-1-flash@low
 Every Go model that OpenCode serves with tools on those three APIs has a profile named `opencode-go-<model>`, and
 the picker lists it under OpenCode with the connection "OpenCode Go". Each profile is an implementer and explorer
 reserve. Planner and auditor roles wait for a live qualification of the model through tare. The reasoning levels
-are the ones OpenCode lists for that model; a model with none uses its default.
+are the ones OpenCode lists for that model. A profile starts at `high` when the model lists it; otherwise it runs at
+the provider's default until you choose a level.
+
+Once the key is stored, automatic selection ranks these reserves with the other flat-rate subscriptions: after the
+subscription CLIs and before metered APIs. Tare does not yet recognize OpenCode's refusal when a model's allowance is
+spent (a later change), so such a model fails its session instead of being skipped until its window resets.
 
 The author is the model's vendor, not the gateway. GLM 5.3 through OpenCode has the same author identity as GLM 5.3
 through OpenRouter, so one never audits the other as an independent reviewer.

@@ -79,6 +79,9 @@ def test_client_names_tare_and_charges_are_provider_reported():
     value = native_catalog.select('opencode-go-glm-5-3')
     client = inference_client(value, deployment_profile(value, value['native_profile']['model']), credential=lambda: 'k')
     assert client.request_headers()['User-Agent'].startswith('tare/')
+    haiku = native_catalog.select('opencode-go-claude-haiku-5-5')
+    messages = inference_client(haiku, deployment_profile(haiku, 'claude-haiku-5-5'), credential=lambda: 'k')
+    assert messages.request_headers()['anthropic-version'] == '2023-06-01'
     assert describe('opencode-go-glm-5-3', value)['cost_accounting'] == 'provider_reported'
     assert quote(value)['source'] == 'opencode.usage.cost'
 
@@ -120,3 +123,14 @@ def test_go_is_a_subscription_on_its_own_plan_account():
     assert usage_keys(go) == ('opencode-go', 'opencode-go:glm-5.3')  # a model's own limit leaves its siblings usable
     listed = model_choices.projection(provider='opencode', role='implementer', include_unconfigured=True)
     assert {row['via'] for row in listed} == {'api'}
+
+
+def test_every_go_model_is_a_pinnable_reserve_until_qualified():
+    from relay.inference_allowlist import exact, matches
+    from relay.native_routes import configured
+    rows = [r for r in configured()['deployments'] if r['id'].startswith('opencode-go-')]
+    assert len(rows) == len([n for n in native_catalog.LOCAL if n.startswith('opencode-go-')]) == 26
+    assert {(tuple(r['roles']), r['kind'], r['cost_tier'], r['quota_domain']) for r in rows} == {
+        (('implementer', 'explorer'), 'reserve', 'flat', 'opencode-go')}
+    pin = exact('opencode/opencode-go-glm-5-3@high')
+    assert matches(pin, 'opencode-go-glm-5-3', native_catalog.select('opencode-go-glm-5-3'))
