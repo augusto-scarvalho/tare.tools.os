@@ -483,6 +483,15 @@ class MessageDelivery(Collapsible):
         self._refresh_content()
 
 
+def welcome_text(note=''):
+    """A new conversation's welcome; note is a lasting condition of the project worth saying before it starts."""
+    welcome = Text('What are we working on?\n', style='bold')
+    welcome.append('\nAsk about the code, fix a bug, or build something new.\n', style='not bold')
+    if note:
+        welcome.append('\n'+note+'\n', style='not bold italic')
+    return welcome
+
+
 class Transcript(VerticalScroll):
     """Messages stay selectable and do not pull the reader away from older output."""
     DEFAULT_CSS = '''
@@ -526,8 +535,7 @@ class Transcript(VerticalScroll):
         self.completed_stream = None
 
     def compose(self):
-        welcome = Text('What are we working on?\n', style='bold')
-        welcome.append('\nAsk about the code, fix a bug, or build something new.\n', style='not bold')
+        welcome = welcome_text()
         # Fill the viewport so anchoring never places short content below a gap.
         # Once messages overflow, the same anchor follows their natural height.
         with Vertical(classes='transcript-body'):
