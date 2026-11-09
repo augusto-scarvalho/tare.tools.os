@@ -154,6 +154,9 @@ def test_pipe_panel_line_input_then_eof(tmp_path,monkeypatch):
                 await pilot.pause(.05)
             assert 'ALL:one line' in panel.pipe_text
             assert panel.query_one('#terminal-fit',Button).disabled
+            for _ in range(80):  # the output can arrive before the process is reaped
+                if service.read(handle)['exit_code'] is not None: break
+                await pilot.pause(.05)
             assert service.read(handle)['exit_code'] == 0
             panel.action_close(); await pilot.pause()
     try: asyncio.run(scenario())
