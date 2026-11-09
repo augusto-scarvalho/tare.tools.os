@@ -19,7 +19,7 @@ def test_listing_needs_no_session_credentials_network_or_repository(monkeypatch,
     assert native_agent.main(['--list-models', '--format', 'text', '--root', str(repository),
                               '--session', str(session)]) == 0
     output = capsys.readouterr().out
-    guarded = {name for name in native_catalog.LOCAL if name.endswith('-contributor')}  # OpenRouter and OpenCode
+    guarded = {name for name in native_catalog.LOCAL if name.endswith('-contributor')}  # Meta Contributor profiles
     assert 'openrouter-muse-spark-1-3-contributor' in guarded
     assert all(name in output for name in native_catalog.LOCAL if name not in guarded)
     assert all((name in output) is contributor for name in guarded)

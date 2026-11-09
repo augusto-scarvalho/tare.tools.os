@@ -148,6 +148,8 @@ def main(argv=None):
         written.append(name)
         if name not in listed:
             roles['deployments'].append(role_row(value, args.plan))
+    if not written:  # the wrong plan's list, or an empty reply: never take it as "remove every profile"
+        raise SystemExit(json.dumps({'error': 'no named model is in this list; nothing changed', 'waiting': waiting}))
     removed = sorted(p.stem for p in PROFILES.glob(PREFIX[args.plan] + '*.json') if p.stem not in written)
     for name in removed:
         (PROFILES/(name + '.json')).unlink()

@@ -289,7 +289,8 @@ def usage_account(deployment):
     """The subscription account a route draws on: all Claude CLI routes share one, the Codex CLI and Codex native
     routes share the ChatGPT one, AGY has its own, and the OpenCode subscription models share its plan. Other API-key
     and local routes have none."""
-    if (deployment.get('native_opencode') or {}).get('plan') == 'sub':
+    from .opencode import subscription
+    if subscription(deployment):
         return 'opencode-sub'
     profile = deployment.get('native_profile') or {}
     endpoint = str(profile.get('endpoint', ''))

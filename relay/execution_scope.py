@@ -201,7 +201,8 @@ def kind(deployment):
     if profile.get('protocol')=='vendor-cli':return 'subscription'
     if profile.get('protocol')=='openai-codex-responses':return 'subscription_direct'
     # OpenCode's subscription profiles draw on a plan; its API profiles are paid per token and stay 'api'.
-    if (deployment.get('native_opencode') or {}).get('plan')=='sub':return 'subscription'
+    from .opencode import subscription
+    if subscription(deployment):return 'subscription'
     if deployment.get('native_credential_env') or str(profile.get('protocol','')).startswith('bedrock'):
         return 'api'
     from .challenger import local

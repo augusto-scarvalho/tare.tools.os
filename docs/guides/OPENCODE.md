@@ -57,7 +57,11 @@ The subscription models draw on one plan account, `opencode-sub`, so a session o
 it and quotes a minimal call as plan usage, not dollars. A limit recorded for one model leaves the others usable,
 since each has its own allowance. Plan usage takes no dollar reservation under tare's spend caps, which holds only
 with Extra Usage off. Tare does not yet recognize OpenCode's refusal when a model's allowance is spent (a later
-change), so a pinned model whose allowance is spent fails its session.
+change), so a pinned model whose allowance is spent fails its session. API profiles will carry the list price as a
+tariff when they ship, so spend caps can reserve dollars for them.
+
+Sessions saved on the earlier `opencode-go-*` profiles cannot be resumed (their author records are gone and they
+would be taken for the API); start them again on an `opencode-sub-*` profile.
 
 ## What tare sends and records
 
@@ -73,8 +77,9 @@ for API use. The receipt keeps the billing source, the list price and the allowa
 ## Refresh the profiles
 
 `python scripts/ops/opencode_profiles.py --plan sub` (or `--plan api`) rewrites that provider's profiles from
-OpenCode's public list for the models `MODELS` names, removes the profiles it no longer names, and adds roster
-records and role rows for new ones; a role row edited by hand is kept. Review the diff before committing: a profile
+OpenCode's public list for the models `MODELS` names, removes the profiles it no longer names with their role rows,
+and adds roster records and role rows for new ones; a role row edited by hand is kept. Roster records stay: remove by
+hand a record nothing else uses. A list without any named model changes nothing. Review the diff before committing: a profile
 is metadata admission, not measured delivery quality.
 
 Sources: [OpenCode Go](https://opencode.ai/docs/go) and [inference API](https://opencode.ai/docs/console/api/inference).
