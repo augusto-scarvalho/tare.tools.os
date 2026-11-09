@@ -74,3 +74,17 @@ def test_shipped_local_endpoints_resolve_to_this_machines_gateway(monkeypatch):
                  if 'native_profile' in e and e['native_profile']['endpoint'].startswith('http://')]
     assert endpoints and set(endpoints) == {'http://gpu-node:8080/v1'}
     assert resource_telemetry.coordinator_candidates() == ['http://127.0.0.1:8765', 'http://gpu-node:8765']
+
+
+def test_one_company_keeps_one_author_identity_across_gateways():
+    """Auditor independence and cross-vendor choice compare vendor and bias domain: a family reached through
+    OpenRouter, Bedrock or a CLI must not look like a second author."""
+    models = round_table_roster.load_roster()['models']
+    for first, second in [('kimi-k3', 'moonshotai/kimi-k3.1-pro'), ('deepseek-v3.2', 'deepseek/deepseek-v4.1-flash-1017'),
+                          ('grok-4.6', 'x-ai/grok-4.7'), ('qwen-3.8-27b', 'qwen/qwen3.8-omni-flash'),
+                          ('mistral-large-3', 'mistralai/mistral-large-4-0')]:
+        assert (models[first]['vendor'], models[first]['bias_domain']) == (models[second]['vendor'], models[second]['bias_domain'])
+    vendors = {}
+    for row in models.values():
+        vendors.setdefault(row['bias_domain'], set()).add(row['vendor'])
+    assert {domain: names for domain, names in vendors.items() if len(names) > 1} == {'qwen/qwen-family': {'Qwen', 'Local'}}
