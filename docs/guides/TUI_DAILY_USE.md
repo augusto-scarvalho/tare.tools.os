@@ -270,7 +270,8 @@ shows, so changes made in an editor or a terminal appear too. The line under the
 title counts the changes and, when there are, the commits ahead (↑) and behind (↓)
 the branch's upstream, a rebase or merge in progress and its conflicts. On a file, **Enter**
 opens it (a row of the list also opens it in the tree), **d** shows what changed
-since the last commit, **a** attaches it to your next message as an `@` reference
+since the last commit, **h** lists the commits that changed it (following renames;
+**Enter** on one shows what it changed in the file), **a** attaches it to your next message as an `@` reference
 (the only way the pane reaches a model), and **y** copies its path.
 Below 100 columns the pane takes the whole screen, like F1 and F2; from 140
 columns it stays beside them. F8 or Esc returns to the message. The pane only

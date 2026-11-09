@@ -71,8 +71,9 @@ def run_git(root, *args, timeout=2, text=True):
     env = dict(os.environ, GIT_OPTIONAL_LOCKS='0', GIT_TERMINAL_PROMPT='0')
     for key in ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR'):
         env.pop(key, None)
+    # log.showSignature would run gpg (or ssh-keygen) for every signed commit a log or show prints.
     return subprocess.run([host_executable('git', required=True), '-c', 'core.fsmonitor=false', '-c', 'core.quotepath=false',
-                           '-C', str(root), *args], capture_output=True, timeout=timeout, env=env,
+                           '-c', 'log.showSignature=false', '-C', str(root), *args], capture_output=True, timeout=timeout, env=env,
                           **({'encoding': 'utf-8', 'errors': 'replace'} if text else {}))
 
 

@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- In the files pane, `h` lists the commits that changed a file, following renames (up to 200, newest first), and Enter on one shows what that commit changed in the file, in the viewer F3 uses; Git reads in a worker with literal names and no external diff or textconv program.
 - The files pane's Git line adds the commits ahead (↑) and behind (↓) the branch's upstream, a rebase, merge, cherry-pick, revert or bisect in progress, and the conflict count, read with the status in the same worker (`rev-list --left-right --count`, `rev-parse --git-path`); no network, no `gh`.
 - The files pane's diff takes file names literally (`a[1].py` is not a glob for `a1.py`), runs no textconv program the repository configures, shows a deleted file's deletion and a repository without commits whole; `a` adds a reference only where a message can carry it (a conversation, and not a running direct task).
 - In the files pane, Enter opens a file in the viewer F3 uses (a row of the list also opens it in the tree), `d` shows what changed since the last commit (a new file whole), `a` attaches it as an `@` reference of the next message through the composer's own context chips, and `y` copies its path; linked and outside paths are refused as in `@` completion, and files are read in a worker with the viewer's 256 KiB bound.

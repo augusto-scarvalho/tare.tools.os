@@ -15,7 +15,7 @@ import time
 from rich.text import Text
 from textual import work
 from textual.binding import Binding
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.widgets import OptionList, Static, Tree
 from textual.widgets.option_list import Option
 
@@ -182,22 +182,62 @@ def read_text(root, path):
     return raw.decode('utf-8', 'replace').replace('\r\n', '\n')
 
 
-def diff_text(root, path):
-    """What changed in a project file since the last commit (staged and not), or the whole new file when Git
-    does not track it yet."""
+def project_name(root, path):
+    """The project-relative name of a file to ask Git about: an existing path through context_path (outside and
+    linked paths refused); a deleted one, whose deletion is worth seeing, by name only, since a missing path cannot
+    be a link and the name has no '..' or '.git'."""
     from .console_context import context_path
-    from .console_header import run_git
     try:
-        _, name = context_path(root, path)
+        return context_path(root, path)[1]
     except ValueError:
-        # A deleted file is gone from disk, and its deletion is the diff worth seeing: a missing path cannot be a
-        # link, so a project-relative name without '..' or '.git' is enough.
         name = path.replace('\\', '/').removeprefix('./')
         parts = name.split('/')
         if Path(name).is_absolute() or '..' in parts or '.git' in parts or (Path(root)/name).exists():
             raise
+        return name
+
+
+def literal_git(root, *args):
+    """Read-only git whose path arguments are literal names (not globs or pathspec magic)."""
+    from .console_header import run_git
+    return run_git(root, '--literal-pathspecs', *args, timeout=GIT_SECONDS)
+
+
+def file_history(root, path, limit=200):
+    """The commits that changed a file, newest first, following renames: [(sha, line, name at that commit)].
+    With --follow, git leaves out a merge that resolved a conflict in the file. Names are relative to root, also
+    when it is a folder inside the repository (--relative)."""
+    name = project_name(root, path)
+    log = literal_git(root, 'log', '--follow', '--relative', '--no-color', f'-n{limit}', '--date=short',
+                      '--format=%x1e%H%x09%h %ad %s · %an', '--name-only', '--', name)
+    if log.returncode != 0:
+        raise ValueError('Not a Git repository, or no commit changed '+name+'.')
+    commits = []
+    for record in log.stdout.split('\x1e')[1:]:
+        lines = [line for line in record.splitlines() if line.strip()]
+        sha, _, line = lines[0].partition('\t')
+        if len(sha) not in (40, 64) or sha.strip('0123456789abcdef'):
+            continue  # a subject holding the separator: what follows it is no commit (and no option for git show)
+        commits.append((sha, line, lines[-1] if len(lines) > 1 else name))
+    return commits
+
+
+def commit_text(root, sha, name):
+    """What one commit changed in one file (no external diff or textconv program runs), bounded."""
+    shown = literal_git(root, 'show', '--no-ext-diff', '--no-textconv', '--no-color', '--date=short',
+                        '--format=%H%n%an · %ad%n%n%B', '--end-of-options', sha, '--', name)
+    if shown.returncode != 0:
+        raise ValueError('That commit cannot be shown.')
+    text = shown.stdout.replace('\r\n', '\n')
+    return text if len(text.encode('utf-8')) <= VIEW_BYTES else 'Commit exceeds the interactive preview limit.'
+
+
+def diff_text(root, path):
+    """What changed in a project file since the last commit (staged and not), or the whole new file when Git
+    does not track it yet."""
+    name = project_name(root, path)
     def git(*args):  # names are literal (a[1].py is not a glob) and no textconv program runs
-        return run_git(root, '--literal-pathspecs', *args, timeout=GIT_SECONDS)
+        return literal_git(root, *args)
     if git('rev-parse', '--show-prefix').returncode != 0:
         return 'Not a Git repository: no diff.'
     if git('ls-files', '--error-unmatch', '--', name).returncode != 0:
@@ -370,13 +410,59 @@ class FileTree(Tree):
                 node.set_label(text)
 
 
+from .console_panels import SupportPanel
+
+
+class FileHistory(SupportPanel):
+    """The commits that changed one file; Enter shows what a commit changed in it, in the viewer F3 uses."""
+
+    BINDINGS = [Binding('escape', 'close', 'Back', priority=True)]
+    DEFAULT_CSS = '''
+    #history-commits { height: 1fr; border: none; padding: 0; background: transparent; }
+    #history-hint { height: 1; color: $text-muted; }
+    '''
+
+    def __init__(self, root, path, commits):
+        super().__init__()
+        self.root, self.path, self.commits = root, path, commits
+
+    def compose(self):
+        with Vertical(classes='support-body'):
+            with Horizontal(classes='panel-header'):
+                yield Static('History · '+self.path, classes='panel-title', markup=False)
+            yield OptionList(*[Option(line, id=str(index)) for index, (_, line, _) in enumerate(self.commits)],
+                             id='history-commits', markup=False)
+            yield Static('Enter what it changed in this file · Esc back', id='history-hint', markup=False)
+
+    def on_mount(self):
+        self.query_one('#history-commits', OptionList).focus()
+
+    def on_option_list_option_selected(self, event):
+        event.stop()
+        self.show_commit(*self.commits[event.option_index])
+
+    @work(group='files-history', exclusive=True)
+    async def show_commit(self, sha, line, name):
+        from .changes_panel import FileViewer
+        try:
+            content = await asyncio.to_thread(commit_text, self.root, sha, name)
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            self.app.notify(str(exc), severity='warning')
+            return
+        self.app.push_screen(FileViewer(path=name, content=content, notice='What '+line.split(' ', 1)[0]+' changed'))
+
+    def action_close(self):
+        self.dismiss()
+
+
 class FilesPane(Vertical):
     """The right pane. Display is set on it only (never a screen class); its tick runs only while shown."""
 
     BINDINGS = [Binding('t', 'scope', 'Turn/session', show=False), Binding('c', 'changed', 'Changed only', show=False),
-                Binding('d', 'diff', 'Diff', show=False), Binding('a', 'mention', '@-mention', show=False),
+                Binding('d', 'diff', 'Diff', show=False), Binding('h', 'history', 'History', show=False),
+                Binding('a', 'mention', '@-mention', show=False),
                 Binding('y', 'copy_path', 'Copy path', show=False), Binding('escape', 'leave', 'Back', show=False)]
-    HINT = 'Enter open · d diff · a @ · y copy · t turn · c changed · Esc'
+    HINT = 'Enter open · d diff · h history · a @ · y copy · t turn · c changed · Esc'
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -563,6 +649,22 @@ class FilesPane(Vertical):
         self.app.push_screen(FileViewer(path=path, content=content, notice=(
             'What changed since the last commit · captured when opened' if diff else
             'Current file content on disk · captured when opened')))
+
+    def action_history(self):
+        if (path := self.selected()) is not None:
+            self.open_history(path)
+
+    @work(group='files-history', exclusive=True)
+    async def open_history(self, path):
+        try:
+            commits = await asyncio.to_thread(file_history, self.root, path)
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            self.app.notify(str(exc), severity='warning')
+            return
+        if not commits:
+            self.app.notify('No commit changed '+path+' yet.')
+            return
+        self.app.push_screen(FileHistory(self.root, path, commits))
 
     def action_mention(self):
         """Attach the path as a context chip of the next message (the only way the pane reaches a model, and only
