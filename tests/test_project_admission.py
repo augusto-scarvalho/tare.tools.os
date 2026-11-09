@@ -378,6 +378,7 @@ def test_a_recent_committed_agents_md_change_is_reported_even_though_it_needs_no
     git(root, 'commit', '-qam', 'An agent added a rule')
     change = admission.recent_change(root)
     assert change['subject'] == 'An agent added a rule' and (change['added'], change['removed']) == ('1', '0')
-    assert admission.recent_change(root) == change  # asked again, said again
+    again = admission.recent_change(root)  # asked again, said again; 'when' is Git's relative age and may tick
+    assert {k: v for k, v in again.items() if k != 'when'} == {k: v for k, v in change.items() if k != 'when'}
     monkeypatch.setattr(admission, 'RECENT_CHANGE', '2099-01-01T00:00:00')
     assert admission.recent_change(root) is None  # older than the window: nothing to say
