@@ -1293,7 +1293,7 @@ def main(argv=None):
                              'skip local ones (the choice of a TUI conversation)')
     parser.add_argument('--folder-grants', type=Path,
                         help='Per-project grants file: the agent may ask to read folders outside the project (new sessions only)')
-    parser.add_argument('--project-admission', choices=('quarantine', 'adopted'))
+    parser.add_argument('--project-admission', choices=('quarantine', 'adopted', 'trusted'))
     parser.add_argument('--root-instruction-pin', help='Reviewed root SHA-256, or absent')
     parser.add_argument('--nested-instructions', action='store_true', help='Explicitly authorize nested discovery with Kernel session pins')
     parser.add_argument('--role', choices=ROLES)
@@ -1486,6 +1486,9 @@ def main(argv=None):
                     raise ValueError('Review /permissions and supply --root-instruction-pin SHA256 or absent.')
                 admission = validate_admission({'mode': 'adopted', 'nested': args.nested_instructions,
                     'root_sha256': None if args.root_instruction_pin == 'absent' else args.root_instruction_pin})
+            elif args.project_admission == 'trusted':  # committed AGENTS.md; a pin names a reviewed local edit
+                admission = validate_admission({'mode': 'trusted', 'nested': args.nested_instructions,
+                    'root_sha256': None if args.root_instruction_pin in (None, 'absent') else args.root_instruction_pin})
             else:
                 if args.root_instruction_pin is not None or args.nested_instructions:
                     raise ValueError('Root pin and nested discovery require explicit adopted policy.')

@@ -316,3 +316,54 @@ def test_pending_instruction_consent_is_distinct_from_new_defaults(tmp_path):
     assert view['defaults'] == saved
     assert 'Instruction policy: quarantine' in view['instructions_text']
     assert 'Nested rules apply' not in view['instructions_text']
+
+
+def git(root, *args):
+    import subprocess
+    subprocess.run(['git', '-C', str(root), '-c', 'user.name=t', '-c', 'user.email=t@example.test', *args],
+                   check=True, capture_output=True)
+
+
+def committed_repository(root, text):
+    root.mkdir()
+    git(root, 'init', '-q')
+    (root/'AGENTS.md').write_bytes(text.encode())
+    git(root, 'add', 'AGENTS.md'); git(root, 'commit', '-qm', 'rules')
+
+
+def test_a_trusted_repository_loads_committed_agents_md_and_holds_back_an_uncommitted_edit(tmp_path):
+    # 2026-11-09: every merge that touched AGENTS.md blocked conversations until a new review, in every worktree.
+    root = tmp_path/'repo'
+    committed_repository(root, 'Rules v1.\n')
+    policy = admission.configure(root, admission.preview(root))
+    assert policy == {'mode': 'trusted', 'root_sha256': None, 'nested': False}
+    assert admission.check(root, policy)['text'] == 'Rules v1.\n'
+    (root/'AGENTS.md').write_bytes('Rules v2.\n'.encode()); git(root, 'commit', '-qam', 'merge from main')
+    assert admission.check(root, policy)['text'] == 'Rules v2.\n'  # committed: loads with no new review
+    (root/'AGENTS.md').write_bytes('An agent wrote this.\n'.encode())
+    held = admission.check(root, policy)
+    assert held['text'] == 'Rules v2.\n' and held['local_edit'] == admission.preview(root)['root_sha256']
+    reviewed = admission.configure(root, admission.preview(root))
+    assert reviewed['root_sha256'] == held['local_edit']
+    assert admission.check(root, reviewed)['text'] == 'An agent wrote this.\n'  # the reviewed edit loads
+    (root/'AGENTS.md').write_bytes('Edited again.\n'.encode())
+    assert admission.check(root, reviewed)['text'] == 'Rules v2.\n'  # a further edit is held back again
+    (root/'AGENTS.md').unlink()
+    assert admission.check(root, policy)['text'] == 'Rules v2.\n'  # nor does deleting it drop the rules
+
+
+def test_trust_covers_every_worktree_and_untrusting_one_untrusts_them_all(tmp_path):
+    root, other = tmp_path/'repo', tmp_path/'worktree'
+    committed_repository(root, 'Rules.\n')
+    git(root, 'worktree', 'add', '-q', str(other))
+    storage, control = tmp_path/'storage', tmp_path/'control'
+    defaults, revision = read_defaults(storage, root, control)
+    assert defaults['project_admission']['mode'] == 'quarantine'
+    save_defaults(storage, root, control, configure_admission(defaults, root, admission.preview(root),
+                                                              load_instructions=True), revision)
+    inherited, other_revision = read_defaults(storage, other, control)
+    assert inherited['project_admission'] == {'mode': 'trusted', 'root_sha256': None, 'nested': False}
+    assert admission.check(other, inherited['project_admission'])['text'].splitlines() == ['Rules.']  # CRLF checkout
+    save_defaults(storage, other, control, configure_admission(inherited, other), other_revision)
+    assert read_defaults(storage, root, control)[0]['project_admission']['mode'] == 'quarantine'
+    assert read_defaults(storage, other, control)[0]['project_admission']['mode'] == 'quarantine'

@@ -203,7 +203,7 @@ class PermissionsPanel(SupportPanel):
                 with Horizontal(classes='permissions-protection-row'):
                     yield Static('Review call limit:', markup=False)
                     yield Input('24', placeholder='Calls per request, 1 to 24', type='integer', id='permissions-review-limit')
-                yield Checkbox('Load reviewed root AGENTS.md (or pin its absence)', id='permissions-root')
+                yield Checkbox("Trust this repository's AGENTS.md (all its worktrees; uncommitted edits need review)", id='permissions-root')
                 yield Checkbox('Allow nested instructions (requires root adoption)', id='permissions-nested', disabled=True)
                 yield Static(COMMANDS_WARNING, id='permissions-command-warning', markup=False)
                 yield Static(
@@ -436,7 +436,7 @@ class PermissionsPanel(SupportPanel):
         policy = defaults.get('project_admission', {})
         with self.prevent(Checkbox.Changed):
             self.query_one('#permissions-root', Checkbox).value = (
-                policy.get('mode') == 'adopted' and self.reviewed_preview is not None)
+                policy.get('mode') in ('adopted', 'trusted') and self.reviewed_preview is not None)
             self.query_one('#permissions-nested', Checkbox).value = (
                 bool(policy.get('nested', False)) and self.reviewed_preview is not None)
         mode = defaults.get('mode', 'read')

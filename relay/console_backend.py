@@ -324,10 +324,10 @@ def command(selection, resume=False, *, replan=False, assistant=False):
             policy = selection.project_admission
             check(root, policy)
             admission_args = ['--project-admission', policy['mode']]
-            if policy['mode'] == 'adopted':
+            if policy['mode'] == 'adopted' or policy['mode'] == 'trusted' and policy['root_sha256']:
                 admission_args += ['--root-instruction-pin', policy['root_sha256'] or 'absent']
-                if policy['nested']:
-                    admission_args += ['--nested-instructions']
+            if policy['mode'] != 'quarantine' and policy['nested']:
+                admission_args += ['--nested-instructions']
             selection.session = str(session_root()/uuid4().hex)
             args += admission_args
             from .console_entry import ASSISTANT_CONTEXT

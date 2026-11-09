@@ -32,9 +32,13 @@ A missing field in an old configuration/session means the legacy contract, label
 
 Qualification requires offline backend/UI fixtures on Windows and Linux, plus a real TUI script: preview/absence, root/nested choices, stale-preview/CAS, invalid preview, new/resume/draft/project switch, child in quarantine, skill snapshot and atomic rejection. Admission backend and UI join QUICK without duplicating the regression phase. Written tests are not execution evidence; CI and real replay must record their own results. This contract does not declare executed checks, Work admission or graph closure.
 
+## PA-07 — Trusted repositories
+
+Adopting a root from the panel trusts the repository's `AGENTS.md` history (`project_admission={mode: trusted, root_sha256, nested}`), not one copy of it: pinning every copy made each merge that touched the file block every worktree until a new review (2026-11-09). In a Git checkout `check` loads the root as committed in `HEAD`; a working copy that Git reports as matching `HEAD` loads as is (CRLF checkouts match through Git's own filters). An uncommitted change (modified, staged, deleted or untracked) loads only when its bytes equal the policy's pin, set by reviewing that edit in the panel; otherwise the committed version loads and the result names the held-back edit (`local_edit`), which a new conversation's welcome reports. The protection kept is the one that matters for an agent session: an agent's edit to `AGENTS.md` cannot change the rules of later sessions without the operator's review. Trust is recorded per repository (its common Git directory) and decides for every worktree of it: a worktree saved as quarantine inherits it, and saving quarantine in any worktree removes it. Outside Git, or before the first commit, a trusted policy pins the reviewed bytes exactly as `adopted` does. `adopted` remains valid for saved policies and the CLI (`--project-admission adopted|trusted`, with `--root-instruction-pin` naming a reviewed local edit for `trusted`).
+
 ## Interfaces and scope
 
-`relay.project_admission`: `preview`, `validate`, `configure`, `check`. `configure` compares the reviewed preview; `check` verifies pin/absence, without granting effects. `relay.project_permissions` keeps preferences/CAS and separates role/paths from the instruction policy.
+`relay.project_admission`: `preview`, `validate`, `configure`, `check`, `repository`, `local_edit`, `committed`. `configure` compares the reviewed preview; `check` verifies pin/absence (or, trusted, the committed version and a reviewed local edit), without granting effects. `relay.project_permissions` keeps preferences/CAS and separates role/paths from the instruction policy.
 
 CLI: `--project-admission quarantine|adopted`, `--root-instruction-pin SHA256|absent`, `--nested-instructions`. Adoption requires a reviewed pin. There is no override across multiple repositories.
 

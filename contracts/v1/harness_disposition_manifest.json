@@ -2151,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 119719,
-      "sha256": "f0b6610f11a15a944c5df7b75d538ff1f233dc7a9da70d4daa08a49565c0b278"
+      "size_bytes": 120067,
+      "sha256": "fd8f0b5204c3233f6d082b4286c2c7b8db7d16de52dbb00db3d3d40460e0224d"
     },
     {
       "name": "native_artifacts.py",
@@ -2661,8 +2661,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 41817,
-      "sha256": "850eccdcee172d0f7309e7d875998e5a61f5b41bd9ab23e0ace184ee27a96290"
+      "size_bytes": 41901,
+      "sha256": "b457cb9637ce4a932d5c6f1c67fae3a48bacd424a59333131e67a54eb2643cde"
     },
     {
       "name": "human_wait.py",
@@ -3141,8 +3141,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns console presentation and project/session selection; observations never authorize execution.",
-      "size_bytes": 16704,
-      "sha256": "87a2c99970b3a888bc33a563dcb86eb36c3240ebdab9860d3ee44b2e0552803b"
+      "size_bytes": 17572,
+      "sha256": "0f501acc154aacec76175cbd3e328b24a68b8fbf2f04021d20d7d8fb78850909"
     },
     {
       "name": "cli_discovery.py",
@@ -3277,8 +3277,8 @@
     {
       "name": "permissions_panel.py",
       "path": "tare.tools.os/relay/permissions_panel.py",
-      "size_bytes": 23895,
-      "sha256": "0ceff90f50dcd1832e2336de8ab6d7901400f25e595c6614763d4820f337d696",
+      "size_bytes": 23943,
+      "sha256": "1a52ceb2240153c724e95e0817b5de53381d90d512865fba644a5bf260eb75fc",
       "summary": "View saved permissions and explicitly save defaults for new conversations.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
@@ -3287,8 +3287,8 @@
     {
       "name": "project_permissions.py",
       "path": "tare.tools.os/relay/project_permissions.py",
-      "size_bytes": 17756,
-      "sha256": "40bd1029d25b93932f6d5690a83ad1901fe161353143306bdc554ea07933860b",
+      "size_bytes": 20643,
+      "sha256": "d74af06b5b48e14ba984b844ea364f0cd14401a5350b3403be4f1ee8ce8f29a0",
       "summary": "Validate scoped project defaults and observe saved session permissions.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
@@ -3981,8 +3981,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 2825,
-      "sha256": "01002aba7c19e17a392efabb9f18d0fe16f1fbc3524c7455fb93c2aacb844d59"
+      "size_bytes": 6144,
+      "sha256": "c1d0942683bdad39e7574c22d0fe98732f99f66e71ac05cb0487ec58ddb728e9"
     },
     {
       "name": "work_control.py",
