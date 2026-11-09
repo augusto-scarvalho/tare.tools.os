@@ -223,8 +223,9 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                   border-left: solid $primary 25%; }
     Screen.compact #files-pane { width: 1fr; border: none; }
     #files-title { height: 1; text-style: bold; }
-    #files-summary, #files-hint { height: auto; max-height: 2; color: $text-muted; }
-    #files-touched { height: 1fr; border: none; padding: 0; background: transparent; }
+    #files-git, #files-summary, #files-hint { height: auto; max-height: 2; color: $text-muted; }
+    #files-touched { height: auto; max-height: 40%; border: none; padding: 0; background: transparent; }
+    #files-tree { height: 1fr; padding: 0; background: transparent; }
     #files-touched > .option-list--option { padding: 0; }
     #navigation { display: none; width: 32; min-width: 26; height: 1fr; padding: 1; background: $panel; border-right: solid $primary 25%; }
     #navigation-project { height: 1; text-style: bold; color: $foreground; }

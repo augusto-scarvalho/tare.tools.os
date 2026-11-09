@@ -65,14 +65,21 @@ class HeaderDetails:
     display_model: str = ''
 
 
-def git_branch(root):
-    """Observe symbolic/unborn and detached HEAD without changing Git state."""
+def run_git(root, *args, timeout=2, text=True):
+    """Read-only git in `root`: no optional locks (never waits on an agent's index lock), no prompt, no inherited
+    repository variables, the bundled git."""
     env = dict(os.environ, GIT_OPTIONAL_LOCKS='0', GIT_TERMINAL_PROMPT='0')
     for key in ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR'):
         env.pop(key, None)
+    return subprocess.run([host_executable('git', required=True), '-c', 'core.fsmonitor=false', '-c', 'core.quotepath=false',
+                           '-C', str(root), *args], capture_output=True, timeout=timeout, env=env,
+                          **({'encoding': 'utf-8', 'errors': 'replace'} if text else {}))
+
+
+def git_branch(root):
+    """Observe symbolic/unborn and detached HEAD without changing Git state."""
     def git(*args):
-        return subprocess.run([host_executable('git', required=True), '-c', 'core.fsmonitor=false', '-C', root, *args], capture_output=True,
-                              timeout=2, env=env, encoding='utf-8', errors='replace')
+        return run_git(root, *args)
     try:
         result = git('symbolic-ref', '--quiet', '--short', 'HEAD')
         if result.returncode == 0:

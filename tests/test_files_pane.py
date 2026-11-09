@@ -130,3 +130,110 @@ def test_the_chat_comes_back_when_the_screen_widens_and_f8_brings_a_covered_pane
                 assert pane.display and app.panel is None and app.files_open
             assert not app.backend.launches
     asyncio.run(scenario())
+
+
+def git(root, *args):
+    import subprocess
+    return subprocess.run(['git', '-C', str(root), '-c', 'user.name=Pane', '-c', 'user.email=pane@example.invalid',
+                           '-c', 'core.hooksPath=/dev/null', *args], capture_output=True, text=True)
+
+
+@pytest.fixture
+def repo(tmp_path, monkeypatch):
+    monkeypatch.setenv('GIT_CEILING_DIRECTORIES', str(tmp_path))
+    root = tmp_path/'repo'; (root/'src').mkdir(parents=True)
+    git(root, 'init', '-b', 'main')
+    (root/'.gitignore').write_text('build/\n'); (root/'src'/'a.py').write_text('a = 1\n'); (root/'b.py').write_text('b = 1\n')
+    git(root, 'add', '.'); git(root, 'commit', '-m', 'fixture')
+    return root
+
+
+async def until(pilot, check, seconds=6):
+    for _ in range(int(seconds*10)):
+        if check():
+            return
+        await pilot.pause(.1)
+    assert check()
+
+
+def test_list_paths_uses_git_and_falls_back_to_a_bounded_walk(repo, tmp_path):
+    from relay.files_pane import list_paths
+    (repo/'build').mkdir(); (repo/'build'/'out.bin').write_text('x'); (repo/'new.py').write_text('')
+    assert list_paths(repo) == (['.gitignore', 'b.py', 'new.py', 'src/a.py'], False)  # ignored files are absent
+    assert list_paths(repo, limit=2) == (['.gitignore', 'b.py'], True)
+    plain = tmp_path/'plain'; (plain/'node_modules'/'x').mkdir(parents=True)
+    (plain/'node_modules'/'x'/'i.js').write_text(''); (plain/'.env').write_text(''); (plain/'m.py').write_text('')
+    assert list_paths(plain) == (['.env', 'm.py'], False)
+
+
+def test_git_status_marks_numstat_and_untracked_folders(repo, tmp_path):
+    from relay.files_pane import changed_dirs, git_status, mark_of
+    (repo/'b.py').write_text('b = 2\nc = 3\n'); (repo/'src'/'a.py').unlink()
+    (repo/'added.py').write_text('x\n'); git(repo, 'add', 'added.py')
+    (repo/'fresh').mkdir(); (repo/'fresh'/'one.py').write_text('')
+    status = git_status(repo)
+    assert status['marks'] == {'b.py': 'M', 'src/a.py': 'D', 'added.py': 'A'} and status['dirs'] == ('fresh/',)
+    assert status['count'] == 4 and status['numstat']['b.py'] == (2, 1)
+    status['changed_dirs'] = changed_dirs(status)
+    assert mark_of(status, 'fresh/one.py') == 'U' and mark_of(status, 'fresh', True) == 'U'
+    assert mark_of(status, 'src', True) == '•' and mark_of(status, '.gitignore') == ''
+    (repo/'fresh'/'sub').mkdir(); (repo/'fresh'/'sub'/'two.py').write_text('')
+    assert mark_of(status, 'fresh/sub', True) == 'U'  # a folder inside an untracked folder
+    (tmp_path/'plain').mkdir()
+    assert git_status(tmp_path/'plain') is None
+
+
+def test_a_project_inside_a_repository_and_unusual_names(repo, tmp_path):
+    from relay.files_pane import changed_dirs, git_status, list_paths, mark_of
+    package = repo/'pkg'/'sub'; package.mkdir(parents=True)
+    (package/'x y.py').write_text('x = 1\n'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'package')
+    (package/'x y.py').write_text('x = 2\n'); (package/'ação.py').write_text(''); (repo/'b.py').write_text('outside\n')
+    status = git_status(repo/'pkg')  # paths from the opened folder, not from the repository's top
+    assert status['marks'] == {'sub/x y.py': 'M', 'sub/ação.py': 'U'} and status['count'] == 2
+    assert status['numstat'] == {'sub/x y.py': (1, 1)}
+    assert list_paths(repo/'pkg') == (['sub/ação.py', 'sub/x y.py'], False)
+    loose = repo/'loose'/'inner'; loose.mkdir(parents=True); (loose/'l.py').write_text('')
+    status = git_status(loose)  # the opened folder is wholly untracked: git names it as one folder
+    assert status['marks'] == {} and status['dirs'] == ('',)
+    status['changed_dirs'] = changed_dirs(status)
+    assert mark_of(status, 'l.py') == 'U' and '' not in status['changed_dirs']
+    unborn = tmp_path/'unborn'; unborn.mkdir(); git(unborn, 'init'); (unborn/'n.py').write_text('n\n')
+    assert git_status(unborn) == {'marks': {'n.py': 'U'}, 'dirs': (), 'count': 1, 'numstat': {}}
+
+
+def test_a_merge_conflict_is_marked(repo):
+    from relay.files_pane import git_status
+    git(repo, 'checkout', '-b', 'other'); (repo/'b.py').write_text('b = 2\n'); git(repo, 'commit', '-am', 'other')
+    git(repo, 'checkout', 'main'); (repo/'b.py').write_text('b = 3\n'); git(repo, 'commit', '-am', 'main')
+    git(repo, 'merge', 'other')
+    assert git_status(repo)['marks'] == {'b.py': '!'}
+
+
+def test_tree_reads_git_only_while_shown_follows_edits_and_filters_changes(repo, tmp_path, monkeypatch):
+    from relay import files_pane
+    from relay.files_pane import FileTree
+    calls, real = [], files_pane.git_status
+    monkeypatch.setattr(files_pane, 'git_status', lambda root, *args: calls.append(root) or real(root, *args))
+    monkeypatch.setattr(files_pane, 'SLOW_SECONDS', 60)  # a loaded CI runner must not switch to the 10 s back-off
+    async def scenario():
+        app = WorkConsole(repo, backend=FakeBackend(), initial_mode='assistant', storage_preferred=tmp_path/'state')
+        async with app.run_test(size=(150, 52)) as pilot:
+            await app.workers.wait_for_complete(); await pilot.pause(1)
+            assert calls == []  # a hidden pane runs no git
+            pane, tree = app.query_one(FilesPane), app.query_one(FileTree)
+            await pilot.press('f8')
+            await until(pilot, lambda: pane.paths)
+            assert set(tree.nodes) == {'.gitignore', 'b.py', 'src'}  # src/ loads when it is expanded
+            (repo/'b.py').write_text('b = 2\n')
+            await until(pilot, lambda: tree.labels['b.py'] == 'b.py  M')
+            (repo/'src'/'new.py').write_text('')
+            app.assistant_activity({'channel': 'activity', 'activity': row('edit', 'src/new.py')})
+            await until(pilot, lambda: tree.cursor_node is not None and tree.cursor_node.data == ('src/new.py', False))
+            assert tree.nodes['src'].is_expanded and tree.labels['src'] == 'src  •'
+            await pilot.press('c'); await pilot.pause()
+            assert set(tree.nodes) == {'b.py', 'src', 'src/new.py'}  # changed only, expanded
+            await pilot.press('f8'); await pilot.pause(1)  # a read started on the last tick may still finish
+            seen = len(calls)
+            await pilot.pause(4)
+            assert len(calls) == seen and not app.backend.launches  # hidden again: no more git
+    asyncio.run(scenario())
