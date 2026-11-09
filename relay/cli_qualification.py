@@ -6,6 +6,7 @@ verdict so the next call probes again.
 """
 import json
 import os
+import tempfile
 
 
 def path():
@@ -22,15 +23,25 @@ def _read():
 
 
 def _write(value):
-    target = path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_name(target.name + '.tmp')
-    temporary.write_text(json.dumps(value, indent=1), encoding='utf-8')
-    os.replace(temporary, target)
+    """Best effort: a verdict that cannot be saved (storage locked by another host writing at the same moment,
+    read-only) is probed again next session; it never fails the call that produced it."""
+    target, temporary = path(), None
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        handle, temporary = tempfile.mkstemp(prefix=target.name + '.', suffix='.tmp', dir=target.parent)
+        with os.fdopen(handle, 'w', encoding='utf-8') as stream:
+            stream.write(json.dumps(value, indent=1))
+        os.replace(temporary, target)
+    except OSError:
+        if temporary is not None and os.path.exists(temporary):
+            try:
+                os.remove(temporary)
+            except OSError:
+                pass
 
 
 class Store(dict):
-    """One endpoint's records, version -> record; each verdict the kernel writes is saved at once.
+    """One endpoint's records, "version model" -> record; each verdict the kernel writes is saved at once.
     # ponytail: two hosts probing the same new release at once both write; the last writer wins (same verdict)."""
 
     def __init__(self, endpoint):

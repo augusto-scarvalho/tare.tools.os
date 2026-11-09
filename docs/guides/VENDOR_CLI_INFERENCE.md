@@ -88,12 +88,12 @@ The original failure, prior effects, history and cumulative budgets remain.
 Uncertain dispatched calls and tool effects do not use this recovery path.
 
 A CLI release the adapter has not seen (AGY, Claude Code and Codex update
-themselves) first answers one small probe before the first real request: the
-same request with its conversation replaced by one short line, at low effort. If
+themselves) first answers one small probe per model before the first real
+request: the same request with its conversation replaced by one short line. If
 the release no longer answers in the shape tare decodes, the call stops with
 `CLI_QUALIFICATION_FAILED` before your request is sent, and the failure says which
 check failed; later calls stop at once without another probe. Quota, provider and
-network failures of the probe are no verdict. Each machine records the verdicts in
+network failures of the probe are no verdict (a cut probe says to resume). Each machine records the verdicts in
 `cli-qualification.json` under the storage root, so a release is probed once, not
 once per session. `tare setup --prove cli:NAME` forgets a failed verdict, so the
 next call probes that release again.

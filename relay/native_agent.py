@@ -1173,12 +1173,9 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                         result['provider_rate_limit_observed'] = True
             if outcome.reason in ('CLI_QUALIFICATION_FAILED', 'CLI_QUALIFICATION_INTERRUPTED'):
                 # A CLI release failed its one probe before the request was sent: the probe's verdict says why.
-                failed = next((r.event() for r in reversed(journal.snapshot().records)
-                               if r.event()['kind'] == 'model_failed'), None)
-                observation = failed and next((row for row in reversed(raw_observations)
-                                               if row.get('call_id') == failed['call_id']
-                                               and row.get('purpose') == 'model'), None)
-                probe = next((call['qualification'] for call in (observation or {}).get('transport_calls', [])
+                # The last probe receipt, whichever call carried it (a model call or a summary, sent or not).
+                probe = next((call['qualification'] for row in reversed(raw_observations)
+                              for call in reversed(row.get('transport_calls') or [])
                               if isinstance(call.get('qualification'), dict)), None)
                 if probe:
                     result['qualification'] = probe

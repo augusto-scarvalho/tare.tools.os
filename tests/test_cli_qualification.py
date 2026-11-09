@@ -34,5 +34,23 @@ def test_a_failed_qualification_is_a_preflight_refusal_explained_to_the_user():
         'runtime_observation': {'deployment_id': 'agy-cli'},
         'qualification': {'version': '1.5.3', 'probe_code': 'CLI_INVALID_RESPONSE',
                           'detail': "invalid arguments: missing property 'text'"}})
-    assert 'agy-cli 1.5.3' in text and 'CLI_INVALID_RESPONSE' in text and 'not sent' in text
+    assert 'agy-cli was updated to 1.5.3' in text and 'CLI_INVALID_RESPONSE' in text and 'not sent' in text
     assert 'tare setup --prove' in text
+
+
+def test_a_verdict_that_cannot_be_saved_is_lost_quietly(tmp_path, monkeypatch):
+    # Two hosts writing at once, or read-only storage: the next session probes again; the call never fails.
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
+    def locked(*args, **kwargs):
+        raise PermissionError('another host holds it')
+    monkeypatch.setattr(cli_qualification.os, 'replace', locked)
+    store = cli_qualification.Store('cli://agy')
+    store['1.5.3 gemini'] = {'status': 'ok'}
+    assert store['1.5.3 gemini'] == {'status': 'ok'} and dict(cli_qualification.Store('cli://agy')) == {}
+    assert not list((tmp_path/'storage').glob('*.tmp'))
+
+
+def test_an_interrupted_check_says_the_request_was_not_sent_and_to_resume():
+    text = provider_limit_guidance({'status': 'BLOCKED', 'reason': 'CLI_QUALIFICATION_INTERRUPTED',
+                                    'runtime_observation': {'deployment_id': 'agy-cli'}})
+    assert 'agy-cli' in text and 'not sent' in text and 'Resume' in text
