@@ -91,7 +91,7 @@ def test_panel_stale_preview_refresh_and_separate_nested(isolated):
             await panel.workers.wait_for_complete()
             await pilot.pause()
             policy = reader()['defaults']['project_admission']
-            assert policy['mode'] == 'adopted' and policy['nested'] is False
+            assert policy['mode'] == 'trusted' and policy['nested'] is False  # outside Git: the reviewed pin
             nested.value = True
             await pilot.pause()
             panel.action_save()
@@ -139,7 +139,7 @@ def test_new_transport_resume_and_wrong_project(isolated):
     policy = admission.configure(root, admission.preview(root), nested=True)
     selected = Selection(str(root), deployment='fixture', prompt='Inspect', project_admission=policy)
     args = command(selected)
-    assert args[args.index('--project-admission')+1] == 'adopted'
+    assert args[args.index('--project-admission')+1] == 'trusted'
     assert args[args.index('--root-instruction-pin')+1] == policy['root_sha256']
     assert '--nested-instructions' in args
     from pathlib import Path

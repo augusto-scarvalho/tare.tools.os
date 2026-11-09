@@ -86,6 +86,15 @@ def git_branch(root):
     return 'No Git branch'
 
 
+def agents_edit(root):
+    """The SHA-256 (or 'absent') of a root AGENTS.md that differs from HEAD; None when it matches or outside Git."""
+    from .project_admission import AdmissionRejected, local_edit, preview
+    try:
+        return (preview(root)['root_sha256'] or 'absent') if local_edit(root) else None
+    except (AdmissionRejected, OSError, ValueError):
+        return None
+
+
 def read_details(key):
     root, session, profile, deployment, automatic = key
     branch = git_branch(root)
@@ -216,9 +225,14 @@ class ConversationHeader:
                   observation.summary() if observation else 'Connection unchecked')
         # A project's AGENTS.md reaches agents only once adopted in /permissions; unsaid, a planner broke its rules.
         # The welcome of a new conversation says it, where adoption applies and the sentence fits (this line cut it).
+        policy = getattr(self, 'project_admission', None) or {}
+        edit = getattr(self, '_agents_edit', None)
         unread = ('This project\'s AGENTS.md is not loaded, so agents do not follow its rules. Review it in '
-                  '/permissions to load it in new conversations.' if (getattr(self, 'project_admission', None)
-                  or {}).get('mode') != 'adopted' and (Path(root)/'AGENTS.md').is_file() else '')
+                  '/permissions to trust this repository\'s AGENTS.md in new conversations.'
+                  if policy.get('mode') not in ('adopted', 'trusted') and (Path(root)/'AGENTS.md').is_file() else
+                  'AGENTS.md has uncommitted changes that are not loaded (the committed version is). Review them in '
+                  '/permissions to load them.' if policy.get('mode') == 'trusted' and edit
+                  and edit != (policy.get('root_sha256') or 'absent') else '')
         if (welcome := self.query_one_optional('#welcome', Static)) and getattr(self, '_unread_note', None) != unread:
             from .console_output import welcome_text
             self._unread_note = unread
@@ -258,6 +272,7 @@ class ConversationHeader:
                         return
                     await asyncio.sleep(.1)
                 details = await asyncio.to_thread(read_details, key)
+                self._agents_edit = await asyncio.to_thread(agents_edit, key[0])
                 if pending and self.busy and details.identity is None:
                     details = HeaderDetails(details.branch, 'Reading saved model…', 'Saved model')
                 if (self.connection_closing or not self.is_mounted or not self.query_one_optional('#session-context')

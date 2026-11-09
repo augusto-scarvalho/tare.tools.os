@@ -284,3 +284,25 @@ def test_a_new_conversation_says_when_the_projects_agents_md_is_not_loaded(tmp_p
             app.render_header(); await pilot.pause()
             assert 'AGENTS.md' not in welcome()  # nothing to load, nothing to say
     asyncio.run(scenario())
+
+
+def test_a_trusted_repository_says_when_an_uncommitted_agents_md_edit_is_held_back(tmp_path, monkeypatch):
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'history'))
+    (tmp_path/'AGENTS.md').write_text('Rules.\n')
+
+    async def scenario():
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(130, 44)) as pilot:
+            await app.workers.wait_for_complete(); await pilot.pause()
+            welcome = lambda: str(app.query_one('#welcome', Static).render())
+            app.project_admission = {'mode': 'trusted', 'root_sha256': None, 'nested': False}
+            app._agents_edit = None
+            app.render_header(); await pilot.pause()
+            assert 'AGENTS.md' not in welcome()  # as committed: loaded, nothing to say
+            app._agents_edit = 'b'*64
+            app.render_header(); await pilot.pause()
+            assert 'uncommitted changes that are not loaded' in welcome() and '/permissions' in welcome()
+            app.project_admission = {'mode': 'trusted', 'root_sha256': 'b'*64, 'nested': False}
+            app.render_header(); await pilot.pause()
+            assert 'AGENTS.md' not in welcome()  # that edit was reviewed: it loads
+    asyncio.run(scenario())

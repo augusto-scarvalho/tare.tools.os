@@ -80,7 +80,18 @@ Choose root adoption explicitly; nested discovery is a separate checkbox, off by
 default. Save revalidates the preview shown on screen and the preferences revision.
 If the file changed, Refresh and review it again in the same panel before saving.
 An invalid preview disables adoption but still allows saving while ignoring
-instructions. An absent file is pinned as absent, not permission to adopt future text.
+instructions.
+
+The checkbox trusts the repository's `AGENTS.md`, not one copy of it. In a Git
+checkout the trust covers every worktree of that repository (they share its common
+Git directory), and a session loads the root `AGENTS.md` as committed: a merge or
+pull that changes it needs no new review. An uncommitted change to it (modified,
+staged, deleted or untracked, as an agent's edit would be) is not loaded; the
+committed version is, and a new conversation's welcome says so. Saving the panel
+with the box checked reviews that edit and loads it while it stays as reviewed.
+Unchecking it in any worktree untrusts the repository in all of them. Outside Git
+the reviewed bytes are pinned as before (an absent file is pinned as absent), so a
+change needs a new review. Policies saved as `adopted` keep their pin until saved again.
 
 New conversations remain quarantined until explicit adoption, including when
 older saved preferences supply edit permissions. Legacy configurations/sessions

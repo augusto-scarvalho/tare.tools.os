@@ -66,7 +66,33 @@ def read_defaults(directory, project, control_root):
             **({'project_admission': defaults['project_admission']} if 'project_admission' in defaults else {}),
             **({'command_protection': defaults['command_protection']}
                if mode == 'commands' and 'command_protection' in defaults else {})})
+    policy = defaults.get('project_admission') or {}
+    repo = project_admission.repository(project) if policy.get('mode') in ('quarantine', 'trusted') else None
+    if repo is not None:  # in Git the repository's record decides, for every worktree of it
+        trust = repository_trust(directory, repo, control_root)
+        if trust is None and policy['mode'] == 'trusted':  # untrusted from another worktree
+            defaults = {**defaults, 'project_admission': dict(project_admission.QUARANTINE)}
+        elif trust is not None and policy['mode'] == 'quarantine':  # no second review of the same history
+            defaults = {**defaults, 'project_admission': {'mode': 'trusted', 'root_sha256': None,
+                                                          'nested': trust['nested']}}
     return defaults, revision
+
+
+def trust_path(directory, repository, control_root):
+    key = hashlib.sha256((repository+'\0'+os.path.normcase(str(Path(control_root).resolve()))).encode()).hexdigest()
+    return regular(Path(directory)/'repository-trust'/(key+'.json'))
+
+
+def repository_trust(directory, repo, control_root):
+    """The record of a repository the operator trusted from any of its worktrees, or None."""
+    path = trust_path(directory, repo, control_root)
+    if not path.exists():
+        return None
+    try:
+        value = read_json(path, 4096)
+    except ConversationRejected:
+        return None
+    return value if value.get('repository') == repo and type(value.get('nested')) is bool else None
 
 
 def stored_defaults(directory, project, control_root):
@@ -99,6 +125,16 @@ def save_defaults(directory, project, control_root, defaults, expected_revision)
             project_admission.check(project, defaults['project_admission'])
         save_json(path, {'schema': 'tare.tools/project-permissions/1', 'project': project,
                          'control_root': control, 'defaults': defaults})
+        admission = defaults.get('project_admission')
+        repo = None if admission is None else project_admission.repository(project)
+        if repo is not None:  # trust belongs to the repository: every worktree of it shares the choice
+            trust = trust_path(directory, repo, control)
+            if admission['mode'] == 'trusted':
+                trust.parent.mkdir(parents=True, exist_ok=True)
+                save_json(trust, {'schema': 'tare.tools/repository-trust/1', 'repository': repo,
+                                  'nested': admission['nested']})
+            elif admission['mode'] == 'quarantine' and trust.exists():
+                trust.unlink()
         from .turn_engine import set_project_permission_mode
         set_project_permission_mode(project, defaults['mode'])  # tare serve's /mode reads the same choice
         return read_defaults(directory, project, control)
@@ -223,10 +259,17 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
         current, current_error = [], str(exc)
     instructions = ([('Project instructions quarantined; the preview below is data, not adopted guidance.'
                       if instruction_policy['mode'] == 'quarantine' else
+                      'Repository AGENTS.md trusted, in every worktree of this repository: committed versions load '
+                      'on their own; an uncommitted edit loads only once reviewed here.'
+                      if instruction_policy['mode'] == 'trusted' else
                       'Root AGENTS.md adopted; nested discovery requires separate explicit authorization.')]
                     if instruction_policy is not None else
                     [('Legacy instruction policy: root and scoped discovery.' if nested_enabled else
                       'Legacy conversation: root AGENTS.md only.')])
+    if (instruction_policy is not None and instruction_policy['mode'] == 'trusted' and current_preview is not None
+            and project_admission.local_edit(project) and current_preview['root_sha256'] != instruction_policy['root_sha256']):
+        instructions.append('This AGENTS.md has uncommitted changes, not loaded: the committed version is. Saving '
+                            'with instructions checked reviews and loads the text below.')
     if instruction_policy is not None and instruction_policy['mode'] == 'adopted':
         stale = (current_preview is None or
                  current_preview['root_sha256'] != instruction_policy['root_sha256'])
