@@ -89,7 +89,7 @@ def describe(name, value):
             supported = list(EFFORTS) if known else [e for e in value.get('native_reasoning_levels', []) if e in EFFORTS]
     elif value.get('native_opencode'):
         from .opencode import connection as opencode_connection
-        group, connection = 'OpenCode', opencode_connection(value)
+        group = connection = opencode_connection(value)
         label = value['native_opencode'].get('label', label)
         effort = {'openai-chat': params.get('reasoning_effort'),
                   'openai-responses': params.get('reasoning', {}).get('effort'),

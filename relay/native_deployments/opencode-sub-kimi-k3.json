@@ -1,16 +1,16 @@
 {
-  "id": "opencode-go-hy4-preview",
+  "id": "opencode-sub-kimi-k3",
   "runner": "native-http",
-  "model": "hy4-preview",
+  "model": "kimi-k3",
   "native_credential_env": "OPENCODE_API_KEY",
   "native_counter_protocol": "utf8-envelope-estimate-v1",
   "native_profile": {
     "protocol": "openai-chat",
-    "model": "hy4-preview",
+    "model": "kimi-k3",
     "endpoint": "https://opencode.ai/inference/go/openai/v1",
-    "context_window": 1024000,
+    "context_window": 1048576,
     "output_tokens": 16384,
-    "parameters_json": "{\"reasoning_effort\": \"high\"}",
+    "parameters_json": "{}",
     "session_header": "x-opencode-session",
     "source": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
   },
@@ -19,13 +19,17 @@
     "source": "https://opencode.ai/docs/console/api/inference (usage.opencode.tokens, cost)"
   },
   "native_reasoning_levels": [
-    "high"
+    "max"
   ],
   "native_opencode": {
-    "plan": "go",
-    "label": "Hy4 preview",
+    "plan": "sub",
+    "label": "Kimi K3",
     "family": "chat-completions",
-    "tool_choice": [],
+    "tool_choice": [
+      "auto",
+      "none",
+      "required"
+    ],
     "source": "https://opencode.ai/inference/go/v1/models",
     "observed_at": "2026-11-09"
   }

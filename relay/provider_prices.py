@@ -75,7 +75,7 @@ def quote(deployment, *, live=False, cache=None):
                                observed_at=datetime.fromtimestamp(obs['observed_at'], timezone.utc).isoformat())
     elif deployment.get('native_opencode'):
         row.update(mode='reported', source='opencode.usage.cost',
-                   scope='OpenCode balance charge: $0 for Go use within its limits; list_cost and allowance inform only.')
+                   scope='OpenCode balance charge: $0 for subscription use within its allowance; list_cost and allowance inform only.')
     elif endpoint == 'cli://claude':
         row.update(mode='client_estimate', source='claude.result.total_cost_usd',
                    scope='CLI estimate of API-equivalent usage; subscription invoice not inferred.')

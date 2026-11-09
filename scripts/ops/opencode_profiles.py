@@ -1,14 +1,18 @@
-"""Write tare's OpenCode deployment profiles from OpenCode's public model list; no inference, no credentials.
+"""Write tare's OpenCode deployment profiles for the operator's model list from OpenCode's public model list.
 
-python scripts/ops/opencode_profiles.py --plan go [--models saved-list.json] [--date YYYY-MM-DD]
+python scripts/ops/opencode_profiles.py --plan sub|api [--models saved-list.json] [--date YYYY-MM-DD]
 
-Each model OpenCode serves with tools on a family the Kernel speaks gets relay/native_deployments/opencode-go-<id>.json
-(Console models: opencode-<id>.json). Its author identity comes from the roster record whose native runtime is the
-OpenCode model id; a record without one gets it, and a model with none gets a new record from its canonical vendor.
-Free models are left out (OpenCode refuses them to other clients). A model without a row in
-relay/role_deployments.json gets one as an implementer and explorer reserve marked `qualified: false`: an exact pin
-reaches it, automatic selection does not until a live qualification flips the mark. An edited row is kept. Rerun after OpenCode changes its list and review the diff: a profile
-is metadata admission, not measured delivery quality.
+OpenCode is two providers in tare. `sub` is the subscription (Go, Go Plus, ...: a plan with a per-model allowance;
+relay/native_deployments/opencode-sub-<id>.json, pin `opencode-sub/...`). `api` is pay-per-token from the account
+balance (opencode-api-<id>.json, pin `opencode-api/...`). Only the models MODELS names for that plan get profiles;
+a profile of the plan that is no longer named, and its role row, are removed. A named model that OpenCode does not
+serve with tools on a family the Kernel speaks is reported as waiting.
+
+A model's author is the roster record whose native runtime is its OpenCode id; a record without one gets it, and a
+model with none gets a new record from its canonical vendor. A new profile gets an implementer and explorer reserve
+row marked `qualified: false`: an exact pin reaches it, automatic selection does not until the mark is flipped after
+a live qualification. An edited row is kept. Review the diff: a profile is metadata admission, not measured quality.
+No inference, no credentials.
 """
 import argparse
 import json
@@ -21,7 +25,12 @@ ROOT = Path(__file__).resolve().parents[2]
 PROFILES = ROOT/'relay'/'native_deployments'
 ROSTER = ROOT/'relay'/'round_table_roster.json'
 ROLES = ROOT/'relay'/'role_deployments.json'
-LISTS = {'go': 'https://opencode.ai/inference/go/v1/models', 'console': 'https://opencode.ai/inference/v1/models'}
+LISTS = {'sub': 'https://opencode.ai/inference/go/v1/models', 'api': 'https://opencode.ai/inference/v1/models'}
+# The operator's selection (2026-11-09). A model may be named under both plans: the API one is then a paid reserve.
+MODELS = {'sub': ('claude-haiku-5-5', 'deepseek-v4.1-flash', 'gemini-4-argon', 'glm-5.3-flash', 'gpt-6-luna',
+                  'grok-4.7', 'kimi-k3', 'mimo-v2.6-flash'),
+          'api': ('claude-fable-5-2', 'claude-sonnet-5-5', 'gemini-3.8-flash', 'gpt-6-astra', 'gpt-6.1-sol',
+                  'mistral-large-4', 'muse-ember-1.0')}
 PROTOCOLS = {'chat-completions': 'openai-chat', 'responses': 'openai-responses', 'messages': 'anthropic-messages'}
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 OUTPUT_CAP = 16384  # the convention of the other API profiles; the provider maximum stays in its list
@@ -32,18 +41,19 @@ VENDORS = {'deepseek': ('DeepSeek', 'deepseek/deepseek'), 'zhipuai': ('Z.ai', 'z
            'xiaomi': ('Xiaomi', 'xiaomi/mimo-family'), 'minimax': ('MiniMax', 'minimax/m3'),
            'meituan': ('Meituan', 'meituan/longcat-family'), 'stepfun': ('StepFun', 'stepfun/step-family'),
            'alibaba': ('Qwen', 'qwen/qwen-family'), 'google': ('Google', 'google/gemini'),
-           'mistralai': ('Mistral AI', 'mistral/mistral')}
+           'mistral': ('Mistral AI', 'mistral/mistral'), 'mistralai': ('Mistral AI', 'mistral/mistral')}
+PREFIX = {'sub': 'opencode-sub-', 'api': 'opencode-api-'}
 
 
 def author(row):
-    vendor = row['canonical_id'].split('/', 1)[0]
+    vendor = (row.get('canonical_id') or '').split('/', 1)[0]
     if vendor == 'anthropic':
         family = next((f for f in ('haiku', 'sonnet', 'opus', 'fable') if f in row['id']), None)
         if family is None:
             raise SystemExit(f"{row['id']}: Anthropic family unknown; add its roster record by hand")
         return 'Anthropic', 'anthropic/' + family
     if vendor not in VENDORS:
-        raise SystemExit(f"{row['id']}: vendor {vendor!r} has no roster family yet; add it to VENDORS")
+        raise SystemExit(f"{row['id']}: vendor {vendor!r} has no roster family yet; add its roster record by hand")
     return VENDORS[vendor]
 
 
@@ -76,7 +86,7 @@ def profile(row, family, api, key, plan, today):
     protocol, wire = PROTOCOLS[family], row['id']
     reasoning = row['capabilities'].get('reasoning') or {}
     levels = [e for e in reasoning.get('effort') or [] if e in EFFORTS]
-    name = ('opencode-go-' if plan == 'go' else 'opencode-') + wire.replace('.', '-')
+    name = PREFIX[plan] + wire.replace('.', '-')
     source = LISTS[plan] + ', read ' + today
     return name, {
         'id': name, 'runner': 'native-http', 'model': key,
@@ -98,13 +108,13 @@ def profile(row, family, api, key, plan, today):
 
 def role_row(value, plan):
     family = value['native_opencode']['family']
-    return {'id': value['id'], 'model': value['model'], 'provider': 'OpenCode Go' if plan == 'go' else 'OpenCode',
+    return {'id': value['id'], 'model': value['model'],
+            'provider': 'OpenCode Subscription' if plan == 'sub' else 'OpenCode API',
             'transport': 'API', 'runner': 'native-http',
-            'quota_domain': 'opencode-go' if plan == 'go' else 'opencode-balance',
+            'quota_domain': 'opencode-sub' if plan == 'sub' else 'opencode-balance',
             'endpoint_domain': 'opencode-' + family, 'effort': None, 'roles': ['implementer', 'explorer'],
-            'kind': 'reserve', 'cost_tier': 'flat' if plan == 'go' else 'metered', 'qualified': False,
-            'native_catalog': value['id'],
-            'note': value['native_profile']['source']}
+            'kind': 'reserve', 'cost_tier': 'flat' if plan == 'sub' else 'metered', 'qualified': False,
+            'native_catalog': value['id'], 'note': value['native_profile']['source']}
 
 
 def main(argv=None):
@@ -122,23 +132,31 @@ def main(argv=None):
     roster = json.loads(ROSTER.read_text(encoding='utf-8'))
     roles = json.loads(ROLES.read_text(encoding='utf-8'))
     listed = {row.get('native_catalog', row['id']) for row in roles['deployments']}
-    written = []
-    for row in listing['data']:
+    rows = {row['id']: row for row in listing['data']}
+    written, waiting = [], {}
+    for wire in MODELS[args.plan]:
+        row = rows.get(wire)
+        if row is None:
+            waiting[wire] = 'not in the list'
+            continue
         (family, api), = row['api'].items()
-        if (family not in PROTOCOLS or not row['capabilities'].get('tools', {}).get('supported')
-                or row['id'].endswith('-free') or not row.get('canonical_id')):
+        if family not in PROTOCOLS or not row['capabilities'].get('tools', {}).get('supported'):
+            waiting[wire] = family + ' API without a Kernel codec' if family not in PROTOCOLS else 'no tool support'
             continue
         name, value = profile(row, family, api, roster_key(roster['models'], row), args.plan, args.date)
         (PROFILES/(name + '.json')).write_text(json.dumps(value, indent=2) + '\n', encoding='utf-8')
         written.append(name)
         if name not in listed:
             roles['deployments'].append(role_row(value, args.plan))
+    if not written:  # the wrong plan's list, or an empty reply: never take it as "remove every profile"
+        raise SystemExit(json.dumps({'error': 'no named model is in this list; nothing changed', 'waiting': waiting}))
+    removed = sorted(p.stem for p in PROFILES.glob(PREFIX[args.plan] + '*.json') if p.stem not in written)
+    for name in removed:
+        (PROFILES/(name + '.json')).unlink()
+    roles['deployments'] = [r for r in roles['deployments'] if r.get('native_catalog', r['id']) not in removed]
     ROSTER.write_text(json.dumps(roster, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     ROLES.write_text(json.dumps(roles, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
-    prefix = 'opencode-go-' if args.plan == 'go' else 'opencode-'
-    stale = sorted(p.stem for p in PROFILES.glob(prefix + '*.json') if p.stem not in written
-                   and (args.plan == 'go' or not p.stem.startswith('opencode-go-')))
-    print(json.dumps({'written': written, 'no_longer_listed': stale}, indent=2))
+    print(json.dumps({'written': written, 'removed': removed, 'waiting': waiting}, indent=2))
 
 
 if __name__ == '__main__':

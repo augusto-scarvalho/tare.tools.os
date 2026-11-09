@@ -1,14 +1,14 @@
 {
-  "id": "opencode-go-kimi-k3-1-pro",
+  "id": "opencode-sub-deepseek-v4-1-flash",
   "runner": "native-http",
-  "model": "kimi-k3.1-pro",
+  "model": "deepseek-v4.1-flash",
   "native_credential_env": "OPENCODE_API_KEY",
   "native_counter_protocol": "utf8-envelope-estimate-v1",
   "native_profile": {
     "protocol": "openai-chat",
-    "model": "kimi-k3.1-pro",
+    "model": "deepseek-v4.1-flash",
     "endpoint": "https://opencode.ai/inference/go/openai/v1",
-    "context_window": 1048576,
+    "context_window": 1000000,
     "output_tokens": 16384,
     "parameters_json": "{\"reasoning_effort\": \"high\"}",
     "session_header": "x-opencode-session",
@@ -24,13 +24,14 @@
     "max"
   ],
   "native_opencode": {
-    "plan": "go",
-    "label": "Kimi K3.1 Pro",
+    "plan": "sub",
+    "label": "DeepSeek V4.1 Flash",
     "family": "chat-completions",
     "tool_choice": [
       "auto",
       "none",
-      "required"
+      "required",
+      "tool"
     ],
     "source": "https://opencode.ai/inference/go/v1/models",
     "observed_at": "2026-11-09"

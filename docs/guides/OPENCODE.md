@@ -1,10 +1,16 @@
-# OpenCode: models through the Go subscription
+# OpenCode: subscription and pay-per-token API
 
 [OpenCode](https://opencode.ai) serves many vendors' models behind one API key: the OpenAI chat and Responses APIs
 and the Anthropic Messages API, one family per model. Tare reaches it as an HTTP API, independent of the OpenCode
-app. The **Go** subscription ($10 a month; Go Plus $40) covers each model up to a monthly dollar allowance, with at
-most 20% of it in any 5 hours and 50% in a week. Pay-as-you-go use from the account balance (the Console) comes in a
-later change.
+app, as two providers:
+
+| Provider | Pays with | Profiles | Pin | Execution flags |
+| --- | --- | --- | --- | --- |
+| OpenCode Subscription | a plan (Go, Go Plus, ...): each model has a monthly dollar allowance, at most 20% of it in any 5 hours and 50% in a week | `opencode-sub-<model>` | `opencode-sub/<profile>@<level>` | a subscription: `--subscription_only`, `--prefer_subscription` |
+| OpenCode API | the account balance, per token | `opencode-api-<model>` | `opencode-api/<profile>@<level>` | an API: `--api_only`, spend caps |
+
+The plan in use is read from each reply (`billing_source`: `go`, `go-plus`, ...), so changing plans needs no change
+to tare.
 
 ## Set it up
 
@@ -13,66 +19,67 @@ it from standard input, never from the command line:
 
 ```powershell
 tare setup --credential OPENCODE_API_KEY
-tare setup --use api:OPENCODE_API_KEY
 ```
 
-In the Console, keep **Extra Usage off**. With it on, a model whose allowance is spent keeps answering and charges
-the balance instead of refusing.
+In the Console, keep **Extra Usage off**. With it on, a subscription model whose allowance is spent keeps answering
+and charges the balance instead of refusing. Two account settings gate some models: DeepSeek is hosted outside
+Europe and the United States and needs the **Global** region, and models that train on request data need **Allow
+paid endpoints that train on request data**.
 
-## Choose a model
+## The models
+
+Tare registers only the operator's selection, kept in `scripts/ops/opencode_profiles.py` (`MODELS`):
+
+| Provider | Models |
+| --- | --- |
+| Subscription | Claude Haiku 5.5, DeepSeek V4.1 Flash, GLM 5.3 Flash, GPT-6 Luna, Grok 4.7, Kimi K3, MiMo V2.6 Flash; Gemini 4 Argon waits for a Gemini API codec |
+| API | Claude Fable 5.2, Claude Sonnet 5.5, Gemini 3.8 Flash, GPT-6 Astra, GPT-6.1 Sol, Mistral Large 4, Muse Ember 1.0: selected, without profiles until the account has a balance |
 
 ```powershell
-tare models --provider opencode --role implementer
-tare . --implementer opencode/opencode-go-glm-5-3@high
-tare . --explorer opencode/opencode-go-deepseek-v4-1-flash@low
+tare models --provider opencode-sub --role implementer
+tare . --implementer opencode-sub/opencode-sub-glm-5-3-flash@high
 ```
 
-Every Go model that OpenCode serves with tools on those three APIs has a profile named `opencode-go-<model>`, and
-the picker lists it under OpenCode with the connection "OpenCode Go". Each profile is an implementer and explorer
-reserve. Planner and auditor roles wait for a live qualification of the model through tare. The reasoning levels
-are the ones OpenCode lists for that model. A profile starts at `high` when the model lists it; otherwise it runs at
-the provider's default until you choose a level.
+Each profile is an implementer and explorer reserve marked `qualified: false`: an exact pin reaches it, and automatic
+selection skips it (`NOT_QUALIFIED_PIN_ONLY`) until a live qualification through tare flips the mark. The reasoning
+levels are the ones OpenCode lists for that model. A profile starts at `high` when the model lists it; otherwise it
+runs at the provider's default until you choose a level.
 
-Until that qualification, the profiles are reached only by an exact pin: automatic selection skips them
-(`NOT_QUALIFIED_PIN_ONLY`). Tare does not yet recognize OpenCode's refusal when a model's allowance is spent (a later
-change), so a pinned model whose allowance is spent fails its session.
+The author is the model's vendor, not the gateway. GLM 5.3 Flash through OpenCode has the same author identity as
+GLM 5.3 Flash through OpenRouter, so one never audits the other as an independent reviewer.
 
-The author is the model's vendor, not the gateway. GLM 5.3 through OpenCode has the same author identity as GLM 5.3
-through OpenRouter, so one never audits the other as an independent reviewer.
+Free models (`-free`) are left out: OpenCode serves them only to its own app ("Free usage limit reached" from the
+API, "Model is unavailable" from the subscription endpoint). Their paid versions are the same models.
 
-Left out for now:
+## Subscription accounting
 
-- **Gemini 4 Argon**, which OpenCode serves only through the Gemini API, which tare does not speak yet.
-- **Free models**, which OpenCode refuses to clients other than its own app.
-- **Muse Spark Contributor** models are listed but wait for the data-use choice in **Settings > Connections**
-  (`tare setup --meta-contributor on`), as on OpenRouter: Meta may use prompts, code and responses to improve its
-  products. OpenCode also blocks them until its own privacy setting allows endpoints that train on request data.
+The subscription models draw on one plan account, `opencode-sub`, so a session on the subscription delegates within
+it and quotes a minimal call as plan usage, not dollars. A limit recorded for one model leaves the others usable,
+since each has its own allowance. Plan usage takes no dollar reservation under tare's spend caps, which holds only
+with Extra Usage off. Tare does not yet recognize OpenCode's refusal when a model's allowance is spent (a later
+change), so a pinned model whose allowance is spent fails its session. API profiles will carry the list price as a
+tariff when they ship, so spend caps can reserve dollars for them.
 
-## Subscription or API
-
-OpenCode is a plan and a balance at once. For now tare counts it as a subscription: `--subscription_only` and
-`--prefer_subscription` include it, and `--api_only` leaves it out. The Go models draw on one plan account,
-`opencode-go`, so a session on Go delegates within Go and quotes a minimal call as plan usage, not dollars. A limit
-recorded for one Go model leaves the others usable, since each has its own allowance.
-
-Plan usage means no dollar reservation: tare's spend caps do not hold a Go call. That is only true with **Extra Usage
-off**. With it on, a model whose allowance is spent charges the balance, and tare sees the charge only in the reply.
+Sessions saved on the earlier `opencode-go-*` profiles cannot be resumed (their author records are gone and they
+would be taken for the API); start them again on an `opencode-sub-*` profile.
 
 ## What tare sends and records
 
 Each request carries `x-opencode-session`, the tare session's opaque key, so OpenCode can route and cache by
 conversation. It also carries `User-Agent: tare/<release>`. On the final call, a delegated role normally names the
-delivery tool. It does so only for models whose OpenCode entry accepts a named `tool_choice`, and the others are
-reminded by the budget notice.
+delivery tool. It does so only for models whose OpenCode entry accepts a named `tool_choice`; the others are reminded
+by the budget notice.
 
 Usage comes from OpenCode's own counters (`usage.opencode.tokens`: input without cache, cache reads and writes,
-output with reasoning). The charge is `usage.cost`, which is $0 for Go use within the allowance. The receipt keeps
-the billing source (`go`, `go-plus`, `balance`, ...), the list price and the allowance each call used.
+output with reasoning). The charge is `usage.cost`: $0 for subscription use within the allowance, the balance charge
+for API use. The receipt keeps the billing source, the list price and the allowance each call used.
 
 ## Refresh the profiles
 
-OpenCode changes its list often. `scripts/ops/opencode_profiles.py --plan go` rewrites the profiles from the public
-list and adds roster records and role rows for new models; a role row edited by hand is kept. Review the diff
-before committing: a profile is metadata admission, not measured delivery quality.
+`python scripts/ops/opencode_profiles.py --plan sub` (or `--plan api`) rewrites that provider's profiles from
+OpenCode's public list for the models `MODELS` names, removes the profiles it no longer names with their role rows,
+and adds roster records and role rows for new ones; a role row edited by hand is kept. Roster records stay: remove by
+hand a record nothing else uses. A list without any named model changes nothing. Review the diff before committing: a profile
+is metadata admission, not measured delivery quality.
 
 Sources: [OpenCode Go](https://opencode.ai/docs/go) and [inference API](https://opencode.ai/docs/console/api/inference).

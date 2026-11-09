@@ -884,202 +884,12 @@
       "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality."
     },
     {
-      "id": "opencode-go-deepseek-v4-1-flash",
-      "model": "deepseek-v4.1-flash",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-chat-completions",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-deepseek-v4-1-flash",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-deepseek-v4-pro",
-      "model": "deepseek-v4-pro",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-chat-completions",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-deepseek-v4-pro",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-glm-5-2",
-      "model": "glm-5.2",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-chat-completions",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-glm-5-2",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-glm-5-3",
-      "model": "glm-5.3",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-chat-completions",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-glm-5-3",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-grok-4-7",
-      "model": "grok-4.7",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-responses",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-grok-4-7",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-muse-spark-1-2-contributor",
-      "model": "muse-spark-1.2-contributor",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-responses",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-muse-spark-1-2-contributor",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-muse-spark-1-3-contributor",
-      "model": "muse-spark-1.3-contributor",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-responses",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-muse-spark-1-3-contributor",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-glm-5-3-flash",
-      "model": "glm-5.3-flash",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-chat-completions",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-glm-5-3-flash",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-gpt-5-6-luna",
-      "model": "gpt-5.6-luna",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-responses",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-gpt-5-6-luna",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-gpt-6-luna",
-      "model": "gpt-6-luna",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-responses",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-gpt-6-luna",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-claude-haiku-5-5",
+      "id": "opencode-sub-claude-haiku-5-5",
       "model": "claude-haiku-5.5",
-      "provider": "OpenCode Go",
+      "provider": "OpenCode Subscription",
       "transport": "API",
       "runner": "native-http",
-      "quota_domain": "opencode-go",
+      "quota_domain": "opencode-sub",
       "endpoint_domain": "opencode-messages",
       "effort": null,
       "roles": [
@@ -1089,16 +899,16 @@
       "kind": "reserve",
       "cost_tier": "flat",
       "qualified": false,
-      "native_catalog": "opencode-go-claude-haiku-5-5",
+      "native_catalog": "opencode-sub-claude-haiku-5-5",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
     {
-      "id": "opencode-go-hy3",
-      "model": "hy3",
-      "provider": "OpenCode Go",
+      "id": "opencode-sub-deepseek-v4-1-flash",
+      "model": "deepseek-v4.1-flash",
+      "provider": "OpenCode Subscription",
       "transport": "API",
       "runner": "native-http",
-      "quota_domain": "opencode-go",
+      "quota_domain": "opencode-sub",
       "endpoint_domain": "opencode-chat-completions",
       "effort": null,
       "roles": [
@@ -1108,16 +918,16 @@
       "kind": "reserve",
       "cost_tier": "flat",
       "qualified": false,
-      "native_catalog": "opencode-go-hy3",
+      "native_catalog": "opencode-sub-deepseek-v4-1-flash",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
     {
-      "id": "opencode-go-hy4-preview",
-      "model": "hy4-preview",
-      "provider": "OpenCode Go",
+      "id": "opencode-sub-glm-5-3-flash",
+      "model": "glm-5.3-flash",
+      "provider": "OpenCode Subscription",
       "transport": "API",
       "runner": "native-http",
-      "quota_domain": "opencode-go",
+      "quota_domain": "opencode-sub",
       "endpoint_domain": "opencode-chat-completions",
       "effort": null,
       "roles": [
@@ -1127,17 +937,17 @@
       "kind": "reserve",
       "cost_tier": "flat",
       "qualified": false,
-      "native_catalog": "opencode-go-hy4-preview",
+      "native_catalog": "opencode-sub-glm-5-3-flash",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
     {
-      "id": "opencode-go-kimi-k2-7-code",
-      "model": "kimi-k2.7-code",
-      "provider": "OpenCode Go",
+      "id": "opencode-sub-gpt-6-luna",
+      "model": "gpt-6-luna",
+      "provider": "OpenCode Subscription",
       "transport": "API",
       "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-chat-completions",
+      "quota_domain": "opencode-sub",
+      "endpoint_domain": "opencode-responses",
       "effort": null,
       "roles": [
         "implementer",
@@ -1146,16 +956,35 @@
       "kind": "reserve",
       "cost_tier": "flat",
       "qualified": false,
-      "native_catalog": "opencode-go-kimi-k2-7-code",
+      "native_catalog": "opencode-sub-gpt-6-luna",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
     {
-      "id": "opencode-go-kimi-k3",
+      "id": "opencode-sub-grok-4-7",
+      "model": "grok-4.7",
+      "provider": "OpenCode Subscription",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "opencode-sub",
+      "endpoint_domain": "opencode-responses",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "reserve",
+      "cost_tier": "flat",
+      "qualified": false,
+      "native_catalog": "opencode-sub-grok-4-7",
+      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
+    },
+    {
+      "id": "opencode-sub-kimi-k3",
       "model": "kimi-k3",
-      "provider": "OpenCode Go",
+      "provider": "OpenCode Subscription",
       "transport": "API",
       "runner": "native-http",
-      "quota_domain": "opencode-go",
+      "quota_domain": "opencode-sub",
       "endpoint_domain": "opencode-chat-completions",
       "effort": null,
       "roles": [
@@ -1165,16 +994,16 @@
       "kind": "reserve",
       "cost_tier": "flat",
       "qualified": false,
-      "native_catalog": "opencode-go-kimi-k3",
+      "native_catalog": "opencode-sub-kimi-k3",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     },
     {
-      "id": "opencode-go-mimo-v2-6-flash",
+      "id": "opencode-sub-mimo-v2-6-flash",
       "model": "mimo-v2.6-flash",
-      "provider": "OpenCode Go",
+      "provider": "OpenCode Subscription",
       "transport": "API",
       "runner": "native-http",
-      "quota_domain": "opencode-go",
+      "quota_domain": "opencode-sub",
       "endpoint_domain": "opencode-chat-completions",
       "effort": null,
       "roles": [
@@ -1184,197 +1013,7 @@
       "kind": "reserve",
       "cost_tier": "flat",
       "qualified": false,
-      "native_catalog": "opencode-go-mimo-v2-6-flash",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-mimo-v2-6-pro",
-      "model": "mimo-v2.6-pro",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-chat-completions",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-mimo-v2-6-pro",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-minimax-m3",
-      "model": "minimax-m3",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-messages",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-minimax-m3",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-minimax-m3-1-flash",
-      "model": "minimax-m3.1-flash",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-chat-completions",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-minimax-m3-1-flash",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-longcat-2-0",
-      "model": "longcat-2.0",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-chat-completions",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-longcat-2-0",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-step-5-preview",
-      "model": "step-5-preview",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-chat-completions",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-step-5-preview",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-qwen3-8-max",
-      "model": "qwen3.8-max",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-messages",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-qwen3-8-max",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-qwen3-8-flash",
-      "model": "qwen3.8-flash",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-messages",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-qwen3-8-flash",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-qwen3-7-plus",
-      "model": "qwen3.7-plus",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-messages",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-qwen3-7-plus",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-kimi-k3-1-pro",
-      "model": "kimi-k3.1-pro",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-chat-completions",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-kimi-k3-1-pro",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-go-hy4",
-      "model": "hy4",
-      "provider": "OpenCode Go",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-go",
-      "endpoint_domain": "opencode-chat-completions",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-go-hy4",
+      "native_catalog": "opencode-sub-mimo-v2-6-flash",
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
     }
   ],
