@@ -127,4 +127,3 @@ def test_unqualified_rows_are_pinned_never_chosen_automatically(monkeypatch):
     _, selection = native_routes.ranked('explorer')
     reasons = {c['deployment']: c['reason'] for c in selection['candidates'] if c['deployment'].startswith('opencode-go-')}
     assert len(reasons) == 26 and set(reasons.values()) == {'NOT_QUALIFIED_PIN_ONLY'}
-
