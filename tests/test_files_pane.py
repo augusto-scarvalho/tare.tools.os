@@ -359,3 +359,63 @@ def test_git_line_says_ahead_behind_an_operation_in_progress_and_conflicts(repo,
     (linked/'b.py').write_text('b = 4\n'); git(linked, 'commit', '-am', 'side')
     git(linked, 'rebase', 'main')  # stops on the conflict, in the linked worktree only
     assert git_state(linked)['operation'] == 'rebase' and git_state(repo)['operation'] == ''
+
+
+def test_history_follows_renames_and_shows_what_a_commit_changed(repo, tmp_path):
+    from relay.files_pane import commit_text, file_history
+    (repo/'b.py').write_text('b = 2\n'); git(repo, 'commit', '-am', 'change b')
+    git(repo, 'mv', 'b.py', 'c.py'); git(repo, 'commit', '-m', 'rename to c')
+    commits = file_history(repo, 'c.py')
+    assert [line.split(' ', 2)[2].split(' · ')[0] for _, line, _ in commits] == ['rename to c', 'change b', 'fixture']
+    assert [name for _, _, name in commits] == ['c.py', 'b.py', 'b.py']
+    first = commit_text(repo, commits[-1][0], commits[-1][2])
+    assert '+b = 1' in first and 'fixture' in first
+    with pytest.raises(ValueError):
+        file_history(repo, '../outside.py')
+    plain = tmp_path/'plain'; plain.mkdir(); (plain/'p.py').write_text('p\n')
+    with pytest.raises(ValueError):
+        file_history(plain, 'p.py')
+
+
+def test_h_opens_the_history_and_enter_opens_a_commit(repo, tmp_path, monkeypatch):
+    from relay import files_pane
+    from relay.changes_panel import FileViewer
+    from relay.files_pane import FileHistory, FileTree
+    monkeypatch.setattr(files_pane, 'SLOW_SECONDS', 60)
+    (repo/'b.py').write_text('b = 2\n'); git(repo, 'commit', '-am', 'change b')
+    async def scenario():
+        app = WorkConsole(repo, backend=FakeBackend(), initial_mode='assistant', storage_preferred=tmp_path/'state')
+        async with app.run_test(size=(150, 52)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.press('f8')
+            pane, tree = app.query_one(FilesPane), app.query_one(FileTree)
+            await until(pilot, lambda: pane.paths)
+            tree.focus(); tree.move_cursor(tree.nodes['b.py']); await pilot.pause()
+            await pilot.press('h')
+            await until(pilot, lambda: isinstance(app.screen, FileHistory))
+            assert len(app.screen.commits) == 2
+            await pilot.press('enter')  # the newest commit
+            await until(pilot, lambda: isinstance(app.screen, FileViewer))
+            assert '+b = 2' in app.screen.content and 'change b' in app.screen.content
+            await pilot.press('escape'); await pilot.pause()
+            await pilot.press('escape'); await pilot.pause()
+            assert app.screen is app.screen_stack[0] and not app.backend.launches
+    asyncio.run(scenario())
+
+
+def test_history_resists_crafted_subjects_and_works_from_a_folder_inside_the_repository(repo):
+    from relay.files_pane import VIEW_BYTES, commit_text, file_history
+    (repo/'b.py').write_text('b = 2\n')
+    git(repo, 'commit', '-am', 'evil\x1e--output=pwned.txt\tsubject')
+    commits = file_history(repo, 'b.py')
+    assert len(commits) == 2 and all(len(sha) == 40 and not sha.strip('0123456789abcdef') for sha, _, _ in commits)
+    assert '+b = 2' in commit_text(repo, commits[0][0], commits[0][2]) and not (repo/'pwned.txt').exists()
+    with pytest.raises(ValueError):
+        commit_text(repo, '--output=pwned.txt', 'b.py')  # an option is no revision
+    (repo/'src'/'a.py').write_text('a = 2\n'); git(repo, 'commit', '-am', 'change a')
+    inside = file_history(repo/'src', 'a.py')  # names come back relative to the opened folder
+    assert [name for _, _, name in inside] == ['a.py', 'a.py']
+    assert '+a = 2' in commit_text(repo/'src', inside[0][0], inside[0][2])
+    (repo/'big.txt').write_text('x'*(VIEW_BYTES+1)); git(repo, 'add', 'big.txt'); git(repo, 'commit', '-m', 'big')
+    big = file_history(repo, 'big.txt')
+    assert commit_text(repo, big[0][0], big[0][2]) == 'Commit exceeds the interactive preview limit.'

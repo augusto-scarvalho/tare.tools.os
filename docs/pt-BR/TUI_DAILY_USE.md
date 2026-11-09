@@ -273,7 +273,8 @@ editor ou num terminal também aparecem. A linha sob o título conta as mudança
 houver, os commits à frente (↑) e atrás (↓) do upstream da branch, um rebase ou merge em
 andamento e os conflitos. Num arquivo, **Enter** abre o arquivo (uma
 linha da lista também o abre na árvore), **d** mostra o que mudou desde o último commit,
-**a** anexa o arquivo à próxima mensagem como referência `@` (o único jeito de o painel
+**h** lista os commits que mudaram o arquivo (seguindo renomeações; **Enter** num deles mostra
+o que ele mudou no arquivo), **a** anexa o arquivo à próxima mensagem como referência `@` (o único jeito de o painel
 chegar a um modelo) e **y** copia o caminho. Abaixo de 100 colunas o painel ocupa a
 tela inteira, como o F1 e o F2; a partir de 140 colunas fica ao lado deles. O F8 ou o
 Esc voltam para a mensagem. O painel só lê o que a conversa já mostra: não chama
