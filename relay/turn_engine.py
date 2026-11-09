@@ -138,6 +138,9 @@ def save_policy(roles, *, auditor_selection=None):
         raise ValueError('Choose automatic frontier reviewers or your auditor routes.')
     saved['auditor_selection'] = mode
     path = policy_path()
+    # The owner's reasoning levels (planner_effort, auditor_effort, heads_up_effort) outlive a change of routes.
+    saved.update({k: v for k, v in (json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}).items()
+                  if k.endswith('_effort')})
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(saved, indent=1), encoding='utf-8')
