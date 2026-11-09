@@ -186,7 +186,9 @@ def uncovered_review(result):
 
 
 def review_reads(job):
-    """What a review session read, from its journal: 'repository:path:start:end' of each successful read."""
+    """What a review session read of the code and references, from its journal: 'repository:path:start:end' of
+    each successful read. The packet tare builds for the auditor ('review': request, diff) is left out: it is
+    rebuilt for every continuation, so reading it again at other lines is not reading anything new."""
     from compute_plane.native_journal import NativeJournal
     path = Path(job)/'session'/'journal.jsonl'
     asked, found = {}, set()
@@ -194,7 +196,8 @@ def review_reads(job):
         event = record.event()
         if event['kind'] == 'effect_requested' and event['tool_call']['name'] == 'read':
             arguments = json.loads(event['tool_call']['arguments_json'])
-            asked[event['effect_id']] = ':'.join(str(arguments.get(k)) for k in ('repository', 'path', 'start', 'end'))
+            if arguments.get('repository') != 'review':
+                asked[event['effect_id']] = ':'.join(str(arguments.get(k)) for k in ('repository', 'path', 'start', 'end'))
         elif (event['kind'] == 'effect_returned' and event['result']['status'] == 'succeeded'
               and event['result']['effect_id'] in asked):
             found.add(asked[event['result']['effect_id']])
