@@ -2681,8 +2681,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 175892,
-      "sha256": "c3717ccbdccd0f8e8b1d50d4031147a4f11541e0d978023b3c8005a4f28c6e89"
+      "size_bytes": 176025,
+      "sha256": "a3aa29d7640b268c03d2b1355bd1df5151a0c56b4ff2e130244a8412fe00e532"
     },
     {
       "name": "native_display.py",
@@ -3141,8 +3141,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns console presentation and project/session selection; observations never authorize execution.",
-      "size_bytes": 15635,
-      "sha256": "af16f24847cf70d6df7484f7b7e97745b9ac62f561193c54e0d24a479164a78c"
+      "size_bytes": 15890,
+      "sha256": "808baae1dc1c0b48044ed2a48ac1f50443304350f529353adf71f53e5e218e89"
     },
     {
       "name": "cli_discovery.py",
@@ -3191,8 +3191,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composes configured model observations through Kernel-owned cancellable transport; observations never select execution routes.",
-      "size_bytes": 8066,
-      "sha256": "11ab3d83ccd6671c2172d7deb88e011f92d7d9c4684d51d62e84928c8e1fd532"
+      "size_bytes": 8353,
+      "sha256": "a945ee4af886e6f1599da42285b6521fb2d320c602e0cac9364e38724a097d85"
     },
     {
       "name": "native_review_actions.py",
@@ -4231,8 +4231,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 23625,
-      "sha256": "ab67e9853fd5936ce00d195f6d8fc0706403373ed207b607e46133a0780cb379"
+      "size_bytes": 23824,
+      "sha256": "89d428ec545ac27af05edbead7d5043629eb40070647c68866a887d578515d09"
     },
     {
       "name": "command_permission.py",

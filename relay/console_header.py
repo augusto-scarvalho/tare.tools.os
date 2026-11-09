@@ -172,6 +172,9 @@ class ConversationHeader:
     def header_key(self):
         if self.assistant_session:
             return (self.workspace_root, self.assistant_session, '', '', False)
+        if getattr(self, 'conversation_coordinator', ''):
+            # A new conversation runs the pinned coordinator (--coordinator), not the saved model preference.
+            return (self.workspace_root, '', '', self.conversation_coordinator, False)
         return (self.workspace_root, self.assistant_session or '',
                 self.query_one('#profile', Input).value.strip(),
                 str(self.query_one('#model', Select).value),

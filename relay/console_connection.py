@@ -27,6 +27,11 @@ def deployment_for(key):
         return saved['deployment']
     if automatic and not profile:
         return None
+    if '@' in str(deployment):  # a coordinator pin (provider/route@level); catalog route names have no '@'
+        from .coordinator_policy import select as pinned
+        from .execution_scope import for_role
+        with for_role('coordinator'):
+            return pinned(deployment)
     from .native_catalog import select
     return select(None if profile else deployment, Path(profile) if profile else None)
 

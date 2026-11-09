@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- A TUI opened with `--coordinator` shows that coordinator before the first message: the launch banner names it, the header and the model picker read it instead of the saved model preference (Qwen3.8 Low while Gemini 3.8 would run), and Check probes it. The banner names roles that share one pin once and takes a third line, so six pins no longer end at "implementer:".
 - Coverage progress counts only reads of code and references: the packet tare builds for the auditor (request and diff) is rebuilt for every continuation, so rereading it at other lines no longer counts as reading something new and keeping the chain going.
 - The side agent's reasoning level is the owner's: `heads_up_effort` in the routing policy (routing.json) applies to its writer routes, as `planner_effort` and `auditor_effort` do for theirs; unset, each route keeps its own default. Saving routes (/routes) keeps the owner's reasoning levels instead of dropping them.
 - An audit reuses the project's satellite inventory while its submodule pins stay the same: building the candidate tree keeps it, and the review, its continuations and cached-decision lookups read it instead of listing every satellite object again; a moved pin reads it anew. Each implement on the OS repository paid seconds for this, even when the audit decision was cached.
