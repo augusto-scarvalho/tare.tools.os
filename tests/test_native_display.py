@@ -84,8 +84,8 @@ def test_redirected_model_listing_is_machine_readable(capsys, monkeypatch, contr
     assert native_agent.main(['--list-models']) == 0
     result = json.loads(capsys.readouterr().out)
     expected = set(LOCAL)
-    if not contributor:
-        expected.remove('openrouter-muse-spark-1-3-contributor')
+    if not contributor:  # Meta Contributor models, through OpenRouter or OpenCode, wait for the data-use choice
+        expected -= {name for name in LOCAL if name.endswith('-contributor')}
     assert {row['deployment'] for row in result['models']} == expected
     assert result['availability'] == 'not_checked'
 
