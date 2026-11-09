@@ -215,9 +215,15 @@ class ConversationHeader:
         health = ('Checking connection…' if self.connection_loading else
                   observation.summary() if observation else 'Connection unchecked')
         # A project's AGENTS.md reaches agents only once adopted in /permissions; unsaid, a planner broke its rules.
-        unread = ('AGENTS.md not loaded · /permissions' if (getattr(self, 'project_admission', None) or {}).get('mode')
-                  != 'adopted' and (Path(root)/'AGENTS.md').is_file() else '')
-        disk = '  ·  '.join(note for note in (getattr(self, '_storage_warning', ''), unread) if note)
+        # The welcome of a new conversation says it, where adoption applies and the sentence fits (this line cut it).
+        unread = ('This project\'s AGENTS.md is not loaded, so agents do not follow its rules. Review it in '
+                  '/permissions to load it in new conversations.' if (getattr(self, 'project_admission', None)
+                  or {}).get('mode') != 'adopted' and (Path(root)/'AGENTS.md').is_file() else '')
+        if (welcome := self.query_one_optional('#welcome', Static)) and getattr(self, '_unread_note', None) != unread:
+            from .console_output import welcome_text
+            self._unread_note = unread
+            welcome.update(welcome_text(unread))
+        disk = getattr(self, '_storage_warning', '')
         suffix = '  ·  '+health+('  ·  '+disk if disk else '')
         value = Text(model, no_wrap=True, overflow='ellipsis')
         value.truncate(max(8, context.size.width-len(suffix)), overflow='ellipsis')
