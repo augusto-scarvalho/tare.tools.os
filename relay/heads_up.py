@@ -208,6 +208,8 @@ def step(tool, args, status, output):
         value['reason'] = str(output.get('reason') or output.get('error') or _last_line(output.get('output')))[:200]
     elif tool in DELEGATED:  # its reads and checks are not this turn's steps, and 'succeeded' is only the call
         said = [f'{key} {output[key]}' for key in ('verdict', 'status', 'reason') if isinstance(output.get(key), str)]
+        if output.get('files') and isinstance(output.get('files_scope'), str):  # without it, a refused candidate read as applied
+            said.append(f"files {output['files_scope']}")
         cited = ', '.join(dict.fromkeys(_paths(output, [])))
         value['summary'] = '; '.join(said + (['cited ' + cited] if cited else []))[:240]
     elif tool in ('verify', 'terminal_read') or status == 'returned':
