@@ -1662,12 +1662,15 @@ def main(argv=None):
             terminal_client = TerminalClient(descriptor)
         execution_entered = True
         emit = None
-        if args.activity_events:
+        repositories = [Path(path).resolve() for path in terminal_config['repositories'].values()]
+        if args.activity_events and repositories:
             # Sessions this conversation delegates to (implementer, explorers, auditor) find this stream through
             # flow_activity.observer and show in the TUI as stage-prefixed rows, as /work and /plan flows do.
+            # The project is the one the TUI opened (--root), so Full output resolves against it.
             from .flow_activity import stream
+            project = next((path for path in repositories if args.root and path == args.root.resolve()), repositories[0])
             emit = activity_scope.enter_context(stream(
-                'conversation', custody, next(iter(terminal_config['repositories'].values())),
+                'conversation', Path(custody).resolve(), project,
                 callback=lambda event: print(encode(event), file=sys.stderr, flush=True), lock=stderr_lock))
         from .execution_scope import current
         result = run_session(config, deployment, custody, prompt,

@@ -240,7 +240,11 @@ def test_conversation_delegations_stream_their_rows_and_full_output_stays_in_the
             and e['activity']['operation'] in {'read', 'edit', 'verify'}]
     assert [row['operation'] for row in rows] == ['read', 'edit', 'verify']
     assert all(row['source']['mode'] == 'conversation' and row['source']['stage'] == 'Implement' for row in rows)
+    agents = [e['activity'] for e in events if e['activity']['operation'] == 'agent_run']
+    assert agents and all(agent['source']['mode'] == 'conversation' for agent in agents)  # its team row too
     assert 'value = 1' in full_output(None, root, rows[0])
+    from relay.native_activity import saved_history
+    assert 'value = 1' in full_output(None, root, saved_history([rows[0]])[0])  # also after a reopen
     with pytest.raises(ValueError, match='another project'):
         full_output(None, root.parent, rows[0])
     (tmp_path/'elsewhere').mkdir()
@@ -306,7 +310,7 @@ def test_conversation_subprocess_streams_its_delegations(tmp_path, monkeypatch, 
     callback, source = seen[0]
     if events:
         assert source['mode'] == 'conversation' and source['stage'] == 'Implement'
-        assert source['owner'] == str(tmp_path/'session') and source['project'] == str(tmp_path.resolve())
+        assert source['owner'] == str((tmp_path/'session').resolve()) and source['project'] == str(tmp_path.resolve())
         err = [line for line in capsys.readouterr().err.splitlines() if line.startswith('{')]
         assert {'channel': 'activity', 'probe': True} in [json.loads(line) for line in err]
     else:
