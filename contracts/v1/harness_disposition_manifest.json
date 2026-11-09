@@ -2151,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 120723,
-      "sha256": "92dd7d13c62463e6f4adcc5d18618eeaadc75ea921cae782d705cff9c3799c1d"
+      "size_bytes": 121770,
+      "sha256": "63bd5211a12971d67c3d64da534d91bd7793577221a3b169f2a06b15af3abe8c"
     },
     {
       "name": "native_artifacts.py",
@@ -3031,8 +3031,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS presents native output; Kernel and Runtime retain execution ownership.",
-      "size_bytes": 37741,
-      "sha256": "01da9ed8cf129f0998ff3b6d2f2ef0fa51f1e7fa5640a0fa9b4c71b364459136"
+      "size_bytes": 37892,
+      "sha256": "f01469c42df4450ce35a7c4e0bffcab4f55d0faa5673d19cee235c1c52071833"
     },
     {
       "name": "console_terminal.py",
@@ -3161,8 +3161,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS projects recorded activity; Runtime and Kernel retain execution ownership.",
-      "size_bytes": 20140,
-      "sha256": "77738c72559f3db55208ccfc018948935dce49af138d5258a0b48c81bf262b0f"
+      "size_bytes": 21143,
+      "sha256": "d09ce0541a4f368721f3227857ff9eb7b2f77260014a13273c23371d89df93c9"
     },
     {
       "name": "console_panels.py",
@@ -3181,8 +3181,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS presents flow stages and receipts while existing owners retain execution, recovery and settlement.",
-      "size_bytes": 7240,
-      "sha256": "787b04bbbc727c0d31a6d998178d264aa21d10809ab9351fd17cda9c54628c91"
+      "size_bytes": 8205,
+      "sha256": "7bf3411a6043faa1966c326a8b3dd1d55b404310e1744de5e2af33014edd170d"
     },
     {
       "name": "console_connection.py",

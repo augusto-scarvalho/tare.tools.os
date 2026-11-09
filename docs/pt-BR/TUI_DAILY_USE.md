@@ -162,6 +162,10 @@ Digite o pedido e pressione **Enter** para enviar. **Shift+Enter** ou **Ctrl+J**
 uma quebra de linha; **Ctrl+Enter** também envia. Nos menus de completar, o Enter aceita primeiro
 o comando ou arquivo selecionado. O coordenador delega o planejamento às rotas de planejador
 configuradas e depois a implementação, a verificação no host e a revisão independente.
+As chamadas de ferramenta de cada sessão delegada aparecem na conversa como linhas
+recolhidas com o nome da etapa, por exemplo `Implement · Edit relay/x.py · Done` ou
+`Explore · Read a.py · Done`, cada uma com **Full output**; as linhas do próprio
+coordenador não têm prefixo.
 
 Texto colado no campo de mensagem continua sendo um rascunho editável. O campo cresce até
 oito linhas. Rascunhos com pelo menos 1 KiB ou mais de oito linhas mostram a contagem de

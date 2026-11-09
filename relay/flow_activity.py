@@ -13,9 +13,10 @@ MODES = {'parallel-explore': ('parallel', '--batch'), 'research-flow': ('researc
 
 
 @contextmanager
-def stream(mode, owner, project, callback=None):
-    """Enable only within this invocation; a worker gets an explicit context copy."""
-    lock = Lock()
+def stream(mode, owner, project, callback=None, lock=None):
+    """Enable only within this invocation; a worker gets an explicit context copy. Yields the serialized emitter;
+    `lock` lets the caller's other writers to the same stream (progress text) share it."""
+    lock = lock or Lock()
 
     def emit(event):
         with lock:
@@ -28,7 +29,7 @@ def stream(mode, owner, project, callback=None):
     token = _stream.set({'mode': mode, 'owner': str(owner), 'project': str(Path(project).resolve()),
                          'callback': emit})
     try:
-        yield
+        yield emit
     finally:
         _stream.reset(token)
 
@@ -57,8 +58,8 @@ def observer(custody, role, *, kind='session'):
     elif source['mode'] == 'research':
         stage = 'Research'
     else:
-        phase = {'planner': 'Plan draft', 'plan-auditor': 'Plan review',
-                 'auditor': 'Code review', 'implementer': 'Implement'}.get(role, role)
+        phase = {'planner': 'Plan draft', 'plan-auditor': 'Plan review', 'auditor': 'Code review',
+                 'implementer': 'Implement', 'explorer': 'Explore'}.get(role, role)
         stage = 'Work '+source['work']+' · '+phase if source['work'] else phase
     source['stage'] = stage
     if current.get('graph_path'):
@@ -103,6 +104,16 @@ def validate_source(source, project):
         if session.parent != directory or session not in allowed or source['kind'] != 'session':
             raise ValueError('The saved tool session does not belong to this plan.')
         return session, project
+    if mode == 'conversation':
+        # A session the conversation delegated to lives under the conversation's custody (units/, delegations/,
+        # reviews/), and the conversation itself is bound to this project. Its own repositories name its candidate
+        # tree, not the project, so no project is returned for the repository check (as for a Work attempt).
+        directory = Path(owner).resolve()
+        repositories = read_json(directory/'native-agent.json', 1024*1024)['config']['repositories'].values()
+        if (session == directory or not session.is_relative_to(directory)
+                or project not in {Path(path).resolve() for path in repositories}):
+            raise ValueError('The saved tool session does not belong to this conversation.')
+        return session, None
     if mode not in {'work', 'sequence'}:
         raise ValueError('Unknown activity owner.')
     work_id = source['work']
