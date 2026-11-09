@@ -210,6 +210,9 @@ def step(tool, args, status, output):
         said = [f'{key} {output[key]}' for key in ('verdict', 'status', 'reason') if isinstance(output.get(key), str)]
         if output.get('files') and isinstance(output.get('files_scope'), str):  # without it, a refused candidate read as applied
             said.append(f"files {output['files_scope']}")
+        stop = output.get('implementation_stop')
+        if isinstance(stop, dict) and isinstance(stop.get('reason'), str):  # an attempt that changed nothing
+            said.append(f"implementer stopped {stop['reason']}")
         cited = ', '.join(dict.fromkeys(_paths(output, [])))
         value['summary'] = '; '.join(said + (['cited ' + cited] if cited else []))[:240]
     elif tool in ('verify', 'terminal_read') or status == 'returned':

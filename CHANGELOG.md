@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The side agent sees when an implementer attempt stopped without changing anything (`implementation_stop`, such as NO_PROGRESS): it read three identical refused attempts and called the coordinator's "stopped without progress" wrong.
 - The consent judge takes an affirmative that says how to carry the work out as allow: "pode tentar de novo, corrigindo esses dois pontos" (yes, fixing those two points) was judged unclear at 0.82, because the options called any added detail a change, and the coordinator asked again for a plain yes or no. The options now call unclear only consent that waits on something still to happen or changes the scope, duration or saving of what was asked, so "only for this session" or "only the docs folder" still ask again.
 - The side agent reads whether a delivery's files were applied: the implement step it sees carries the delivery's file scope ("unapplied candidate, not project files"), which it dropped before, so after an audit stop it wrote that the changes "remain applied" while the project was unchanged.
 - A TUI opened with `--coordinator` shows that coordinator before the first message: the launch banner names it, the header and the model picker read it instead of the saved model preference (Qwen3.8 Low while Gemini 3.8 would run), and Check probes it. The banner names roles that share one pin once and takes a third line, so six pins no longer end at "implementer:".
