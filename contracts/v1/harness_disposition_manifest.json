@@ -3141,8 +3141,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns console presentation and project/session selection; observations never authorize execution.",
-      "size_bytes": 15890,
-      "sha256": "808baae1dc1c0b48044ed2a48ac1f50443304350f529353adf71f53e5e218e89"
+      "size_bytes": 16257,
+      "sha256": "9eea204f03d8de9ef7ff5676d3dd98287d91fa7551f333fcbbd7adaaecdf40d4"
     },
     {
       "name": "cli_discovery.py",
