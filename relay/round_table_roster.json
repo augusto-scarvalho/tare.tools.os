@@ -238,7 +238,7 @@
     },
     "kimi-k3": {
       "display_name": "Kimi K3",
-      "vendor": "Kimi",
+      "vendor": "Moonshot AI",
       "bias_domain": "kimi/kimi-k3",
       "runtime": {
         "kimi-cli": "kimi-code/k3-256k",
@@ -476,7 +476,7 @@
     },
     "kimi-k2.5": {
       "display_name": "Kimi K2.5",
-      "vendor": "Kimi",
+      "vendor": "Moonshot AI",
       "bias_domain": "kimi/kimi-k3",
       "bedrock": {
         "model_id": "moonshotai.kimi-k2.5",
@@ -647,7 +647,7 @@
     "moonshotai/kimi-k3.1-pro": {
       "display_name": "Kimi K3.1 Pro",
       "vendor": "Moonshot AI",
-      "bias_domain": "moonshot/kimi-family",
+      "bias_domain": "kimi/kimi-k3",
       "runtime": {
         "native": "moonshotai/kimi-k3.1-pro",
         "native-http": "moonshotai/kimi-k3.1-pro"
@@ -656,7 +656,7 @@
     "deepseek/deepseek-v4.1-flash-1017": {
       "display_name": "DeepSeek V4.1 Flash 1017",
       "vendor": "DeepSeek",
-      "bias_domain": "deepseek/v4-family",
+      "bias_domain": "deepseek/deepseek",
       "runtime": {
         "native": "deepseek/deepseek-v4.1-flash-1017",
         "native-http": "deepseek/deepseek-v4.1-flash-1017"
@@ -673,8 +673,8 @@
     },
     "mistralai/mistral-large-4-0": {
       "display_name": "Mistral Large 4",
-      "vendor": "Mistral",
-      "bias_domain": "mistral/mistral-family",
+      "vendor": "Mistral AI",
+      "bias_domain": "mistral/mistral",
       "runtime": {
         "native": "mistralai/mistral-large-4-0",
         "native-http": "mistralai/mistral-large-4-0"
@@ -709,8 +709,8 @@
     },
     "x-ai/grok-4.7": {
       "display_name": "Grok 4.7",
-      "vendor": "SpaceXAI",
-      "bias_domain": "xai/grok-family",
+      "vendor": "xAI",
+      "bias_domain": "xai/grok",
       "runtime": {
         "native": "x-ai/grok-4.7",
         "native-http": "x-ai/grok-4.7"
@@ -727,8 +727,8 @@
     },
     "qwen/qwen3.8-omni-flash": {
       "display_name": "Qwen3.8 Omni Flash",
-      "vendor": "Alibaba",
-      "bias_domain": "alibaba/qwen-family",
+      "vendor": "Qwen",
+      "bias_domain": "qwen/qwen-family",
       "runtime": {
         "native": "qwen/qwen3.8-omni-flash",
         "native-http": "qwen/qwen3.8-omni-flash"

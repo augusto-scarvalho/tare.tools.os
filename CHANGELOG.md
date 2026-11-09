@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The roster gives each company one author identity across gateways: Kimi K3.1 Pro on OpenRouter had its own vendor (Moonshot AI) and bias domain apart from Kimi K3 and K2.5 (Kimi), and Grok 4.7 (SpaceXAI), Qwen3.8 Omni Flash (Alibaba), Mistral Large 4 (Mistral) and the DeepSeek V4.1 Flash 1017 snapshot likewise, so tare could pick one to audit the other as an independent, cross-vendor reviewer. They now share vendor and bias domain with their family (Moonshot AI, xAI, Qwen, Mistral AI, DeepSeek); a test pins the pairs and that one bias domain has one vendor.
 - The files pane's TUI tests place the tree cursor through the pane's own `reveal` and wait for it and for the viewer's title, instead of moving the cursor before the tree has drawn its lines (an intermittent failure on a busy laptop).
 - The files pane's viewer names what it shows: "Diff · price.py" for `d` and "Commit 88cab32 · price.py" for a commit of the history, where it said "File ·" for all three.
 - In the files pane, `h` lists the commits that changed a file, following renames (up to 200, newest first), and Enter on one shows what that commit changed in the file, in the viewer F3 uses; Git reads in a worker with literal names and no external diff or textconv program.
