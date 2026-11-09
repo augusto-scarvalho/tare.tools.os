@@ -84,6 +84,7 @@ def test_satellite_sources_through_review(reviewed,paired_packages,satellite_rep
     if scenario=='inventory-error':
         def unavailable(*a,**kw):raise ValueError('local inventory unreadable')
         monkeypatch.setattr(workspace,'submodule_inventory',unavailable)
+        monkeypatch.setattr(workspace,'_INVENTORY',None)  # the snapshot's inventory would otherwise be reused
     fallback=scenario in {'missing-pin','symlink','deadline','inventory-deadline','checkout-error'}
     # A missing first pin with no matching package retains the valid sibling pin;
     # an unrelated runtime root must not switch this context to runtime fallback.

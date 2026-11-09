@@ -1,4 +1,5 @@
 """Bounded Git snapshots and explicit reuse of a reviewed challenger."""
+import copy
 import hashlib
 import filecmp
 import os
@@ -140,6 +141,41 @@ def submodule_inventory(root, *, revision='HEAD', deadline=None):
     return rows
 
 
+# ponytail: one entry for the process. Object availability that changes under the same pins (a gc, a fetch into a
+# satellite) keeps the earlier answer until a pin moves; the candidate's own rev-parse check still runs every review.
+_INVENTORY = None  # ((resolved root, top-level gitlinks), rows)
+
+
+def gitlink_pins(root, *, deadline=None):
+    """The top-level (path, commit) gitlinks, which determine the whole inventory, nested pins included."""
+    deadline = time.monotonic()+300 if deadline is None else deadline
+    pins = []
+    for record in _offline_git(root, 'ls-tree', '-rz', 'HEAD', deadline=deadline).split(b'\0'):
+        if record:
+            header, name = record.split(b'\t', 1)
+            mode, _, oid = header.decode().split()
+            if mode == '160000':
+                pins.append((name.decode('utf-8'), oid))
+    return tuple(sorted(pins))
+
+
+def _remember(root, rows, pins=None):
+    """Keep rows under their top-level pins; the rows name those pins themselves (no git process)."""
+    global _INVENTORY
+    if pins is None:
+        pins = tuple(sorted((r['path'], r['commit']) for r in rows
+                            if not any(r['path'].startswith(o['path']+'/') for o in rows)))
+    _INVENTORY = ((str(Path(root).resolve()), pins), copy.deepcopy(rows))
+
+
+def cached_inventory(root, *, deadline=None):
+    """submodule_inventory once per pin set: a review, its continuations and cached-decision lookups ask again."""
+    pins = gitlink_pins(root, deadline=deadline)
+    if _INVENTORY is None or _INVENTORY[0] != (str(Path(root).resolve()), pins):
+        _remember(root, submodule_inventory(root, deadline=deadline), pins)
+    return copy.deepcopy(_INVENTORY[1])  # callers pop and update rows
+
+
 def populate_submodules(root, destination, *, deadline):
     """Offline checkout with per-pin failure isolation and owned-output cleanup.
 
@@ -151,6 +187,7 @@ def populate_submodules(root, destination, *, deadline):
     except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
         return [{'path': '.', 'commit': 'HEAD', 'initialized': False,
                  'available': False, 'reason': str(exc)[:500]}]
+    _remember(root, rows)  # the review of this candidate reuses it, before checkout marks failures
     failed = []
     for row in rows:
         owned = False
