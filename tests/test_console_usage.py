@@ -118,9 +118,9 @@ def test_flow_usage_available_before_execution_in_choose_flow(tmp_path, monkeypa
             assert app.assistant_session is None
             assert app.open_workbench('usage')
             await pilot.pause()
-            assert len(app.screen.rows) == 3
-            assert app.screen.rows[-1]['id'] == 'behavioral-profiles'
-            assert 'Completed Work executions: 0/10' in app.screen.rows[-1]['body']
+            assert len(app.screen.rows) == 4 and app.screen.rows[-1]['id'] == 'quota'  # the provider readings come last
+            assert app.screen.rows[-2]['id'] == 'behavioral-profiles'
+            assert 'Completed Work executions: 0/10' in app.screen.rows[-2]['body']
             assert 'CPU_INPUT_PREFLIGHT' in app.screen.query_one('#workbench-preview', TextArea).text
             await pilot.click('#workbench-list', offset=(1, 0))
             await pilot.press('down'); await pilot.pause()
@@ -153,7 +153,7 @@ def test_usage_rows_distinguish_recorded_and_unknown_values():
                  "Cache reads: 20; 2 call(s) missing counts", "Cache writes: Unknown",
                  "EUR 0.25, USD 1.50", "Unpriced or partially priced calls: 1",
                  "max model calls: 8", "max total tokens: Unlimited",
-                 "Subscription balance: Unknown"):
+                 'Subscription quota and API credit: see "Provider quota and credit"'):
         assert text in body
     unknown = _body(usage_rows({}))
     assert "Model calls: Unknown" in unknown
@@ -188,6 +188,8 @@ def test_usage_command_preserves_draft_and_scope_and_empty_state(tmp_path, monke
             assert isinstance(panel, WorkbenchPanel)
             assert "No saved native session" in panel.query_one("#workbench-preview", TextArea).text
             assert panel.region.contains_region(panel.query_one("#workbench-preview").region)
+            # The panel also carries what each provider last reported as left, read from the saved readings only.
+            assert panel.rows[-1]["id"] == "quota" and panel.rows[-1]["body"].startswith("No reading yet.")
             await pilot.press("escape"); await pilot.pause()
             assert prompt.text == "unsent draft"
             assert app.workbench_scope() == scope
@@ -195,6 +197,27 @@ def test_usage_command_preserves_draft_and_scope_and_empty_state(tmp_path, monke
             assert isinstance(app.screen, WorkbenchPanel)
             assert not app.backend.launches
     asyncio.run(scenario())
+
+
+def test_usage_panel_shows_the_saved_provider_readings_without_asking_a_provider(tmp_path, monkeypatch):
+    import json
+    from relay import provider_quota
+    from relay.console_workbench import quota_row
+    monkeypatch.setenv("TARE_STORAGE_ROOT", str(tmp_path/"state"))
+    monkeypatch.setattr(provider_quota, "refresh", lambda *a, **k: pytest.fail("the panel asked a provider"))
+    assert quota_row()["body"].startswith("No reading yet.")
+    saved = {"schema": provider_quota.SCHEMA, "observed_at": 1794300000, "accounts": [
+        {"account": "agy", "name": "AGY subscription", "kind": "subscription", "status": "OBSERVED", "buckets": [
+            {"id": "gemini-argon-wtu-weekly", "label": "Gemini 4 Argon, week", "remaining": 0, "resets_at": 1794632256}]},
+        {"account": "openrouter", "name": "OpenRouter", "kind": "credit", "status": "OBSERVED",
+         "credit": {"currency": "USD", "total": 20, "remaining": 5.23}}]}
+    provider_quota.cache_path().parent.mkdir(parents=True)
+    provider_quota.cache_path().write_text(json.dumps(saved), encoding="utf-8")
+    row = quota_row()
+    assert row["label"] == "Provider quota and credit"
+    for text in ("Gemini 4 Argon, week", "none left", "OpenRouter: US$ 5.23 left of US$ 20.00",
+                 "Run tare quota in a terminal to read again."):
+        assert text in row["body"]
 
 
 def test_busy_usage_never_reads_session_and_preserves_draft(tmp_path, monkeypatch):

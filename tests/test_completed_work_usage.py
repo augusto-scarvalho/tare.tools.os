@@ -91,10 +91,10 @@ def test_usage_without_saved_session_keeps_flow_rows_and_never_launches(tmp_path
             app.action_usage(); await pilot.pause()
             assert isinstance(app.screen, WorkbenchPanel)
             assert [r['id'] for r in app.screen.rows] == [
-                'flow-fixture', 'completed-work-review', 'provider-pilot-review', 'behavioral-profiles']
-            assert '1/10' in app.screen.rows[-3]['body']
-            assert '1/5' in app.screen.rows[-2]['body']
-            assert 'Completed Work executions: 1/10' in app.screen.rows[-1]['body']
+                'flow-fixture', 'completed-work-review', 'provider-pilot-review', 'behavioral-profiles', 'quota']
+            assert '1/10' in app.screen.rows[-4]['body']
+            assert '1/5' in app.screen.rows[-3]['body']
+            assert 'Completed Work executions: 1/10' in app.screen.rows[-2]['body']  # the provider readings come last
             assert not app.assistant_session and not backend.launches
             await pilot.press('escape'); await pilot.pause()
             app.controls(True)
@@ -124,7 +124,7 @@ def test_optional_failure_keeps_other_usage_rows(tmp_path, monkeypatch):
             assert app.screen.rows[0]['id'] == 'usage'
             work_row = next(r for r in app.screen.rows if r['id'] == 'completed-work-review')
             assert 'unavailable' in work_row['label']
-            audit_row = app.screen.rows[-1]
+            audit_row = app.screen.rows[-2]  # the provider readings come last
             assert audit_row['id'] == 'behavioral-profiles'
             assert 'controlled_replay' in audit_row['body']
             assert 'confirmed_corrected' in audit_row['body']
