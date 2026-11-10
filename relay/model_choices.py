@@ -93,7 +93,8 @@ def describe(name, value):
         label = value['native_opencode'].get('label', label)
         effort = {'openai-chat': params.get('reasoning_effort'),
                   'openai-responses': params.get('reasoning', {}).get('effort'),
-                  'anthropic-messages': params.get('output_config', {}).get('effort')}.get(protocol) or ''
+                  'anthropic-messages': params.get('output_config', {}).get('effort'),
+                  'gemini-generate-content': params.get('thinkingConfig', {}).get('thinkingLevel')}.get(protocol) or ''
         supported = [e for e in value.get('native_reasoning_levels', []) if e in EFFORTS]
     elif protocol == 'bedrock-converse':
         group, connection = 'AWS Bedrock', 'AWS Bedrock'
@@ -406,6 +407,8 @@ def reasoning_parameters(value, effort):
         params.setdefault('chat_template_kwargs', {})['reasoning_effort'] = effort
     elif effort and protocol == 'anthropic-messages':
         params.setdefault('output_config', {})['effort'] = effort
+    elif effort and protocol == 'gemini-generate-content':
+        params.setdefault('thinkingConfig', {})['thinkingLevel'] = effort
     return params
 
 

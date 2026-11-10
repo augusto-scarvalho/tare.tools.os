@@ -979,6 +979,25 @@
       "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09. Qualified through tare on 2026-11-10 (read, edit, verify, deliver)."
     },
     {
+      "id": "opencode-sub-gemini-4-argon",
+      "model": "gemini-4-argon",
+      "provider": "OpenCode Subscription",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "opencode-sub",
+      "endpoint_domain": "opencode-generate-content",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "reserve",
+      "cost_tier": "flat",
+      "qualified": true,
+      "native_catalog": "opencode-sub-gemini-4-argon",
+      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09. Qualified through tare on 2026-11-10 (read, edit, verify, deliver)."
+    },
+    {
       "id": "opencode-sub-grok-4-7",
       "model": "grok-4.7",
       "provider": "OpenCode Subscription",

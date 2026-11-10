@@ -130,8 +130,9 @@ class ModelPicker(SupportPanel):
         single.update(route['label'])
         note = self.note or ('Apply sets the model for new conversations.\nContinue task reviews a brief for this conversation.'
                 if self.can_continue else 'Applies to new conversations.\nSaved conversations keep their settings.')
-        if not self.note and route.get('protocol') == 'anthropic-messages':
-            note = note.split('\n')[0] + '\nClaude API returns complete responses, without streaming.'
+        if not self.note and route.get('protocol') in {'anthropic-messages', 'gemini-generate-content'}:
+            api = 'Claude API' if route['protocol'] == 'anthropic-messages' else 'Gemini API'
+            note = note.split('\n')[0] + '\n' + api + ' returns complete responses, without streaming.'
         if (route.get('openrouter') or {}).get('notice'):
             note = 'Meta may use prompts, code and responses to improve its products.'
         self.query_one('#model-note', Static).update(note)

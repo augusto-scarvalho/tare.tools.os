@@ -196,7 +196,7 @@ class ConversationModels:
             self.notify('tare auto: ' + str(exc), severity='error')
             return
         current = self.selection()
-        if deployment['native_profile']['protocol'] not in {'vendor-cli', 'anthropic-messages'}:
+        if deployment['native_profile']['protocol'] not in {'vendor-cli', 'anthropic-messages', 'gemini-generate-content'}:
             deployment = {**deployment, 'native_streaming': current.streaming}
         route = deployment['native_auto_selection']['route']
         self.say(f"tare auto: {saved['native_auto_selection']['route']} {why or 'stopped'}; continuing on {route}.")
@@ -292,7 +292,7 @@ class ConversationModels:
             value = preview(source, self.workspace_root,
                             terminal_connection=self.backend.continuity_terminal(source))
             deployment = load_deployment(profile)
-            if deployment['native_profile']['protocol'] not in {'vendor-cli', 'anthropic-messages'}:
+            if deployment['native_profile']['protocol'] not in {'vendor-cli', 'anthropic-messages', 'gemini-generate-content'}:
                 deployment = {**deployment, 'native_streaming': selected.streaming}
             if selected.prompt.strip():
                 value['text'] += '\nNew user instruction:\n'+selected.prompt

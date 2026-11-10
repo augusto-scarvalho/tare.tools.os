@@ -33,7 +33,7 @@ Tare registers only the operator's selection, kept in `scripts/ops/opencode_prof
 
 | Provider | Models |
 | --- | --- |
-| Subscription | Claude Haiku 5.5, DeepSeek V4.1 Flash, GLM 5.3 Flash, GPT-6 Luna, Grok 4.7, Kimi K3, MiMo V2.6 Flash; Gemini 4 Argon waits for a Gemini API codec |
+| Subscription | Claude Haiku 5.5, DeepSeek V4.1 Flash, Gemini 4 Argon, GLM 5.3 Flash, GPT-6 Luna, Grok 4.7, Kimi K3, MiMo V2.6 Flash |
 | API | Claude Fable 5.2, Claude Sonnet 5.5, Gemini 3.8 Flash, GPT-6 Astra, GPT-6.1 Sol, Mistral Large 4, Muse Ember 1.0: selected, without profiles until the account has a balance |
 
 ```powershell
@@ -42,7 +42,7 @@ tare . --implementer opencode-sub/opencode-sub-glm-5-3-flash@high
 ```
 
 A new profile is an implementer and explorer reserve marked `qualified: false`: an exact pin reaches it, and automatic
-selection skips it (`NOT_QUALIFIED_PIN_ONLY`) until a live qualification through tare flips the mark. The seven
+selection skips it (`NOT_QUALIFIED_PIN_ONLY`) until a live qualification through tare flips the mark. The eight
 subscription models above passed it on 2026-11-09 and 2026-11-10 (read a file, edit it, run the verifier, deliver) and are chosen
 automatically, after the other subscriptions' primary routes and before anything paid per token. Among themselves
 they follow the order of their rows in `relay/role_deployments.json`, the operator's choice: cheapest on the plan
@@ -55,8 +55,9 @@ first, by what that same task drew from the allowance.
 | 3 | GLM 5.3 Flash | $0.0008 |
 | 4 | GPT-6 Luna | $0.0021 |
 | 5 | Claude Haiku 5.5 | $0.0036 |
-| 6 | Grok 4.7 | $0.0602 |
-| 7 | Kimi K3 | $0.1023 |
+| 6 | Gemini 4 Argon | $0.0426 |
+| 7 | Grok 4.7 | $0.0602 |
+| 8 | Kimi K3 | $0.1023 |
 
 The task is small, so the table orders cost, not quality: every model completed it in four calls. The reasoning
 levels are the ones OpenCode lists for that model. A profile starts at `high` when the model lists it; otherwise it
@@ -95,6 +96,12 @@ conversation. It also carries `User-Agent: tare/<release>`. On the final call, a
 delivery tool. It does so only for models whose OpenCode entry accepts a named `tool_choice`; the others are reminded
 by the budget notice. A Messages profile (Claude Haiku) also marks its prompt for caching (`cache_control`), which
 that API requires; the other families cache on their own.
+
+Gemini 4 Argon runs on Gemini's own `generateContent` API, the only one OpenCode lists for it, and returns complete
+responses without streaming. Its cache is slow to start: a repeated prompt was read from cache only some 30 to 60
+seconds after it was first sent, so the four-call qualification session read 6% of its input from cache where the
+other models read 59% to 85%. A long session should read more; a short one draws its whole prompt from the allowance
+on every call.
 
 Usage comes from OpenCode's own counters (`usage.opencode.tokens`: input without cache, cache reads and writes,
 output with reasoning). The charge is `usage.cost`: $0 for subscription use within the allowance, the balance charge

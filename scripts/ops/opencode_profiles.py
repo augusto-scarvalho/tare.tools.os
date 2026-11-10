@@ -31,7 +31,8 @@ MODELS = {'sub': ('claude-haiku-5-5', 'deepseek-v4.1-flash', 'gemini-4-argon', '
                   'grok-4.7', 'kimi-k3', 'mimo-v2.6-flash'),
           'api': ('claude-fable-5-2', 'claude-sonnet-5-5', 'gemini-3.8-flash', 'gpt-6-astra', 'gpt-6.1-sol',
                   'mistral-large-4', 'muse-ember-1.0')}
-PROTOCOLS = {'chat-completions': 'openai-chat', 'responses': 'openai-responses', 'messages': 'anthropic-messages'}
+PROTOCOLS = {'chat-completions': 'openai-chat', 'responses': 'openai-responses', 'messages': 'anthropic-messages',
+             'generate-content': 'gemini-generate-content'}
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 OUTPUT_CAP = 16384  # the convention of the other API profiles; the provider maximum stays in its list
 # canonical_id prefix -> roster vendor and bias domain of that family (one author identity across gateways)
@@ -85,7 +86,8 @@ def parameters(protocol, levels):
     if 'high' not in levels:
         return cache  # the provider's default reasoning
     return {**cache, **{'openai-chat': {'reasoning_effort': 'high'}, 'openai-responses': {'reasoning': {'effort': 'high'}},
-                        'anthropic-messages': {'output_config': {'effort': 'high'}}}[protocol]}
+                        'anthropic-messages': {'output_config': {'effort': 'high'}},
+                        'gemini-generate-content': {'thinkingConfig': {'thinkingLevel': 'high'}}}[protocol]}
 
 
 def profile(row, family, api, key, plan, today):
