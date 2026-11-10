@@ -2681,8 +2681,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 179731,
-      "sha256": "52acbabc52e068c20700e2a95fbeac768d2fb03083c0bbd8a449b219c39b9d81"
+      "size_bytes": 179943,
+      "sha256": "bc4a828a94a16c72378d0bfc02c4b96ff6506196a00888e14708d6266da9c641"
     },
     {
       "name": "native_display.py",
@@ -3091,8 +3091,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns selected context presentation and conversation composition; file reads and execution stay in Kernel and Runtime.",
-      "size_bytes": 11398,
-      "sha256": "fdf3fefd02e54973f63fe29f65c166807cce11b9df94f631979be7539699abaa"
+      "size_bytes": 11385,
+      "sha256": "dd3cd29e296d07ad98d1059fd48fdbe8d2662c6e300abf9b2f6c57292520989c"
     },
     {
       "name": "console_navigation.py",
@@ -3101,8 +3101,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS presents existing conversation checkpoints; execution and recovery remain with their owners.",
-      "size_bytes": 23399,
-      "sha256": "a594524b0ae1c5bf4097efd7b1ec746560366ab353fb47cbf238d62a08dae7e3"
+      "size_bytes": 23421,
+      "sha256": "b336d6bb39ece116c76a83ff212021a1d6c40cc143af941c390bbf31dad94a24"
     },
     {
       "name": "console_appearance.py",

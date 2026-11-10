@@ -109,7 +109,7 @@ class FileContext:
         if token is None:
             return None
         try:
-            root=str(Path(self.query_one('#root',Input).value).resolve())
+            root=str(Path(self.workspace_field()).resolve())
         except (ValueError,OSError):
             return None
         if Path(root)!=Path(self.workspace_root):
