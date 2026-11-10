@@ -1,10 +1,11 @@
 """What each provider reports as left: subscription quota and API credit, read without a model call.
 
-tare quota [--json] [--cached]
+tare quota [--json] [--cached] [--set ACCOUNT AMOUNT]
 
 Claude, Codex and AGY answer from their own CLI: the plan's windows, each with the models it covers and when it
 resets. OpenRouter answers its credit endpoint. A provider that publishes no balance for an ordinary key is listed as
-not reported. Every reading names its source and the time it was observed; nothing here is estimated.
+not reported, unless the operator stated its balance (--set): tare then shows that balance less the dollars its own
+sessions recorded since. Every reading names its source and the time it was observed.
 """
 import argparse
 import json
@@ -22,7 +23,8 @@ SCHEMA = 'tare.tools/provider-quota/1'
 WINDOWS = {300: '5 h', 10080: 'week', '5h': '5 h', 'weekly': 'week'}
 # Credentials whose provider has no balance endpoint for an ordinary key (checked 2026-11-10).
 UNREPORTED = {'OPENAI_API_KEY': ('openai-api', 'OpenAI API'), 'ANTHROPIC_API_KEY': ('anthropic-api', 'Claude API'),
-              'GEMINI_API_KEY': ('gemini-api', 'Gemini API'), 'AWS_BEARER_TOKEN_BEDROCK': ('bedrock', 'AWS Bedrock')}
+              'GEMINI_API_KEY': ('gemini-api', 'Gemini API'), 'AWS_BEARER_TOKEN_BEDROCK': ('bedrock', 'AWS Bedrock'),
+              'OPENCODE_API_KEY': ('opencode-api', 'OpenCode API')}
 CLAUDE_LINE = re.compile(r'Current ([^:(]+?)(?: \(([^)]+)\))?: (\d+(?:\.\d+)?)% used(?:\W+resets (.+))?$')
 CLAUDE_RESET = re.compile(r'(?:([A-Z][a-z]{2}) (\d{1,2}),? (?:at )?)?(\d{1,2})(?::(\d{2}))?\s*([ap]m)(?: \(([^)]+)\))?')
 MONTHS = ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
@@ -242,9 +244,17 @@ def refresh(now=None):
         accounts.append({'account': 'opencode-sub', 'name': 'OpenCode subscription', 'kind': 'subscription',
                          'status': 'NOT_REPORTED', 'observed_at': now, 'reason':
                          'OpenCode publishes no remaining allowance; a reply only says what it used.'})
-    accounts += [{'account': account, 'name': name, 'kind': 'credit', 'status': 'NOT_REPORTED', 'observed_at': now,
-                  'reason': 'This provider has no balance endpoint for an API key.'}
-                 for variable, (account, name) in UNREPORTED.items() if secret(variable)]
+    from . import provider_spend
+    for variable, (account, name) in UNREPORTED.items():
+        credit = provider_spend.remaining(account)
+        reading = {'account': account, 'name': name, 'kind': 'credit', 'observed_at': now}
+        if credit:
+            accounts.append({**reading, 'status': 'DECLARED', 'credit': credit,
+                             'source': 'the stated balance less the spend tare recorded since'})
+        elif secret(variable) and account != 'opencode-api':  # OpenCode's key is listed as its subscription above
+            accounts.append({**reading, 'status': 'NOT_REPORTED', 'reason':
+                             'This provider has no balance endpoint for an API key. State the balance with '
+                             'tare quota --set ' + account + ' AMOUNT and tare counts down from it.'})
     report = {'schema': SCHEMA, 'observed_at': now, 'accounts': accounts}
     from .relay_io import write_json_atomic
     path = cache_path()
@@ -322,13 +332,16 @@ def render(report, now=None):
         lines += ([''] if lines else []) + [title]
         for account in accounts:
             head = '  ' + account['name'] + (' · ' + account['plan'] if account.get('plan') else '')
-            if account['status'] != 'OBSERVED':
+            if account['status'] not in ('OBSERVED', 'DECLARED'):
                 lines.append(head + ': ' + ('not reported. ' if account['status'] == 'NOT_REPORTED' else 'no reading. ')
                              + account['reason'])
                 continue
             credit = account.get('credit')
             if credit:
-                lines.append(f"{head}: US$ {credit['remaining']:.2f} left of US$ {credit['total']:.2f}")
+                left = 'none' if credit['remaining'] <= 0 else f"US$ {credit['remaining']:.2f}"
+                stated = (f", stated {clock(credit['declared_at'], now)}, less tare's own use since"
+                          if account['status'] == 'DECLARED' else '')
+                lines.append(f"{head}: {left} left of US$ {credit['total']:.2f}{stated}")
                 continue
             lines.append(head)
             for row in account.get('buckets', []):
@@ -345,8 +358,16 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog='tare quota', description=__doc__.split('\n\n')[0])
     parser.add_argument('--json', action='store_true', help='print the readings as JSON')
     parser.add_argument('--cached', action='store_true', help='show the last readings without asking the providers')
+    parser.add_argument('--set', nargs=2, metavar=('ACCOUNT', 'AMOUNT'),
+                        help="state an API account's balance in dollars as of now; tare counts its own spend down from it")
     args = parser.parse_args(argv)
-    report = cached() if args.cached else refresh()
+    if args.set:
+        from . import provider_spend
+        try:
+            provider_spend.declare(args.set[0], float(args.set[1]))
+        except ValueError as exc:
+            parser.error(str(exc))
+    report = cached() if args.cached and not args.set else refresh()
     if report is None:
         print('No reading yet. Run tare quota.', file=sys.stderr)
         return 1
