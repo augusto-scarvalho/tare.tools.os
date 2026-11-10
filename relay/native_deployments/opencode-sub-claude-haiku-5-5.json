@@ -10,7 +10,7 @@
     "endpoint": "https://opencode.ai/inference/go/anthropic/v1",
     "context_window": 1000000,
     "output_tokens": 16384,
-    "parameters_json": "{\"output_config\": {\"effort\": \"high\"}}",
+    "parameters_json": "{\"cache_control\": {\"type\": \"ephemeral\"}, \"output_config\": {\"effort\": \"high\"}}",
     "session_header": "x-opencode-session",
     "billing_sources": [
       "free",

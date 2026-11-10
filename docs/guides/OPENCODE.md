@@ -77,7 +77,8 @@ would be taken for the API); start them again on an `opencode-sub-*` profile.
 Each request carries `x-opencode-session`, the tare session's opaque key, so OpenCode can route and cache by
 conversation. It also carries `User-Agent: tare/<release>`. On the final call, a delegated role normally names the
 delivery tool. It does so only for models whose OpenCode entry accepts a named `tool_choice`; the others are reminded
-by the budget notice.
+by the budget notice. A Messages profile (Claude Haiku) also marks its prompt for caching (`cache_control`), which
+that API requires; the other families cache on their own.
 
 Usage comes from OpenCode's own counters (`usage.opencode.tokens`: input without cache, cache reads and writes,
 output with reasoning). The charge is `usage.cost`: $0 for subscription use within the allowance, the balance charge
