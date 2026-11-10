@@ -92,6 +92,13 @@ def disable_installed_flow_assessor(monkeypatch, tmp_path_factory):
     for name in ('NO_PROXY', 'no_proxy'):
         monkeypatch.setenv(name, 'localhost,127.0.0.1,::1')
     monkeypatch.setenv('PYTHON_KEYRING_BACKEND', 'keyring.backends.null.Keyring')
+    # The quota readings taken at startup must not run the operator's vendor CLIs; a test replaces these to read.
+    from relay import provider_quota
+
+    def no_vendor_cli(*args, **kwargs):
+        raise OSError('tests do not run vendor CLIs')
+    monkeypatch.setattr(provider_quota, 'run', no_vendor_cli)
+    monkeypatch.setattr(provider_quota, 'codex_limits', no_vendor_cli)
 
 
 LOOPBACK = ('127.', '::1', 'localhost')

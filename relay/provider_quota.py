@@ -267,6 +267,46 @@ def cached():
     return report if isinstance(report, dict) and report.get('schema') == SCHEMA else None
 
 
+def covers(account, bucket, model):
+    """Whether a window limits this model. A window tare cannot place limits nothing: it is shown, never acted on."""
+    scope = bucket.get('scope')
+    if scope is None:
+        return True  # the account's general window
+    if account == 'agy':  # AGY's groups by their ids: Argon's own quota, the third-party models, the other Gemini models
+        key = str(bucket.get('id') or '')
+        if key.startswith('gemini-argon'):
+            return 'argon' in model
+        if key.startswith('3p-'):
+            return not model.startswith('gemini')
+        return key.startswith('gemini-') and model.startswith('gemini') and 'argon' not in model
+    return scope in model  # Claude's "Fable" window; a Codex limit named after a model
+
+
+def spent_until(deployment, now=None):
+    """Until when the saved readings say this route's quota is spent, else None. Only a window read at zero counts,
+    until its own reset (half an hour when the provider gave none); a window with anything left leaves the route."""
+    from .turn_engine import USAGE_LIMIT_DEFAULT_SECONDS, usage_account
+    account, report = usage_account(deployment), cached()
+    if account is None or not report:
+        return None
+    now = time.time() if now is None else now
+    model = str((deployment.get('native_profile') or {}).get('model') or '').lower()
+    found = []
+    try:
+        for reading in report['accounts']:
+            if reading.get('account') != account or reading.get('status') != 'OBSERVED':
+                continue
+            for bucket in reading.get('buckets') or []:
+                if bucket['remaining'] > 0 or not covers(account, bucket, model):
+                    continue
+                until = bucket.get('resets_at') or reading['observed_at'] + USAGE_LIMIT_DEFAULT_SECONDS
+                if now < until <= now + 7 * 86400:  # the bound of a limit a failed call records
+                    found.append(until)
+    except (KeyError, TypeError):
+        return None  # an unreadable record is unknown, not a limit
+    return max(found) if found else None
+
+
 def clock(epoch, now):
     when = datetime.fromtimestamp(epoch)
     return when.strftime('%H:%M' if when.date() == datetime.fromtimestamp(now).date() else '%a %d %b %H:%M')

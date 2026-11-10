@@ -457,6 +457,11 @@ class ConversationWorkbench:
             self.call_from_thread(self.set_status, message)
         if message := summary(r for r in report if r['status'] == 'failed'):
             self.call_from_thread(self.notify, message, severity='warning', timeout=12)
+        try:  # what each provider has left, so a spent plan is not chosen; no model call
+            from . import provider_quota
+            provider_quota.refresh()
+        except Exception:  # optional: without a reading tare learns a spent plan from the failed call, as before
+            pass
 
     def check_storage_space(self):
         from .storage import GIB, low_space
