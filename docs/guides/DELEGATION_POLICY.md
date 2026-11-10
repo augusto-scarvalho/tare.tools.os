@@ -71,7 +71,7 @@ Four tiers of marginal cost, written in `cost_tier` in
 | Tier | What it is | Deployments |
 |---|---|---|
 | `free` | local GPU, no money or quota | `local-qwen` |
-| `flat` | subscription plan, zero marginal cost until the quota runs out | `claude-cli`, `codex-cli`, `gemini-cli`, `kimi-cli` |
+| `flat` | subscription plan, zero marginal cost until the quota runs out | `claude-cli`, `codex-cli`, `gemini-cli`, `kimi-cli`, `opencode-sub-*` (reserves) |
 | `free-credit` | AWS credit, reserve | `bedrock-*-explorer` |
 | `metered` | paid per token | `openrouter-glm-auditor` |
 
@@ -91,7 +91,9 @@ Rules that come with it:
 - **Plan quota is the scarce resource, not money.** It resets every cycle;
   what is spent on exploration is missing for judgment at the end of the cycle. That is why
   the `free-credit` reserve ranks above `flat` for exploring, even though it is an
-  older-generation model.
+  older-generation model. The OpenCode subscription reserves are the exception: that plan serves
+  only implementers and explorers, so using it takes nothing from judgment, and automatic
+  selection reaches them before the credit when the local model is unavailable.
 - **Independence matters more than the ladder.** If the cheapest route that clears the
   floor is in the same bias domain as the author, go up one step. Never down.
 - **Moving up a tier requires a reason recorded in the receipt:** quota exhausted,

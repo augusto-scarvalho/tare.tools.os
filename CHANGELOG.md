@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The seven OpenCode subscription models are chosen automatically: each passed a live qualification through tare on 2026-11-09 or 2026-11-10 (Claude Haiku 5.5 three times out of three after the final-newline and verifier fixes, Kimi K3 for the first time), so their role rows say `qualified: true`. They stay implementer and explorer reserves of the subscription tier and follow the operator's order, cheapest on the plan first: DeepSeek V4.1 Flash, MiMo V2.6 Flash, GLM 5.3 Flash, GPT-6 Luna, Claude Haiku 5.5, Grok 4.7, Kimi K3. A newly generated row still starts unqualified.
 - The OpenCode Claude Haiku profile marks its prompt for caching (`cache_control`), as the Claude API profiles do: the Messages API caches only a marked prompt, so every turn was billed in full. In the qualification task of 2026-11-10 the session read 0 of 15,700 input tokens from cache without the mark and 11,177 of 15,562 with it, and used half the plan allowance.
 - The Kernel pin moves to fbcd54d: a read page that reaches the end of a file says whether the file ends with a line break (`final_newline`), which the numbered lines cannot show, so a model keeps the ending instead of doubling it (Claude Haiku 5.5 did in the OpenCode qualification).
 - The delegated-audit trace test stands in for the usage-limit note with the arguments the audit loop now passes (its reset and scope), where its stand-in took only the route.

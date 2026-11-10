@@ -41,8 +41,24 @@ tare models --provider opencode-sub --role implementer
 tare . --implementer opencode-sub/opencode-sub-glm-5-3-flash@high
 ```
 
-Each profile is an implementer and explorer reserve marked `qualified: false`: an exact pin reaches it, and automatic
-selection skips it (`NOT_QUALIFIED_PIN_ONLY`) until a live qualification through tare flips the mark. The reasoning
+A new profile is an implementer and explorer reserve marked `qualified: false`: an exact pin reaches it, and automatic
+selection skips it (`NOT_QUALIFIED_PIN_ONLY`) until a live qualification through tare flips the mark. The seven
+subscription models above passed it on 2026-11-09 and 2026-11-10 (read a file, edit it, run the verifier, deliver) and are chosen
+automatically, after the other subscriptions' primary routes and before anything paid per token. Among themselves
+they follow the order of their rows in `relay/role_deployments.json`, the operator's choice: cheapest on the plan
+first, by what that same task drew from the allowance.
+
+| Order | Model | Allowance the task used |
+| --- | --- | --- |
+| 1 | DeepSeek V4.1 Flash | $0.0004 |
+| 2 | MiMo V2.6 Flash | $0.0005 |
+| 3 | GLM 5.3 Flash | $0.0008 |
+| 4 | GPT-6 Luna | $0.0021 |
+| 5 | Claude Haiku 5.5 | $0.0036 |
+| 6 | Grok 4.7 | $0.0602 |
+| 7 | Kimi K3 | $0.1023 |
+
+The task is small, so the table orders cost, not quality: every model completed it in four calls. The reasoning
 levels are the ones OpenCode lists for that model. A profile starts at `high` when the model lists it; otherwise it
 runs at the provider's default until you choose a level.
 
