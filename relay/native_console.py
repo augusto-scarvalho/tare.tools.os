@@ -1244,13 +1244,17 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
     def session_options(rows):
         return [(r['session_id'][:6]+' · '+r['task'][:24], r['session']) for r in rows]
 
+    def workspace_field(self):
+        # An emptied field means the open project. Windows refuses an empty working directory (WinError 123).
+        return self.query_one('#root', Input).value.strip() or self.workspace_root
+
     def selection(self):
         def value(name):
             v = self.query_one('#'+name, Select).value
             return '' if v is EMPTY_SELECTION else str(v)
         def field(name):
             return self.query_one('#'+name, Input).value.strip()
-        return Selection(root=field('root'), mode=value('mode'), role=value('session-role'), deployment=value('model'),
+        return Selection(root=self.workspace_field(), mode=value('mode'), role=value('session-role'), deployment=value('model'),
             execution_policy={'coordinator': self.conversation_coordinator},
             resume_coordinator_seconds=self.resume_coordinator_seconds,
             resume_coordinator_calls=self.resume_coordinator_calls,
@@ -1717,7 +1721,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             return None
         try:
             mode = self.query_one('#mode', Select).value
-            root = str(Path(self.query_one('#root', Input).value.strip()).resolve())
+            root = str(Path(self.workspace_field()).resolve())
             if root != str(Path(self.workspace_root).resolve()) or mode not in {'assistant', 'session'}:
                 return None
             session = self.assistant_session if mode == 'assistant' else self.query_one('#session', Select).value

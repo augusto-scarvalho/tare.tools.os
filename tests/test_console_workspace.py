@@ -231,3 +231,26 @@ def test_a_queued_work_selection_does_not_come_back_after_a_workspace_change(wor
             await pilot.pause()
             assert not app.selection().work
     asyncio.run(scenario())
+
+
+def test_an_emptied_workspace_field_means_the_open_project(workspace):
+    project, preferred, fallback = workspace
+    roots = []
+
+    class Recording(FakeBackend):
+        async def launch(self, args, root):
+            roots.append(root)
+            self.process.done.set()
+            return await super().launch(args, root)
+
+    async def scenario():
+        app = WorkConsole(project, backend=Recording(), storage_preferred=preferred, storage_fallback=fallback)
+        async with app.run_test(size=(130, 48)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one('#root', Input).value = ''
+            assert app.selection().root == app.workspace_root == str(project.resolve())
+            app.query_one('#prompt', TextArea).load_text('Task')
+            app.execute(False)
+            await app.workers.wait_for_complete()
+            assert roots == [app.workspace_root]
+    asyncio.run(scenario())

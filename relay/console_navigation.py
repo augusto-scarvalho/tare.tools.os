@@ -202,7 +202,7 @@ class RenameDialog(ModalScreen):
 
         try:
             underlying = app.screen_stack[0] if getattr(app, 'screen_stack', None) else app
-            root_input = underlying.query_one('#root', Input).value.strip()
+            root_input = underlying.query_one('#root', Input).value.strip() or app.workspace_root
             if str(Path(root_input).resolve()) != self.captured_root:
                 self.show_error('Workspace changed after dialog opened.')
                 self.reset_saving()
