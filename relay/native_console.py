@@ -3015,8 +3015,10 @@ def main(argv=None):
     from .native_installation import default_storage, workspace_storage
     preferred = args.storage_root if args.storage_root is not None else default_storage()
     try:
+        # Refuse a folder that contains tare's own history (the home folder) here, not as a crash while the TUI mounts.
+        chosen = workspace_storage(args.root, preferred)
         if args.storage_root is not None:  # pins name profiles in the history folder this TUI's sessions use
-            os.environ['TARE_STORAGE_ROOT'] = str(workspace_storage(args.root, preferred))
+            os.environ['TARE_STORAGE_ROOT'] = str(chosen)
         try:scope=from_arguments(args)
         except ValueError as error:
             # A new history folder has CLI profiles only once discovery writes them (no model call). Sessions
