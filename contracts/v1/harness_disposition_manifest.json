@@ -2481,8 +2481,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns the product turn coordination shared by its frontends; the agent loop stays in the runtime.",
-      "size_bytes": 92918,
-      "sha256": "f1c4a063a524eb3adf620c8817d4fbcd14a83917f1b5892fc0b4f4eb3781eff1"
+      "size_bytes": 93173,
+      "sha256": "9caebf9562b972c6f91a5abe1d6d0515fd95b5c64b34c2036ea583b4ebaaabd4"
     },
     {
       "name": "audit_report.py",
@@ -2991,8 +2991,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator-facing entry points; Runtime retains session execution.",
-      "size_bytes": 26883,
-      "sha256": "a45a955497d9bd75614454a7cf7c17a7542d1be738105cd3fecb87ef9e31af5c"
+      "size_bytes": 27161,
+      "sha256": "f64786dcdcfd6731b73cef5d4eeeec9d748190b5244abacb61d3546a36c0551e"
     },
     {
       "name": "copilot_mode.py",
@@ -3421,8 +3421,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator views and draft composition; Runtime retains execution authority.",
-      "size_bytes": 35390,
-      "sha256": "f3acf463702d8049d7059ef50deb7c9798cd292aac989c15ac880a1d9e9e0c46"
+      "size_bytes": 35689,
+      "sha256": "426bd925e7b0ac252a4b210fcd9c2de403839d3e19e7c96f9a9796258feb1704"
     },
     {
       "name": "adaptive_routes.py",
@@ -4391,8 +4391,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 15712,
-      "sha256": "04420ebfd7f96cd75922bdf43cc8076f8996927d9b7914473453d15cadfb698c"
+      "size_bytes": 17811,
+      "sha256": "43cad3f8560375994d1fc788756546f0a8f44c547a25104ae908b2dfcbdcdefd"
     }
   ]
 }

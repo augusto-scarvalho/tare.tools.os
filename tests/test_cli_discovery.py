@@ -132,11 +132,14 @@ def test_console_reports_news_in_status_and_only_failures_as_notice(tmp_path, mo
         async with app.run_test(size=(120, 30)) as pilot:
             await app.workers.wait_for_complete(); await pilot.pause()
             return str(app.query_one('#status', Static).render()), shown
+    readings = []
+    monkeypatch.setattr('relay.provider_quota.refresh', lambda: readings.append('read'))
     status, shown = asyncio.run(scenario(True))
     assert 'Claude CLI ready · 1 model(s) added' in status
     assert shown == ['AGY CLI found but not usable: AUTH_FAILED']
+    assert readings == ['read']  # the same start reads what each provider has left
     status, shown = asyncio.run(scenario(False))  # tests and fixtures never probe
-    assert 'Claude CLI' not in status and shown == []
+    assert 'Claude CLI' not in status and shown == [] and readings == ['read']
 
 
 def test_codex_models_follow_codex_and_only_discovery_profiles_are_updated(tmp_path, monkeypatch):

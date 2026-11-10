@@ -512,6 +512,11 @@ def discover_clis():
         print('tare serve: ' + (line or 'vendor CLIs unchanged'), flush=True)
     except Exception as exc:  # discovery is optional; the local and API routes keep working
         print(f'tare serve: CLI discovery failed: {type(exc).__name__}: {str(exc)[:200]}', flush=True)
+    try:  # what each provider has left, so a spent plan is not chosen; no model call
+        from . import provider_quota
+        provider_quota.refresh()
+    except Exception:  # optional: without a reading a spent plan is learned from the failed call, as before
+        pass
 
 
 def default_models():

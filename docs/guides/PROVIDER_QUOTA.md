@@ -45,6 +45,24 @@ Gemini 4 Argon each have their own windows; on a Pro plan Argon's weekly quota i
 Times are shown in this machine's time zone. Claude prints its reset as text ("Nov 15, 5:59pm"); tare reads it as
 the next such time and keeps the original words in the JSON (`resets`).
 
+## What tare does with a reading
+
+A window read at zero takes the routes it covers out of every selection until that window resets, exactly as a
+failed call would have, but before any call is made. tare shows the route as out of usage until that time
+(`QUOTA_EXHAUSTED` in a selection receipt).
+
+- Only zero counts. A window with anything left changes nothing, however little.
+- Only the routes the window covers leave. With AGY's Gemini 4 Argon quota spent, the other Gemini models and the
+  Claude and GPT models through AGY stay. With Claude's Fable window spent, Opus, Sonnet and Haiku stay. A spent
+  Codex window leaves both the Codex CLI and the Codex native routes.
+- A window tare cannot place (a new group, a Codex limit id that names no model) is shown and never acted on.
+- A zero without a reset time holds for half an hour from the reading.
+
+The readings are taken when the console or `tare serve` starts, right after the vendor CLIs are discovered, and
+whenever you run `tare quota`. If you buy credits or use one of Codex's free limit resets, run `tare quota`: a
+route that a reading had taken out is back at once. A limit that a failed call recorded still waits for the reset
+time that call reported.
+
 ## What is not reported
 
 - **OpenCode** has no endpoint for the remaining allowance or balance (its documentation, read on 2026-11-10). Each

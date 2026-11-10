@@ -342,12 +342,13 @@ def note_usage_limit(deployment, resets_at=None, now=None, kind=None):
 
 
 def usage_limited(deployment, now=None):
-    """Until when this deployment's account, or its own model, has no usage left (note_usage_limit), else None."""
+    """Until when this deployment's account, or its own model, has no usage left, else None: a failed call said so
+    (note_usage_limit), or the provider's own quota reading shows a window of this model at zero (tare quota)."""
     keys = usage_keys(deployment)
     try:
         limits = json.loads(usage_limits_path().read_text(encoding='utf-8')) if keys else {}
     except (OSError, ValueError):
-        return None
+        limits = {}
     now = datetime.now(timezone.utc).timestamp() if now is None else now
     # Match the writer's seven-day bound. Invalid cached metadata is unknown, like an
     # unreadable record; synthesizing now + grace here would renew its block forever.
@@ -355,6 +356,10 @@ def usage_limited(deployment, now=None):
              if isinstance(limits, dict) and isinstance(entry := limits.get(key), dict)
              and type(entry.get('until')) in (int, float) and math.isfinite(entry['until'])
              and now < entry['until'] <= now + 7*86400]
+    if keys:
+        from .provider_quota import spent_until
+        if read := spent_until(deployment, now):
+            found.append(read)
     return max(found) if found else None
 
 

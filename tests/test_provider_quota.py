@@ -146,3 +146,49 @@ def test_the_table_says_what_is_left_when_it_resets_and_what_is_not_reported(pro
 def test_tare_quota_is_a_registered_command():
     import tare_ops
     assert 'relay.provider_quota' in open(tare_ops.__file__, encoding='utf-8').read()
+
+
+def route(model, endpoint='cli://agy', protocol='vendor-cli'):
+    return {'id': model + '-route', 'native_profile': {'model': model, 'endpoint': endpoint, 'protocol': protocol}}
+
+
+def test_a_window_read_at_zero_leaves_only_the_routes_it_covers(providers):
+    from relay import turn_engine
+    provider_quota.refresh(now=NOW)
+    argon = datetime.fromisoformat('2026-11-14T04:57:36+00:00').timestamp()
+    spent = {name: provider_quota.spent_until(route(name), NOW) for name in (
+        'gemini-4-argon-high', 'gemini-3.8-flash-high', 'claude-opus-5-5-high', 'gpt-oss-120b-medium')}
+    # AGY: Argon's own weekly quota is spent; the Gemini group and the third-party group have room.
+    assert spent == {'gemini-4-argon-high': argon, 'gemini-3.8-flash-high': None, 'claude-opus-5-5-high': None,
+                     'gpt-oss-120b-medium': None}
+    # Claude: the Fable window is spent, the all-models window is not.
+    fable, opus = route('claude-fable-5-1', 'cli://claude'), route('claude-opus-5-5', 'cli://claude')
+    assert provider_quota.spent_until(opus, NOW) is None
+    assert datetime.fromtimestamp(provider_quota.spent_until(fable, NOW)).strftime('%m-%d %H:%M') == '11-15 18:00'
+    # Codex: the general weekly window is spent for the CLI and the native route alike.
+    native = route('gpt-6.1-sol', 'https://chatgpt.com/backend-api/codex', 'openai-codex-responses')
+    assert provider_quota.spent_until(route('gpt-6-astra', 'cli://codex'), NOW) == 1794518478
+    assert provider_quota.spent_until(native, NOW) == 1794518478
+    # The route selectors read it through the limit a failed call would have recorded.
+    assert turn_engine.usage_limited(route('gemini-4-argon-high'), now=NOW) == argon
+    assert turn_engine.usage_limited(route('gemini-3.8-flash-high'), now=NOW) is None
+    assert turn_engine.usage_limited(route('gemini-4-argon-high'), now=argon + 1) is None  # the window reset
+
+
+def test_a_reading_never_parks_on_a_guess(providers):
+    provider_quota.refresh(now=NOW)
+    # A limit id tare cannot place (Codex "premium") is shown, never acted on; a route without an account has none.
+    assert not provider_quota.covers('codex', {'scope': 'premium', 'id': 'premium:5 h'}, 'gpt-6.1-sol')
+    assert not provider_quota.covers('agy', {'scope': 'New group', 'id': 'future-weekly'}, 'gemini-4-argon-high')
+    assert provider_quota.spent_until(route('glm-5.3', 'https://openrouter.ai/api/v1', 'openai-chat'), NOW) is None
+    # A zero without a reset time holds for half an hour from the reading, not for ever.
+    report = provider_quota.cached()
+    for account in report['accounts']:
+        for bucket in account.get('buckets', []):
+            bucket['resets_at'] = None
+    provider_quota.cache_path().write_text(json.dumps(report), encoding='utf-8')
+    assert provider_quota.spent_until(route('gemini-4-argon-high'), NOW + 60) == NOW + 1800
+    assert provider_quota.spent_until(route('gemini-4-argon-high'), NOW + 1801) is None
+    provider_quota.cache_path().write_text('{"schema": "tare.tools/provider-quota/1", "accounts": [{"account": "agy", '
+                                           '"status": "OBSERVED", "buckets": [{}]}]}', encoding='utf-8')
+    assert provider_quota.spent_until(route('gemini-4-argon-high'), NOW) is None  # an unreadable record is unknown
