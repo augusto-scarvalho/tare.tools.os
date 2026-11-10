@@ -150,13 +150,18 @@ def test_the_subscription_is_a_plan_and_the_api_is_paid_per_token():
     assert {row['via'] for row in listed} == {'api'} and len(listed) == len(SUBSCRIPTION)
 
 
-def test_every_subscription_model_is_a_pinnable_reserve_until_qualified():
+# The operator's order (2026-11-10): what the same task drew from the plan allowance, cheapest first.
+PREFERENCE = ['deepseek-v4-1-flash', 'mimo-v2-6-flash', 'glm-5-3-flash', 'gpt-6-luna', 'claude-haiku-5-5', 'grok-4-7',
+              'kimi-k3']
+
+
+def test_every_subscription_model_is_a_qualified_reserve_in_the_operators_order():
     from relay.inference_allowlist import exact, matches
     from relay.native_routes import configured
     rows = [r for r in configured()['deployments'] if r['id'].startswith('opencode-')]
-    assert sorted(r['id'] for r in rows) == ['opencode-sub-' + n for n in SUBSCRIPTION]
+    assert [r['id'] for r in rows] == ['opencode-sub-' + n for n in PREFERENCE] and sorted(PREFERENCE) == SUBSCRIPTION
     assert {(tuple(r['roles']), r['kind'], r['cost_tier'], r['quota_domain'], r['qualified']) for r in rows} == {
-        (('implementer', 'explorer'), 'reserve', 'flat', 'opencode-sub', False)}
+        (('implementer', 'explorer'), 'reserve', 'flat', 'opencode-sub', True)}
     pin = exact('opencode-sub/opencode-sub-glm-5-3-flash@high')
     assert matches(pin, 'opencode-sub-glm-5-3-flash', native_catalog.select('opencode-sub-glm-5-3-flash'))
 
@@ -170,12 +175,25 @@ def test_a_subscription_limit_parks_the_whole_plan(tmp_path, monkeypatch):
     assert turn_engine.usage_limited(api_profile(), now=1001.0) is None  # the balance is another bill
 
 
-def test_unqualified_rows_are_pinned_never_chosen_automatically(monkeypatch):
+def test_qualified_rows_are_chosen_in_order_and_an_unqualified_one_only_by_pin(monkeypatch):
     from relay import native_routes
     monkeypatch.setattr(native_routes, 'credential_available', lambda name: True)
+    chosen, selection = native_routes.ranked('explorer')
+    ours = [c for c in selection['candidates'] if c['deployment'].startswith('opencode-')]
+    assert all(c['eligible'] for c in ours), ours
+    assert [d['id'] for d in chosen if d['id'].startswith('opencode-')] == ['opencode-sub-' + n for n in PREFERENCE]
+    # A reserve of the subscription tier: after every primary subscription route, before anything paid per token.
+    tiers = [(c['cost_tier'], c['deployment'].startswith('opencode-')) for c in
+             sorted((c for c in selection['candidates'] if c['eligible']), key=lambda c: c['position'])]
+    assert tiers.index(('flat', True)) > max(i for i, t in enumerate(tiers) if t == ('flat', False) or t[0] == 'free')
+    assert all(t[0] in {'free-credit', 'metered'} for t in tiers[tiers.index(('flat', True)) + len(ours):])
+    table = native_routes.configured()
+    table['deployments'] = [{**r, 'qualified': False} if r['id'] == 'opencode-sub-kimi-k3' else r
+                            for r in table['deployments']]
+    monkeypatch.setattr(native_routes, 'configured', lambda: table)
     _, selection = native_routes.ranked('explorer')
-    reasons = {c['deployment']: c['reason'] for c in selection['candidates'] if c['deployment'].startswith('opencode-')}
-    assert len(reasons) == len(SUBSCRIPTION) and set(reasons.values()) == {'NOT_QUALIFIED_PIN_ONLY'}
+    reasons = {c['deployment']: c.get('reason') for c in selection['candidates'] if not c['eligible']}
+    assert reasons['opencode-sub-kimi-k3'] == 'NOT_QUALIFIED_PIN_ONLY'
 
 
 def test_a_spent_plan_or_a_balance_charge_is_a_limit_on_that_model_only():

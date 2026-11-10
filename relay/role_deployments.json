@@ -884,25 +884,6 @@
       "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality."
     },
     {
-      "id": "opencode-sub-claude-haiku-5-5",
-      "model": "claude-haiku-5.5",
-      "provider": "OpenCode Subscription",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-sub",
-      "endpoint_domain": "opencode-messages",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-sub-claude-haiku-5-5",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
       "id": "opencode-sub-deepseek-v4-1-flash",
       "model": "deepseek-v4.1-flash",
       "provider": "OpenCode Subscription",
@@ -917,85 +898,9 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
-      "qualified": false,
+      "qualified": true,
       "native_catalog": "opencode-sub-deepseek-v4-1-flash",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-sub-glm-5-3-flash",
-      "model": "glm-5.3-flash",
-      "provider": "OpenCode Subscription",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-sub",
-      "endpoint_domain": "opencode-chat-completions",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-sub-glm-5-3-flash",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-sub-gpt-6-luna",
-      "model": "gpt-6-luna",
-      "provider": "OpenCode Subscription",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-sub",
-      "endpoint_domain": "opencode-responses",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-sub-gpt-6-luna",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-sub-grok-4-7",
-      "model": "grok-4.7",
-      "provider": "OpenCode Subscription",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-sub",
-      "endpoint_domain": "opencode-responses",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-sub-grok-4-7",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
-    },
-    {
-      "id": "opencode-sub-kimi-k3",
-      "model": "kimi-k3",
-      "provider": "OpenCode Subscription",
-      "transport": "API",
-      "runner": "native-http",
-      "quota_domain": "opencode-sub",
-      "endpoint_domain": "opencode-chat-completions",
-      "effort": null,
-      "roles": [
-        "implementer",
-        "explorer"
-      ],
-      "kind": "reserve",
-      "cost_tier": "flat",
-      "qualified": false,
-      "native_catalog": "opencode-sub-kimi-k3",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
+      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09. Qualified through tare on 2026-11-09 (read, edit, verify, deliver)."
     },
     {
       "id": "opencode-sub-mimo-v2-6-flash",
@@ -1012,9 +917,104 @@
       ],
       "kind": "reserve",
       "cost_tier": "flat",
-      "qualified": false,
+      "qualified": true,
       "native_catalog": "opencode-sub-mimo-v2-6-flash",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
+      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09. Qualified through tare on 2026-11-09 (read, edit, verify, deliver)."
+    },
+    {
+      "id": "opencode-sub-glm-5-3-flash",
+      "model": "glm-5.3-flash",
+      "provider": "OpenCode Subscription",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "opencode-sub",
+      "endpoint_domain": "opencode-chat-completions",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "reserve",
+      "cost_tier": "flat",
+      "qualified": true,
+      "native_catalog": "opencode-sub-glm-5-3-flash",
+      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09. Qualified through tare on 2026-11-09 (read, edit, verify, deliver)."
+    },
+    {
+      "id": "opencode-sub-gpt-6-luna",
+      "model": "gpt-6-luna",
+      "provider": "OpenCode Subscription",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "opencode-sub",
+      "endpoint_domain": "opencode-responses",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "reserve",
+      "cost_tier": "flat",
+      "qualified": true,
+      "native_catalog": "opencode-sub-gpt-6-luna",
+      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09. Qualified through tare on 2026-11-09 (read, edit, verify, deliver)."
+    },
+    {
+      "id": "opencode-sub-claude-haiku-5-5",
+      "model": "claude-haiku-5.5",
+      "provider": "OpenCode Subscription",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "opencode-sub",
+      "endpoint_domain": "opencode-messages",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "reserve",
+      "cost_tier": "flat",
+      "qualified": true,
+      "native_catalog": "opencode-sub-claude-haiku-5-5",
+      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09. Qualified through tare on 2026-11-10 (read, edit, verify, deliver)."
+    },
+    {
+      "id": "opencode-sub-grok-4-7",
+      "model": "grok-4.7",
+      "provider": "OpenCode Subscription",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "opencode-sub",
+      "endpoint_domain": "opencode-responses",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "reserve",
+      "cost_tier": "flat",
+      "qualified": true,
+      "native_catalog": "opencode-sub-grok-4-7",
+      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09. Qualified through tare on 2026-11-09 (read, edit, verify, deliver)."
+    },
+    {
+      "id": "opencode-sub-kimi-k3",
+      "model": "kimi-k3",
+      "provider": "OpenCode Subscription",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "opencode-sub",
+      "endpoint_domain": "opencode-chat-completions",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "reserve",
+      "cost_tier": "flat",
+      "qualified": true,
+      "native_catalog": "opencode-sub-kimi-k3",
+      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09. Qualified through tare on 2026-11-10 (read, edit, verify, deliver)."
     }
   ],
   "cost_tiers": {

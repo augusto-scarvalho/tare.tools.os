@@ -26,6 +26,11 @@ def test_auto_resolves_current_profile_and_reserve(selection, role):
     for row in selection['deployments']:
         if row['model'] == 'qwen-3.8-27b': row['roles'].remove(role)
     reserve = native_catalog.select('auto', role=role)
+    # A subscription reserve comes before credit: the first OpenCode subscription model in the operator's order.
+    assert reserve['native_profile'] == native_catalog.select('opencode-sub-deepseek-v4-1-flash')['native_profile']
+    for row in selection['deployments']:
+        if row['id'].startswith('opencode-sub-'): row['roles'].remove(role)
+    reserve = native_catalog.select('auto', role=role)
     assert reserve['native_profile'] == native_catalog.select('bedrock-opus')['native_profile']
     assert all(r['reason'].startswith('RUNNER_NOT_SUPPORTED') for r in reserve['native_selection']['candidates']
                if r['deployment'].endswith('-cli') and r['reason'] != 'ROLE_NOT_CONFIGURED')
