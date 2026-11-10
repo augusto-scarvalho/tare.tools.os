@@ -115,7 +115,7 @@ def main(argv=None):
         from . import relay_mesh
         sys.modules['relay_mesh'] = relay_mesh
         root = Path(selected).resolve()
-        graph_optional = remaining[:1] in (['models'], ['console'], ['agent'], ['sessions'], ['plan'], ['profiles'], ['mcp'], ['serve'], ['ci'], ['gpu'], ['fleet'], ['setup'],
+        graph_optional = remaining[:1] in (['models'], ['console'], ['agent'], ['sessions'], ['plan'], ['profiles'], ['mcp'], ['serve'], ['ci'], ['gpu'], ['quota'], ['fleet'], ['setup'],
                                            ['parallel-explore'], ['research-flow'], ['findings'], ['workflow'])
         if not (root/'work-graph.json').is_file() and not graph_optional:
             raise ValueError('native_os_control_root_missing')

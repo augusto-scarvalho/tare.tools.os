@@ -227,7 +227,7 @@ def main(argv=None):
     # Pass through existing public CLIs; no second parser or policy for them.
     owners = {"findings": "relay.planning_findings", "research-flow": "relay.research_flow", "parallel-explore": "relay.parallel_explore", "sequence": "relay.work_sequence", "decision": "relay.human_wait", "work-control": "relay.work_control", "console": "relay.native_console", "plan": "relay.native_plan", "prepare": "relay.work_prepare", "revise": "relay.work_change", "telemetry": "scripts.round_table.report_round_table_telemetry",
               "sessions": "relay.native_sessions", "setup": "relay.environment", "review": "relay.native_review", "message": "relay.native_messages",
-              "profiles": "relay.native_profiles", "mcp": "relay.native_mcp", "serve": "relay.native_serve", "ci": "relay.ci_watch", "gpu": "relay.gpu", "fleet": "relay.fleet", "storage": "relay.storage",
+              "profiles": "relay.native_profiles", "mcp": "relay.native_mcp", "serve": "relay.native_serve", "ci": "relay.ci_watch", "gpu": "relay.gpu", "quota": "relay.provider_quota", "fleet": "relay.fleet", "storage": "relay.storage",
               "agent": "relay.agent", "audit": "relay.audit_cases", "audit-evidence": "relay.native_audit_access", "hook": "compute_plane.hook_cli",
               "backlog": "graph_backlog.cli", "specgraph": "specgraph.cli",
               "test-selection": "relay.test_selection_pilot", "workflow": "relay.workflow_compiler"}
@@ -240,7 +240,7 @@ def main(argv=None):
     from relay.model_choices import PIN_HELP, help_summary
     parser = argparse.ArgumentParser(prog="tare-ops", description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Terminal UI: tare opens the current folder; tare PATH opens another folder (quote paths with spaces). Explicit form: console [--root PATH]. Owner CLIs: profiles ..., mcp ..., serve ..., sessions ..., review ..., telemetry ..., agent ..., audit ..., hook <vendor> ..., backlog ..., specgraph ... "
+        epilog="Terminal UI: tare opens the current folder; tare PATH opens another folder (quote paths with spaces). Explicit form: console [--root PATH]. Owner CLIs: profiles ..., quota, mcp ..., serve ..., sessions ..., review ..., telemetry ..., agent ..., audit ..., hook <vendor> ..., backlog ..., specgraph ... "
                "Local delegation: explore, evidence, research (see docs/guides/DELEGATION_POLICY.md)\n"+
                (help_summary() if any(v in ('--help', '-h') for v in argv) else PIN_HELP))
     sub = parser.add_subparsers(dest="action", required=True)

@@ -71,6 +71,8 @@ documents are the reference.
   and cache for HTTP API providers.
 - [OpenCode: subscription and pay-per-token API](guides/OPENCODE.md): the two OpenCode providers, the operator's model
   list, key setup, what tare sends and records, and how the profiles are refreshed.
+- [Provider quota and credit](guides/PROVIDER_QUOTA.md): `tare quota`, what each subscription and API account
+  reports as left, where each reading comes from and what no provider reports.
 - [OpenRouter models and routes per role](guides/OPENROUTER_MODELS.md): the operator-approved OpenRouter
   connection contracts.
 - [Internal Amazon Bedrock catalog](guides/BEDROCK_CATALOG.md): why each Bedrock model was selected; the live
