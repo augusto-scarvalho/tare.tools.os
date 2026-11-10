@@ -88,7 +88,7 @@ def usage_rows(report):
         lines.append('Provider estimate (not billed): '+', '.join(f'{currency} {amount}' for currency, amount in sorted(estimates.items())))
     unpriced = report.get('unpriced_or_partial_calls')
     lines.append('Unpriced or partially priced calls: '+(str(unpriced) if unpriced is not None else 'Unknown'))
-    lines.append('Subscription balance: Unknown (not queried)')
+    lines.append('Subscription quota and API credit: see "Provider quota and credit" in this panel')
     limits = report.get('effective_limits')
     lines.append('Configured limits:')
     if isinstance(limits, dict) and limits:
@@ -97,6 +97,15 @@ def usage_rows(report):
     else:
         lines.append('  Unknown')
     return [{'id': 'usage', 'label': 'Conversation totals and limits', 'body': '\n'.join(lines)}]
+
+
+def quota_row():
+    """What each provider last reported as left (tare quota), as saved: opening the panel asks no provider."""
+    from . import provider_quota
+    report = provider_quota.cached()
+    return {'id': 'quota', 'label': 'Provider quota and credit', 'body': (
+        provider_quota.render(report) + '\nRun tare quota in a terminal to read again.' if report else
+        'No reading yet. tare reads each provider when the console starts; run tare quota in a terminal to read now.')}
 
 
 def observed_tasks(history, *, busy=False, result=None, profile=''):
@@ -115,7 +124,7 @@ def observed_tasks(history, *, busy=False, result=None, profile=''):
                     summary += f"\n{label}: {count.get('known_sum', 0)} recorded; {count.get('unknown_calls', 'unknown')} call(s) without counts"
                 elif count is not None:
                     summary += f'\n{label}: {count}'
-        summary += '\nSubscription balance: unknown'
+        summary += '\nSubscription quota: see /usage'
     rows = [{'id': 'current', 'label': 'Current execution · '+('Running' if busy else 'Idle'),
              'body': ('Running; cancellation applies to the whole current execution.' if busy else
                       'No execution is running in this console.')+'\n\n'+
@@ -599,6 +608,7 @@ class ConversationWorkbench:
                             panel.render_rows()
                 self.push_screen(DeliveryReviewPanel(control, row['review_targets']), saved)
 
+            rows = [*rows, quota_row()]
             panel = WorkbenchPanel('Usage · conversation, flow selection and saved Work', rows, kind=kind,
                                    review=review_delivery if not self.busy and not self.sending_message else None)
         elif kind == 'artifacts':

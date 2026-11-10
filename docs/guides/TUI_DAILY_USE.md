@@ -207,15 +207,18 @@ panel before **Add to draft** discards the unsubmitted comment.
 ### Inspect usage, tasks, tools and project skills
 
 - `/usage` shows recorded conversation calls, tokens, cache reads/writes, known
-  costs by currency and configured limits. Missing counts, unpriced calls and
-  subscription balance remain explicit; no vendor balance is queried. Reopen
+  costs by currency and configured limits. Missing counts and unpriced calls
+  remain explicit. Its last row, **Provider quota and credit**, shows what each
+  subscription and API account last reported as left, with the time of the
+  reading; opening the panel asks no provider (see
+  [Provider quota and credit](PROVIDER_QUOTA.md)). Reopen
   the panel after a running task finishes to read its saved totals.
 - `/tasks` shows the current execution and retained tool activity grouped by
   child session/stage. It refreshes while open and can cancel the **whole current
   execution**. A successful tool operation does not mean that a task was accepted.
   This is the current console's observed history, not a global background-agent
   registry. Profile and recorded call/token/cache totals appear when available;
-  subscription balance remains unknown.
+  the subscription quota is in `/usage`.
 - `/tools` shows the saved conversation's effective tools and scope, or the
   pending scope for a new conversation, plus project instructions. Use
   `/permissions` to change defaults for future conversations.

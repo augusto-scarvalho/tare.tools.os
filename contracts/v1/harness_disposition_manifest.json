@@ -3421,8 +3421,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator views and draft composition; Runtime retains execution authority.",
-      "size_bytes": 35689,
-      "sha256": "426bd925e7b0ac252a4b210fcd9c2de403839d3e19e7c96f9a9796258feb1704"
+      "size_bytes": 36265,
+      "sha256": "d86de75f41f4786b15344324bf636f038b552ed8e8728f6b6652539d9278738e"
     },
     {
       "name": "adaptive_routes.py",

@@ -9,6 +9,9 @@ tare quota --cached   # the last readings, without asking again
 tare quota --json     # the same readings as JSON
 ```
 
+In the console, `/usage` shows the last readings in its row **Provider quota and credit**. Opening the panel asks
+no provider; the readings are the ones taken at start or by the last `tare quota`.
+
 ```text
 Subscriptions
   Claude subscription
