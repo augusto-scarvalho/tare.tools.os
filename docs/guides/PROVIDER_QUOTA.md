@@ -70,7 +70,18 @@ time that call reported.
 ## What is not reported
 
 - **OpenCode** has no endpoint for the remaining allowance or balance (its documentation, read on 2026-11-10). Each
-  reply only says how much of the allowance it used.
+  reply only says how much of the allowance it used. tare shows the two facts it has instead:
+
+  ```text
+  OpenCode subscription: not reported. OpenCode publishes no remaining allowance; a reply only says what it used.
+      A refused call left this account out until 21:05.
+      Allowance tare's own sessions used: US$ 0.38 in the last 5 h, US$ 1.88 in 7 days, US$ 1.88 in 30 days.
+  ```
+
+  The first line appears when OpenCode refused a call for a spent plan and gave the time to try again. The second
+  adds up what each reply said it used; it is not a share of what is left. OpenCode's documentation gives limits
+  per model, but the refusal observed on 2026-11-09 stopped every paid model of the plan at once, so tare does not
+  turn these dollars into a percentage. It counts tare's sessions only.
 - **OpenAI, Anthropic, Gemini and AWS Bedrock** have no balance endpoint for an ordinary API key.
 - **Kimi** has no reader yet.
 
@@ -101,6 +112,9 @@ the charge of each of its calls to `<storage>/serve/provider-spend.jsonl` when i
 
 A reading that fails (the CLI is signed out, the provider does not answer in time) is shown as "no reading" with
 the reason, and the other providers are still read.
+
+Any subscription that a refused call left out says so under its windows ("A refused call left this account out
+until ..."), because that limit holds even when a later reading shows room.
 
 ## The saved readings
 

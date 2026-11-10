@@ -272,3 +272,33 @@ def test_a_real_session_adds_its_charge_to_the_account(setup, monkeypatch):
     result = native_agent.run_session(config, deployment, custody, 'Change and verify a.py', client=Paid(steps=steps()))
     assert result['status'] == 'PROPOSED'
     assert provider_spend.spent('opencode-api', 0) == round(0.002 * result['model_calls'], 6)
+
+
+def test_opencode_shows_what_tare_used_of_the_allowance_and_a_plan_a_refused_call_left_out(providers, tmp_path):
+    from relay import native_catalog, provider_spend, turn_engine
+    report = provider_quota.refresh(now=NOW)
+    plan = next(a for a in report['accounts'] if a['account'] == 'opencode-sub')
+    assert plan['status'] == 'NOT_REPORTED' and plan['notes'] == [
+        "tare's own sessions recorded no allowance use in the last 30 days."]
+    # Each reply of the subscription says what it used of the plan's allowance; it charges nothing.
+    glm = native_catalog.select('opencode-sub-glm-5-3-flash')
+
+    def calls(*allowances):
+        return {'calls': [{'call_id': f's/model/{i}', 'cost': {'currency': 'USD', 'known_amount': '0', 'opencode': {
+            'billing_source': 'go', 'allowance': value}}} for i, value in enumerate(allowances, 1)]}
+    old, recent = tmp_path/'old', tmp_path/'recent'
+    old.mkdir(); recent.mkdir()
+    assert provider_spend.post(glm, calls('1.5'), old, now=NOW - 3 * 86400) == 1
+    assert provider_spend.post(glm, calls('0.25', None, '0.125'), recent, now=NOW - 3600) == 2
+    assert provider_spend.spent('opencode-sub', 0) == 0  # allowance is not a charge
+    turn_engine.note_usage_limit(glm, resets_at=NOW + 7200, now=NOW)  # a refused call: GoUsageLimitError
+    report = provider_quota.refresh(now=NOW)
+    plan = next(a for a in report['accounts'] if a['account'] == 'opencode-sub')
+    assert plan['allowance_used'] == {'5h': 0.375, '7d': 1.875, '30d': 1.875} and plan['parked_until'] == NOW + 7200
+    text = provider_quota.render(report, now=NOW)
+    assert 'OpenCode subscription: not reported.' in text
+    assert '    A refused call left this account out until 10:00.' in text
+    assert "    Allowance tare's own sessions used: US$ 0.38 in the last 5 h, US$ 1.88 in 7 days, US$ 1.88 in 30 days." in text
+    # Other subscriptions say so too; an account no refused call touched says nothing.
+    assert 'parked_until' not in next(a for a in report['accounts'] if a['account'] == 'agy')
+    assert provider_quota.parked('opencode-sub', NOW + 7201) is None
