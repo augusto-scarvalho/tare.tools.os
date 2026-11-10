@@ -98,7 +98,11 @@ by the budget notice. A Messages profile (Claude Haiku) also marks its prompt fo
 that API requires; the other families cache on their own.
 
 Gemini 4 Argon runs on Gemini's own `generateContent` API, the only one OpenCode lists for it, and returns complete
-responses without streaming. Its cache is slow to start: a repeated prompt was read from cache only some 30 to 60
+responses without streaming. It is a frontier model, so its route is also a planner and auditor reserve, like the
+other Gemini 4 Argon routes; it completed a typed audit and a typed plan through tare on 2026-11-10. Automatic
+selection therefore picks it to review another vendor's work before any route paid per token (the operator's
+choice of 2026-11-10: subscription before paid). It never reviews a Google model's work, and an exact pin
+(`--auditor`) selects another reviewer. Its cache is slow to start: a repeated prompt was read from cache only some 30 to 60
 seconds after it was first sent, so the four-call qualification session read 6% of its input from cache where the
 other models read 59% to 85%. A long session should read more; a short one draws its whole prompt from the allowance
 on every call.

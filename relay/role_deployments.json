@@ -988,6 +988,9 @@
       "endpoint_domain": "opencode-generate-content",
       "effort": null,
       "roles": [
+        "planner",
+        "plan-auditor",
+        "auditor",
         "implementer",
         "explorer"
       ],
@@ -995,7 +998,7 @@
       "cost_tier": "flat",
       "qualified": true,
       "native_catalog": "opencode-sub-gemini-4-argon",
-      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09. Qualified through tare on 2026-11-10 (read, edit, verify, deliver)."
+      "note": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09. Qualified through tare on 2026-11-10 (read, edit, verify, deliver; a typed audit; a typed plan)."
     },
     {
       "id": "opencode-sub-grok-4-7",

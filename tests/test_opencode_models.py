@@ -165,6 +165,10 @@ def test_gemini_runs_on_its_own_api_without_streaming():
     assert profile.endpoint == 'https://opencode.ai/inference/go/google/v1beta'
     assert profile.billing_sources == ('free', 'go', 'go-plus') and profile.session_header == 'x-opencode-session'
     assert not native_generation.supports_streaming(value)
+    # A planner must run at high reasoning or above, and reads the level in this API's own spelling.
+    from relay import planner_policy
+    from relay.execution_team import reasoning
+    assert reasoning(value) == 'high' == reasoning(planner_policy.effective(value))
     from relay.opencode import names_delivery_tool
     assert names_delivery_tool(value)
 
@@ -174,8 +178,11 @@ def test_every_subscription_model_is_a_qualified_reserve_in_the_operators_order(
     from relay.native_routes import configured
     rows = [r for r in configured()['deployments'] if r['id'].startswith('opencode-')]
     assert [r['id'] for r in rows] == ['opencode-sub-' + n for n in PREFERENCE] and sorted(PREFERENCE) == SUBSCRIPTION
-    assert {(tuple(r['roles']), r['kind'], r['cost_tier'], r['quota_domain'], r['qualified']) for r in rows} == {
-        (('implementer', 'explorer'), 'reserve', 'flat', 'opencode-sub', True)}
+    assert {(r['kind'], r['cost_tier'], r['quota_domain'], r['qualified']) for r in rows} == {
+        ('reserve', 'flat', 'opencode-sub', True)}
+    # Gemini 4 Argon is a frontier model, so its route also plans and audits (the role policy's rule).
+    assert {r['id']: r['roles'] for r in rows if r['roles'] != ['implementer', 'explorer']} == {
+        'opencode-sub-gemini-4-argon': ['planner', 'plan-auditor', 'auditor', 'implementer', 'explorer']}
     pin = exact('opencode-sub/opencode-sub-glm-5-3-flash@high')
     assert matches(pin, 'opencode-sub-glm-5-3-flash', native_catalog.select('opencode-sub-glm-5-3-flash'))
 
