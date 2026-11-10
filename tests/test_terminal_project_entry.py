@@ -125,3 +125,13 @@ def test_managed_status_remains_explicit_and_does_not_open_tui(tmp_path, monkeyp
     monkeypatch.setattr(native_product.subprocess, 'call', lambda *a, **k: pytest.fail('status opened a TUI'))
     assert native_product.main(['--home', str(tmp_path), 'status']) == 0
     assert '"current": null' in capsys.readouterr().out
+
+
+def test_a_folder_holding_tare_history_is_refused_before_the_tui(opened, monkeypatch, tmp_path, capsys):
+    _, calls = opened
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'managed'/'state'))
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path/'AppData'/'Local'))  # the fallback history folder lives here
+    with pytest.raises(SystemExit) as error:
+        native_installation.main([str(tmp_path)])  # like starting tare in the home folder
+    assert error.value.code == 2 and not calls
+    assert 'The workspace contains its history folder' in capsys.readouterr().err
