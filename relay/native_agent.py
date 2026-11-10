@@ -1199,6 +1199,16 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                     result['usage_limit'] = {**limit, 'account': usage_account(deployment),
                                              'until': note_usage_limit(deployment, limit.get('resets_at'),
                                                                        kind=limit.get('kind'))}
+                else:
+                    # The OpenCode subscription's allowance is gone: its models are left until it resets.
+                    from .opencode import plan_limit
+                    limit = plan_limit(deployment, last, raw_observations, time.time())
+                    if limit:
+                        from .turn_engine import note_usage_limit, usage_account
+                        result['failure_code'] = 'PLAN_USAGE_LIMIT'
+                        result['usage_limit'] = {**limit, 'account': usage_account(deployment),
+                                                 'until': note_usage_limit(deployment, limit['resets_at'],
+                                                                           kind=limit['kind'])}
             if spend_policy:
                 result['spend'] = model.report()
             messages = [record.event() for record in journal.snapshot().records

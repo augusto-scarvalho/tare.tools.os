@@ -63,7 +63,7 @@ def test_conditional_ranking_fallback_contract_and_replay(routing, monkeypatch):
     assert [r['deployment'] for r in role['fallbacks']] == ['one', 'three']
     assert 'candidate_2' not in routing.calls[1]['options']
     assert set(routing.calls[2]['options']) == {'candidate_3', 'insufficient'}
-    assert role['fallbacks'][0]['when'] == ['HTTP_429', 'HTTP_502', 'HTTP_503', 'HTTP_504']
+    assert role['fallbacks'][0]['when'] == ['HTTP_429', 'HTTP_502', 'HTTP_503', 'HTTP_504', 'PLAN_USAGE_LIMIT']
     assert 'ADMITTED_SUCCESSOR' in role['fallbacks'][0]['requires']
     assert role['escalation'] is None
     assert plan['input_tokens'] == 300 and plan['inference_attempts'] == 3

@@ -690,15 +690,16 @@ def reference_sources_current(config,sources):
 
 def quota_before_review(job, result):
     """An explicit first-call quota rejection produced no review to resample."""
-    if not result or result.get('failure_code') != 'CLI_USAGE_LIMIT':
+    from .turn_engine import USAGE_LIMIT_CODES
+    if not result or result.get('failure_code') not in USAGE_LIMIT_CODES:
         return False
     from compute_plane.native_journal import NativeJournal
     try:
         events = [r.event() for r in NativeJournal(job/'session/journal.jsonl').snapshot().records]
     except (OSError, ValueError):
         return False
-    return (any(e['kind'] == 'model_failed' and e.get('code') == 'CLI_USAGE_LIMIT' for e in events)
-            and not any(e['kind'] == 'model_returned' for e in events))
+    return (any(e['kind'] == 'model_failed' and e.get('code') in ('CLI_USAGE_LIMIT', 'HTTP_429', 'BILLING_SOURCE_REFUSED')
+                for e in events) and not any(e['kind'] == 'model_returned' for e in events))
 
 
 def packet_preflight(tree,changed):

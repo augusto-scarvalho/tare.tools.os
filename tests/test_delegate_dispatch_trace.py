@@ -47,7 +47,7 @@ def audit_env(tmp_path, monkeypatch):
     monkeypatch.setattr(native_agent, 'session_root', lambda: tmp_path/'sessions')
     monkeypatch.setattr(turn_engine, 'policy', lambda: {'auditor_selection': 'cross_vendor_frontier', 'auditor_effort': 'high'})
     monkeypatch.setattr(turn_engine, 'with_effort', effort_applied)
-    monkeypatch.setattr(turn_engine, 'note_usage_limit', lambda deployment: None)
+    monkeypatch.setattr(turn_engine, 'note_usage_limit', lambda deployment, *args, **kwargs: None)
     monkeypatch.setattr('relay.native_artifacts.read_input', lambda path: {'artifact': {'payload': {
         'verdict': 'ACCEPT', 'summary': 'Fixture review', 'findings': [], 'remaining': []}}})
     return tmp_path

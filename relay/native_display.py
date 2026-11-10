@@ -70,10 +70,18 @@ def provider_limit_guidance(result):
     if 'CLI_QUALIFICATION_INTERRUPTED' in (result.get('reason'), result.get('failure_code')):
         return (f'The check of {cli}\'s new release was cut short, so your request was not sent. Resume to '
                 'check it again and continue.')
-    if result.get('failure_code') == 'CLI_USAGE_LIMIT':
+    if result.get('failure_code') in ('CLI_USAGE_LIMIT', 'PLAN_USAGE_LIMIT'):
         limit = result.get('usage_limit') or {}
         until = limit.get('until')
         when = f" until {time.strftime('%H:%M', time.localtime(until))}" if type(until) in (int, float) else ''
+        if limit.get('cause') == 'unknown_billing_source':
+            return (f"OpenCode billed this call to '{limit.get('billing_source')}', which the subscription profiles do "
+                    f"not accept, so the session stopped and tare leaves this model{when}. If you changed plans, add "
+                    "that name to BILLING in scripts/ops/opencode_profiles.py and regenerate the profiles.")
+        if limit.get('cause') == 'billed_to_balance':
+            return (f"OpenCode charged this call to the account {limit.get('billing_source')} because the plan's "
+                    f"allowance for this model is spent and Extra Usage is on; the session stopped and tare leaves "
+                    f"this model{when}. Turn Extra Usage off in the OpenCode Console to stop such charges.")
         return (f"The {limit.get('account') or 'provider'} account behind this model has no usage left{when}; "
                 'tare auto and tare serve skip its routes until then. Choose another model, or use Model → '
                 'Continue task to move this conversation to another provider with a compact brief.')
@@ -258,7 +266,8 @@ def conversation_result(result, *, exit_code=None):
         notices.insert(0, limit_guidance)
     elif status != 'PROPOSED':
         meanings = {'GPU_STATUS_UNKNOWN': 'the local model is unavailable',
-                    'CLI_USAGE_LIMIT': 'the quota or usage limit is exhausted'}
+                    'CLI_USAGE_LIMIT': 'the quota or usage limit is exhausted',
+                    'PLAN_USAGE_LIMIT': "this model's plan allowance is exhausted"}
         recorded = list(dict.fromkeys(str(value) for value in (
             result.get('reason'), result.get('failure_code')) if value))
         reason = '; '.join(meanings.get(value, '('+value+')') for value in recorded)

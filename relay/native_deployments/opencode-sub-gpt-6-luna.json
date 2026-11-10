@@ -12,6 +12,11 @@
     "output_tokens": 16384,
     "parameters_json": "{\"reasoning\": {\"effort\": \"high\"}}",
     "session_header": "x-opencode-session",
+    "billing_sources": [
+      "free",
+      "go",
+      "go-plus"
+    ],
     "source": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
   },
   "native_usage_contract": {

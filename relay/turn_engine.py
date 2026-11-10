@@ -283,6 +283,8 @@ def gpu_taken(why):
 
 
 USAGE_LIMIT_DEFAULT_SECONDS = 30 * 60  # when the CLI does not say when the account resets
+# A route whose account or plan has no usage left: a vendor CLI said so, or an OpenCode subscription model's allowance.
+USAGE_LIMIT_CODES = frozenset({'CLI_USAGE_LIMIT', 'PLAN_USAGE_LIMIT'})
 
 
 def usage_account(deployment):
@@ -320,8 +322,7 @@ def note_usage_limit(deployment, resets_at=None, now=None, kind=None):
     keys = usage_keys(deployment)
     if not keys:
         return None
-    # Each OpenCode subscription model has its own allowance: a limit never parks the whole plan.
-    account = keys[-1] if kind == 'model' or keys[0] == 'opencode-sub' else keys[0]
+    account = keys[-1] if kind == 'model' else keys[0]
     now = datetime.now(timezone.utc).timestamp() if now is None else now
     until = (resets_at if type(resets_at) in (int, float) and now < resets_at <= now + 7*86400
              else now + USAGE_LIMIT_DEFAULT_SECONDS)
@@ -1498,8 +1499,10 @@ def run_audit(request, files, root, implementer, emit, checks=None):
                   'attempts': list(attempts)}
         if result.get('status') == 'PROPOSED':
             break
-        if result.get('failure_code') == 'CLI_USAGE_LIMIT':
-            note_usage_limit(deployment)
+        if result.get('failure_code') in USAGE_LIMIT_CODES:
+            # Keep the reset and scope the session recorded; a bare note would shorten it to the default.
+            limit = result.get('usage_limit') or {}
+            note_usage_limit(deployment, limit.get('until'), kind=limit.get('kind'))
         emit(f"_tare audit: {name} {result.get('status')} {result.get('reason') or ''}._\n")
     if not result or result.get('status') != 'PROPOSED':
         emit('_tare audit: no auditor completed; the change is unaudited._\n')

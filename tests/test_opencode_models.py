@@ -2,6 +2,7 @@
 from copy import deepcopy
 import json
 from pathlib import Path
+import time
 
 import pytest
 
@@ -157,12 +158,13 @@ def test_every_subscription_model_is_a_pinnable_reserve_until_qualified():
     assert matches(pin, 'opencode-sub-glm-5-3-flash', native_catalog.select('opencode-sub-glm-5-3-flash'))
 
 
-def test_a_subscription_limit_parks_only_that_model(tmp_path, monkeypatch):
+def test_a_subscription_limit_parks_the_whole_plan(tmp_path, monkeypatch):
     from relay import turn_engine
     monkeypatch.setattr(turn_engine, 'usage_limits_path', lambda: tmp_path/'usage-limits.json')
     glm, kimi = native_catalog.select('opencode-sub-glm-5-3-flash'), native_catalog.select('opencode-sub-kimi-k3')
-    until = turn_engine.note_usage_limit(glm, now=1000.0)  # the generic callers pass no kind
-    assert turn_engine.usage_limited(glm, now=1001.0) == until and turn_engine.usage_limited(kimi, now=1001.0) is None
+    until = turn_engine.note_usage_limit(glm, now=1000.0)  # the plan's 5-hour window, shared by its models
+    assert turn_engine.usage_limited(glm, now=1001.0) == until == turn_engine.usage_limited(kimi, now=1001.0)
+    assert turn_engine.usage_limited(api_profile(), now=1001.0) is None  # the balance is another bill
 
 
 def test_unqualified_rows_are_pinned_never_chosen_automatically(monkeypatch):
@@ -171,3 +173,52 @@ def test_unqualified_rows_are_pinned_never_chosen_automatically(monkeypatch):
     _, selection = native_routes.ranked('explorer')
     reasons = {c['deployment']: c['reason'] for c in selection['candidates'] if c['deployment'].startswith('opencode-')}
     assert len(reasons) == len(SUBSCRIPTION) and set(reasons.values()) == {'NOT_QUALIFIED_PIN_ONLY'}
+
+
+def test_a_spent_plan_or_a_balance_charge_is_a_limit_on_that_model_only():
+    sub, api = native_catalog.select('opencode-sub-glm-5-3-flash'), api_profile()
+    spent = [{'call_id': 'c1', 'transport_calls': [{'provider_error': {'type': 'GoUsageLimitError'}, 'retry_after': 14921}]}]
+    assert opencode.plan_limit(sub, {'code': 'HTTP_429', 'call_id': 'c1'}, spent, 1000.0) == {
+        'kind': 'account', 'resets_at': 15921.0, 'cause': 'allowance_spent'}
+    summary = {'kind': 'context_summary_failed', 'call_id': 'c1', 'reason': 'HTTP_429'}  # a summary says reason
+    assert opencode.plan_limit(sub, summary, spent, 1000.0)['cause'] == 'allowance_spent'
+    passing = [{'call_id': 'c1', 'transport_calls': [{'provider_error': {'type': 'rate_limit_error'}, 'retry_after': 3}]}]
+    assert opencode.plan_limit(sub, {'code': 'HTTP_429', 'call_id': 'c1'}, passing, 1000.0) is None
+    billed = [{'call_id': 'c1', 'billing_source': 'balance'}]
+    limit = opencode.plan_limit(sub, {'code': 'BILLING_SOURCE_REFUSED', 'call_id': 'c1'}, billed, 1000.0)
+    assert limit == {'kind': 'account', 'resets_at': 1000.0 + 5 * 3600, 'billing_source': 'balance', 'cause': 'billed_to_balance'}
+    teams = opencode.plan_limit(sub, {'code': 'BILLING_SOURCE_REFUSED', 'call_id': 'c1'},
+                                [{'call_id': 'c1', 'billing_source': 'go-teams'}], 1000.0)
+    assert teams['cause'] == 'unknown_billing_source'
+    from relay.native_display import provider_limit_guidance
+    notice = provider_limit_guidance({'failure_code': 'PLAN_USAGE_LIMIT', 'usage_limit': {**teams, 'until': 1000.0}})
+    assert "'go-teams'" in notice and 'BILLING in scripts/ops/opencode_profiles.py' in notice
+    assert opencode.plan_limit(api, {'code': 'HTTP_429', 'call_id': 'c1'}, spent, 1000.0) is None  # the balance has no allowance
+    assert json.loads(sub['native_profile'].get('parameters_json')) is not None and sub['native_profile']['billing_sources'] == ['free', 'go', 'go-plus']
+
+
+def test_a_session_on_a_spent_model_parks_it_until_retry_after(setup, tmp_path, monkeypatch):
+    from tare_tools_agent_runtime import ModelFailure
+    from relay import turn_engine
+    from relay.native_display import provider_limit_guidance
+    monkeypatch.setattr(turn_engine, 'usage_limits_path', lambda: tmp_path/'usage-limits.json')
+    config, custody, root = setup
+    deployment = native_catalog.select('opencode-sub-kimi-k3')
+
+    class Spent(Client):
+        endpoint = deployment['native_profile']['endpoint']
+
+        def post_observed(self, path, body, control, **kwargs):
+            failure = ModelFailure('HTTP_429')
+            failure.transport_observation = {'transport': 'fixture', 'started': True, 'response_received': True,
+                                             'provider_error': {'type': 'GoUsageLimitError'}, 'retry_after': 14921}
+            raise failure
+
+    before = time.time()
+    result = native_agent.run_session(config, deployment, custody, 'Change and verify a.py', client=Spent(steps=steps()))
+    assert result['failure_code'] == 'PLAN_USAGE_LIMIT' and result['usage_limit']['cause'] == 'allowance_spent'
+    assert result['usage_limit']['account'] == 'opencode-sub'
+    until = turn_engine.usage_limited(deployment)
+    assert until == result['usage_limit']['until'] and before + 14921 <= until <= time.time() + 14921
+    assert turn_engine.usage_limited(native_catalog.select('opencode-sub-glm-5-3-flash')) == until  # the plan's window
+    assert 'no usage left until' in provider_limit_guidance(result)

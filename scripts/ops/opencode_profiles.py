@@ -43,6 +43,9 @@ VENDORS = {'deepseek': ('DeepSeek', 'deepseek/deepseek'), 'zhipuai': ('Z.ai', 'z
            'alibaba': ('Qwen', 'qwen/qwen-family'), 'google': ('Google', 'google/gemini'),
            'mistral': ('Mistral AI', 'mistral/mistral'), 'mistralai': ('Mistral AI', 'mistral/mistral')}
 PREFIX = {'sub': 'opencode-sub-', 'api': 'opencode-api-'}
+# The billing sources a subscription reply may report without costing money (usage.opencode.billing_source). Any other,
+# a new plan's included, ends the session after that call: add a new plan's name here and regenerate.
+BILLING = ['free', 'go', 'go-plus']
 
 
 def author(row):
@@ -96,6 +99,8 @@ def profile(row, family, api, key, plan, today):
             'context_window': row['limit']['context'], 'output_tokens': min(row['limit']['output'], OUTPUT_CAP),
             'parameters_json': json.dumps(parameters(protocol, levels), sort_keys=True),
             'session_header': 'x-opencode-session',
+            # A subscription reply billed elsewhere (balance, with Extra Usage on) ends the session after that call.
+            **({'billing_sources': BILLING} if plan == 'sub' else {}),
             'source': 'OpenCode model list ' + source + '; metadata admission, not measured delivery quality.'},
         'native_usage_contract': {'layout': 'opencode-exclusive',
                                   'source': 'https://opencode.ai/docs/console/api/inference (usage.opencode.tokens, cost)'},
