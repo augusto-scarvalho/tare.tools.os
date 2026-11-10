@@ -2,7 +2,7 @@
   "$schema": "https://tare.tools/schemas/v1/disposition-manifest.json",
   "version": "1.0.0",
   "generated_at": "2026-10-04T03:10:28.054735+00:00",
-  "total_modules": 438,
+  "total_modules": 439,
   "modules": [
     {
       "name": "consent_decisions.py",
@@ -2241,8 +2241,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 5836,
-      "sha256": "dca9668fe2e0635a1b0730461a869d7528c9586cd84ac20537f756debdb9e565"
+      "size_bytes": 5847,
+      "sha256": "310172c2bfb04435b6b57a8463fcd40f23f9fa32444f382c857286ff64e38e02"
     },
     {
       "name": "native_settlement.py",
@@ -4383,6 +4383,16 @@
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
       "size_bytes": 3629,
       "sha256": "65b2c7b1c2f6d321d6c041ed3088170c91d3e7a2a172a6db735c64b7ee72e467"
+    },
+    {
+      "name": "provider_quota.py",
+      "path": "tare.tools.os/relay/provider_quota.py",
+      "summary": "What each provider reports as left: subscription quota windows and API credit, read without a model call.",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
+      "size_bytes": 15712,
+      "sha256": "04420ebfd7f96cd75922bdf43cc8076f8996927d9b7914473453d15cadfb698c"
     }
   ]
 }
