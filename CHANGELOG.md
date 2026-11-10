@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The OpenCode Claude Haiku profile marks its prompt for caching (`cache_control`), as the Claude API profiles do: the Messages API caches only a marked prompt, so every turn was billed in full. In the qualification task of 2026-11-10 the session read 0 of 15,700 input tokens from cache without the mark and 11,177 of 15,562 with it, and used half the plan allowance.
 - The Kernel pin moves to fbcd54d: a read page that reaches the end of a file says whether the file ends with a line break (`final_newline`), which the numbered lines cannot show, so a model keeps the ending instead of doubling it (Claude Haiku 5.5 did in the OpenCode qualification).
 - The delegated-audit trace test stands in for the usage-limit note with the arguments the audit loop now passes (its reset and scope), where its stand-in took only the route.
 - An OpenCode subscription limit leaves the whole subscription, not one model: OpenCode documents a per-model allowance, but once one model spent the 5-hour window every paid model answered the same `GoUsageLimitError` with the same Retry-After and only free models still worked (observed 2026-11-09). The earlier rule that a subscription limit parks only its model is gone, so tare no longer tries each subscription model in turn against the same refusal.

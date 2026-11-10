@@ -43,7 +43,10 @@ def test_picker_writes_each_family_reasoning_key_and_keeps_the_gateway(name, mon
     assert 'high' in levels and levels == base['native_reasoning_levels']
     for effort in levels:
         value = model_choices.realization([item], {'key': item['key'], 'connection': name, 'reasoning': effort})
-        assert FAMILIES[name][1](json.loads(value['native_profile']['parameters_json'])) == effort
+        parameters = json.loads(value['native_profile']['parameters_json'])
+        assert FAMILIES[name][1](parameters) == effort
+        # Messages caches only a marked prompt; the mark survives a change of effort.
+        assert parameters.get('cache_control') == ({'type': 'ephemeral'} if FAMILIES[name][0] == '/messages' else None)
         profile = value['native_profile']
         assert profile['session_header'] == 'x-opencode-session' and profile['endpoint'].startswith('https://opencode.ai/inference/go/')
         assert value['native_credential_env'] == 'OPENCODE_API_KEY'

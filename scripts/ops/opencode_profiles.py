@@ -79,10 +79,13 @@ def roster_key(models, row):
 
 
 def parameters(protocol, levels):
+    # Messages caches only a marked prompt (the other families cache on their own): without the mark every turn of
+    # a Claude Haiku session was billed in full (0 of 15,700 input tokens read from cache, 2026-11-10).
+    cache = {'cache_control': {'type': 'ephemeral'}} if protocol == 'anthropic-messages' else {}
     if 'high' not in levels:
-        return {}  # the provider's default reasoning
-    return {'openai-chat': {'reasoning_effort': 'high'}, 'openai-responses': {'reasoning': {'effort': 'high'}},
-            'anthropic-messages': {'output_config': {'effort': 'high'}}}[protocol]
+        return cache  # the provider's default reasoning
+    return {**cache, **{'openai-chat': {'reasoning_effort': 'high'}, 'openai-responses': {'reasoning': {'effort': 'high'}},
+                        'anthropic-messages': {'output_config': {'effort': 'high'}}}[protocol]}
 
 
 def profile(row, family, api, key, plan, today):
