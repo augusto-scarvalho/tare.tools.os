@@ -1,4 +1,5 @@
 """What tare itself spent on each API account, kept across sessions, and the balance the operator declared for it.
+For OpenCode's subscription, which charges nothing per call, it keeps the plan allowance each reply said it used.
 
 Most providers publish no balance for an ordinary API key. The operator states the balance once (tare quota --set
 ACCOUNT AMOUNT) and tare subtracts the dollars its own sessions record from then on. It counts tare's use only: use
@@ -36,17 +37,26 @@ def post(deployment, usage, session, now=None):
         done = int(json.loads(marker.read_text(encoding='utf-8'))['calls'])
     except (OSError, ValueError, KeyError, TypeError):
         done = 0
+    from .opencode import subscription
     name, rows = account(deployment), []
+    plan = 'opencode-sub' if subscription(deployment) else None
     now = time.time() if now is None else now
-    for call in calls[done:] if name else []:
-        cost = call.get('cost') or {}
+
+    def amount(value):
         try:
-            usd = float(cost['known_amount']) if cost.get('currency') == 'USD' else 0.0
-        except (KeyError, TypeError, ValueError):
-            usd = 0.0
-        if usd > 0:
-            rows.append(json.dumps({'at': now, 'account': name, 'deployment': deployment.get('id'),
-                                    'call': call.get('call_id'), 'usd': usd}))
+            return max(0.0, float(value))
+        except (TypeError, ValueError):
+            return 0.0
+    for call in calls[done:] if name or plan else []:
+        cost = call.get('cost') or {}
+        row = {'at': now, 'deployment': deployment.get('id'), 'call': call.get('call_id')}
+        usd = amount(cost.get('known_amount')) if cost.get('currency') == 'USD' else 0.0
+        # OpenCode's subscription charges nothing; each reply says how much of the plan's allowance it used.
+        allowance = amount((cost.get('opencode') or {}).get('allowance')) if plan else 0.0
+        if name and usd > 0:
+            rows.append(json.dumps({**row, 'account': name, 'usd': usd}))
+        elif allowance > 0:
+            rows.append(json.dumps({**row, 'account': plan, 'allowance': allowance}))
     if rows:
         folder().mkdir(parents=True, exist_ok=True)
         with open(folder()/'provider-spend.jsonl', 'a', encoding='utf-8') as ledger:
@@ -56,8 +66,8 @@ def post(deployment, usage, session, now=None):
     return len(rows)
 
 
-def spent(name, since):
-    """Dollars tare recorded for this account from `since` on."""
+def spent(name, since, field='usd'):
+    """Dollars tare recorded for this account from `since` on (field 'allowance': of OpenCode's plan allowance)."""
     total = 0.0
     try:
         with open(folder()/'provider-spend.jsonl', encoding='utf-8') as ledger:
@@ -65,7 +75,7 @@ def spent(name, since):
                 try:
                     row = json.loads(line)
                     if row['account'] == name and row['at'] >= since:
-                        total += float(row['usd'])
+                        total += float(row[field])
                 except (ValueError, KeyError, TypeError):
                     continue  # a torn line is not a charge
     except OSError:

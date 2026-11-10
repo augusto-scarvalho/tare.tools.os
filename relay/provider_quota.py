@@ -240,11 +240,20 @@ def refresh(now=None):
         jobs.append(('openrouter', 'OpenRouter', 'credit', read_openrouter, key))
     with ThreadPoolExecutor(max_workers=max(1, len(jobs))) as pool:
         accounts = list(pool.map(lambda job: observe(*job, now), jobs))
+    from . import provider_spend
     if secret('OPENCODE_API_KEY'):
+        used = [provider_spend.spent('opencode-sub', now - seconds, 'allowance') for seconds in (5 * 3600, 7 * 86400, 30 * 86400)]
         accounts.append({'account': 'opencode-sub', 'name': 'OpenCode subscription', 'kind': 'subscription',
                          'status': 'NOT_REPORTED', 'observed_at': now, 'reason':
-                         'OpenCode publishes no remaining allowance; a reply only says what it used.'})
-    from . import provider_spend
+                         'OpenCode publishes no remaining allowance; a reply only says what it used.',
+                         'allowance_used': dict(zip(('5h', '7d', '30d'), used)), 'notes': [
+                             "Allowance tare's own sessions used: US$ {:.2f} in the last 5 h, US$ {:.2f} in 7 days, "
+                             'US$ {:.2f} in 30 days.'.format(*used) if used[2] else
+                             "tare's own sessions recorded no allowance use in the last 30 days."]})
+    for reading in accounts:  # a limit a refused call recorded, which no provider reading shows
+        if reading['kind'] == 'subscription' and (until := parked(reading['account'], now)):
+            reading['parked_until'] = until
+            reading.setdefault('notes', []).insert(0, 'A refused call left this account out until ' + clock(until, now) + '.')
     for variable, (account, name) in UNREPORTED.items():
         credit = provider_spend.remaining(account)
         reading = {'account': account, 'name': name, 'kind': 'credit', 'observed_at': now}
@@ -261,6 +270,17 @@ def refresh(now=None):
     path.parent.mkdir(parents=True, exist_ok=True)
     write_json_atomic(path, report)
     return report
+
+
+def parked(account, now):
+    """Until when a refused call left this whole account out (turn_engine.note_usage_limit), else None."""
+    from .turn_engine import usage_limits_path
+    try:
+        entry = json.loads(usage_limits_path().read_text(encoding='utf-8')).get(account)
+        until = entry.get('until')
+    except (OSError, ValueError, AttributeError):
+        return None
+    return until if type(until) in (int, float) and now < until <= now + 7 * 86400 else None
 
 
 def cache_path():
@@ -335,6 +355,7 @@ def render(report, now=None):
             if account['status'] not in ('OBSERVED', 'DECLARED'):
                 lines.append(head + ': ' + ('not reported. ' if account['status'] == 'NOT_REPORTED' else 'no reading. ')
                              + account['reason'])
+                lines += ['    ' + note for note in account.get('notes', [])]
                 continue
             credit = account.get('credit')
             if credit:
