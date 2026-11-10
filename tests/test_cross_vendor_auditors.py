@@ -17,6 +17,9 @@ def pool(tmp_path, monkeypatch):
     return tmp_path/'profiles'
 
 
+SUBSCRIPTION_REVIEWER = 'opencode-sub-gemini-4-argon'
+
+
 def install(pool, name, endpoint, model):
     value = profile(endpoint, model, 'high')
     value['id'] = name
@@ -41,7 +44,11 @@ def install(pool, name, endpoint, model):
 def test_automatic_frontier_pair_follows_actual_model_vendor_and_cost_preference(pool, planner, expected, role):
     producer = native_catalog.select(planner)
     candidates, receipt = native_routes.reviewers(producer, role)
-    assert candidates[0]['id'] == expected
+    # The subscription Gemini 4 Argon reviews before any route paid per token, except work of its own vendor;
+    # `expected` is the first of the paid ones.
+    names = [d['id'] for d in candidates]
+    assert (names[0] == SUBSCRIPTION_REVIEWER) == (planner != 'gemini-api')
+    assert [n for n in names if n != SUBSCRIPTION_REVIEWER][0] == expected
     assert receipt['generation_calls'] == 0
     author = work_audit.identity(producer, 'implementer')
     critic = work_audit.identity(candidates[0], 'auditor')
@@ -97,7 +104,8 @@ def test_known_codex_quota_cooldown_excludes_native_and_cli_without_repeating_a_
     turn_engine.note_usage_limit(native_catalog.select('codex-cli-gpt-6-1-sol'))
     selected, receipt = native_routes.reviewers(native_catalog.select('claude-api-fable-5-1'))
     assert not any(d['id'].startswith('codex-') for d in selected)
-    assert selected[0]['id'] == 'openai-api'  # separate enabled API balance
+    # Another subscription first, then the separate enabled API balance.
+    assert [d['id'] for d in selected[:2]] == [SUBSCRIPTION_REVIEWER, 'openai-api']
     assert {r['reason'] for r in receipt['candidates'] if r['deployment'].startswith('codex-')
             and '6-1-sol' in r['deployment']} == {'QUOTA_EXHAUSTED'}
 

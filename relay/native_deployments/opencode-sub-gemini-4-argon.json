@@ -1,0 +1,44 @@
+{
+  "id": "opencode-sub-gemini-4-argon",
+  "runner": "native-http",
+  "model": "gemini-4-argon",
+  "native_credential_env": "OPENCODE_API_KEY",
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_profile": {
+    "protocol": "gemini-generate-content",
+    "model": "gemini-4-argon",
+    "endpoint": "https://opencode.ai/inference/go/google/v1beta",
+    "context_window": 1048576,
+    "output_tokens": 16384,
+    "parameters_json": "{\"thinkingConfig\": {\"thinkingLevel\": \"high\"}}",
+    "session_header": "x-opencode-session",
+    "billing_sources": [
+      "free",
+      "go",
+      "go-plus"
+    ],
+    "source": "OpenCode model list https://opencode.ai/inference/go/v1/models, read 2026-11-09; metadata admission, not measured delivery quality."
+  },
+  "native_usage_contract": {
+    "layout": "opencode-exclusive",
+    "source": "https://opencode.ai/docs/console/api/inference (usage.opencode.tokens, cost)"
+  },
+  "native_reasoning_levels": [
+    "low",
+    "medium",
+    "high"
+  ],
+  "native_opencode": {
+    "plan": "sub",
+    "label": "Gemini 4 Argon",
+    "family": "generate-content",
+    "tool_choice": [
+      "auto",
+      "none",
+      "required",
+      "tool"
+    ],
+    "source": "https://opencode.ai/inference/go/v1/models",
+    "observed_at": "2026-11-09"
+  }
+}

@@ -1032,7 +1032,7 @@ def _pytest_in_config(root, filename, marker):
 
 
 def streaming(deployment):
-    if deployment['native_profile']['protocol'] in {'vendor-cli', 'anthropic-messages'}:
+    if deployment['native_profile']['protocol'] in {'vendor-cli', 'anthropic-messages', 'gemini-generate-content'}:
         return deployment
     return {**deployment, 'native_streaming': True}
 

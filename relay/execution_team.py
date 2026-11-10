@@ -29,6 +29,7 @@ def reasoning(deployment):
                       params.get('chat_template_kwargs', {}).get('reasoning_effort'),
                       params.get('output_config', {}).get('effort'),
                       params.get('thinking_config', {}).get('thinking_level'),
+                      params.get('thinkingConfig', {}).get('thinkingLevel'),  # Gemini generateContent
                       params.get('additionalModelRequestFields', {}).get('reasoning_config')):
             if isinstance(value, str) and value.strip():
                 return value

@@ -15,9 +15,11 @@ from test_model_choices import catalog
 ROSTER = Path(__file__).parents[1]/'relay/round_table_roster.json'
 FAMILIES = {'opencode-sub-glm-5-3-flash': ('/chat/completions', lambda p: p['reasoning_effort']),
             'opencode-sub-gpt-6-luna': ('/responses', lambda p: p['reasoning']['effort']),
-            'opencode-sub-claude-haiku-5-5': ('/messages', lambda p: p['output_config']['effort'])}
-SUBSCRIPTION = ['claude-haiku-5-5', 'deepseek-v4-1-flash', 'glm-5-3-flash', 'gpt-6-luna', 'grok-4-7', 'kimi-k3',
-                'mimo-v2-6-flash']  # the operator's list; Gemini 4 Argon waits for a Gemini API codec
+            'opencode-sub-claude-haiku-5-5': ('/messages', lambda p: p['output_config']['effort']),
+            'opencode-sub-gemini-4-argon': ('/models/gemini-4-argon:generateContent',
+                                            lambda p: p['thinkingConfig']['thinkingLevel'])}
+SUBSCRIPTION = ['claude-haiku-5-5', 'deepseek-v4-1-flash', 'gemini-4-argon', 'glm-5-3-flash', 'gpt-6-luna', 'grok-4-7',
+                'kimi-k3', 'mimo-v2-6-flash']  # the operator's list
 
 
 def api_profile(name='opencode-sub-glm-5-3-flash'):
@@ -151,8 +153,24 @@ def test_the_subscription_is_a_plan_and_the_api_is_paid_per_token():
 
 
 # The operator's order (2026-11-10): what the same task drew from the plan allowance, cheapest first.
-PREFERENCE = ['deepseek-v4-1-flash', 'mimo-v2-6-flash', 'glm-5-3-flash', 'gpt-6-luna', 'claude-haiku-5-5', 'grok-4-7',
-              'kimi-k3']
+PREFERENCE = ['deepseek-v4-1-flash', 'mimo-v2-6-flash', 'glm-5-3-flash', 'gpt-6-luna', 'claude-haiku-5-5',
+              'gemini-4-argon', 'grok-4-7', 'kimi-k3']
+
+
+def test_gemini_runs_on_its_own_api_without_streaming():
+    from relay import native_generation
+    value = native_catalog.select('opencode-sub-gemini-4-argon')
+    profile = native_generation.deployment_profile(value, 'gemini-4-argon')
+    assert profile.protocol == 'gemini-generate-content'
+    assert profile.endpoint == 'https://opencode.ai/inference/go/google/v1beta'
+    assert profile.billing_sources == ('free', 'go', 'go-plus') and profile.session_header == 'x-opencode-session'
+    assert not native_generation.supports_streaming(value)
+    # A planner must run at high reasoning or above, and reads the level in this API's own spelling.
+    from relay import planner_policy
+    from relay.execution_team import reasoning
+    assert reasoning(value) == 'high' == reasoning(planner_policy.effective(value))
+    from relay.opencode import names_delivery_tool
+    assert names_delivery_tool(value)
 
 
 def test_every_subscription_model_is_a_qualified_reserve_in_the_operators_order():
@@ -160,8 +178,11 @@ def test_every_subscription_model_is_a_qualified_reserve_in_the_operators_order(
     from relay.native_routes import configured
     rows = [r for r in configured()['deployments'] if r['id'].startswith('opencode-')]
     assert [r['id'] for r in rows] == ['opencode-sub-' + n for n in PREFERENCE] and sorted(PREFERENCE) == SUBSCRIPTION
-    assert {(tuple(r['roles']), r['kind'], r['cost_tier'], r['quota_domain'], r['qualified']) for r in rows} == {
-        (('implementer', 'explorer'), 'reserve', 'flat', 'opencode-sub', True)}
+    assert {(r['kind'], r['cost_tier'], r['quota_domain'], r['qualified']) for r in rows} == {
+        ('reserve', 'flat', 'opencode-sub', True)}
+    # Gemini 4 Argon is a frontier model, so its route also plans and audits (the role policy's rule).
+    assert {r['id']: r['roles'] for r in rows if r['roles'] != ['implementer', 'explorer']} == {
+        'opencode-sub-gemini-4-argon': ['planner', 'plan-auditor', 'auditor', 'implementer', 'explorer']}
     pin = exact('opencode-sub/opencode-sub-glm-5-3-flash@high')
     assert matches(pin, 'opencode-sub-glm-5-3-flash', native_catalog.select('opencode-sub-glm-5-3-flash'))
 

@@ -376,7 +376,7 @@ def test_new_plan_uses_recoverable_review_stage(proposal, monkeypatch, reviewer_
         assert result['routes']['plan-auditor']['reason']=='OPERATOR_SELECTED_REVIEWER'
     elif independent_available:
         assert result['routes']['plan-auditor']['selection']['role']=='plan-auditor'
-        assert result['routes']['plan-auditor']['deployment']=='openai-api'
+        assert result['routes']['plan-auditor']['deployment']=='opencode-sub-gemini-4-argon'  # subscription before paid
     else:
         assert result['routes']['plan-auditor']['reason']=='SEPARATE_SESSION_NO_INDEPENDENT_REVIEWER'
         assert result['routes']['plan-auditor']['independent'] is False

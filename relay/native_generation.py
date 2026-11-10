@@ -81,6 +81,7 @@ def deployment_profile(deployment, requested_model):
                                   'openai-codex-responses': {'responses-inclusive'},
                                   'openai-responses': {'responses-inclusive', 'openrouter-responses-inclusive', 'opencode-exclusive'},
                                   'anthropic-messages': {'anthropic-exclusive', 'opencode-exclusive'},
+                                  'gemini-generate-content': {'opencode-exclusive'},
                                   'vendor-cli': {'claude-cli-exclusive', 'codex-cli-inclusive', 'agy-cli-exclusive'}}[profile.protocol]:
             raise ValueError('native usage contract must match the wire protocol')
     if profile.model != requested_model:
@@ -132,7 +133,7 @@ def codex_login_available(deployment):
 def supports_streaming(deployment):
     """Only use transports whose streamed tool frames match the qualified codec."""
     profile=deployment['native_profile']
-    if profile['protocol'] in {'vendor-cli','anthropic-messages'}:return False
+    if profile['protocol'] in {'vendor-cli','anthropic-messages','gemini-generate-content'}:return False
     # Google's compatibility endpoint emits complete tool calls without stream
     # indexes. The full-response codec preserves them and their thought signatures.
     from urllib.parse import urlsplit
