@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The Kernel pin moves to fbcd54d: a read page that reaches the end of a file says whether the file ends with a line break (`final_newline`), which the numbered lines cannot show, so a model keeps the ending instead of doubling it (Claude Haiku 5.5 did in the OpenCode qualification).
 - The delegated-audit trace test stands in for the usage-limit note with the arguments the audit loop now passes (its reset and scope), where its stand-in took only the route.
 - An OpenCode subscription limit leaves the whole subscription, not one model: OpenCode documents a per-model allowance, but once one model spent the 5-hour window every paid model answered the same `GoUsageLimitError` with the same Retry-After and only free models still worked (observed 2026-11-09). The earlier rule that a subscription limit parks only its model is gone, so tare no longer tries each subscription model in turn against the same refusal.
 - The OpenCode plan limit also holds when the spent window or a balance charge lands on a context summary, whose failure carries its code as the reason. The subscription profiles accept the billing sources `free`, `go` and `go-plus` only (`BILLING` in the profile generator): a reply billed to the balance says Extra Usage charged it, and an unknown source, such as a new plan's, names that source and where to add it, instead of reading as a spent allowance.
