@@ -5,6 +5,7 @@ from datetime import datetime
 import pytest
 
 from relay import provider_quota
+from test_native_agent import setup  # noqa: F401  (the session fixture)
 
 NOW = datetime(2026, 11, 10, 8, 0).timestamp()
 CLAUDE = ('You are currently using your subscription to power your Claude Code usage\n\n'
@@ -192,3 +193,82 @@ def test_a_reading_never_parks_on_a_guess(providers):
     provider_quota.cache_path().write_text('{"schema": "tare.tools/provider-quota/1", "accounts": [{"account": "agy", '
                                            '"status": "OBSERVED", "buckets": [{}]}]}', encoding='utf-8')
     assert provider_quota.spent_until(route('gemini-4-argon-high'), NOW) is None  # an unreadable record is unknown
+
+
+def usage(*amounts):
+    return {'calls': [{'call_id': f's/model/{i}', 'cost': {'currency': 'USD', 'known_amount': amount}}
+                      for i, amount in enumerate(amounts, 1)]}
+
+
+def test_a_session_posts_each_dollar_once_to_its_api_account(providers, tmp_path):
+    from relay import provider_spend
+    session = tmp_path/'session'; session.mkdir()
+    api = {'id': 'openai-api', 'native_credential_env': 'OPENAI_API_KEY', 'native_profile': {'model': 'gpt-6.1-sol'}}
+    assert provider_spend.post(api, usage('0.25', None, '0'), session, now=NOW) == 1  # unknown and zero are no charge
+    # The report of a resumed session is cumulative: only its new calls are added.
+    assert provider_spend.post(api, usage('0.25', None, '0', '0.5'), session, now=NOW + 60) == 1
+    assert provider_spend.post(api, usage('0.25', None, '0', '0.5'), session, now=NOW + 90) == 0
+    assert provider_spend.spent('openai-api', 0) == 0.75 and provider_spend.spent('openai-api', NOW + 30) == 0.5
+    # A subscription or a local route is billed to no API account.
+    other = tmp_path/'other'; other.mkdir()
+    assert provider_spend.post(route('claude-opus-5-5', 'cli://claude'), usage('0.9'), other, now=NOW) == 0
+    assert provider_spend.spent('anthropic-api', 0) == 0
+    with open(provider_spend.folder()/'provider-spend.jsonl', 'a', encoding='utf-8') as ledger:
+        ledger.write('{"account": "openai-api", "at"')  # a torn line is not a charge
+    assert provider_spend.spent('openai-api', 0) == 0.75
+
+
+def test_a_stated_balance_counts_down_by_what_tare_recorded_since(providers, tmp_path, capsys):
+    from relay import provider_spend
+    session = tmp_path/'session'; session.mkdir()
+    api = {'id': 'openai-api', 'native_credential_env': 'OPENAI_API_KEY', 'native_profile': {'model': 'gpt-6.1-sol'}}
+    provider_spend.post(api, usage('3'), session, now=NOW - 60)  # before the statement: already in the balance
+    assert provider_spend.remaining('openai-api') is None
+    provider_spend.declare('openai-api', 25, now=NOW)
+    provider_spend.post(api, usage('3', '1.5'), session, now=NOW + 60)
+    assert provider_spend.remaining('openai-api') == {'currency': 'USD', 'total': 25.0, 'declared_at': NOW,
+                                                      'remaining': 23.5}
+    for bad in (('openrouter', 5), ('claude', 5), ('openai-api', -1), ('openai-api', float('nan'))):
+        with pytest.raises(ValueError):
+            provider_spend.declare(*bad)
+    report = provider_quota.refresh(now=NOW + 120)
+    accounts = {a['account']: a for a in report['accounts']}
+    assert accounts['openai-api']['status'] == 'DECLARED' and accounts['openai-api']['credit']['remaining'] == 23.5
+    text = provider_quota.render(report, now=NOW + 120)
+    assert "OpenAI API: US$ 23.50 left of US$ 25.00, stated 08:00, less tare's own use since" in text
+    # An account without a credential on this machine is listed once its balance is stated; a spent one says so.
+    provider_spend.declare('opencode-api', 1, now=NOW)
+    paid = {'id': 'opencode-api-x', 'native_credential_env': 'OPENCODE_API_KEY', 'native_profile': {'model': 'x'},
+            'native_opencode': {'plan': 'api'}}
+    provider_spend.post(paid, usage('1.25'), tmp_path, now=NOW + 5)
+    assert 'OpenCode API: none left of US$ 1.00' in provider_quota.render(provider_quota.refresh(now=NOW + 120), now=NOW + 120)
+    # The command states a balance and reads again; an unknown account is refused with the accepted names.
+    assert provider_quota.main(['--set', 'gemini-api', '10', '--json']) == 0
+    assert 'gemini-api' in provider_spend.declared() and '"DECLARED"' in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        provider_quota.main(['--set', 'openrouter', '10'])
+    assert 'anthropic-api' in capsys.readouterr().err
+
+
+def test_a_real_session_adds_its_charge_to_the_account(setup, monkeypatch):
+    from relay import native_agent, native_catalog, provider_spend
+    from test_native_agent import Client, steps
+    config, custody, root = setup
+    config['capabilities'] = ['read', 'edit', 'verify']
+    deployment = native_catalog.select('opencode-sub-glm-5-3-flash')  # the same model as a pay-per-token route
+    deployment['native_opencode'] = {**deployment['native_opencode'], 'plan': 'api'}
+    deployment['native_profile'].pop('billing_sources')
+
+    class Paid(Client):
+        endpoint = deployment['native_profile']['endpoint']
+
+        def post(self, path, body, control):
+            response = super().post(path, body, control)
+            response['model'] = 'glm-5.3-flash'
+            response['usage'] = {'prompt_tokens': 80, 'completion_tokens': 5, 'cost': 0.002, 'opencode': {
+                'billing_source': 'balance', 'tokens': {'input': 80, 'output': 5, 'reasoning': 0, 'cache_read': 0,
+                                                        'cache_write_5m': 0, 'cache_write_1h': 0}}}
+            return response
+    result = native_agent.run_session(config, deployment, custody, 'Change and verify a.py', client=Paid(steps=steps()))
+    assert result['status'] == 'PROPOSED'
+    assert provider_spend.spent('opencode-api', 0) == round(0.002 * result['model_calls'], 6)

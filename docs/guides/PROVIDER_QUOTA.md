@@ -7,6 +7,7 @@ API account. It asks the providers directly and makes no model call, so it spend
 tare quota            # ask every provider now (about ten seconds)
 tare quota --cached   # the last readings, without asking again
 tare quota --json     # the same readings as JSON
+tare quota --set openai-api 25   # state an API balance in dollars; tare counts its own spend down from it
 ```
 
 In the console, `/usage` shows the last readings in its row **Provider quota and credit**. Opening the panel asks
@@ -74,6 +75,29 @@ time that call reported.
 - **Kimi** has no reader yet.
 
 These appear as "not reported" when their credential is set, never as a guess.
+
+## A stated balance for an API without a balance endpoint
+
+For `openai-api`, `anthropic-api`, `gemini-api`, `bedrock` and `opencode-api` you can state the balance yourself:
+
+```powershell
+tare quota --set anthropic-api 18.40
+```
+
+```text
+API credit
+  Claude API: US$ 17.92 left of US$ 18.40, stated Tue 10 Nov 09:12, less tare's own use since
+```
+
+tare then subtracts the dollars its own sessions record on that account from that moment on. Every session adds
+the charge of each of its calls to `<storage>/serve/provider-spend.jsonl` when it ends; the stated balances are in
+`<storage>/serve/provider-balance.json`.
+
+- It counts tare's use only. If the same key is used elsewhere, or you add credit, state the balance again.
+- A call whose cost is unknown (no price for that model) adds nothing, so the figure can only be too high.
+- Single text calls outside a session (a flow assessment, a title) are not added yet.
+- Routing does not act on a stated balance: at zero the row says "none left" and the provider's own refusal is
+  what stops the route.
 
 A reading that fails (the CLI is signed out, the provider does not answer in time) is shown as "no reading" with
 the reason, and the other providers are still read.

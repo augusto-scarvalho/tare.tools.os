@@ -2,7 +2,7 @@
   "$schema": "https://tare.tools/schemas/v1/disposition-manifest.json",
   "version": "1.0.0",
   "generated_at": "2026-10-04T03:10:28.054735+00:00",
-  "total_modules": 439,
+  "total_modules": 440,
   "modules": [
     {
       "name": "consent_decisions.py",
@@ -2151,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 122963,
-      "sha256": "88ac36d774807b28bcd68d56541b1a7faf9b50f6f71368f8146a06f63665ddf5"
+      "size_bytes": 123245,
+      "sha256": "98a5ef573dd5f1142d0b1d7a5bb312a0cb0dc94b893de0aed4e59bcbc78fc0e5"
     },
     {
       "name": "native_artifacts.py",
@@ -4391,8 +4391,18 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 17811,
-      "sha256": "43cad3f8560375994d1fc788756546f0a8f44c547a25104ae908b2dfcbdcdefd"
+      "size_bytes": 19230,
+      "sha256": "58110179c12b8c52aed23ee7780fe15df2c0d223c452ce115eacbb7c5080fef4"
+    },
+    {
+      "name": "provider_spend.py",
+      "path": "tare.tools.os/relay/provider_spend.py",
+      "summary": "What tare itself spent on each API account across sessions, and the balance the operator stated for it.",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
+      "size_bytes": 4631,
+      "sha256": "1a600aff382d2e9777231ae652c96e072d6243c726e54cbad962c4475b623298"
     }
   ]
 }
