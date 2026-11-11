@@ -459,3 +459,12 @@ Em cada máquina, a tarefa `Tare-Update` roda `tare.cmd auto-update` no logon e 
 transição I2I-02 descrita acima para reconciliar o Serve com segurança. O TUI nunca
 é fechado: ele avisa uma vez que há atualização instalada, e a próxima abertura
 já usa a nova versão; conversas continuam de onde pararam.
+
+A release é assinada (ADR-075). O workflow a cria como rascunho; um job separado, o único que guarda a chave
+Ed25519 do projeto, assina o bundle, confere a assinatura e só então envia `bundle.zip.sig` e publica o rascunho.
+A assinatura cobre `tare.tools product bundle` e uma quebra de linha, seguidos do SHA-256 de `bundle.zip` em
+hexadecimal. Para conferir um download à mão, a partir do bundle extraído:
+`python install.py verify-signature bundle.zip bundle.zip.sig` (ou `python relay/native_product.py
+verify-signature ...` num checkout); nenhum dos dois precisa de instalação, e o código de saída é 0 quando a
+assinatura é válida. As cópias instaladas ainda não exigem a assinatura: passarão a exigir a partir da release
+seguinte à primeira assinada.

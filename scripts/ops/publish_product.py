@@ -11,7 +11,9 @@ carries published.json (the heads it was built from), which the next run reads t
 changed.
 
   python scripts/ops/publish_product.py [--state DIR] [--force] [--commit SHA] [--state-from-release]
-                                        [--bundle-out PATH] [--here]
+                                        [--bundle-out PATH] [--draft] [--here]
+
+With --draft the release stays a draft until the workflow's `sign` job has signed it (ADR-075).
 """
 import argparse
 from datetime import datetime, timezone
@@ -228,6 +230,7 @@ def last_release(state):
     """The newest product release's published.json (the heads it was built from) into the state folder, where
     publish() compares with it; CI starts with an empty folder. A release without one leaves nothing to compare."""
     listed = json.loads(subprocess.run(['gh', 'release', 'list', '--repo', f"{OWNER}/{REPOS['os']}", '--limit', '30',
+                                        '--exclude-drafts',  # an unsigned draft is not "the newest release"
                                         '--json', 'tagName,publishedAt'], check=True, capture_output=True,
                                        text=True, timeout=120).stdout or '[]')
     newest = max((row for row in listed if row['tagName'].startswith('product-')),
@@ -238,8 +241,22 @@ def last_release(state):
     return newest and newest['tagName']
 
 
-def publish(state, *, force=False, peers=(), tooling_commit=None, commit=None, bundle_out=None):
+def delete_draft_products():
+    """Drafts left by a run whose signing failed would hold the tag of the next one; published releases stay."""
+    repo = f"{OWNER}/{REPOS['os']}"
+    listed = json.loads(subprocess.run(['gh', 'release', 'list', '--repo', repo, '--limit', '30',
+                                        '--json', 'tagName,isDraft'], check=True, capture_output=True,
+                                       text=True, timeout=120).stdout or '[]')
+    for row in listed:
+        if row['isDraft'] and row['tagName'].startswith('product-'):
+            subprocess.run(['gh', 'release', 'delete', row['tagName'], '--repo', repo, '--yes'], check=True,
+                           capture_output=True, timeout=120)
+
+
+def publish(state, *, force=False, peers=(), tooling_commit=None, commit=None, bundle_out=None, draft=False):
     started = time.monotonic()
+    if draft:
+        delete_draft_products()
     mirrors, remote_heads = {}, {}
     for source in REPOS:
         mirrors[source], remote_heads[source] = mirror(state, source)
@@ -303,11 +320,12 @@ def publish(state, *, force=False, peers=(), tooling_commit=None, commit=None, b
     versions = ', '.join(f"{s['package']} {s['version']} ({s['commit'][:7]})" for s in lock['sources'])
     subprocess.run(['gh', 'release', 'create', tag, archive, str(heads_file), '--repo', f"{OWNER}/{REPOS['os']}",
                     '--title', f"tare.tools {next(s['version'] for s in lock['sources'] if s['id'] == 'os')}",
-                    '--notes', 'Product bundle for Python 3.12 on Windows: ' + versions + '\n\n' + CI_PASSED + passed],
+                    '--notes', 'Product bundle for Python 3.12 on Windows: ' + versions + '\n\n' + CI_PASSED + passed,
+                    *(['--draft'] if draft else [])],
                    check=True)
     record = {'heads': heads, 'tag': tag, 'bundle': identifier,
               'published': datetime.now(timezone.utc).isoformat(timespec='seconds'),
-              'seconds': round(time.monotonic() - started)}
+              'seconds': round(time.monotonic() - started), **({'draft': True} if draft else {})}
     published.write_text(json.dumps(record, indent=2), encoding='utf-8')
     shutil.rmtree(work, ignore_errors=True)
     return {'status': 'published', **record, 'updates_started': notify(peers)}
@@ -326,6 +344,8 @@ def main(argv=None):
     parser.add_argument('--state-from-release', action='store_true',
                         help="first read the newest release's published.json (CI starts with an empty state)")
     parser.add_argument('--bundle-out', type=Path, help='also copy the published bundle.zip here (provenance)')
+    parser.add_argument('--draft', action='store_true',
+                        help='create the release as a draft, and first delete leftover product-* drafts')
     parser.add_argument('--here', action='store_true', help='publish from this machine; CI normally does')
     args = parser.parse_args(argv)
     if not os.environ.get('GITHUB_ACTIONS') and not args.here:
@@ -337,9 +357,13 @@ def main(argv=None):
         last_release(args.state.resolve())
     if args.latest_tools:
         return refresh_tools(args.state.resolve(),force=args.force,peers=args.peer)
-    print(json.dumps(publish(args.state.resolve(), force=args.force, peers=args.peer,
-                             tooling_commit=args.tooling_commit, commit=args.commit, bundle_out=args.bundle_out),
-                     indent=2), flush=True)
+    result = publish(args.state.resolve(), force=args.force, peers=args.peer, tooling_commit=args.tooling_commit,
+                     commit=args.commit, bundle_out=args.bundle_out, draft=args.draft)
+    print(json.dumps(result, indent=2), flush=True)
+    if os.environ.get('GITHUB_OUTPUT'):  # the workflow's `sign` job runs only for a release this run created
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as outputs:
+            outputs.write(f"published=true\ntag={result['tag']}\n" if result['status'] == 'published'
+                          else 'published=false\n')
     return 0
 
 

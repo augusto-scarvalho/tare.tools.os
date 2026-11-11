@@ -452,6 +452,16 @@ with); its notes end with `CI passed on main: <run>`. The workflow attests the b
 download with `gh attestation verify bundle.zip -R augusto-scarvalho/tare.tools.os`. Outside GitHub Actions the
 publisher publishes nothing unless given `--here`.
 
+The release is signed ([ADR-075](../adr/ADR-075_SIGNED_PRODUCT_RELEASES.md)). The workflow creates it as a draft;
+a separate job that alone holds the project's Ed25519 signing key signs the bundle, checks the signature and only
+then uploads `bundle.zip.sig` and publishes the draft. The signature covers `tare.tools product bundle` and a newline
+followed by the SHA-256 of `bundle.zip` in hex. Check a download by hand from the extracted bundle with
+`python install.py verify-signature bundle.zip bundle.zip.sig`, or from a checkout with
+`python relay/native_product.py verify-signature bundle.zip bundle.zip.sig`; neither needs an installation, and the
+exit code is 0 when the signature is valid. `--key HEX` (repeatable) checks against other public keys instead of the
+ones built in. Installed copies do not require the signature yet: they will from the release after the first signed
+one.
+
 On each machine, the `Tare-Update` task runs `tare.cmd auto-update` at logon and every 5 minutes. It reads the
 public releases over HTTPS (one GitHub API call, two when the installed release is older than the newest hundred; no
 login and no GitHub CLI), takes the newest release whose notes say CI passed and that is newer than the installed
