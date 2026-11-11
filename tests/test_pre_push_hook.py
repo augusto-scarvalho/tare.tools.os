@@ -56,8 +56,14 @@ def test_the_hook_refuses_a_pushed_commit_with_a_personal_email(tmp_path, email,
     git(tmp_path, 'add', '.')
     git(tmp_path, '-c', 'user.email=noreply@github.com', 'commit', '-qm', 'base')
     base = git(tmp_path, 'rev-parse', 'HEAD')
-    changelog = (tmp_path/'CHANGELOG.md').read_text().replace('## Unreleased\n', '## Unreleased\n\n- A test entry.\n', 1)
-    (tmp_path/'CHANGELOG.md').write_text(changelog)
+    # An entry the guard accepts (long enough to say something), added without touching the file's line endings:
+    # rewriting them made every bullet look new on Windows and hid a too-short entry that Linux refused.
+    changelog = (tmp_path/'CHANGELOG.md').read_bytes()
+    line_end = b'\r\n' if b'\r\n' in changelog else b'\n'
+    heading = b'## Unreleased' + line_end + line_end
+    assert heading in changelog
+    (tmp_path/'CHANGELOG.md').write_bytes(changelog.replace(
+        heading, heading + b'- The notes file records what this hook test pushes.' + line_end, 1))
     (tmp_path/'notes.txt').write_text('x\n')
     git(tmp_path, 'add', '.')
     git(tmp_path, '-c', f'user.email={email}', 'commit', '-qm', 'notes')
