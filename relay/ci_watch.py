@@ -17,8 +17,12 @@ removed or archived -- with the shepherd beats they left, and keeps the ones gh 
 `tare ci dismiss KEY`: drops one alert, given the key `tare ci check` prints, once the operator decided not to fix it.
 `tare ci pr [--body TEXT]`: main is protected and takes changes only through pull requests that merge themselves
 (a merge commit) once CI is green: this pushes the current branch, opens its pull request (or reuses the open one),
-turns on auto-merge and brings the branch up to date when main moved. CI on main then skips a merge whose bytes
-already passed in the pull request (scripts/ci_suite.py). It leaves `tare ci shepherd <repo-dir> <number>` running
+turns on auto-merge and brings the branch up to date when main moved. Before anything is pushed it reads
+GitHub (repository settings, branch protection, rulesets) and refuses, with the reason, a push to a public
+repository whose unpublished commits carry an author or committer email that is not a GitHub noreply address,
+unsigned commits where signing is required, and a repository whose settings leave no merge method; otherwise the
+method is chosen from those settings (merge commit, else squash, never rebase). CI on main then skips a merge whose
+bytes already passed in the pull request (scripts/ci_suite.py). It leaves `tare ci shepherd <repo-dir> <number>` running
 detached: main requires a branch up to date with it and a personal account has no merge queue, so a pull request
 falls behind whenever another one merges; the shepherd merges main into it (CI runs again) until it merges or
 closes. Every pull request adds its CHANGELOG entry on top, so it merges here, where CHANGELOG.md is a union
@@ -656,10 +660,64 @@ def pr_identity(value):
         and re.fullmatch(r'https://[^/\s]+/[^/\s]+/[^/\s]+/pull/'+str(number), url) is not None)
 
 
+def preflight(repo_dir):
+    """What GitHub says about the repository and its main branch. The repository settings are required (a failure
+    propagates, so nothing is pushed blind); the protection readings fall back to "unknown" or "none"."""
+    def read(endpoint, default):
+        try:
+            value = json.loads(gh(['api', endpoint], repo_dir))
+        except (ValueError, OSError, subprocess.SubprocessError):
+            return default
+        return value if isinstance(value, type(default)) else default
+    settings = json.loads(gh(['api', 'repos/{owner}/{repo}'], repo_dir))
+    if not isinstance(settings, dict):
+        raise ValueError('Preflight refused: GitHub did not return the repository settings.')
+    return {'settings': settings, 'branch': read('repos/{owner}/{repo}/branches/main', {}),
+            'protection': read('repos/{owner}/{repo}/branches/main/protection', {}),  # 404 or 403: none we can see
+            'rules': read('repos/{owner}/{repo}/rules/branches/main', [])}
+
+
+def merge_plan(settings, branch, protection, rules):
+    """What the repository allows, and the merge method that follows: merge commit, else squash, never rebase.
+    A setting GitHub did not show (a token without push access) is unknown, which counts as allowed."""
+    rules = [rule for rule in rules if isinstance(rule, dict)]
+    def params(kind):
+        return [rule.get('parameters') or {} for rule in rules if rule.get('type') == kind]
+    def classic(key):
+        return protection.get(key) or {}
+    checks = set(classic('required_status_checks').get('contexts') or [])
+    checks |= set(((branch.get('protection') or {}).get('required_status_checks') or {}).get('contexts') or [])
+    checks |= {check['context'] for found in params('required_status_checks')
+               for check in found.get('required_status_checks') or [] if isinstance(check, dict) and check.get('context')}
+    reviews = max([classic('required_pull_request_reviews').get('required_approving_review_count') or 0]
+                  + [found.get('required_approving_review_count') or 0 for found in params('pull_request')])
+    kinds = {rule.get('type') for rule in rules}
+    signed = classic('required_signatures').get('enabled') is True or 'required_signatures' in kinds
+    linear = classic('required_linear_history').get('enabled') is True or 'required_linear_history' in kinds
+    out = {}  # method -> why the repository rules it out
+    for method, setting in (('merge', 'allow_merge_commit'), ('squash', 'allow_squash_merge')):
+        if settings.get(setting) is False:
+            out[method] = f'the repository setting {setting} is off'
+        for found in params('pull_request'):
+            allowed = found.get('allowed_merge_methods')
+            if isinstance(allowed, list) and method not in allowed:
+                out.setdefault(method, 'a ruleset allows only ' + ', '.join(allowed))
+    if linear:
+        out.setdefault('merge', 'linear history is required')
+    method = next((name for name in ('merge', 'squash') if name not in out), None)
+    if method is None:
+        raise ValueError(f"Preflight refused: no merge method is left: merge commit ({out['merge']}), squash "
+                         f"({out['squash']}); rebase is never used.")
+    return {'method': method, 'auto_merge': settings.get('allow_auto_merge'), 'protected': branch.get('protected'),
+            'required_checks': sorted(checks), 'required_reviews': reviews, 'signed_commits': signed,
+            'linear_history': linear, 'visibility': settings.get('visibility')}
+
+
 def pull_request(repo_dir, body=None):
-    """main takes changes through pull requests that merge themselves once CI is green: push the current branch,
-    open its pull request into main (or reuse the open one), turn on auto-merge with a merge commit and, when main
-    moved, bring the branch up to date (main requires it). Returns {'number', 'url', 'state'}."""
+    """main takes changes through pull requests that merge themselves once CI is green: refuse what the
+    preflight refuses, push the current branch, open its pull request into main (or reuse the open one), turn on
+    auto-merge with the merge method the repository allows and, when main moved, bring the branch up to date
+    (main requires it). Returns {'number', 'url', 'state', 'preflight'}."""
     def git(*args):
         return subprocess.run([host_executable('git', required=True), '-C', str(repo_dir), *args], capture_output=True, text=True, encoding='utf-8',
                               errors='replace', check=True).stdout.strip()
@@ -667,6 +725,20 @@ def pull_request(repo_dir, body=None):
     if branch in ('HEAD', 'main', 'dev'):
         raise ValueError('Work on a branch: main takes changes only through a pull request.')
     absorb(repo_dir, branch)
+    read = preflight(repo_dir)
+    plan = merge_plan(read['settings'], read['branch'], read['protection'], read['rules'])
+    # This file also runs as a script (the detached shepherd), where a relative import at module level fails.
+    from . import push_preflight
+    executable = host_executable('git', required=True)
+    refusals = []
+    if read['settings'].get('private') is not True:  # anything but a private repository counts as public: fail closed
+        refusals = push_preflight.identity_refusals(push_preflight.unpublished(repo_dir, 'HEAD', git=executable))
+    fix = ' ' + push_preflight.FIX if refusals else ''
+    if plan['signed_commits']:
+        refusals += [f'commit {sha[:8]} is not signed and main requires signed commits'
+                     for sha in push_preflight.unsigned(repo_dir, 'HEAD', git=executable)]
+    if refusals:
+        raise ValueError('Preflight refused: ' + '; '.join(refusals) + '.' + fix)
     git('push', '--quiet', '--set-upstream', 'origin', branch)
     found = json.loads(gh(['pr', 'list', '--head', branch, '--base', 'main', '--state', 'open', '--json', 'number,url'],
                           repo_dir) or '[]')
@@ -694,25 +766,23 @@ def pull_request(repo_dir, body=None):
     number, url = found[0]['number'], found[0]['url']
     # gh --auto merges immediately when the base has no enforced protection.
     # Keep the reviewable PR open rather than assuming another repo's CI gate.
+    if plan['protected'] is not True:
+        return {'number': number, 'url': url, 'preflight': plan,
+                'state': 'UNPROTECTED_AWAITING_INTEGRATION' if plan['protected'] is False else 'PROTECTION_UNCONFIRMED'}
+    if plan['auto_merge'] is False:
+        return {'number': number, 'url': url, 'state': 'AUTO_MERGE_DISABLED_AWAITING_INTEGRATION', 'preflight': plan}
     try:
-        protection = json.loads(gh(['api', 'repos/{owner}/{repo}/branches/main'], repo_dir)).get('protected')
-    except (ValueError, OSError, subprocess.SubprocessError):
-        protection = None
-    if protection is not True:
-        return {'number': number, 'url': url,
-                'state': 'UNPROTECTED_AWAITING_INTEGRATION' if protection is False else 'PROTECTION_UNCONFIRMED'}
-    try:
-        gh(['pr', 'merge', str(number), '--auto', '--merge'], repo_dir)
+        gh(['pr', 'merge', str(number), '--auto', '--' + plan['method']], repo_dir)
     except subprocess.CalledProcessError as exc:
         if 'Auto merge is not allowed for this repository' not in str(exc.stderr or ''):
             raise
-        return {'number': number, 'url': url, 'state': 'AUTO_MERGE_DISABLED_AWAITING_INTEGRATION'}
+        return {'number': number, 'url': url, 'state': 'AUTO_MERGE_DISABLED_AWAITING_INTEGRATION', 'preflight': plan}
     state = json.loads(gh(['pr', 'view', str(number), '--json', 'mergeStateStatus'], repo_dir))['mergeStateStatus']
     if state == 'BEHIND':  # main moved: GitHub merges main into the branch, and the local branch follows
         gh(['pr', 'update-branch', str(number)], repo_dir)
         git('pull', '--quiet', '--ff-only', 'origin', branch)
     detached('shepherd', repo_dir, number)
-    return {'number': number, 'url': url, 'state': state}
+    return {'number': number, 'url': url, 'state': state, 'preflight': plan}
 
 
 def forget_pushing_worktree():
