@@ -196,6 +196,7 @@ def test_files_tare_cannot_safely_edit_are_left_as_they_are(tmp_path):
 def release(tag, published, passed=True):
     # The publisher writes the CI line into the notes only after CI passed on main for the release's commit.
     return {'tag_name': tag, 'created_at': '2026-10-02T00:29:51Z', 'published_at': published, 'draft': False,
+            'assets': [{'name': 'bundle.zip.sig'}],
             'body': 'Product bundle for Python 3.12 on Windows: ...'
                     + ('\n\n' + product.CI_PASSED + 'https://ci/runs/7' if passed else '')}
 

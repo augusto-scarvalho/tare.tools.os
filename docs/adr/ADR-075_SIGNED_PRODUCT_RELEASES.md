@@ -56,3 +56,5 @@ Python before any dependency exists and must stay small. The attestation stays a
   keys.
 - Until the second step ships, installed copies do not require the signature and the protection above is not in
   force.
+- The second step shipped on 2026-11-11: the updater now refuses a release without a valid signature, and the
+  protection is in force for copies that have updated past it.

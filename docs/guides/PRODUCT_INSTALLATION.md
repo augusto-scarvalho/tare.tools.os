@@ -459,13 +459,17 @@ followed by the SHA-256 of `bundle.zip` in hex. Check a download by hand from th
 `python install.py verify-signature bundle.zip bundle.zip.sig`, or from a checkout with
 `python relay/native_product.py verify-signature bundle.zip bundle.zip.sig`; neither needs an installation, and the
 exit code is 0 when the signature is valid. `--key HEX` (repeatable) checks against other public keys instead of the
-ones built in. Installed copies do not require the signature yet: they will from the release after the first signed
-one.
+ones built in. Installed copies require the signature: the updater takes only releases that have a `bundle.zip.sig`
+asset, downloads it with the bundle and verifies it against the built-in keys before extracting anything. A bundle
+whose signature is missing or does not verify is not installed: `auto-update` reports `refused` with the tag, leaves
+the installation as it was and tries again on a later run, so a release repaired by hand with the recovery key still
+installs.
 
 On each machine, the `Tare-Update` task runs `tare.cmd auto-update` at logon and every 5 minutes. It reads the
 public releases over HTTPS (one GitHub API call, two when the installed release is older than the newest hundred; no
-login and no GitHub CLI), takes the newest release whose notes say CI passed and that is newer than the installed
-one, and downloads its `bundle.zip`. It installs the new release next to the current one and uses the
+login and no GitHub CLI), takes the newest signed release (one with `bundle.zip.sig`) whose notes say CI passed and
+that is newer than the installed one, downloads its `bundle.zip` and verifies the signature. It installs the new
+release next to the current one and uses the
 I2I-02 transition described above to reconcile Serve safely. The TUI is never
 closed: it warns once that an update is installed, and the next launch
 already uses the new version; conversations continue where they stopped.

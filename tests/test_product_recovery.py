@@ -93,6 +93,7 @@ def test_manual_rollback_pauses_and_resume_is_byte_idempotent(recovery, monkeypa
 def test_rejected_B_excludes_all_older_candidates_but_allows_C(monkeypatch):
     import urllib.error
     rows = [{'tag_name': 'product-' + value[:16], 'published_at': str(i), 'created_at': str(i),
+             'assets': [{'name': 'bundle.zip.sig'}],
              'body': product.CI_PASSED + 'https://ci/runs/' + str(i)} for i, value in enumerate((A, B, C))]
     def api(path):
         if path.endswith('?per_page=100'):

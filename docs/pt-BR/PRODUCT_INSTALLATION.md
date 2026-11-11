@@ -466,5 +466,8 @@ A assinatura cobre `tare.tools product bundle` e uma quebra de linha, seguidos d
 hexadecimal. Para conferir um download à mão, a partir do bundle extraído:
 `python install.py verify-signature bundle.zip bundle.zip.sig` (ou `python relay/native_product.py
 verify-signature ...` num checkout); nenhum dos dois precisa de instalação, e o código de saída é 0 quando a
-assinatura é válida. As cópias instaladas ainda não exigem a assinatura: passarão a exigir a partir da release
-seguinte à primeira assinada.
+assinatura é válida. As cópias instaladas exigem a assinatura: o atualizador só considera releases que têm o asset
+`bundle.zip.sig`, baixa-o junto com o bundle e o verifica com as chaves embutidas antes de extrair qualquer coisa.
+Um bundle cuja assinatura falta ou não confere não é instalado: `auto-update` informa `refused` com a tag, deixa a
+instalação como estava e tenta de novo numa execução posterior, de modo que uma release corrigida à mão com a chave
+de recuperação ainda é instalada.

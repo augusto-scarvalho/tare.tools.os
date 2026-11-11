@@ -264,6 +264,7 @@ SERVE_TASK, SERVE_HEALTH = 'Tare-Serve', 'http://127.0.0.1:8790/health'
 # The publisher releases a bundle only after tare.tools CI passed on main for its OS commit, and says so in the notes
 # (scripts/ops/publish_product.py, CI_PASSED). An installed copy takes only such releases and never asks about CI.
 CI_PASSED = 'CI passed on main: '
+SIGNATURE_ASSET = 'bundle.zip.sig'  # the release asset the updater requires (ADR-075)
 
 
 def github(path):
@@ -298,7 +299,9 @@ def latest_published(repo, current=None, *, after=None, api=github):
                     return None  # its place in the order is unknown; never infer a downgrade
                 raise
         floor = max(floor, when(row))
-    passed = [row for row in releases if when(row) > floor and CI_PASSED in (row.get('body') or '')]
+    # An unsigned release still places `current`/`after` above, but is never returned (ADR-075).
+    passed = [row for row in releases if when(row) > floor and CI_PASSED in (row.get('body') or '')
+              and any(asset.get('name') == SIGNATURE_ASSET for asset in row.get('assets') or ())]
     return passed[-1]['tag_name'] if passed else None
 
 
@@ -418,13 +421,33 @@ def verify_signature_command(argv):
     return 0 if valid else 1
 
 
+class SignatureError(ValueError):
+    """A release's bundle has no valid signature from RELEASE_KEYS (ADR-075)."""
+
+
 def download_bundle(repo, tag, folder):
-    """The release's bundle.zip into folder, from its public download link."""
+    """The release's bundle.zip into folder, from its public download link, checked against its bundle.zip.sig and
+    RELEASE_KEYS. A missing, unreadable or invalid signature raises SignatureError (naming the tag), and the caller
+    must then not extract the archive. The signature is fetched first, so a release without one costs no bundle
+    download."""
+    import urllib.error
     import urllib.request
-    request = urllib.request.Request(f'https://github.com/{repo}/releases/download/{tag}/bundle.zip',
-                                     headers={'User-Agent': 'tare.tools'})
+    base = f'https://github.com/{repo}/releases/download/{tag}/'
+    request = urllib.request.Request(base + SIGNATURE_ASSET, headers={'User-Agent': 'tare.tools'})
+    try:
+        with urllib.request.urlopen(request, timeout=60) as reply:
+            text = reply.read(1024).decode('ascii')  # about 88 characters
+    except urllib.error.HTTPError as exc:
+        if exc.code != 404:
+            raise
+        raise SignatureError(f'{tag} has no {SIGNATURE_ASSET}') from exc
+    except UnicodeDecodeError as exc:
+        raise SignatureError(f'{tag} has an unreadable {SIGNATURE_ASSET}') from exc
+    request = urllib.request.Request(base + 'bundle.zip', headers={'User-Agent': 'tare.tools'})
     with urllib.request.urlopen(request, timeout=1800) as reply, open(Path(folder)/'bundle.zip', 'wb') as target:
         shutil.copyfileobj(reply, target)
+    if not verify_signature(Path(folder)/'bundle.zip', text):
+        raise SignatureError(f'{tag} has no valid signature')
 
 
 def serve_health(url=SERVE_HEALTH):
@@ -805,7 +828,13 @@ def _auto_update_locked(home, *, repo, wait_seconds):
     tag = latest_published(repo, selected['current'], after=policy.get('after'))
     if tag and not (selected['current'] or '').startswith(tag.removeprefix('product-')):
         with tempfile.TemporaryDirectory(dir=home, prefix='download-') as folder:
-            download_bundle(repo, tag, folder)
+            try:
+                download_bundle(repo, tag, folder)
+            except SignatureError as exc:
+                # No barrier (`after`): a release whose signature is repaired by hand installs on a later run.
+                # ponytail: a release with a wrong signature is downloaded again on every run until it is repaired,
+                # removed or superseded; remember the refused asset if that ever costs real bandwidth.
+                return {**result, 'refused': str(exc), **status(home)}
             with zipfile.ZipFile(Path(folder)/'bundle.zip') as archive:
                 archive.extractall(Path(folder)/'bundle')
             _require_pair(home, selected)
