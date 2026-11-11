@@ -70,3 +70,17 @@ def test_the_hook_refuses_a_pushed_commit_with_a_personal_email(tmp_path, email,
         assert result.returncode != 0 and f'commit {head[:8]}: author email {email}' in result.stderr, result
     else:
         assert result.returncode == 0 and 'noreply' not in result.stderr, result
+
+
+@pytest.mark.skipif(SH is None, reason='no POSIX shell to run the hook')
+def test_the_hook_passes_an_empty_line_from_a_wrapper_with_nothing_to_push(tmp_path):
+    # The machine's publication guard forwards its stdin with printf: an up-to-date push arrives as one empty line.
+    for path in ('.githooks/pre-push', 'tools/changelog_guard.py', 'relay/push_preflight.py', 'CHANGELOG.md'):
+        (tmp_path/path).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT/path, tmp_path/path)
+    git(tmp_path, 'init', '-q')
+    env = {key: value for key, value in os.environ.items() if key != 'LOCALAPPDATA'}  # no CI watcher
+    env['PYTHON'] = sys.executable
+    result = subprocess.run([SH, '.githooks/pre-push', 'origin', 'unused-url'], cwd=tmp_path, env=env, input='\n',
+                            capture_output=True, text=True)
+    assert result.returncode == 0 and not result.stderr, result

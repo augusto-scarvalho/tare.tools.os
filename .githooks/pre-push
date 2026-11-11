@@ -42,7 +42,8 @@ run_identity() {
 }
 
 while read -r local_ref local_sha remote_ref remote_sha; do
-    [ "$local_sha" != "$zero_sha" ] || continue
+    # A wrapper that forwards an empty stdin (nothing to push) sends one empty line.
+    [ -n "$local_sha" ] && [ "$local_sha" != "$zero_sha" ] || continue
     # Any push publishes commits, a tag's too, and a public repository keeps a leaked email for good (ADR-072).
     # The hook cannot ask GitHub whether the repository is public, so it always checks.
     run_identity "$local_sha" || result=1
