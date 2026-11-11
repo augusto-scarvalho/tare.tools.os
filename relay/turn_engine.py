@@ -64,8 +64,12 @@ DEFAULT_POLICY = {
     # Writes heads-up notes (relay/heads_up.py). Measured 2026-11-05 against 49 notes users accepted from a side agent
     # and 50 turns it left quiet (scripts/heads_up_calibration.py claude --writer): Sonnet wrote consequence notes on
     # 31% and 22% of them; Sol rarely speaks (6%, 2%) but is precise; Haiku, Luna and the local model mostly flag
-    # process details, as often on quiet turns as on noted ones, so Haiku only stands in when both are unavailable.
-    'heads_up': ['claude-sonnet-5-5-cli', 'codex-cli-gpt-6-1-sol', 'claude-haiku-5-5-cli'],
+    # process details, as often on quiet turns as on noted ones.
+    # The side agent needs the whole picture, so it is a mid-to-high model at medium-to-high effort (operator, 2026-11-11):
+    # Sonnet at high is the entry level, Sol and AGY's Gemini 3.8 are the alternatives, and no small model stands in
+    # (a note from Haiku is worse than no note).
+    'heads_up': ['claude-sonnet-5-5-cli', 'codex-cli-gpt-6-1-sol', 'agy-cli'],
+    'heads_up_effort': 'high',
 }
 
 
