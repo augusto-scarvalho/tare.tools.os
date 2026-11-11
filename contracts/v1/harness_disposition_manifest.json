@@ -2547,8 +2547,8 @@
     {
       "name": "strict_workspace.py",
       "path": "tare.tools.os/relay/strict_workspace.py",
-      "size_bytes": 9003,
-      "sha256": "69c78e7d875651829ffb86a8a34c992be04e8745fce351a6415c0468a1c257e7",
+      "size_bytes": 11112,
+      "sha256": "7d12c92d669a256a10beb7853e59ff6878918ab74bef1af24eb97c8ea58a92f4",
       "summary": "OS-owned intent and ready artifacts around the Kernel workspace lease.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -3671,8 +3671,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded experiment scheduling, evidence comparison and operator controls; execution ports remain in Kernel and Runtime.",
-      "size_bytes": 17916,
-      "sha256": "d0eb1457654a99df70956753ee90e324af705c6ae759761e5d325373913cb56c"
+      "size_bytes": 18006,
+      "sha256": "86707cc5356e6961d9da70c9f6542039a4f3617bbb40e9d0e3c4fd71b9cde492"
     },
     {
       "name": "console_challenger.py",
@@ -3761,8 +3761,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS composes isolated Work preparation and existing admission; Kernel owns workspaces and Runtime owns model execution.",
-      "size_bytes": 18812,
-      "sha256": "2be963d426366c6138f77a1b687b2e9048136820bf676874805866d65ff2aa22"
+      "size_bytes": 18975,
+      "sha256": "6145d5a75dab1ad667bbbbbe5b300553d3bfe8d51b58a78aa107bdbe6a7d9b54"
     },
     {
       "name": "ci_watch.py",
