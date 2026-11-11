@@ -23,6 +23,7 @@ def main() -> int:
     required = [
         root / ".githooks" / "pre-push",
         root / "tools" / "changelog_guard.py",
+        root / "relay" / "push_preflight.py",
     ]
     missing = [str(path) for path in required if not path.is_file()]
     if missing:

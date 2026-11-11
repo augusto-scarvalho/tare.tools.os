@@ -242,6 +242,62 @@ def test_gh_runs_without_a_working_directory_that_no_longer_exists(tmp_path, mon
     assert seen == [tmp_path, None]
 
 
+NOREPLY_EMAIL = '21094776+me@users.noreply.github.com'
+
+
+def core(result):
+    assert 'preflight' in result  # `tare ci pr` prints what it read
+    return {key: result[key] for key in ('number', 'url', 'state')}
+
+
+def api_answer(endpoint, protected=True, settings=None, classic=None, rules=None):
+    """The scripted `gh api` of a public repository whose main is protected; each argument changes one reading."""
+    if endpoint == 'repos/{owner}/{repo}':
+        return json.dumps({'private': False, 'visibility': 'public', **(settings or {})})
+    if endpoint.endswith('/branches/main/protection'):
+        return json.dumps(classic or {})
+    if endpoint.endswith('/rules/branches/main'):
+        return json.dumps(rules or [])
+    return json.dumps({'protected': protected})
+
+
+def feature_checkout(tmp_path, email):
+    """A clone of a bare `main` with a pushed base commit and a `feature` branch carrying one unpublished commit."""
+    remote, work = tmp_path/'remote.git', tmp_path/'work'
+    subprocess.run(['git', 'init', '-q', '--bare', '-b', 'main', str(remote)], check=True)
+    subprocess.run(['git', 'clone', '-q', str(remote), str(work)], check=True, capture_output=True)
+    def git(*args):
+        return subprocess.run(['git', '-C', str(work), *args], capture_output=True, text=True, check=True).stdout
+    git('config', 'user.email', email); git('config', 'user.name', 'T'); git('config', 'core.hooksPath', '/dev/null')
+    (work/'a.txt').write_text('1'); git('add', '.'); git('commit', '-qm', 'base'); git('push', '-q', 'origin', 'HEAD:main')
+    git('checkout', '-qb', 'feature'); (work/'a.txt').write_text('2'); git('commit', '-qam', 'Change a')
+    return remote, work, git
+
+
+def on_remote(remote, ref='feature'):
+    return subprocess.run(['git', '-C', str(remote), 'rev-parse', ref], capture_output=True).returncode == 0
+
+
+def scripted_github(monkeypatch, answer=api_answer, merge_stderr=None):
+    """A `gh` for `tare ci pr`: `answer(endpoint)` serves `gh api`; returns the recorded calls."""
+    calls, prs = [], []
+    def gh(args, cwd):
+        calls.append(args)
+        if args[0] == 'api':
+            return answer(args[1])
+        if args[:2] == ['pr', 'list']:
+            return json.dumps(prs)
+        if args[:2] == ['pr', 'create']:
+            prs.append({'number': 5, 'url': 'https://github.com/o/r/pull/5'})
+            return prs[0]['url']
+        if args[:2] == ['pr', 'view']:
+            return json.dumps({'mergeStateStatus': 'BLOCKED'})
+        return ''
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+    monkeypatch.setattr(ci_watch, 'detached', lambda *args: None)
+    return calls
+
+
 @pytest.mark.parametrize('protection', [True, False, None])
 @pytest.mark.parametrize('auto_merge', [True, False])
 @pytest.mark.parametrize('visibility', ['ready', 'empty', 'zero'])
@@ -252,7 +308,7 @@ def test_a_branch_reaches_main_through_a_pull_request_that_merges_itself(tmp_pat
     subprocess.run(['git', 'clone', '-q', str(remote), str(work)], check=True, capture_output=True)
     def git(*args):
         return subprocess.run(['git', '-C', str(work), *args], capture_output=True, text=True, check=True).stdout
-    git('config', 'user.email', 't@localhost'); git('config', 'user.name', 'T'); git('config', 'core.hooksPath', '/dev/null')
+    git('config', 'user.email', NOREPLY_EMAIL); git('config', 'user.name', 'T'); git('config', 'core.hooksPath', '/dev/null')
     (work/'a.txt').write_text('1'); git('add', '.'); git('commit', '-qm', 'base'); git('push', '-q', 'origin', 'HEAD:main')
     git('checkout', '-qb', 'feature'); (work/'a.txt').write_text('2'); git('commit', '-qam', 'Change a')
     calls, prs = [], []
@@ -261,7 +317,7 @@ def test_a_branch_reaches_main_through_a_pull_request_that_merges_itself(tmp_pat
         nonlocal pending
         calls.append(args[:2])
         if args[0] == 'api':
-            return json.dumps({'protected': protection})
+            return api_answer(args[1], protected=protection)
         if args[:2] == ['pr', 'list']:
             if pending:
                 pending = False
@@ -287,16 +343,18 @@ def test_a_branch_reaches_main_through_a_pull_request_that_merges_itself(tmp_pat
     monkeypatch.setattr(ci_watch, 'detached', lambda *args: started.append(args))
     if protection is not True:
         result = ci_watch.pull_request(work)
-        assert result == {'number': 5, 'url': 'https://github.com/o/r/pull/5',
+        assert core(result) == {'number': 5, 'url': 'https://github.com/o/r/pull/5',
             'state': 'UNPROTECTED_AWAITING_INTEGRATION' if protection is False else 'PROTECTION_UNCONFIRMED'}
         assert ['pr', 'merge'] not in calls and not started and prs
         return
     if not auto_merge:
-        assert ci_watch.pull_request(work) == {'number': 5, 'url': 'https://github.com/o/r/pull/5',
+        assert core(ci_watch.pull_request(work)) == {'number': 5, 'url': 'https://github.com/o/r/pull/5',
             'state': 'AUTO_MERGE_DISABLED_AWAITING_INTEGRATION'}
         assert not started and prs
         return
-    assert ci_watch.pull_request(work) == {'number': 5, 'url': 'https://github.com/o/r/pull/5', 'state': 'BLOCKED'}
+    result = ci_watch.pull_request(work)
+    assert core(result) == {'number': 5, 'url': 'https://github.com/o/r/pull/5', 'state': 'BLOCKED'}
+    assert result['preflight']['method'] == 'merge' and result['preflight']['protected'] is True
     assert started == [('shepherd', work, 5)]
     assert prs[0]['title'] == 'Change a' and ['pr', 'merge'] in calls
     assert subprocess.run(['git', '-C', str(remote), 'rev-parse', 'feature'], capture_output=True).returncode == 0
@@ -1177,3 +1235,140 @@ def test_a_restart_remembers_the_head_branch_so_the_gone_round_cleans_its_push_a
     monkeypatch.setattr(ci_watch, 'gh', restarted)
     assert ci_watch.shepherd(worktree, 9, sleep=lambda s: pytest.fail('it waited another round')) == 'GONE'
     assert ci_watch.read('shepherds.json') == {} and ci_watch.read() == {}
+
+
+def test_a_personal_email_in_a_push_to_a_public_repository_is_refused_before_anything_is_pushed(tmp_path, monkeypatch):
+    remote, work, git = feature_checkout(tmp_path, 't@example.org')
+    calls = scripted_github(monkeypatch)
+    sha = git('rev-parse', 'HEAD').strip()
+    with pytest.raises(ValueError, match='Preflight refused') as refused:
+        ci_watch.pull_request(work)
+    assert sha[:8] in str(refused.value) and 'author email t@example.org' in str(refused.value)
+    assert not on_remote(remote) and ['pr', 'create'] not in [call[:2] for call in calls]
+
+
+def test_a_refused_identity_reads_well_on_the_command_line(tmp_path, monkeypatch, capsys):
+    remote, work, git = feature_checkout(tmp_path, 't@example.org')
+    scripted_github(monkeypatch)
+    assert ci_watch.main(['pr', '--repo-dir', str(work)]) == 1
+    error = capsys.readouterr().err
+    assert error.startswith('tare ci pr: Preflight refused: commit ') and error.endswith('yet).\n') and '..' not in error
+    assert 'git config user.email' in error and not on_remote(remote)
+
+
+def test_a_personal_email_is_pushed_to_a_private_repository(tmp_path, monkeypatch):
+    remote, work, git = feature_checkout(tmp_path, 't@example.org')
+    scripted_github(monkeypatch, lambda endpoint: api_answer(endpoint, settings={'private': True, 'visibility': 'private'}))
+    assert ci_watch.pull_request(work)['number'] == 5
+    assert on_remote(remote)
+
+
+def test_a_repository_whose_visibility_is_not_shown_counts_as_public(tmp_path, monkeypatch):
+    remote, work, git = feature_checkout(tmp_path, 't@example.org')
+    scripted_github(monkeypatch, lambda endpoint: json.dumps({}) if endpoint == 'repos/{owner}/{repo}' else api_answer(endpoint))
+    with pytest.raises(ValueError, match='Preflight refused'):
+        ci_watch.pull_request(work)
+    assert not on_remote(remote)
+
+
+def test_nothing_is_pushed_when_github_cannot_be_read(tmp_path, monkeypatch):
+    remote, work, git = feature_checkout(tmp_path, NOREPLY_EMAIL)
+    def unreadable(endpoint):
+        raise subprocess.CalledProcessError(1, ['gh', 'api', endpoint], stderr='HTTP 502')
+    calls = scripted_github(monkeypatch, unreadable)
+    with pytest.raises(subprocess.CalledProcessError):
+        ci_watch.pull_request(work)
+    assert not on_remote(remote) and [call[0] for call in calls] == ['api']
+
+
+def test_protection_that_cannot_be_read_is_unknown_and_no_rule_is_assumed(tmp_path, monkeypatch):
+    remote, work, git = feature_checkout(tmp_path, NOREPLY_EMAIL)
+    def partly(endpoint):
+        if endpoint == 'repos/{owner}/{repo}':
+            return api_answer(endpoint)
+        raise subprocess.CalledProcessError(1, ['gh', 'api', endpoint], stderr='HTTP 403')
+    scripted_github(monkeypatch, partly)
+    result = ci_watch.pull_request(work)
+    assert result['state'] == 'PROTECTION_UNCONFIRMED' and result['preflight']['method'] == 'merge'
+    assert on_remote(remote)
+
+
+MERGE_ONLY = {'type': 'pull_request', 'parameters': {'allowed_merge_methods': ['merge']}}
+SQUASH_AND_REBASE = {'type': 'pull_request', 'parameters': {'allowed_merge_methods': ['squash', 'rebase']}}
+
+
+@pytest.mark.parametrize('settings, classic, rules, method', [
+    ({}, {}, [], 'merge'),  # the defaults
+    ({'allow_merge_commit': True, 'allow_squash_merge': True, 'allow_rebase_merge': True}, {}, [], 'merge'),
+    ({'allow_merge_commit': False}, {}, [], 'squash'),
+    ({}, {'required_linear_history': {'enabled': True}}, [], 'squash'),  # classic protection
+    ({}, {}, [{'type': 'required_linear_history'}], 'squash'),  # ruleset
+    ({}, {'required_linear_history': {'enabled': False}}, [], 'merge'),
+    ({}, {}, [SQUASH_AND_REBASE], 'squash'),
+    ({}, {}, [MERGE_ONLY], 'merge'),
+    ({'allow_merge_commit': None}, {}, [], 'merge'),  # absent or null: unknown, which is allowed
+])
+def test_the_merge_method_is_a_merge_commit_unless_the_repository_rules_it_out(settings, classic, rules, method):
+    plan = ci_watch.merge_plan(settings, {}, classic, rules)
+    assert plan['method'] == method
+
+
+@pytest.mark.parametrize('settings, classic, rules, reason', [
+    ({'allow_merge_commit': False, 'allow_squash_merge': False}, {}, [], 'allow_merge_commit is off'),
+    ({'allow_squash_merge': False}, {'required_linear_history': {'enabled': True}}, [], 'linear history is required'),
+    ({}, {}, [{'type': 'required_linear_history'}, {'type': 'pull_request',
+                                                    'parameters': {'allowed_merge_methods': ['rebase']}}],
+     'a ruleset allows only rebase'),
+])
+def test_a_repository_that_leaves_only_rebase_refuses_with_the_reason(settings, classic, rules, reason):
+    with pytest.raises(ValueError, match='^Preflight refused: no merge method is left') as refused:
+        ci_watch.merge_plan(settings, {}, classic, rules)
+    assert reason in str(refused.value) and 'rebase is never used' in str(refused.value)
+
+
+def test_the_plan_collects_checks_reviews_and_signing_from_every_source():
+    branch = {'protected': True, 'protection': {'required_status_checks': {'contexts': ['changelog', 'lint']}}}
+    classic = {'required_status_checks': {'strict': True, 'contexts': ['changelog', 'Tests (linux)']},
+               'required_pull_request_reviews': {'required_approving_review_count': 1},
+               'required_signatures': {'enabled': False}, 'required_linear_history': {'enabled': False}}
+    rules = [{'type': 'required_status_checks', 'parameters': {'required_status_checks': [{'context': 'ci'}]}},
+             {'type': 'pull_request', 'parameters': {'required_approving_review_count': 2,
+                                                     'allowed_merge_methods': ['merge', 'squash', 'rebase']}},
+             {'type': 'required_signatures'}]
+    plan = ci_watch.merge_plan({'visibility': 'public', 'allow_auto_merge': True}, branch, classic, rules)
+    assert plan == {'method': 'merge', 'auto_merge': True, 'protected': True, 'visibility': 'public',
+                    'required_checks': ['Tests (linux)', 'changelog', 'ci', 'lint'], 'required_reviews': 2,
+                    'signed_commits': True, 'linear_history': False}
+    bare = ci_watch.merge_plan({}, {}, {}, [])
+    assert bare['required_checks'] == [] and bare['required_reviews'] == 0 and bare['auto_merge'] is None
+    assert not bare['signed_commits'] and not bare['linear_history'] and bare['protected'] is None
+
+
+def test_the_method_the_plan_chose_is_the_one_auto_merge_is_turned_on_with(tmp_path, monkeypatch):
+    remote, work, git = feature_checkout(tmp_path, NOREPLY_EMAIL)
+    calls = scripted_github(monkeypatch, lambda endpoint: api_answer(endpoint, settings={'allow_merge_commit': False}))
+    assert ci_watch.pull_request(work)['preflight']['method'] == 'squash'
+    assert ['pr', 'merge', '5', '--auto', '--squash'] in calls and ['pr', 'merge', '5', '--auto', '--merge'] not in calls
+
+
+def test_a_repository_that_turned_auto_merge_off_is_not_asked_to_merge(tmp_path, monkeypatch):
+    remote, work, git = feature_checkout(tmp_path, NOREPLY_EMAIL)
+    calls = scripted_github(monkeypatch, lambda endpoint: api_answer(endpoint, settings={'allow_auto_merge': False}))
+    assert core(ci_watch.pull_request(work))['state'] == 'AUTO_MERGE_DISABLED_AWAITING_INTEGRATION'
+    assert 'merge' not in [call[1] for call in calls if call[0] == 'pr'] and on_remote(remote)
+
+
+def test_an_unsigned_commit_is_refused_where_signed_commits_are_required(tmp_path, monkeypatch):
+    from relay import push_preflight
+    remote, work, git = feature_checkout(tmp_path, NOREPLY_EMAIL)  # git here cannot sign: every commit is unsigned
+    scripted_github(monkeypatch, lambda endpoint: api_answer(endpoint, classic={'required_signatures': {'enabled': True}}))
+    sha = git('rev-parse', 'HEAD').strip()
+    with pytest.raises(ValueError, match='Preflight refused') as refused:
+        ci_watch.pull_request(work)
+    assert f'commit {sha[:8]} is not signed' in str(refused.value) and not on_remote(remote)
+
+
+def test_an_unsigned_commit_is_pushed_where_signing_is_not_required(tmp_path, monkeypatch):
+    remote, work, git = feature_checkout(tmp_path, NOREPLY_EMAIL)
+    scripted_github(monkeypatch)
+    assert ci_watch.pull_request(work)['number'] == 5 and on_remote(remote)

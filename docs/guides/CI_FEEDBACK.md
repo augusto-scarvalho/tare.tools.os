@@ -110,6 +110,15 @@ the shepherd never automatically reruns tests. Diagnose and fix the cause before
 If a protected repository disables GitHub auto-merge, `tare ci pr` keeps the PR open
 and returns `AUTO_MERGE_DISABLED_AWAITING_INTEGRATION`. Integrate it only after
 the required checks pass; the command does not change repository settings.
+Before it pushes anything, `tare ci pr` reads the repository's settings, branch protection and rulesets (required
+checks, reviews, signed commits, linear history, merge methods, auto-merge) and prints them under `preflight`. It
+refuses, with the reason, a push to a public repository when an unpublished commit's author or committer email is not
+a GitHub noreply address (`relay/push_preflight.py`; the `pre-push` hook runs the same check for every push, tags
+included), when the branch requires signed commits and one is unsigned, and when the settings leave no merge method.
+To fix an identity refusal, set `git config user.email` to your GitHub noreply address and recreate the named
+commits before pushing: a published commit cannot be taken back from a public repository, so nothing is rewritten
+afterwards. Auto-merge uses a merge commit, else a squash (when merge commits are off or linear history is required),
+never a rebase.
 The watcher leaves pull request alerts to the shepherd. A shepherd beats in
 `shepherds.json` every round; the end of an agent's turn (the stop hook), `tare ci check`, every push's watcher and
 the daily check start again one silent for 15 minutes (the machine restarted or the process died), so a red pull
