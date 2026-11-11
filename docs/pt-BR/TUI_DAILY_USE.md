@@ -222,6 +222,12 @@ são escritos. Um aviso aparece só enquanto a conversa está aberta; `/heads-up
 os últimos avisos no compositor pelo teclado, e a caixa de seleção nas Configurações
 desliga os avisos para a máquina.
 
+Quando uma resposta precisava de um aviso e o tare não mostrou nenhum, digite `/missed`
+seguido do que ela deveria ter dito (as palavras são opcionais). Isso registra o fato
+para a última resposta concluída, mesmo com um turno em andamento, e não envia nada ao
+agente. O registro fica nesta máquina (o log não guarda texto) e serve, junto com as
+avaliações dos avisos, para ajustar quando e quais avisos são escritos.
+
 ### Consultar uso, tarefas, ferramentas e skills do projeto
 
 - `/usage` abre na primeira linha, **Provider quota and credit**: o que resta em cada assinatura

@@ -57,3 +57,42 @@ def test_the_note_buttons_fill_the_composer_and_record_labels(tmp_path, monkeypa
             buttons['heads-up-useful'].focus(); await pilot.press('enter'); await pilot.pause()
             assert heads_up.shown(session)['noted'][0]['label'] == 'useful'
     asyncio.run(scenario())
+
+
+def test_missed_records_the_last_reply_without_sending_anything(tmp_path, monkeypatch):
+    from test_heads_up import session as journal  # a conversation whose journal holds a finished turn
+    monkeypatch.delenv('TARE_HEADS_UP', raising=False)
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'state'))
+    root = tmp_path/'project'; root.mkdir()
+    folder = journal(tmp_path)
+    log = tmp_path/'state'/'serve'/'heads-up.jsonl'
+    words = 'the reply hid the failed audit, "really"!  (twice)'
+
+    async def scenario():
+        backend = FakeBackend()
+        app = WorkConsole(root, backend=backend, initial_mode='assistant')
+        async with app.run_test(size=(80, 24)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.pause(.3)
+            prompt, said = app.query_one('#prompt', TextArea), []
+            app.set_status = said.append
+            prompt.load_text('/missed ' + words)  # no conversation yet: nothing to flag, the draft stays
+            app.execute(False); await pilot.pause()
+            assert prompt.text == '/missed ' + words and 'no finished reply' in said[-1] and not log.exists()
+            app.assistant_session = folder
+            app.execute(False); await pilot.pause()
+            assert prompt.text == '' and 'Recorded' in said[-1] and 'on this machine' in said[-1]
+            assert not app.busy and not backend.launches  # nothing was sent, no model was called
+            [entry] = heads_up.shown(folder)['missed']
+            assert entry['text'] == words and entry['turn'] == heads_up._digest('Done: all tests pass.')
+            [row] = [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()]
+            assert (row['event'], row['said'], row['reply_sha256']) == ('miss', True, entry['turn'])
+            assert 'audit' not in json.dumps(row)
+
+            app.busy = True  # about the last finished reply: allowed during a turn (as /team is), with no words too
+            prompt.load_text('/missed'); app.execute(False); await pilot.pause()
+            assert prompt.text == '' and 'Recorded' in said[-1] and not backend.launches
+            assert [m['text'] for m in heads_up.shown(folder)['missed']] == [words, '']
+            app.busy = False
+            heads_up.set_enabled(True)
+    asyncio.run(scenario())

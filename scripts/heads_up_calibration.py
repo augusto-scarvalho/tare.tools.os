@@ -3,8 +3,8 @@
 `replay` sends saved TUI and tare serve turns through the funnel with each one forwarded to the writer, so the log
 (<storage>/serve/heads-up.jsonl) holds the score beside the writer's verdict for every turn; a turn already replayed
 is skipped. It spends writer and judge calls: --limit bounds them.
-`notes` lists every note the TUI showed since a date, with its turn, for dogfood review: a label from a person
-who reads it, where /heads-up only says a note was sent to the agent.
+`notes` lists every note the TUI showed since a date, with its turn, and every reply the user flagged with /missed,
+for dogfood review: a label from a person who reads it, where /heads-up only says a note was sent to the agent.
 `report` reads the log: for each score, how many writer calls it saves and how many turns that got notes it would
 have dropped, the notes Jev dropped as already said, how many the user labelled useful or not useful, and how many
 notes the user really sent to the agent (a request that carries the text) and whether its reply confirmed them.
@@ -32,16 +32,21 @@ def log_rows():
     return [r for r in rows if r.get('funnel') == funnel()]
 
 
-def noted(root, since=''):
+def noted(root, since='', key='noted'):
     """Every note the TUI showed at or after `since` (an ISO time), oldest first, with its session."""
     found = []
     for path in root.glob('*/heads-up.json'):
         try:
             found += [{'session': path.parent.name, **n} for n in json.loads(path.read_text(encoding='utf-8')).get(
-                'noted') or [] if n['at'] >= since]
+                key) or [] if n['at'] >= since]
         except (OSError, ValueError, KeyError, TypeError):
             continue
     return sorted(found, key=lambda n: n['at'])
+
+
+def missed(root, since=''):
+    """Every reply the user flagged with /missed at or after `since`, oldest first, with its session."""
+    return noted(root, since, 'missed')
 
 
 def replay(root, limit, writer=None):
@@ -341,6 +346,12 @@ def report(rows):
           f"{sum(c is not None and c >= CONFIRMED_AT for c in checked)} confirmed by its reply, "
           f"{sum(c is not None and c < CONFIRMED_AT for c in checked)} not confirmed, "
           f"{sum(c is None for c in checked)} without an answer.")
+    flagged = {r.get('reply_sha256') for r in rows if r.get('event') == 'miss'}
+    shown_for, ran_for, turn_for = ({r.get('reply_sha256') for r in rs} for rs in (noted, ran, turns))  # joined by the reply
+    print(f"{len(flagged)} replies flagged as missing a note: "
+          f"{len((flagged & ran_for) - shown_for)} where the writer ran and wrote none, "
+          f"{len(flagged & shown_for)} where a note was shown anyway, "
+          f"{len((flagged & turn_for) - ran_for)} where the writer did not run, {len(flagged - turn_for)} not in this log.")
     if ran:
         print(f'threshold  writer calls saved  noted turns dropped   (now {FORWARD_AT})')
         for threshold in sorted({.05, .1, .2, FORWARD_AT, .3, .4, .5}):
@@ -383,8 +394,10 @@ def main(argv=None):
         return fit(claude_cases(args.projects, 10**9))
     if args.command == 'notes':
         from relay.native_agent import session_root
-        for note in noted(session_root(), args.since):
-            print(json.dumps(note, ensure_ascii=False))
+        root = session_root()
+        for kind, found in sorted([('note', n) for n in noted(root, args.since)]
+                                  + [('miss', m) for m in missed(root, args.since)], key=lambda p: p[1]['at']):
+            print(json.dumps({'kind': kind, **found}, ensure_ascii=False))
         return 0
     if args.command == 'replay':
         os.environ.pop('TARE_HEADS_UP', None)  # replaying is asking for it
