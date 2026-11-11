@@ -2861,8 +2861,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns experience and flow selection; native text inference and execution owners are reused.",
-      "size_bytes": 18160,
-      "sha256": "478e04425b9ba6cdf59c153ab4adade8a8356f6f636c1e52bebc90aa90412e0b"
+      "size_bytes": 18447,
+      "sha256": "126f86d388fa76346f6d8577ae5304755e9c2a642c70ad476a47a31a1c8d2fa7"
     },
     {
       "name": "work_intake.py",
@@ -3101,8 +3101,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS presents existing conversation checkpoints; execution and recovery remain with their owners.",
-      "size_bytes": 23563,
-      "sha256": "3947dd6c175ffa10bcd73c46c7283834cd48eaf0b8bfaa238d19f359d04f967b"
+      "size_bytes": 24408,
+      "sha256": "0a45ec080ea9661f09d3fc3929e720a365265afc4c7fffe428ef96b928d8c782"
     },
     {
       "name": "console_appearance.py",
@@ -4351,8 +4351,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 37733,
-      "sha256": "27ab5caee56f3ae6a3fbdd1657181468d147a41b545184369fd76a329ff433b1"
+      "size_bytes": 39519,
+      "sha256": "6c51a1da662b1c337dc39cc73cd6495acdeb1e5daadfda5b0007bb8056c9e42f"
     },
     {
       "name": "cli_qualification.py",

@@ -246,12 +246,12 @@ class ConversationNavigation:
     def dispatch_conversation_command(self, name, arguments):
         """Handle UI commands without passing them to the model or flow router."""
         workbench = {'/artifacts', '/tasks', '/team', '/usage', '/tools', '/skills'}
-        if name not in {'/new', '/model', '/reasoning', '/diff', '/sessions', '/terminal', '/files', '/project', '/permissions', '/backlog', '/delivery', '/challenger', '/storage', '/delegation', '/routes', '/fleet', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up'} | workbench:
+        if name not in {'/new', '/model', '/reasoning', '/diff', '/sessions', '/terminal', '/files', '/project', '/permissions', '/backlog', '/delivery', '/challenger', '/storage', '/delegation', '/routes', '/fleet', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up', '/missed'} | workbench:
             return False
-        if arguments:
+        if arguments and name != '/missed':  # /missed takes the words the reply should have said
             self.set_status(name+' takes no arguments. Your draft has been kept.')
             return True
-        if (self.sending_message or self.busy) and name not in {'/terminal', '/files', '/tasks', '/team', '/usage', '/challenger', '/storage'}:
+        if (self.sending_message or self.busy) and name not in {'/terminal', '/files', '/tasks', '/team', '/usage', '/challenger', '/storage', '/missed'}:
             self.set_status('Wait for the current operation before using '+name+'.')
             return True
         if Path(self.selection().root).resolve() != Path(self.workspace_root).resolve():
@@ -278,6 +278,18 @@ class ConversationNavigation:
                     loaded(self.assistant_session, last)
                 except OSError:
                     pass  # then only a message that keeps the note's text counts
+        elif name == '/missed':  # about the last finished reply, so it also runs during a turn; nothing reaches the agent
+            from .heads_up import missed
+            try:
+                done = bool(self.assistant_session) and missed(self.assistant_session, arguments)
+            except OSError as exc:
+                self.notify('tare heads-up: could not save the miss: '+str(exc)[:200], severity='error')
+                return True
+            if done:
+                prompt.clear()
+                self.set_status('Recorded: the last reply needed a heads-up note. It is kept on this machine.')
+            else:
+                self.set_status('There is no finished reply in this conversation to flag. Your draft has been kept.')
         elif name == '/files':  # read-only: it opens the pane, never closes it
             prompt.clear()
             if not self.files_open:

@@ -177,7 +177,8 @@ def test_calibration_reports_what_each_threshold_saves_and_drops(capsys):
                         'to the agent; 1 dropped as already said.')
     assert lines[1] == ('0 notes labelled useful, 0 not useful; 1 sent to the agent (0 with the note rewritten), '
                         '0 confirmed by its reply, 0 not confirmed, 0 without an answer.')
-    assert lines[3].split() == ['0.050', '0/4', '0/2'] and lines[6].split() == ['0.250', '2/4', '1/2']
+    assert lines[2].startswith('0 replies flagged as missing a note')  # no /missed yet
+    assert lines[4].split() == ['0.050', '0/4', '0/2'] and lines[7].split() == ['0.250', '2/4', '1/2']
     assert lines[-1] == 'sonnet: 4/4 answered, median 2.0 s'
 
 
@@ -239,7 +240,7 @@ def test_the_tui_shows_new_notes_once_and_keeps_them_for_the_composer(tmp_path, 
     reply = hashlib.sha256(b'Done: all tests pass.').hexdigest()
     mine = heads_up.shown(source)
     assert mine == {'shown': ['The verifier failed.'], 'last': ['The verifier failed.'], 'turn': reply,
-                    'noted': mine['noted'], 'since': 3, 'held': []}  # the pace is the session's, kept across turns
+                    'noted': mine['noted'], 'missed': [], 'since': 3, 'held': []}  # the pace is the session's, kept across turns
     assert logged[0]['session'] == source.name  # the log row names its conversation
     from scripts.heads_up_calibration import noted  # dogfood review: each note with its turn
     assert [(n['session'], n['note'], n['request'], n['reply']) for n in noted(source.parent)] == [
@@ -406,6 +407,79 @@ def test_the_calibration_report_sums_the_labels_and_what_use_confirmed(capsys):
     assert lines[1] == ('2 notes labelled useful, 2 not useful; 3 sent to the agent (1 with the note rewritten), '
                         '1 confirmed by its reply, '
                         '1 not confirmed, 1 without an answer.')
+
+
+def test_a_miss_is_kept_with_the_users_words_and_logged_without_any_text(tmp_path, log):
+    folder = session(tmp_path, reply='Done: all tests pass. ' + 'x' * 2000)
+    reply = heads_up.from_journal([(folder, 'inv')])['reply']
+    assert heads_up.missed(folder, '  The reply never said the verifier failed.  ') is True
+    [entry] = heads_up.shown(folder)['missed']
+    assert entry['text'] == 'The reply never said the verifier failed.' and entry['request'] == 'Fix the parser and run the tests'
+    assert entry['reply'] == reply[:1600] and entry['funnel'] == heads_up.funnel() and entry['at']
+    assert entry['turn'] == heads_up._digest(reply)  # the digest the turn's own log row carries as reply_sha256
+    [row] = log()
+    assert (row['event'], row['said'], row['source'], row['reply_sha256'], row['funnel']) == (
+        'miss', True, 'tui', entry['turn'], heads_up.funnel())
+    assert 'verifier' not in json.dumps(row) and 'Done' not in json.dumps(row) and 'parser' not in json.dumps(row)
+    assert heads_up.missed(folder, source='serve') is True  # a miss without words still counts
+    assert log()[-1]['said'] is False and log()[-1]['source'] == 'serve' and len(heads_up.shown(folder)['missed']) == 2
+    wrapped = tmp_path/'wrapped'  # a TUI turn's request is wrapped: the end, the user's words, is kept
+    wrapped.mkdir()
+    (wrapped/'journal.jsonl').write_text('\n'.join(json.dumps({'event': e}) for e in [
+        {'kind': 'session_started', 'instruction': 'w' * 2000 + '\n\nOperator message:\nMeasure it'},
+        {'kind': 'terminal', 'output': 'Measured.'}]), encoding='utf-8')
+    assert heads_up.missed(wrapped) is True
+    assert heads_up.shown(wrapped)['missed'][0]['request'].endswith('Operator message:\nMeasure it')
+    assert len(heads_up.shown(wrapped)['missed'][0]['request'].encode('utf-8')) <= 900
+
+
+def test_a_miss_needs_a_finished_exchange(tmp_path, log):
+    empty = tmp_path/'empty'
+    empty.mkdir()
+    (empty/'journal.jsonl').write_text('', encoding='utf-8')
+    unfinished = tmp_path/'unfinished'
+    unfinished.mkdir()
+    (unfinished/'journal.jsonl').write_text(json.dumps({'event': {'kind': 'user_message', 'text': 'Still working'}}),
+                                            encoding='utf-8')
+    for folder in (empty, unfinished, tmp_path/'missing'):
+        assert heads_up.missed(folder, 'x') is False
+    assert not list(tmp_path.glob('*/heads-up.json')) and log() == []
+
+
+def test_a_miss_survives_what_rewrites_the_state(tmp_path, log, monkeypatch):
+    monkeypatch.setattr(heads_up, 'confirms', lambda turn, note: .9)
+    folder = session(tmp_path)
+    assert heads_up.missed(folder, 'No warning.') is True
+    heads_up.keep(folder, ['A note.'], {'request': 'r', 'reply': 'reply'}, {'since': 1})
+    assert heads_up.label(folder, 'A note.', 'useful') is True
+    heads_up.loaded(folder, ['A note.'])
+    assert heads_up.followed(folder, {'request': heads_up.ask(['A note.']), 'reply': 'r'}) == ['A note.']
+    heads_up.keep(folder, [], {'reply': 'quiet'}, {'since': 2})
+    assert [m['text'] for m in heads_up.shown(folder)['missed']] == ['No warning.']
+
+
+def test_the_calibration_report_counts_the_flagged_replies_and_never_as_turns(capsys):
+    from scripts.heads_up_calibration import report
+    writer = [{'route': 'sonnet', 'ok': True, 'ms': 2000}]
+    report([{'score': .3, 'forwarded': 'score', 'notes': 0, 'writers': writer, 'reply_sha256': 'a'},  # wrote none
+            {'score': .3, 'forwarded': 'score', 'notes': 1, 'writers': writer, 'reply_sha256': 'b'},  # a note anyway
+            {'score': .02, 'forwarded': None, 'notes': 0, 'writers': [], 'reply_sha256': 'c'},  # not run
+            {'event': 'miss', 'reply_sha256': 'a'}, {'event': 'miss', 'reply_sha256': 'a'},  # one reply, flagged twice
+            {'event': 'miss', 'reply_sha256': 'b'}, {'event': 'miss', 'reply_sha256': 'c'},
+            {'event': 'miss', 'reply_sha256': 'z'}])  # a turn this log does not hold
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith('3 logged turns; the writer answered 2')
+    assert lines[2] == ('4 replies flagged as missing a note: 1 where the writer ran and wrote none, '
+                        '1 where a note was shown anyway, 1 where the writer did not run, 1 not in this log.')
+
+
+def test_the_misses_are_listed_beside_the_notes(tmp_path, log):
+    from scripts.heads_up_calibration import missed
+    folder = session(tmp_path)
+    assert heads_up.missed(folder, 'No warning.') is True
+    [found] = missed(folder.parent)
+    assert found['session'] == folder.name and found['text'] == 'No warning.' and found['turn']
+    assert missed(folder.parent, '9999') == []
 
 
 def test_the_writer_uses_the_owners_heads_up_effort(monkeypatch, tmp_path):

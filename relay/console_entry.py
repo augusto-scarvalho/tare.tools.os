@@ -45,6 +45,7 @@ COMMANDS = (('/new', '', 'Save this conversation and start a new one'),
             ('/reasoning', '', 'Choose reasoning for a new conversation'),
             ('/diff', '', 'Review file changes and recorded checks'),
             ('/heads-up', '', 'Put the last heads-up notes in the composer to ask the agent'),
+            ('/missed', '', 'Tell tare the last reply needed a heads-up note it did not write'),
             ('/artifacts', '', 'Review captured responses and draft linked comments'),
             ('/tasks', '', 'Inspect observed tasks and agent activity'),
             ('/team', '', 'See recorded roles, models, reasoning and connections'),
@@ -73,7 +74,7 @@ COMMANDS = (('/new', '', 'Save this conversation and start a new one'),
             ('/attach', '[PATH]', 'Preview and attach a file or image'),
             ('/help', '', 'Show command help'))
 CONVERSATION_COMMANDS = {'/new', '/model', '/reasoning', '/diff', '/sessions', '/project', '/permissions', '/backlog', '/terminal', '/files', '/resume', '/attach', '/delivery'}
-CONVERSATION_COMMANDS |= {'/artifacts', '/tasks', '/team', '/usage', '/tools', '/skills', '/challenger', '/storage', '/delegation', '/routes', '/fleet', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up'}
+CONVERSATION_COMMANDS |= {'/artifacts', '/tasks', '/team', '/usage', '/tools', '/skills', '/challenger', '/storage', '/delegation', '/routes', '/fleet', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up', '/missed'}
 COMMAND_SHORTCUTS = {'/diff': 'F3', '/sessions': 'F1', '/terminal': 'F4', '/project': 'F5', '/files': 'F8'}
 
 
@@ -105,6 +106,8 @@ HELP = ('Conversation sends ordinary messages directly to the assistant, with wo
         '/diff opens changes; /sessions opens saved conversations; /terminal opens existing session processes. '
         '/files opens the pane of files the agents read and edit (F8). '
         '/heads-up puts the last heads-up note in the composer as a question to the agent. '
+        '/missed, with what the last reply should have told you, records on this machine that it needed a heads-up note '
+        'it did not get; nothing is sent to the agent. '
         '/artifacts reviews captured responses with comments; /tasks shows observed execution activity. '
         '/team shows who executed each role, including the recorded model, reasoning and connection. '
         '/usage shows recorded conversation usage and configured limits without querying providers. '

@@ -219,6 +219,12 @@ are used to tune when notes are written. A note shows only while its conversatio
 open; `/heads-up` puts the last notes in the composer from the keyboard, and the
 Settings checkbox turns notes off for the machine.
 
+When a reply needed a warning and tare showed none, type `/missed` followed by what it
+should have told you (the words are optional). It records that for the last finished
+reply, even while a turn is running, and sends nothing to the agent. The record stays on
+this machine (the log holds no text) and is used with the note labels to tune when and
+what notes are written.
+
 ### Inspect usage, tasks, tools and project skills
 
 - `/usage` opens on its first row, **Provider quota and credit**: what each

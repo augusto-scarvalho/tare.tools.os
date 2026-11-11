@@ -22,7 +22,9 @@ the user really sent it) and a 'checked'
 row with Jev's probability that the reply confirms it. Useful and Not useful log a 'label' event (label(); the last
 one wins). All are labels from use, joined to the note's turn by the reply digest. The TUI also keeps each note it
 showed with its turn (the request's end, the reply's start), its funnel, label and what followed() found in the
-conversation's heads-up.json, for dogfood review.
+conversation's heads-up.json, for dogfood review. /missed (missed()) is the other half: the user flags the last
+finished reply as one that needed a note and got none (or the wrong one), kept there with the words they gave and
+logged as a 'miss' event (the reply digest, never the words).
 scripts/heads_up_calibration.py replays history through the funnel, reports the trade and lists the TUI's notes. Every frontend calls
 notes(); a failure here never fails the turn it reports on. TARE_HEADS_UP=off disables it.
 """
@@ -502,14 +504,16 @@ def notes(turn, *, seen=(), observed=None, pace=None):
 
 def shown(session):
     """A session's heads-up state: {'shown': every note its user saw, 'last': the latest turn's notes, 'turn': that
-    turn's reply digest, 'noted': each note with its time and turn, and the pace notes() keeps: 'since' and 'held'}."""
+    turn's reply digest, 'noted': each note with its time and turn, 'missed': the replies the user flagged as missing
+    a note (missed()), and the pace notes() keeps: 'since' and 'held'}. Whoever rewrites the file starts from this
+    dict, so a key it does not return is lost."""
     try:
         value = json.loads((Path(session)/'heads-up.json').read_text(encoding='utf-8'))
         return {'shown': list(value['shown']), 'last': list(value['last']), 'turn': value.get('turn'),
-                'noted': list(value.get('noted') or []), 'since': int(value.get('since', 0)),
-                'held': list(value.get('held') or [])}
+                'noted': list(value.get('noted') or []), 'missed': list(value.get('missed') or []),
+                'since': int(value.get('since', 0)), 'held': list(value.get('held') or [])}
     except (OSError, ValueError, KeyError, TypeError):
-        return {'shown': [], 'last': [], 'turn': None, 'noted': [], 'since': 0, 'held': []}
+        return {'shown': [], 'last': [], 'turn': None, 'noted': [], 'missed': [], 'since': 0, 'held': []}
 
 
 def keep(session, new, turn=None, pace=None):
@@ -548,6 +552,28 @@ def label(session, note, value, source='tui'):
     judge_log('heads-up', {'ts': datetime.now(timezone.utc).isoformat(timespec='seconds'),
                            'funnel': entry.get('funnel') or funnel(), 'event': 'label', 'value': value,
                            'source': source, 'reply_sha256': entry.get('turn')})
+    return True
+
+
+def missed(session, text='', source='tui'):
+    """The user says the session's last finished reply needed a note and got none (or the wrong one): kept in its
+    state with their words, logged without them. False, writing nothing, when no finished exchange can be read."""
+    try:
+        lines = (Path(session)/'journal.jsonl').read_text(encoding='utf-8').splitlines()
+        last = _exchanges(json.loads(line)['event'] for line in lines if line.strip())[-1:]
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    if not last:
+        return False
+    from .turn_engine import judge_log
+    state, last = shown(session), last[0]
+    reply = _digest(last['assistant'])  # what notes() logs as this turn's reply_sha256
+    state['missed'].append({'at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+                            'text': _clip(text.strip(), 1000), 'request': _tail(last['user'], 900).strip(),
+                            'reply': _clip(last['assistant'], 1600).strip(), 'turn': reply, 'funnel': funnel()})
+    _save(session, state)
+    judge_log('heads-up', {'ts': datetime.now(timezone.utc).isoformat(timespec='seconds'), 'funnel': funnel(),
+                           'event': 'miss', 'source': source, 'reply_sha256': reply, 'said': bool(text.strip())})
     return True
 
 
