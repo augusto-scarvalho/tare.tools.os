@@ -10,8 +10,9 @@ tare quota --json     # the same readings as JSON
 tare quota --set openai-api 25   # state an API balance in dollars; tare counts its own spend down from it
 ```
 
-In the console, `/usage` shows the last readings in its row **Provider quota and credit**. Opening the panel asks
-no provider; the readings are the ones taken at start or by the last `tare quota`.
+In the console, `/usage` opens on its first row, **Provider quota and credit**. It shows the saved readings at once
+and asks every provider again in the background (no model call, about 15 seconds); the row changes when the new
+reading lands. Reopen `/usage` to read again.
 
 ```text
 Subscriptions

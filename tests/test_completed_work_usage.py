@@ -90,18 +90,18 @@ def test_usage_without_saved_session_keeps_flow_rows_and_never_launches(tmp_path
             assert not app.assistant_session
             app.action_usage(); await pilot.pause()
             assert isinstance(app.screen, WorkbenchPanel)
-            assert [r['id'] for r in app.screen.rows] == [
-                'flow-fixture', 'completed-work-review', 'provider-pilot-review', 'behavioral-profiles', 'quota']
-            assert '1/10' in app.screen.rows[-4]['body']
-            assert '1/5' in app.screen.rows[-3]['body']
-            assert 'Completed Work executions: 1/10' in app.screen.rows[-2]['body']  # the provider readings come last
+            assert [r['id'] for r in app.screen.rows] == [  # the provider readings come first
+                'quota', 'flow-fixture', 'completed-work-review', 'provider-pilot-review', 'behavioral-profiles']
+            assert '1/10' in app.screen.rows[-3]['body']
+            assert '1/5' in app.screen.rows[-2]['body']
+            assert 'Completed Work executions: 1/10' in app.screen.rows[-1]['body']
             assert not app.assistant_session and not backend.launches
             await pilot.press('escape'); await pilot.pause()
             app.controls(True)
             seen.clear()
             app.action_usage(); await pilot.pause()
             assert not seen
-            assert app.screen.rows[0]['id'] == 'unavailable'
+            assert [r['id'] for r in app.screen.rows] == ['quota', 'unavailable']
             assert not backend.launches
             app.controls(False)
     asyncio.run(scenario())
@@ -121,10 +121,10 @@ def test_optional_failure_keeps_other_usage_rows(tmp_path, monkeypatch):
             await app.workers.wait_for_complete()
             app.action_usage(); await pilot.pause()
             assert isinstance(app.screen, WorkbenchPanel)
-            assert app.screen.rows[0]['id'] == 'usage'
+            assert [r['id'] for r in app.screen.rows[:2]] == ['quota', 'usage']
             work_row = next(r for r in app.screen.rows if r['id'] == 'completed-work-review')
             assert 'unavailable' in work_row['label']
-            audit_row = app.screen.rows[-2]  # the provider readings come last
+            audit_row = app.screen.rows[-1]
             assert audit_row['id'] == 'behavioral-profiles'
             assert 'controlled_replay' in audit_row['body']
             assert 'confirmed_corrected' in audit_row['body']

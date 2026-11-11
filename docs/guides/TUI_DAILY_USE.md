@@ -206,12 +206,14 @@ panel before **Add to draft** discards the unsubmitted comment.
 
 ### Inspect usage, tasks, tools and project skills
 
-- `/usage` shows recorded conversation calls, tokens, cache reads/writes, known
-  costs by currency and configured limits. Missing counts and unpriced calls
-  remain explicit. Its last row, **Provider quota and credit**, shows what each
-  subscription and API account last reported as left, with the time of the
-  reading; opening the panel asks no provider (see
-  [Provider quota and credit](PROVIDER_QUOTA.md)). Reopen
+- `/usage` opens on its first row, **Provider quota and credit**: what each
+  subscription and API account has left, with the time of the reading. The
+  saved reading shows at once and the panel asks every provider again in the
+  background, without a model call (see
+  [Provider quota and credit](PROVIDER_QUOTA.md)). The rows after it show
+  recorded conversation calls, tokens, cache reads/writes, known costs by
+  currency and configured limits; missing counts and unpriced calls remain
+  explicit. Reopen
   the panel after a running task finishes to read its saved totals.
 - `/tasks` shows the current execution and retained tool activity grouped by
   child session/stage. It refreshes while open and can cancel the **whole current
