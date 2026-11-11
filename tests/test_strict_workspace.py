@@ -105,3 +105,35 @@ def test_missing_descriptor_seal_blocks_before_intent_or_worktree(tmp_path: Path
         )
     assert not list(train.glob("WORKSPACE_*.json"))
     assert not list(workspaces.iterdir())
+
+
+def test_one_worktree_add_at_a_time_per_repository(tmp_path: Path, monkeypatch):
+    from threading import Thread
+    from relay.strict_workspace import adding_worktree
+    monkeypatch.setenv("TARE_STORAGE_ROOT", str(tmp_path / "storage"))
+    repository, _ = _repository(tmp_path)
+    other = tmp_path / "other"
+    other.mkdir()
+    _git("init", cwd=other)
+    linked = tmp_path / "linked"
+    _git("worktree", "add", "--detach", str(linked), cwd=repository)
+    order = []
+
+    def second():
+        with adding_worktree(repository):
+            order.append("second")
+
+    with adding_worktree(repository):
+        thread = Thread(target=second)
+        thread.start()
+        thread.join(0.5)
+        assert thread.is_alive() and order == []  # it waits while the first add holds the repository
+        with adding_worktree(other):  # another repository is not held up
+            order.append("other repository")
+        with pytest.raises(TimeoutError, match="WORKTREE_ADD_BUSY"):
+            with adding_worktree(linked, wait=0.2):  # a checkout of the same repository shares its worktree list
+                order.append("never")
+        order.append("first")
+    thread.join(10)
+    assert order == ["other repository", "first", "second"]
+    assert not (repository / ".git" / "writer.lock").exists()  # the lock is tare's, outside the project

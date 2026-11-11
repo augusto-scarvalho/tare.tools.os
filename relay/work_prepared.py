@@ -148,8 +148,10 @@ def prepare(directory, node, root, deployment, *, cancellation=None, unlimited=F
         if not workspace.exists():
             if (directory/'session').exists():
                 raise ValueError('PREPARED_WORKSPACE_MISSING')
-            provision_linked_worktree(root, workspace, base_commit=descriptor.base_commit,
-                                     worktree_id=intent['worktree_id'])
+            from .strict_workspace import adding_worktree
+            with adding_worktree(root):  # two Works are prepared at once on the same repository
+                provision_linked_worktree(root, workspace, base_commit=descriptor.base_commit,
+                                         worktree_id=intent['worktree_id'])
         qualified = qualify_ephemeral_git_worktree(workspace, require_clean=False)
         common = Path(_git(root, 'rev-parse', '--git-common-dir').stdout.decode().strip())
         common = (root/common).resolve()

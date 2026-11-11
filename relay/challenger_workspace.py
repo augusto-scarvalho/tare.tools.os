@@ -230,8 +230,10 @@ def snapshot(root, destination):
     # The worktree takes the repository's own line-ending settings, so its bytes match the operator's checkout
     # (forcing core.autocrlf=false made every text file differ under Git for Windows' default and refused any
     # repository past 512 of them). A cold checkout of a large repository can take well over 30 s.
-    git(root, 'worktree', 'add', '--detach', str(destination), base,
-        timeout=max(0.001, deadline-time.monotonic()))
+    from .strict_workspace import adding_worktree
+    with adding_worktree(root):
+        git(root, 'worktree', 'add', '--detach', str(destination), base,
+            timeout=max(0.001, deadline-time.monotonic()))
     # Git can still hide clean/smudge or CRLF differences. The experiment receives the
     # operator's exact bytes, including clean tracked files affected by filters.
     for name in git(root, 'ls-files', '--cached', '-z').decode().split('\0'):

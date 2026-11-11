@@ -6,6 +6,7 @@ import json
 import os
 import re
 import secrets
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -27,6 +28,43 @@ _READY_FIELDS = _INTENT_FIELDS | {
 
 class StrictWorkspaceRejected(RuntimeError):
     pass
+
+
+@contextmanager
+def adding_worktree(repository, wait=600):
+    """One `git worktree add` at a time per repository, across tare's threads and processes. While an add has
+    created its admin folder's `commondir` and not yet written it, another add that lists the worktrees dies with
+    "failed to read .git/worktrees/<name>/commondir" (parallel preparation, CI on 2026-11-09 and 2026-11-11).
+    The lock lives in tare's storage, keyed by the repository's Git folder, never inside the project."""
+    import hashlib
+    import subprocess
+    import time
+    from compute_plane.managed_process import host_executable
+    from compute_plane.native_journal import custody_lock
+    from relay.native_installation import storage_root
+    try:  # every checkout of one repository shares its worktree list
+        common = subprocess.run([host_executable('git', required=True), '-C', str(repository), 'rev-parse',
+                                 '--path-format=absolute', '--git-common-dir'], capture_output=True, text=True,
+                                timeout=30).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        common = ''  # the add itself reports what is wrong with the repository
+    key = os.path.normcase(common or str(Path(repository).resolve()))
+    folder = storage_root() / 'worktree-adds' / hashlib.sha256(key.encode('utf-8')).hexdigest()[:24]
+    folder.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + wait
+    while True:
+        lock = custody_lock(folder)
+        try:
+            lock.__enter__()
+            break
+        except ValueError:  # held by another add: a cold checkout of a large repository can take minutes
+            if time.monotonic() >= deadline:
+                raise TimeoutError('WORKTREE_ADD_BUSY') from None
+            time.sleep(.05)
+    try:
+        yield
+    finally:
+        lock.__exit__(None, None, None)
 
 
 @dataclass(frozen=True)
@@ -71,12 +109,13 @@ def provision_train_workspace(
     }
     intent_file = train_root / f"WORKSPACE_INTENT.{worktree_id}.json"
     _write_create_only(intent_file, intent)
-    lease = provision_linked_worktree(
-        repository_root,
-        destination,
-        base_commit=descriptor.base_commit,
-        worktree_id=worktree_id,
-    )
+    with adding_worktree(repository_root):
+        lease = provision_linked_worktree(
+            repository_root,
+            destination,
+            base_commit=descriptor.base_commit,
+            worktree_id=worktree_id,
+        )
     ready = {
         "schema": READY_SCHEMA,
         **{key: intent[key] for key in (
@@ -141,8 +180,10 @@ def recover_train_workspace(train_dir, descriptor, *, repository_root, workspace
     if not ready_path.exists():
         lease = reconcile_workspace_intent(intents[0], repository_root=repository)
         if lease is None:
-            lease = provision_linked_worktree(repository, intent['destination'], base_commit=descriptor.base_commit,
-                                              worktree_id=intent['worktree_id'])
+            with adding_worktree(repository):
+                lease = provision_linked_worktree(repository, intent['destination'],
+                                                  base_commit=descriptor.base_commit,
+                                                  worktree_id=intent['worktree_id'])
         _write_create_only(ready_path, dict(intent, schema=READY_SCHEMA, repository_root=str(lease.repository_root),
             git_common_dir=str(lease.git_common_dir), git_admin_dir=str(lease.git_admin_dir), head=lease.base_commit))
     ready = read_workspace_ready(ready_path)

@@ -186,3 +186,34 @@ def test_cancel_after_preparation_then_reduce_capacity_reuses_both_proposals(seq
     result = work_sequence.execute(sequence['dir'])
     assert result['status'] == 'COMPLETED', result
     assert result['workers'] == 1 and len(sequence['calls']) == 10
+
+
+def test_parallel_preparation_adds_its_worktrees_one_at_a_time(sequence, monkeypatch):
+    # Two concurrent `git worktree add` on one repository: the second can list the worktrees while the first has
+    # created its `commondir` and not yet written it, and dies with "failed to read .git/worktrees/workspace/
+    # commondir" (the nightly suite, 2026-11-11). Both preparations reach the add together here.
+    import time
+    from threading import Lock
+    from relay import work_prepared
+    independent(sequence)
+    create(sequence)
+    barrier, guard, inside, most = Barrier(2, timeout=20), Lock(), [0], [0]
+    prepare, provision = work_prepared.prepare, work_prepared.provision_linked_worktree
+    def together(*args, **kwargs):
+        barrier.wait()
+        return prepare(*args, **kwargs)
+    def counted(*args, **kwargs):
+        with guard:
+            inside[0] += 1
+            most[0] = max(most[0], inside[0])
+        try:
+            time.sleep(.3)  # long enough for the other preparation to arrive
+            return provision(*args, **kwargs)
+        finally:
+            with guard:
+                inside[0] -= 1
+    monkeypatch.setattr(work_prepared, 'prepare', together)
+    monkeypatch.setattr(work_prepared, 'provision_linked_worktree', counted)
+    result = work_sequence.execute(sequence['dir'])
+    assert result['status'] == 'COMPLETED', json.dumps(result, default=str)
+    assert most == [1]
