@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- `scripts/ops/release_signing_key.py` now refuses to run when the release signing key is already set, unless you pass `--replace`: running it again replaced the CI key at once, and installed copies would then refuse every new release until one was signed by hand with the recovery key. Its help and ADR-075 now say that every key replacement needs the old recovery key.
 - Installed copies now refuse a product release that has no valid signature (ADR-075, second step): the updater considers only releases that carry `bundle.zip.sig`, verifies it against the built-in keys before extracting the bundle, and when it does not verify installs nothing, leaves the installation untouched and reports `refused` with the release tag, so an unsigned or tampered release can no longer reach an installed copy.
 - The publisher's test of who may publish no longer inherits `GITHUB_OUTPUT` from the CI runner: it failed there with `KeyError: 'tag'` and would have written into the test job's own outputs.
 - Product releases are now signed with the project's key and published only after the signature verifies (ADR-075): the release workflow signs `bundle.zip` in a separate job that holds the key, uploads `bundle.zip.sig`, and `python install.py verify-signature bundle.zip bundle.zip.sig` checks a download by hand. Installed copies do not require the signature yet; a later release will make them refuse an unsigned one.

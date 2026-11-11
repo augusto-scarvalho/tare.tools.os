@@ -56,5 +56,9 @@ Python before any dependency exists and must stay small. The attestation stays a
   keys.
 - Until the second step ships, installed copies do not require the signature and the protection above is not in
   force.
+- Replacing the CI key (`release_signing_key.py --replace`) destroys the old one, which exists only in the secret.
+  The release that adds the new public keys is then signed by a key installed copies do not list yet, so it must be
+  signed by hand with the recovery key. The script refuses to replace a key that is set unless told to, and every
+  replacement, planned or not, needs the recovery key.
 - The second step shipped on 2026-11-11: the updater now refuses a release without a valid signature, and the
   protection is in force for copies that have updated past it.
