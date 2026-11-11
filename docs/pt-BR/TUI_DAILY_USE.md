@@ -206,6 +206,22 @@ feedback não faz chamada de modelo. Trocar de projeto/conversa, uma tarefa em e
 ou uma falha ao salvar o rascunho impede que ele seja adicionado ao destino errado. Fechar o
 painel antes de **Add to draft** descarta o comentário não enviado.
 
+### Avisos (heads-up)
+
+Depois de algumas respostas, o tare acrescenta um aviso curto: algo que a resposta
+deixou pouco claro. **Ask the agent** apenas coloca o aviso no compositor como uma
+pergunta; o rascunho que você já tinha é mantido, e nada é enviado até você editar e
+apertar **Enter**. Um aviso conta como usado só quando você o envia e a resposta do
+agente o confirma. Você pode reescrever o aviso com as suas palavras: mantenha a
+primeira linha (`tare's heads-up after your last reply:`) e o tare continua sabendo de
+qual aviso a mensagem trata, e guarda a sua versão ao lado da original. **Useful** e
+**Not useful** registram se o aviso ajudou (o botão
+escolhido mostra um visto, e você pode mudar a escolha). Esses registros ficam nesta
+máquina, o log não guarda o texto do aviso, e eles servem para ajustar quando os avisos
+são escritos. Um aviso aparece só enquanto a conversa está aberta; `/heads-up` coloca
+os últimos avisos no compositor pelo teclado, e a caixa de seleção nas Configurações
+desliga os avisos para a máquina.
+
 ### Consultar uso, tarefas, ferramentas e skills do projeto
 
 - `/usage` abre na primeira linha, **Provider quota and credit**: o que resta em cada assinatura

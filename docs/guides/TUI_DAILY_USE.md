@@ -204,6 +204,21 @@ feedback makes no model call. Changing projects/conversations, a running task,
 or a failed draft save prevents adding it to the wrong destination. Closing the
 panel before **Add to draft** discards the unsubmitted comment.
 
+### Heads-up notes
+
+After some replies, tare adds a short heads-up note: one thing the reply left unclear.
+**Ask the agent** only puts the note in the composer as a question; it keeps any draft
+you had, and nothing is sent until you edit it and press **Enter**. A note counts as
+used only when you send it and the agent's reply confirms it. You may rewrite the
+note in your own words: keep the first line (`tare's heads-up after your last reply:`)
+and tare still knows which note the message is about, and keeps your version beside
+the original. **Useful** and **Not
+useful** record whether the note helped (the chosen button shows a check, and you can
+change it). These records stay on this machine, the log holds no note text, and they
+are used to tune when notes are written. A note shows only while its conversation is
+open; `/heads-up` puts the last notes in the composer from the keyboard, and the
+Settings checkbox turns notes off for the machine.
+
 ### Inspect usage, tasks, tools and project skills
 
 - `/usage` opens on its first row, **Provider quota and credit**: what each

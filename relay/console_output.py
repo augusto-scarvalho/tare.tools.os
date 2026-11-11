@@ -255,6 +255,33 @@ class ExecutionResult(Vertical):
             event.button.label = 'Copied'
 
 
+class HeadsUpNote(Vertical):
+    """A heads-up note (relay/heads_up.py) with its three actions. Asking only fills the composer; the labels are
+    the user's verdict on the note and can be changed."""
+    CHOICES = {'useful': 'Useful', 'not_useful': 'Not useful'}
+
+    def __init__(self, note, session):
+        super().__init__(classes='heads-up-note')
+        self.note, self.session = note, session
+
+    def compose(self):
+        yield AssistantMessage(plain(f'_tare · heads-up: {self.note}_'), classes='message reply')
+        with Horizontal(classes='heads-up-actions'):
+            yield Button('Ask the agent', id='heads-up-ask')
+            for value, text in self.CHOICES.items():
+                yield Button(text, id='heads-up-' + value.replace('_', '-'))
+
+    def on_button_pressed(self, event):
+        event.stop()
+        if event.button.id == 'heads-up-ask':
+            self.app.heads_up_ask(self.note, self.session)
+            return
+        value = next((v for v in self.CHOICES if event.button.id == 'heads-up-' + v.replace('_', '-')), None)
+        if value and self.app.heads_up_label(self.note, self.session, value):
+            for other, text in self.CHOICES.items():  # the chosen one is marked: what is recorded
+                self.query_one('#heads-up-' + other.replace('_', '-'), Button).label = text + (' ✓' if other == value else '')
+
+
 class ToolActivity(Collapsible):
     """One recorded tool invocation, updated in place; tool success is not task acceptance."""
 
@@ -518,6 +545,11 @@ class Transcript(VerticalScroll):
     Transcript .tool-actions { height: 1; margin: 0; }
     Transcript .tool-activity Button { height: 1; min-height: 1; min-width: 16; width: auto; border: none; padding: 0 1; margin: 0 1 0 0; background: transparent; color: $text-muted; text-style: none; }
     Transcript .tool-activity Button:focus, Transcript .tool-activity Button:hover { background: $primary; color: $background; }
+    Transcript .heads-up-note { height: auto; }
+    Transcript .heads-up-note .message { margin: 1 0 0 0; }
+    Transcript .heads-up-actions { height: 1; margin: 0 0 1 0; }
+    Transcript .heads-up-actions Button { height: 1; min-height: 1; min-width: 0; width: auto; border: none; padding: 0 1; margin: 0 1 0 0; background: transparent; color: $text-muted; text-style: none; }
+    Transcript .heads-up-actions Button:focus, Transcript .heads-up-actions Button:hover { background: $primary; color: $background; }
     Transcript .message-delivery > CollapsibleTitle { color: $text-muted; }
     Transcript .message-delivery-detail { height: auto; color: $text-muted; }
     Transcript .execution-result { height: auto; margin: 0 0 1 0; }
