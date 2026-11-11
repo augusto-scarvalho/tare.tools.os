@@ -348,11 +348,15 @@ def report(rows):
     if why:
         print('By reason: ' + '; '.join(why) + '.')
     checked = [r.get('confirmed') for r in rows if r.get('event') == 'checked']
+    # a reply that only agrees reads as a confirmation: it counts only when the agent ran steps before answering
+    agreed = [bool(r.get('steps')) for r in rows if r.get('event') == 'checked'
+              and r.get('confirmed') is not None and r['confirmed'] >= CONFIRMED_AT]
     print(f"{sum(v == 'useful' for v in labels.values())} notes labelled useful, "
           f"{sum(v == 'not_useful' for v in labels.values())} not useful; "
           f"{sum(r.get('event') == 'asked' for r in rows)} sent to the agent "
           f"({sum(r.get('event') == 'asked' and bool(r.get('edited')) for r in rows)} with the note rewritten), "
-          f"{sum(c is not None and c >= CONFIRMED_AT for c in checked)} confirmed by its reply, "
+          f"{sum(agreed)} confirmed by its reply after checking, "
+          f"{len(agreed) - sum(agreed)} agreed without checking, "
           f"{sum(c is not None and c < CONFIRMED_AT for c in checked)} not confirmed, "
           f"{sum(c is None for c in checked)} without an answer.")
     flagged = {r.get('reply_sha256') for r in rows if r.get('event') == 'miss'}

@@ -20,8 +20,9 @@ Each decision is logged for calibration (<storage>/serve/heads-up.jsonl: scores,
 sizes, never the texts); the turns the cadence sends below the score measure what the score misses. The TUI shows a
 note with three buttons. Ask the agent (like /heads-up) only fills the composer and logs nothing: after each turn,
 followed() logs an 'asked' row for a note the request carries (its text, or a rewrite of it under ASK's first line:
-the user really sent it) and a 'checked'
-row with Jev's probability that the reply confirms it. Useful and Not useful log a 'label' event (label(); the last
+the user really sent it) and a 'checked' row with Jev's probability that the reply confirms it and the steps the
+agent ran before answering (a reply that only agrees is not a confirmation). Useful and Not useful log a 'label'
+event (label(); the last
 one wins). All are labels from use, joined to the note's turn by the reply digest. The TUI also keeps each note it
 showed with its turn (the request's end, the reply's start), its funnel, label and what followed() found in the
 conversation's heads-up.json, for dogfood review. /missed (missed()) is the other half: the user flags the last
@@ -659,7 +660,9 @@ def followed(session, turn, source='tui'):
     is enough, whatever put it there. A request that rewrote the text still counts while it keeps ASK's first line:
     it is about the note last put in the composer (loaded()) and not sent yet, and that entry keeps the message as
     sent beside the original. Each note is logged once as 'asked', then 'checked': whether the agent's reply confirms
-    the note as it was written. Returns those notes."""
+    the note as it was written, and how many steps the agent ran before answering. A reply that only agrees scores as
+    high as one that checked and confirmed (hosted Jev gave .93 and .90, 2026-11-11), so a confirmation counts as
+    use only with steps. Returns those notes."""
     from .turn_engine import judge_log
     state, sent = shown(session), []
     request = ' '.join((turn.get('request') or '').split())
@@ -675,8 +678,11 @@ def followed(session, turn, source='tui'):
             entry.update(edited=True, sent=_tail(turn.get('request'), 900).strip())
         asked(session, source, entry['note'], edited)
         entry['confirmed'] = confirms(turn, entry['note'])
+        # ponytail: any step that ran counts as checking, whatever it read; name the tools if agreement slips through
+        entry['steps'] = sum(s.get('status') not in ('refused', 'failed') for s in turn.get('steps') or [])
         judge_log('heads-up', {'ts': entry['asked'], 'funnel': entry.get('funnel') or funnel(), 'event': 'checked',
                                'confirmed': None if entry['confirmed'] is None else round(entry['confirmed'], 4),
+                               'steps': entry['steps'],
                                'source': source, 'edited': edited, 'reply_sha256': entry.get('turn') or state['turn'],
                                'answer_sha256': _digest(turn.get('reply'))})
         sent.append(entry['note'])

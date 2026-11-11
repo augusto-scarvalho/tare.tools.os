@@ -210,7 +210,8 @@ After a reply that follows delivered or attempted work (an implementation, an ed
 then after other replies, tare adds a short heads-up note: one thing the reply left unclear.
 **Ask the agent** only puts the note in the composer as a question; it keeps any draft
 you had, and nothing is sent until you edit it and press **Enter**. A note counts as
-used only when you send it and the agent's reply confirms it. You may rewrite the
+used only when you send it and the agent's reply confirms it after checking (a reply
+that just agrees, with no step run, does not count). You may rewrite the
 note in your own words: keep the first line (`tare's heads-up after your last reply:`)
 and tare still knows which note the message is about, and keeps your version beside
 the original. **Useful** and **Not

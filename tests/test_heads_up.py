@@ -180,7 +180,8 @@ def test_calibration_reports_what_each_threshold_saves_and_drops(capsys):
     assert lines[1] == ('By reason: score 2 forwarded, 1 with a note (0 useful, 0 not useful); '
                         'cadence 2 forwarded, 1 with a note (0 useful, 0 not useful).')
     assert lines[2] == ('0 notes labelled useful, 0 not useful; 1 sent to the agent (0 with the note rewritten), '
-                        '0 confirmed by its reply, 0 not confirmed, 0 without an answer.')
+                        '0 confirmed by its reply after checking, 0 agreed without checking, 0 not confirmed, '
+                        '0 without an answer.')
     assert lines[3].startswith('0 replies flagged as missing a note')  # no /missed yet
     assert lines[5].split() == ['0.050', '0/4', '0/2'] and lines[8].split() == ['0.250', '2/4', '1/2']
     assert lines[-1] == 'sonnet: 4/4 answered, median 2.0 s'
@@ -337,23 +338,29 @@ def test_a_note_counts_as_asked_only_when_a_request_carries_it(tmp_path, log, mo
     monkeypatch.setattr(heads_up, 'confirms', lambda turn, note: judged.append(note) or .9)
     assert heads_up.followed(folder, {'request': 'Something else', 'reply': 'x'}) == [] and log() == []
     # filling the composer logs nothing; the ask text sent in a request does, once, with the note's own turn
-    assert heads_up.followed(folder, {'request': heads_up.ask(['First note.']), 'reply': 'Confirmed.'}) == ['First note.']
+    ran = [{'tool': 'read', 'status': 'succeeded'}, {'tool': 'terminal_read', 'status': 'returned'},
+           {'tool': 'read', 'status': 'refused'}]  # a refused step checked nothing
+    assert heads_up.followed(folder, {'request': heads_up.ask(['First note.']), 'reply': 'Confirmed.',
+                                      'steps': ran}) == ['First note.']
     asked_row, checked = log()
     assert (asked_row['event'], asked_row['reply_sha256'], asked_row['funnel']) == ('asked', digest('reply one'),
                                                                                      heads_up.funnel())
     assert (checked['event'], checked['confirmed'], checked['reply_sha256'], checked['answer_sha256']) == (
         'checked', .9, digest('reply one'), digest('Confirmed.'))
+    assert checked['steps'] == 2  # what the agent ran before answering: agreement alone is not a confirmation
     assert 'First note' not in json.dumps(log())
     first, second = heads_up.shown(folder)['noted']
-    assert first['confirmed'] == .9 and first['asked'] and 'asked' not in second
+    assert first['confirmed'] == .9 and first['steps'] == 2 and first['asked'] and 'asked' not in second
     assert heads_up.followed(folder, {'request': heads_up.ask(['First note.']), 'reply': 'Again.'}) == []
     assert len(log()) == 2 and judged == ['First note.']  # an entry is followed at most once
     # whitespace differs (the user wrapped the lines): still the same note
     assert heads_up.followed(folder, {'request': 'Check: Second note. On  two\n lines. Thanks', 'reply': 'r'}) == [
         'Second note.\nOn two lines.']
     assert log()[-2]['reply_sha256'] == digest('reply two')
+    assert log()[-1]['steps'] == 0  # this reply agreed without running anything
     heads_up.keep(folder, [], {'reply': 'quiet'}, {'since': 1})
-    assert [(bool(n['asked']), n['confirmed']) for n in heads_up.shown(folder)['noted']] == [(True, .9), (True, .9)]
+    assert [(bool(n['asked']), n['confirmed'], n['steps']) for n in heads_up.shown(folder)['noted']] == [
+        (True, .9, 2), (True, .9, 0)]
 
 
 def test_a_message_that_rewrote_the_note_still_counts_while_it_keeps_the_first_line(tmp_path, log, monkeypatch):
@@ -404,12 +411,13 @@ def test_the_calibration_report_sums_the_labels_and_what_use_confirmed(capsys):
             {'event': 'label', 'value': 'not_useful', 'reply_sha256': 'd'},
             {'event': 'asked', 'reply_sha256': 'a'}, {'event': 'asked', 'reply_sha256': 'b', 'edited': True},
             {'event': 'asked', 'reply_sha256': 'c'},
-            {'event': 'checked', 'confirmed': .9}, {'event': 'checked', 'confirmed': .2},
-            {'event': 'checked', 'confirmed': None}])
+            {'event': 'checked', 'confirmed': .9, 'steps': 3}, {'event': 'checked', 'confirmed': .93, 'steps': 0},
+            {'event': 'checked', 'confirmed': .95},  # a row from before steps were counted: not a confirmation
+            {'event': 'checked', 'confirmed': .2, 'steps': 4}, {'event': 'checked', 'confirmed': None, 'steps': 1}])
     lines = capsys.readouterr().out.splitlines()
     assert lines[0].startswith('0 logged turns;')  # no event row is a turn
     assert lines[1] == ('2 notes labelled useful, 2 not useful; 3 sent to the agent (1 with the note rewritten), '
-                        '1 confirmed by its reply, '
+                        '1 confirmed by its reply after checking, 2 agreed without checking, '
                         '1 not confirmed, 1 without an answer.')
 
 
