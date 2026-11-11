@@ -256,16 +256,48 @@ class ConversationModels:
         try:
             turn = heads_up.from_journal([(source, i) for i in ids], request)
             route = read_json(Path(source)/'native-agent.json', 1024*1024)['deployment'].get('id')
-            mine = heads_up.shown(source)
             with local_models(local):  # the conversation's choice: no local judge or writer when it said so
+                heads_up.followed(source, turn)  # before the new notes: this request may carry an earlier one
+                mine = heads_up.shown(source)
                 new = heads_up.notes(turn, seen=mine['shown'], pace=mine, observed={'source': 'tui', 'route': route, 'session': Path(source).name})
             heads_up.keep(source, new, turn, mine)
         except (OSError, ValueError, KeyError, TypeError, StopIteration) as exc:
             self.call_from_thread(self.notify, 'tare heads-up: ' + str(exc)[:200], severity='error')
             return
         if new:
-            self.call_from_thread(self.audit_say, heads_up.shown_text(new).strip() +
-                                  '\n_/heads-up puts them in the composer to ask the agent._', source, 'tare heads-up')
+            self.call_from_thread(self.show_heads_up, new, source)
+
+    def show_heads_up(self, new, source):
+        from . import heads_up
+        from .console_output import HeadsUpNote, Transcript
+        if not self.audited_open(source):
+            self.notify('tare heads-up of another conversation: ' + heads_up.shown_text(new).strip()[:300], timeout=20)
+            return
+        for note in new:  # live only, like the audit's text: a reopened conversation is rebuilt from assistant_history, which has no notes
+            self.query_one('#output', Transcript).append(HeadsUpNote(note, source))
+
+    def heads_up_ask(self, note, source):
+        """The note becomes a question in the composer, after any draft; the operator edits and sends it."""
+        from textual.widgets import TextArea
+        from . import heads_up
+        prompt = self.query_one('#prompt', TextArea)
+        text = heads_up.ask([note])
+        if text not in prompt.text:  # a second click adds nothing
+            prompt.load_text(prompt.text.rstrip() + '\n\n' + text if prompt.text.strip() else text)
+        prompt.move_cursor(prompt.document.end)
+        prompt.focus()
+        self.set_status('The heads-up is in the composer: edit it and press Enter to send it; nothing is sent until then.')
+
+    def heads_up_label(self, note, source, value):
+        from . import heads_up
+        try:
+            done = heads_up.label(source, note, value)
+        except OSError as exc:
+            self.notify('tare heads-up: could not save the label: ' + str(exc)[:200], severity='error')
+            return False
+        if done:
+            self.set_status('Recorded: this heads-up was ' + value.replace('_', ' ') + '. Press the other button to change it.')
+        return done
 
     def send_audit_fix(self, text, source):
         from textual.widgets import TextArea

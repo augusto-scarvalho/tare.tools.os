@@ -15,9 +15,13 @@ A funnel, cheapest stage first:
 4. Check: hosted Jev drops a note the reply already says (a Noul, REDUNDANT_AT). Without Jev the note stands.
 
 Each decision is logged for calibration (<storage>/serve/heads-up.jsonl: scores, probabilities, routes, times and
-sizes, never the texts); the turns the cadence sends below the score measure what the score misses, and the TUI's
-/heads-up logs that the user sent a note to the agent (asked()), a label from use. The TUI also keeps each note it
-showed with its turn (the request's end, the reply's start) in the conversation's heads-up.json, for dogfood review.
+sizes, never the texts); the turns the cadence sends below the score measure what the score misses. The TUI shows a
+note with three buttons. Ask the agent (like /heads-up) only fills the composer and logs nothing: after each turn,
+followed() logs an 'asked' row for a note whose text the request carries (the user really sent it) and a 'checked'
+row with Jev's probability that the reply confirms it. Useful and Not useful log a 'label' event (label(); the last
+one wins). All are labels from use, joined to the note's turn by the reply digest. The TUI also keeps each note it
+showed with its turn (the request's end, the reply's start), its funnel, label and what followed() found in the
+conversation's heads-up.json, for dogfood review.
 scripts/heads_up_calibration.py replays history through the funnel, reports the trade and lists the TUI's notes. Every frontend calls
 notes(); a failure here never fails the turn it reports on. TARE_HEADS_UP=off disables it.
 """
@@ -49,6 +53,8 @@ EVERY = 4  # below the score, the writer runs on every EVERY-th turn since it la
 HELD_STEPS = 100  # steps of the turns since then that the conversation keeps for it (pace['held'])
 ALREADY_SAID = 'Does `assistant_final_reply` already tell the user what `note` says?'
 REDUNDANT_AT = .7  # TypeSafe's starting threshold for a Noul's yes
+CONFIRMS = 'Does `assistant_final_reply` confirm that what `note` says holds?'  # not in funnel(): no note is written by it
+CONFIRMED_AT = .7  # ponytail: a starting threshold, not measured yet; set it from the Useful / Not useful labels
 # Jev also judged the written note alone (consequence, process status, a gap in the record) and a regex caught notes
 # arguing from what the record does not show. On the user's labels of 18 notes by the consequence writer, that gate
 # ranked them worse than chance (AUC 0.41) and would have dropped 6 of the 14 they wanted, so it is gone.
@@ -513,19 +519,80 @@ def keep(session, new, turn=None, pace=None):
         at = datetime.now(timezone.utc).isoformat(timespec='seconds')
         value.update(shown=value['shown'] + new, last=new, turn=_digest(turn.get('reply')), noted=value['noted'] + [
             {'at': at, 'note': note, 'request': _tail(turn.get('request'), 900).strip(),
-             'reply': _clip(turn.get('reply'), 1600).strip()} for note in new])
+             'reply': _clip(turn.get('reply'), 1600).strip(), 'turn': _digest(turn.get('reply')),
+             'funnel': funnel()} for note in new])  # turn and funnel: a later label joins to this note's own turn
     value.update(since=(pace or {}).get('since', 0), held=(pace or {}).get('held', []))
+    _save(session, value)
+
+
+def _save(session, value):
     path = Path(session)/'heads-up.json'
     temporary = path.with_name(path.name + f'.{os.getpid()}.tmp')
     temporary.write_text(json.dumps(value, ensure_ascii=False), encoding='utf-8')
     os.replace(temporary, path)
 
 
-def asked(session, source='tui'):
-    """The user sent the last notes to the agent: a label from use, joined to its turn's row by the reply digest."""
+def label(session, note, value, source='tui'):
+    """The user's verdict on a note ('useful' or 'not_useful'), kept on its noted entry and logged without the text.
+    The last verdict wins. True when a note matched."""
+    if value not in ('useful', 'not_useful'):
+        raise ValueError(f'heads-up label must be useful or not_useful, not {value!r}')
+    state = shown(session)
+    entry = next((e for e in reversed(state['noted']) if e.get('note') == note), None)
+    if entry is None:
+        return False
     from .turn_engine import judge_log
-    judge_log('heads-up', {'ts': datetime.now(timezone.utc).isoformat(timespec='seconds'), 'funnel': funnel(),
-                           'event': 'asked', 'source': source, 'reply_sha256': shown(session)['turn']})
+    entry['label'] = value
+    _save(session, state)  # the whole state, as keep() writes it: the pace stays as it was
+    judge_log('heads-up', {'ts': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+                           'funnel': entry.get('funnel') or funnel(), 'event': 'label', 'value': value,
+                           'source': source, 'reply_sha256': entry.get('turn')})
+    return True
+
+
+def asked(session, source='tui', note=None):
+    """The user sent a note to the agent (followed() finds out): a label from use, joined to its turn's row by the
+    reply digest and funnel (the note's own when `note` is given and kept with them, else the session's last turn)."""
+    from .turn_engine import judge_log
+    state = shown(session)
+    entry = next((e for e in reversed(state['noted']) if note and e.get('note') == note), {})
+    judge_log('heads-up', {'ts': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+                           'funnel': entry.get('funnel') or funnel(), 'event': 'asked', 'source': source,
+                           'reply_sha256': entry.get('turn') or state['turn']})
+
+
+def confirms(turn, note):
+    """Hosted Jev's probability that the reply to a message that sent `note` confirms it, or None without an answer."""
+    try:
+        from .turn_engine import judge_many
+        state = json.dumps({'assistant_final_reply': _clip(turn['reply'], 6000), 'note': note}, ensure_ascii=False)
+        return (judge_many(state, {'confirms': CONFIRMS}, timeout=10).get('yes') or {}).get('confirms')
+    except Exception:  # ponytail: no answer is None, never a failed turn
+        return None
+
+
+def followed(session, turn, source='tui'):
+    """After a finished turn: the kept notes its request carries (the ASK text embeds one verbatim, whatever put it
+    in the composer; a note the user deleted or rewrote does not match) were really sent. Each is logged once as
+    'asked', then 'checked': whether the agent's reply confirms it. Returns those notes."""
+    from .turn_engine import judge_log
+    state, sent = shown(session), []
+    request = ' '.join((turn.get('request') or '').split())
+    for entry in state['noted']:
+        note = ' '.join(str(entry.get('note') or '').split())
+        if 'asked' in entry or not note or note not in request:
+            continue
+        entry['asked'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
+        asked(session, source, entry['note'])
+        entry['confirmed'] = confirms(turn, entry['note'])
+        judge_log('heads-up', {'ts': entry['asked'], 'funnel': entry.get('funnel') or funnel(), 'event': 'checked',
+                               'confirmed': None if entry['confirmed'] is None else round(entry['confirmed'], 4),
+                               'source': source, 'reply_sha256': entry.get('turn') or state['turn'],
+                               'answer_sha256': _digest(turn.get('reply'))})
+        sent.append(entry['note'])
+    if sent:
+        _save(session, state)
+    return sent
 
 
 def shown_text(new):

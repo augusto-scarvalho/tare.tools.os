@@ -6,7 +6,8 @@ is skipped. It spends writer and judge calls: --limit bounds them.
 `notes` lists every note the TUI showed since a date, with its turn, for dogfood review: a label from a person
 who reads it, where /heads-up only says a note was sent to the agent.
 `report` reads the log: for each score, how many writer calls it saves and how many turns that got notes it would
-have dropped, the notes Jev dropped as already said, and those the user sent to the agent (/heads-up).
+have dropped, the notes Jev dropped as already said, how many the user labelled useful or not useful, and how many
+notes the user really sent to the agent (a request that carries the text) and whether its reply confirmed them.
 `claude` uses labels: Claude Code's side agent left the notes the user accepted in the transcripts, so each such
 turn should get a note, and the other turns of those sessions may stay quiet. With no --writer it costs nothing:
 the score and the cadence on every turn, measured by session, and the weights a refit gives. With --writer it runs
@@ -322,15 +323,23 @@ def report(rows):
     """The log in use: what the score saves and drops among the turns the writer answered (the cadence's sit below
     it), the notes Jev dropped as already said, those the user sent to the agent (/heads-up), and the writer
     routes."""
-    from relay.heads_up import FORWARD_AT, REDUNDANT_AT
+    from relay.heads_up import CONFIRMED_AT, FORWARD_AT, REDUNDANT_AT
     asked = {r.get('reply_sha256') for r in rows if r.get('event') == 'asked'}
     turns = [r for r in rows if not r.get('event') and r.get('score') is not None]
     ran = [r for r in turns if any(w.get('ok') for w in r.get('writers') or [])]
     noted = [r for r in ran if r['notes'] > 0]
     print(f"{len(turns)} logged turns; the writer answered {len(ran)} "
           f"({sum(r['forwarded'] == 'cadence' for r in ran)} by cadence below the score); {len(noted)} got a note, "
-          f"{sum(r['reply_sha256'] in asked for r in noted)} sent to the agent with /heads-up; "
+          f"{sum(r['reply_sha256'] in asked for r in noted)} sent to the agent; "
           f"{sum((r.get('redundant') or 0) >= REDUNDANT_AT for r in ran)} dropped as already said.")
+    labels = {r.get('reply_sha256'): r.get('value') for r in rows if r.get('event') == 'label'}  # the last one wins
+    checked = [r.get('confirmed') for r in rows if r.get('event') == 'checked']
+    print(f"{sum(v == 'useful' for v in labels.values())} notes labelled useful, "
+          f"{sum(v == 'not_useful' for v in labels.values())} not useful; "
+          f"{sum(r.get('event') == 'asked' for r in rows)} sent to the agent, "
+          f"{sum(c is not None and c >= CONFIRMED_AT for c in checked)} confirmed by its reply, "
+          f"{sum(c is not None and c < CONFIRMED_AT for c in checked)} not confirmed, "
+          f"{sum(c is None for c in checked)} without an answer.")
     if ran:
         print(f'threshold  writer calls saved  noted turns dropped   (now {FORWARD_AT})')
         for threshold in sorted({.05, .1, .2, FORWARD_AT, .3, .4, .5}):

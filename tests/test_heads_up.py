@@ -2,6 +2,8 @@ import hashlib
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from relay import heads_up, turn_engine
 from relay.console_models import ConversationModels
 
@@ -172,8 +174,10 @@ def test_calibration_reports_what_each_threshold_saves_and_drops(capsys):
             {'event': 'asked', 'reply_sha256': 'c'}])  # the user sent c's note to the agent
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == ('5 logged turns; the writer answered 4 (2 by cadence below the score); 2 got a note, 1 sent '
-                        'to the agent with /heads-up; 1 dropped as already said.')
-    assert lines[2].split() == ['0.050', '0/4', '0/2'] and lines[5].split() == ['0.250', '2/4', '1/2']
+                        'to the agent; 1 dropped as already said.')
+    assert lines[1] == ('0 notes labelled useful, 0 not useful; 1 sent to the agent, 0 confirmed by its reply, '
+                        '0 not confirmed, 0 without an answer.')
+    assert lines[3].split() == ['0.050', '0/4', '0/2'] and lines[6].split() == ['0.250', '2/4', '1/2']
     assert lines[-1] == 'sonnet: 4/4 answered, median 2.0 s'
 
 
@@ -222,15 +226,16 @@ def test_the_tui_shows_new_notes_once_and_keeps_them_for_the_composer(tmp_path, 
     monkeypatch.delenv('TARE_HEADS_UP')
     monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
     source = session(tmp_path)
-    told, said, logged = [], [], []
-    monkeypatch.setattr(heads_up, 'notes', lambda turn, seen=(), observed=None, pace=None: told.append(list(seen)) or (
-        logged.append(observed)) or pace.update(since=3) or ['The verifier failed.'])
+    told, said, logged, order = [], [], [], []
+    monkeypatch.setattr(heads_up, 'notes', lambda turn, seen=(), observed=None, pace=None: order.append('notes') or (
+        told.append(list(seen))) or (logged.append(observed)) or pace.update(since=3) or ['The verifier failed.'])
+    monkeypatch.setattr(heads_up, 'followed', lambda session, turn, source='tui': order.append('followed') or [])
     console = SimpleNamespace(selection=lambda: SimpleNamespace(local_models=True),
                               call_from_thread=lambda fn, *a, **kw: fn(*a, **kw),
                               notify=lambda text, **kw: said.append(text),
-                              audit_say=lambda text, source, label: said.append(text))
+                              show_heads_up=lambda new, source: said.append(new))
     ConversationModels._heads_up(console, str(source), ['inv'], 'Fix it')
-    assert 'tare · heads-up: The verifier failed.' in said[0] and '/heads-up' in said[0]
+    assert said == [['The verifier failed.']] and order == ['followed', 'notes']  # what the request sent comes first
     reply = hashlib.sha256(b'Done: all tests pass.').hexdigest()
     mine = heads_up.shown(source)
     assert mine == {'shown': ['The verifier failed.'], 'last': ['The verifier failed.'], 'turn': reply,
@@ -245,7 +250,7 @@ def test_the_tui_shows_new_notes_once_and_keeps_them_for_the_composer(tmp_path, 
     ConversationModels._heads_up(console, str(source), ['inv'], 'Fix it')
     assert told[-1] == ['The verifier failed.']  # the second turn's writer is told what was shown
     assert heads_up.ask(heads_up.shown(source)['last']).startswith("tare's heads-up after your last reply:\n- The")
-    heads_up.asked(source)  # /heads-up: the operator sent it to the agent, a label joined to the turn by its reply
+    heads_up.asked(source)  # without a note: the session's last turn, joined to its row by the reply
     row = json.loads((tmp_path/'storage'/'serve'/'heads-up.jsonl').read_text(encoding='utf-8').splitlines()[-1])
     assert row['event'] == 'asked' and row['reply_sha256'] == reply
 
@@ -269,6 +274,111 @@ def test_a_message_queued_during_the_turn_reaches_the_heads_up_but_host_messages
     turn = heads_up.from_journal([(folder, 'inv')], 'Add the endpoint')
     assert turn['request'] == ('Add the endpoint\n\nLater message from the user:\nAlso log every refusal'
                                '\n\nLater message from the user:\nAnd keep the old route')
+
+
+def test_a_note_of_another_conversation_is_only_a_notification():
+    said = []
+    console = SimpleNamespace(audited_open=lambda source: False, notify=lambda text, **kw: said.append((text, kw)))
+    ConversationModels.show_heads_up(console, ['The verifier failed.'], 'elsewhere')
+    assert said == [('tare heads-up of another conversation: _tare · heads-up: The verifier failed._', {'timeout': 20})]
+
+
+@pytest.fixture
+def log(tmp_path, monkeypatch):
+    """The heads-up log's rows so far, with logging on and storage in the test's folder."""
+    monkeypatch.delenv('TARE_HEADS_UP', raising=False)
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
+    path = tmp_path/'storage'/'serve'/'heads-up.jsonl'
+    return lambda: [json.loads(line) for line in path.read_text(encoding='utf-8').splitlines()] if path.exists() else []
+
+
+def kept(tmp_path, notes):
+    """A session folder whose heads-up.json holds each (note, reply) as a note of its own turn."""
+    folder = tmp_path/'kept'
+    folder.mkdir(exist_ok=True)
+    for note, reply in notes:
+        heads_up.keep(folder, [note], {'request': 'Request', 'reply': reply}, {})
+    return folder
+
+
+def digest(text):
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+
+def test_a_label_is_kept_on_its_note_and_logged_without_the_text(tmp_path, log):
+    folder = kept(tmp_path, [('First note.', 'reply one'), ('Second note.', 'reply two')])
+    first, second = heads_up.shown(folder)['noted']
+    assert second['turn'] == digest('reply two') and second['funnel'] == heads_up.funnel()
+    assert heads_up.label(folder, 'Second note.', 'useful') is True
+    first, second = heads_up.shown(folder)['noted']
+    assert second['label'] == 'useful' and 'label' not in first
+    [row] = log()
+    assert (row['event'], row['value'], row['source'], row['funnel']) == ('label', 'useful', 'tui', heads_up.funnel())
+    assert row['reply_sha256'] == digest('reply two') and 'Second note' not in json.dumps(row)
+    assert heads_up.label(folder, 'Unknown note.', 'useful') is False and len(log()) == 1  # nothing written or logged
+    with pytest.raises(ValueError):
+        heads_up.label(folder, 'Second note.', 'maybe')
+    assert heads_up.label(folder, 'Second note.', 'not_useful') is True  # the last one wins
+    assert heads_up.shown(folder)['noted'][1]['label'] == 'not_useful' and [r['value'] for r in log()] == [
+        'useful', 'not_useful']
+    heads_up.keep(folder, ['Third note.'], {'request': 'r', 'reply': 'reply three'}, {'since': 2})
+    state = heads_up.shown(folder)
+    assert [n.get('label') for n in state['noted']] == [None, 'not_useful', None] and state['since'] == 2
+
+
+def test_a_note_counts_as_asked_only_when_a_request_carries_it(tmp_path, log, monkeypatch):
+    folder = kept(tmp_path, [('First note.', 'reply one'), ('Second note.\nOn two lines.', 'reply two')])
+    judged = []
+    monkeypatch.setattr(heads_up, 'confirms', lambda turn, note: judged.append(note) or .9)
+    assert heads_up.followed(folder, {'request': 'Something else', 'reply': 'x'}) == [] and log() == []
+    # filling the composer logs nothing; the ask text sent in a request does, once, with the note's own turn
+    assert heads_up.followed(folder, {'request': heads_up.ask(['First note.']), 'reply': 'Confirmed.'}) == ['First note.']
+    asked_row, checked = log()
+    assert (asked_row['event'], asked_row['reply_sha256'], asked_row['funnel']) == ('asked', digest('reply one'),
+                                                                                     heads_up.funnel())
+    assert (checked['event'], checked['confirmed'], checked['reply_sha256'], checked['answer_sha256']) == (
+        'checked', .9, digest('reply one'), digest('Confirmed.'))
+    assert 'First note' not in json.dumps(log())
+    first, second = heads_up.shown(folder)['noted']
+    assert first['confirmed'] == .9 and first['asked'] and 'asked' not in second
+    assert heads_up.followed(folder, {'request': heads_up.ask(['First note.']), 'reply': 'Again.'}) == []
+    assert len(log()) == 2 and judged == ['First note.']  # an entry is followed at most once
+    # whitespace differs (the user wrapped the lines): still the same note
+    assert heads_up.followed(folder, {'request': 'Check: Second note. On  two\n lines. Thanks', 'reply': 'r'}) == [
+        'Second note.\nOn two lines.']
+    assert log()[-2]['reply_sha256'] == digest('reply two')
+    heads_up.keep(folder, [], {'reply': 'quiet'}, {'since': 1})
+    assert [(bool(n['asked']), n['confirmed']) for n in heads_up.shown(folder)['noted']] == [(True, .9), (True, .9)]
+
+
+@pytest.mark.parametrize('fails', [False, True])
+def test_a_judge_without_an_answer_still_logs_the_note_as_asked(tmp_path, log, monkeypatch, fails):
+    def judge(*args, **kwargs):
+        if fails:
+            raise RuntimeError('Jev is down')
+        return {}
+    monkeypatch.setattr(turn_engine, 'judge_many', judge)
+    folder = kept(tmp_path, [('First note.', 'reply one')])
+    assert heads_up.followed(folder, {'request': heads_up.ask(['First note.']), 'reply': 'r'}) == ['First note.']
+    assert [r['event'] for r in log()] == ['asked', 'checked'] and log()[1]['confirmed'] is None
+    assert heads_up.shown(folder)['noted'][0]['confirmed'] is None
+
+
+def test_the_calibration_report_sums_the_labels_and_what_use_confirmed(capsys):
+    from scripts.heads_up_calibration import report
+    report([{'event': 'label', 'value': 'useful', 'reply_sha256': 'a'},
+            {'event': 'label', 'value': 'not_useful', 'reply_sha256': 'a'},  # the last label of a note wins
+            {'event': 'label', 'value': 'useful', 'reply_sha256': 'b'},
+            {'event': 'label', 'value': 'useful', 'reply_sha256': 'c'},
+            {'event': 'label', 'value': 'not_useful', 'reply_sha256': 'd'},
+            {'event': 'asked', 'reply_sha256': 'a'}, {'event': 'asked', 'reply_sha256': 'b'},
+            {'event': 'asked', 'reply_sha256': 'c'},
+            {'event': 'checked', 'confirmed': .9}, {'event': 'checked', 'confirmed': .2},
+            {'event': 'checked', 'confirmed': None}])
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith('0 logged turns;')  # no event row is a turn
+    assert lines[1] == ('2 notes labelled useful, 2 not useful; 3 sent to the agent, 1 confirmed by its reply, '
+                        '1 not confirmed, 1 without an answer.')
 
 
 def test_the_writer_uses_the_owners_heads_up_effort(monkeypatch, tmp_path):

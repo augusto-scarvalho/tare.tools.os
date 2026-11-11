@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- A heads-up note in the TUI now carries three buttons: **Ask the agent** only puts the note in the composer as a question you can edit (it keeps any draft and sends nothing), and **Useful** and **Not useful** record whether the note helped. A note counts as used only when you send it and the agent's reply confirms it; the records stay on this machine, without the note's text, to tune when notes are written.
 - The backlog now records two delivered Ship items as done, with their evidence: the alert and shepherd lifecycle (#71) and the push preflight (#104). `backlog next` no longer offers them.
 - The push hook's identity test now adds a changelog entry the changelog guard accepts on every platform. Its accepted case failed on Linux because the entry was too short; on Windows a line-ending rewrite hid that.
 - The `pre-push` hook no longer fails a push that has nothing to send when a wrapper hook forwards its empty input as one empty line: the new identity check ran on an empty commit id.

@@ -452,7 +452,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 yield Checkbox('Heads-up notes after each turn (whole machine)', heads_up_enabled(), id='heads-up',
                                tooltip='After a finished turn, a model may write a note on what the reply left unsaid: '
                                        'counts tare keeps of the turn, or a pause of a few turns, decide when it runs. '
-                                       '/heads-up puts the last notes in the composer. The choice is saved.')
+                                       "A note's buttons ask the agent or rate it; /heads-up puts the last notes in the "
+                                       'composer. The choice is saved.')
                 yield Static('Use Choose model → Continue task to change a saved conversation.', classes='settings-note', markup=False)
                 with Collapsible(title='Connection details', collapsed=True, id='connection-section'):
                     yield Static('', id='connection-details', classes='settings-note', markup=False)
