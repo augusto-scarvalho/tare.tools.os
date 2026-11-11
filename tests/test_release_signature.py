@@ -203,8 +203,8 @@ def test_verify_signature_command_runs_bare_and_reports_by_exit_code(tmp_path):
 
 class FakeTools:
     """gh, git and openssl as the key script calls them; keys are recognizable text, never real."""
-    def __init__(self, inside_git=False):
-        self.calls, self.inside_git, self.count = [], inside_git, 0
+    def __init__(self, inside_git=False, secrets=()):
+        self.calls, self.inside_git, self.count, self.secrets = [], inside_git, 0, secrets
 
     def __call__(self, argv, input=None):
         self.calls.append((list(argv), input))
@@ -218,6 +218,8 @@ class FakeTools:
             return 0, b'DER-HEADER-12' + (b'%02d' % int(input.split(b'SECRET')[1][:1])) * 16, ''
         if tool == 'git':
             return (0, b'true\n', '') if self.inside_git else (128, b'', 'not a git repository')
+        if argv[:3] == ['gh', 'secret', 'list']:
+            return 0, json.dumps([{'name': name} for name in self.secrets]).encode(), ''
         return 0, b'', ''
 
     def with_input(self, *words):
@@ -254,8 +256,23 @@ def test_key_script_restricts_the_environment_to_protected_branches(tmp_path):
     assert argv == ['gh', 'api', '-X', 'PUT', 'repos/o/r/environments/env-x', '--input', '-']
     assert json.loads(body) == {'deployment_branch_policy': {'protected_branches': True,
                                                              'custom_branch_policies': False}}
-    assert tools.with_input('gh', 'secret')[0][0][5:7] == ['env-x', '--repo']
+    assert tools.with_input('gh', 'secret', 'set')[0][0][5:7] == ['env-x', '--repo']
     assert tools.calls.index(tools.with_input('gh', 'api')[0]) < tools.calls.index(tools.with_input('gh', 'secret')[0])
+
+
+def test_key_script_refuses_to_replace_a_ci_key_that_is_set_unless_told_to(tmp_path, capsys):
+    # The old CI key exists only in the secret: replacing it leaves installed copies with keys nobody can sign with.
+    tools = FakeTools(secrets=('OTHER', 'RELEASE_SIGNING_KEY'))
+    assert keys.main(['--recovery-out', str(tmp_path/'recovery.pem'), '--repo', 'o/r'], runner=tools) == 1
+    assert 'already set' in capsys.readouterr().err and '--replace' in keys.__doc__
+    assert tools.with_input('gh', 'secret', 'set') == [] and tools.with_input('genpkey') == []
+    assert not (tmp_path/'recovery.pem').exists()
+    assert tools.with_input('gh', 'secret', 'list')[0][0] == [
+        'gh', 'secret', 'list', '--env', 'release-signing', '--repo', 'o/r', '--json', 'name']
+    assert keys.main(['--recovery-out', str(tmp_path/'recovery.pem'), '--repo', 'o/r', '--replace'], runner=tools) == 0
+    assert len(tools.with_input('gh', 'secret', 'set')) == 1 and (tmp_path/'recovery.pem').exists()
+    other = FakeTools(secrets=('OTHER',))  # another secret in the environment is not the CI key
+    assert keys.main(['--recovery-out', str(tmp_path/'second.pem'), '--repo', 'o/r'], runner=other) == 0
 
 
 def test_key_script_never_overwrites_nor_writes_inside_a_git_working_tree(tmp_path, capsys):
