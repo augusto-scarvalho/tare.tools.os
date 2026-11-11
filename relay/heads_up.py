@@ -448,7 +448,7 @@ def write(text, seen, known=()):
               + ('\n\nFacts the host is certain of (never contradict them):\n' + '\n'.join('- ' + s for s in known)
                  if known else '')
               + '\n\nTurn record (JSON):\n' + text)
-    attempts, effort = [], policy().get('heads_up_effort')  # unset: each route's own default
+    attempts, effort = [], policy().get('heads_up_effort')  # high unless the owner chose another level
     for name in policy().get('heads_up') or DEFAULT_POLICY['heads_up']:
         deployment, _ = available(name)
         if deployment is None:
