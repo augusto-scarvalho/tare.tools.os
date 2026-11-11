@@ -302,6 +302,122 @@ def latest_published(repo, current=None, *, after=None, api=github):
     return passed[-1]['tag_name'] if passed else None
 
 
+# Public keys (hex of the 32 raw bytes of an Ed25519 key) that sign product releases. Any listed key is accepted, so
+# a key is rotated by shipping a release that lists the old and the new one, then dropping the old. A second,
+# offline recovery key is listed from the start, so a lost or exposed CI key does not strand installed copies.
+# Releases carry bundle.zip.sig (.github/workflows/release.yml); ADR-075.
+RELEASE_KEYS = (
+    '1698fdec4d14bcbaa0532353afdca16d2e7462d12d1105f6c705f67100822233',  # CI (RELEASE_SIGNING_KEY), 2026-11-11
+    '8b76d0f62354a9fc0328b7c516f973bd01175a123e170e87062fff5cf27c3a5f',  # offline recovery, 2026-11-11
+)
+# What is signed: this prefix plus the SHA-256 of bundle.zip in lowercase hex. The digest keeps the message tiny, so
+# any Ed25519 tool can sign it; the prefix keeps the key from signing anything another protocol could mistake.
+SIGNED_PREFIX = b'tare.tools product bundle\n'
+
+
+def signed_message(archive):
+    return SIGNED_PREFIX + digest(archive).encode('ascii')
+
+
+# Ed25519 verification, RFC 8032 section 5.1.7, standard library only: this file runs as install.py with a bare
+# Python. It handles no secret, so it is not constant time; never use it to sign.
+_P = 2**255 - 19
+_L = 2**252 + 27742317777372353535851937790883648493
+_D = -121665 * pow(121666, _P - 2, _P) % _P
+_SQRT_M1 = pow(2, (_P - 1) // 4, _P)
+
+
+def _add(a, b):
+    # Extended coordinates (X, Y, Z, T), x = X/Z, y = Y/Z, xy = T/Z; the unified formula of RFC 8032 section 5.1.4.
+    a1, b1 = (a[1] - a[0]) * (b[1] - b[0]) % _P, (a[1] + a[0]) * (b[1] + b[0]) % _P
+    c, d = 2 * a[3] * b[3] * _D % _P, 2 * a[2] * b[2] % _P
+    e, f, g, h = b1 - a1, d - c, d + c, b1 + a1
+    return e * f % _P, g * h % _P, f * g % _P, e * h % _P
+
+
+def _multiply(scalar, point):
+    result = (0, 1, 1, 0)
+    while scalar:
+        if scalar & 1:
+            result = _add(result, point)
+        point = _add(point, point)
+        scalar >>= 1
+    return result
+
+
+def _decode_point(data):
+    """The point a 32-byte encoding names, or None when it names none."""
+    y = int.from_bytes(data, 'little')
+    sign, y = y >> 255, y & (1 << 255) - 1
+    if y >= _P:
+        return None
+    x2 = (y * y - 1) * pow(_D * y * y + 1, _P - 2, _P) % _P
+    x = pow(x2, (_P + 3) // 8, _P)
+    if (x * x - x2) % _P:
+        x = x * _SQRT_M1 % _P
+    if (x * x - x2) % _P or (x == 0 and sign):
+        return None
+    if x & 1 != sign:
+        x = _P - x
+    return x, y, 1, x * y % _P
+
+
+_BASE_Y = 4 * pow(5, _P - 2, _P) % _P
+_BASE = _decode_point(_BASE_Y.to_bytes(32, 'little'))
+
+
+def ed25519_verify(public, message, signature):
+    """True when `signature` (64 bytes) is `public`'s (32 bytes) valid Ed25519 signature of `message`. Malformed
+    input, `S >= L` (a malleable signature) included, is False, never an exception."""
+    try:
+        if len(public) != 32 or len(signature) != 64:
+            return False
+        a, r = _decode_point(bytes(public)), _decode_point(bytes(signature[:32]))
+        s = int.from_bytes(signature[32:], 'little')
+        if a is None or r is None or s >= _L:
+            return False
+        h = int.from_bytes(hashlib.sha512(bytes(signature[:32]) + bytes(public) + bytes(message)).digest(),
+                           'little') % _L
+        left, right = _multiply(s, _BASE), _add(r, _multiply(h, a))
+        # Projective equality: X1/Z1 == X2/Z2 and Y1/Z1 == Y2/Z2.
+        return ((left[0] * right[2] - right[0] * left[2]) % _P == 0
+                and (left[1] * right[2] - right[1] * left[2]) % _P == 0)
+    except Exception:
+        return False
+
+
+def verify_signature(archive, signature_text, keys=None):
+    """True when any of `keys` (default RELEASE_KEYS) signed the bundle: `signature_text` is the base64 of the
+    64-byte signature of signed_message(archive). Bad base64, a wrong length or no keys is False."""
+    import base64
+    try:
+        signature = base64.b64decode(signature_text.strip(), validate=True)
+        message = signed_message(archive)
+    except ValueError:  # binascii.Error is one; so is bad ASCII
+        return False
+    for key in RELEASE_KEYS if keys is None else keys:
+        try:
+            if ed25519_verify(bytes.fromhex(key), message, signature):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def verify_signature_command(argv):
+    """install.py verify-signature BUNDLE_ZIP SIGNATURE_FILE [--key HEX]...: needs no installation."""
+    parser = argparse.ArgumentParser(prog='install.py verify-signature', allow_abbrev=False)
+    parser.add_argument('bundle')
+    parser.add_argument('signature')
+    parser.add_argument('--key', action='append', help='public key (hex) to accept instead of the keys built into this copy, '
+                        'to check a signature before the keys are committed; repeat')
+    args = parser.parse_args(argv)
+    keys = RELEASE_KEYS if args.key is None else args.key
+    valid = verify_signature(args.bundle, Path(args.signature).read_text(encoding='ascii'), keys)
+    print(f"{args.bundle}: signature {'valid' if valid else 'NOT valid'} ({len(keys)} key(s) tried)")
+    return 0 if valid else 1
+
+
 def download_bundle(repo, tag, folder):
     """The release's bundle.zip into folder, from its public download link."""
     import urllib.request
@@ -1285,6 +1401,8 @@ def main(argv=None):
                 raise ValueError('Usage: tare auto-update [--resume]')
             result = auto_update(home, repo=os.environ.get('TARE_UPDATE_REPO', UPDATE_REPO),
                                  resume=bool(args.args))
+        elif args.command == 'verify-signature':
+            return verify_signature_command(args.args)
         elif args.command == 'transition-status':
             if args.args:
                 raise ValueError('Usage: install.py [--home <installation>] transition-status')

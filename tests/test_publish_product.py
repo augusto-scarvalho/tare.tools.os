@@ -325,6 +325,7 @@ def test_native_git_pin_and_safe_extraction(tmp_path,monkeypatch,unsafe):
 def test_only_ci_publishes_unless_told_here(tmp_path, monkeypatch, capsys):
     # The maintainers' scheduled task runs main's publisher: once CI publishes, it must not publish too.
     monkeypatch.delenv('GITHUB_ACTIONS', raising=False)
+    monkeypatch.delenv('GITHUB_OUTPUT', raising=False)  # under CI this would write the test job's own outputs
     monkeypatch.setattr(publisher, 'publish', lambda *a, **k: pytest.fail('published outside CI'))
     assert publisher.main(['--state', str(tmp_path)]) == 0
     assert 'CI publishes releases' in capsys.readouterr().out
@@ -367,3 +368,84 @@ def test_the_newest_release_tells_ci_what_was_published_last(tmp_path, monkeypat
     download = calls[-1]
     assert download[:4] == ['gh', 'release', 'download', 'product-new']
     assert download[download.index('--pattern')+1] == 'published.json' and str(tmp_path) in download
+
+
+def release_run(monkeypatch, tmp_path, listed=()):
+    """publish() through to `gh release create` with every build step stubbed; returns the commands that ran."""
+    heads = {key: 'a'*40 for key in publisher.REPOS}
+    monkeypatch.setattr(publisher, 'mirror', lambda state, key: (key+'-mirror', heads[key]))
+    monkeypatch.setattr(publisher, 'lock_for', lambda mirrors, h: {'build_tools': {}, 'sources': [
+        {'id': key, 'commit': value, 'package': 'p-'+key, 'version': '1.0'} for key, value in heads.items()]})
+    monkeypatch.setattr(publisher, 'ci_passed', lambda commit: 'https://ci/runs/1')
+    monkeypatch.setattr(publisher, 'build_python', lambda *a: tmp_path/'python')
+    monkeypatch.setattr(publisher, 'git', lambda *a: b'# installer')
+    monkeypatch.setattr(publisher, 'fetch_ripgrep', lambda destination: destination/'rg')
+    monkeypatch.setattr(publisher, 'fetch_mingit', lambda destination: destination)
+    monkeypatch.setattr(publisher, 'notify', lambda peers: {})
+    calls = []
+    def run(argv, **k):
+        calls.append(list(argv))
+        if argv[:3] == ['gh', 'release', 'list']:
+            return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(list(listed)))
+        if any(str(part).endswith('pack_native_release.py') for part in argv):
+            bundle = Path(argv[argv.index('--output')+1])
+            bundle.mkdir(parents=True)
+            (bundle/'bundle.json').write_text('{}')
+        return subprocess.CompletedProcess(argv, 0, stdout='')
+    monkeypatch.setattr(publisher.subprocess, 'run', run)
+    return calls
+
+
+def test_a_draft_release_is_created_as_a_draft_and_says_so(tmp_path, monkeypatch):
+    calls = release_run(monkeypatch, tmp_path)
+    record = publisher.publish(tmp_path/'state', draft=True)
+    create, = (argv for argv in calls if argv[:3] == ['gh', 'release', 'create'])
+    assert '--draft' in create and record['draft'] is True and record['status'] == 'published'
+    calls.clear()
+    record = publisher.publish(tmp_path/'state2')
+    create, = (argv for argv in calls if argv[:3] == ['gh', 'release', 'create'])
+    assert '--draft' not in create and 'draft' not in record
+    assert not [argv for argv in calls if argv[:3] == ['gh', 'release', 'list']]  # no cleanup without --draft
+
+
+def test_leftover_product_drafts_are_deleted_and_published_releases_are_not(tmp_path, monkeypatch):
+    calls = release_run(monkeypatch, tmp_path, listed=[
+        {'tagName': 'product-failed-signing', 'isDraft': True},
+        {'tagName': 'product-published', 'isDraft': False},
+        {'tagName': 'v1-draft', 'isDraft': True}])  # not a product release: not ours to delete
+    publisher.publish(tmp_path/'state', draft=True)
+    deleted = [argv for argv in calls if argv[:3] == ['gh', 'release', 'delete']]
+    assert [argv[3] for argv in deleted] == ['product-failed-signing'] and '--yes' in deleted[0]
+    listing = next(argv for argv in calls if argv[:3] == ['gh', 'release', 'list'])
+    assert 'tagName,isDraft' in listing
+    assert calls.index(deleted[0]) < next(i for i, argv in enumerate(calls) if argv[:3] == ['gh', 'release', 'create'])
+
+
+def test_the_newest_release_is_never_a_draft(tmp_path, monkeypatch):
+    calls = []
+    def run(argv, **k):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0, stdout='[]')
+    monkeypatch.setattr(publisher.subprocess, 'run', run)
+    assert publisher.last_release(tmp_path) is None
+    assert '--exclude-drafts' in calls[0]
+
+
+@pytest.mark.parametrize('result, expected', [
+    ({'status': 'published', 'tag': 'product-0123'}, 'published=true\ntag=product-0123\n'),
+    ({'status': 'unchanged', 'tag': 'product-old'}, 'published=false\n'),
+    ({'status': 'waiting for CI', 'commit': 'c'*40, 'tag': 'product-old'}, 'published=false\n'),
+    ({'status': 'no packaged change', 'tag': 'product-old'}, 'published=false\n'),
+    ({'status': 'older than the newest release', 'commit': 'c'*40, 'tag': 'product-new'}, 'published=false\n')])
+def test_the_workflow_learns_from_github_output_whether_a_release_was_created(
+        tmp_path, monkeypatch, result, expected):
+    output = tmp_path/'github_output'
+    output.write_text('earlier=1\n')  # GITHUB_OUTPUT is shared by the steps: append, never replace
+    monkeypatch.setenv('GITHUB_OUTPUT', str(output))
+    monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+    seen = {}
+    monkeypatch.setattr(publisher, 'publish', lambda state, **k: seen.update(k) or result)
+    assert publisher.main(['--state', str(tmp_path), '--draft']) == 0
+    assert output.read_text() == 'earlier=1\n' + expected and seen['draft'] is True
+    monkeypatch.delenv('GITHUB_OUTPUT')
+    assert publisher.main(['--state', str(tmp_path)]) == 0 and seen['draft'] is False

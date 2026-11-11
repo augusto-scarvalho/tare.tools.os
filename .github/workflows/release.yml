@@ -7,6 +7,14 @@ name: Product release
 # Trust: workflow_run also fires for pull requests' CI, a fork's included, and a fork may name its branch main. So the
 # job accepts only push runs of this repository, and the code that runs is always this repository's main, never the
 # triggering run's commit: main's publisher builds the tested commit from GitHub mirrors after checking it is on main.
+#
+# Signing (ADR-075): installed copies install only a bundle signed with the project key. The signing is a separate job
+# because the key must never exist on the runner that builds and runs project code. `publish` creates the release as a
+# DRAFT; `sign` receives only that release's bundle, signs it, checks the signature with the keys committed to main
+# (so a key the installed copies do not know stops the release here) and only then uploads bundle.zip.sig and
+# publishes the draft. A release therefore becomes visible to installed copies only with a signature that verifies.
+# The job runs in the release-signing environment, which allows only protected branches, and it holds the only
+# reference to the signing secret.
 on:
   workflow_run:
     workflows: ['tare.tools CI']
@@ -39,6 +47,9 @@ jobs:
           && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: windows-latest  # the bundle is for Python 3.12 on Windows
     timeout-minutes: 45
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+      tag: ${{ steps.publish.outputs.tag }}
     env:
       GH_TOKEN: ${{ github.token }}
       COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -57,10 +68,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Build, test and publish the bundle
+      - name: Build, test and publish the bundle (as a draft)
+        id: publish
         run: >-
           python -X utf8 scripts/ops/publish_product.py --state "${{ runner.temp }}/publisher"
-          --commit ${{ env.COMMIT }} --state-from-release --bundle-out dist/bundle.zip
+          --commit ${{ env.COMMIT }} --state-from-release --bundle-out dist/bundle.zip --draft
           ${{ inputs.force && '--force' || '' }}
 
       - name: Attest the bundle's build provenance
@@ -68,3 +80,47 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: dist/bundle.zip
+
+  sign:
+    needs: publish
+    if: needs.publish.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release-signing
+    permissions:
+      contents: write  # upload the signature and publish the draft
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.publish.outputs.tag }}
+    steps:
+      - name: Checkout main (the verifier only)
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Download the release's bundle
+        run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern bundle.zip --dir dist
+
+      - name: Sign the bundle
+        shell: bash
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key="$RUNNER_TEMP/release-signing.pem"
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$RELEASE_SIGNING_KEY" > "$key"
+          message="$RUNNER_TEMP/message"
+          printf 'tare.tools product bundle\n%s' "$(sha256sum dist/bundle.zip | cut -d' ' -f1)" > "$message"
+          openssl pkeyutl -sign -inkey "$key" -rawin -in "$message" -out "$RUNNER_TEMP/sig.bin"
+          base64 -w0 "$RUNNER_TEMP/sig.bin" > dist/bundle.zip.sig
+
+      - name: Verify the signature with the keys committed to main
+        run: python3 relay/native_product.py verify-signature dist/bundle.zip dist/bundle.zip.sig
+
+      - name: Publish the signed release
+        run: |
+          gh release upload "$TAG" dist/bundle.zip.sig --repo "$GITHUB_REPOSITORY"
+          gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"

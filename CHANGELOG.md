@@ -4,6 +4,8 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The publisher's test of who may publish no longer inherits `GITHUB_OUTPUT` from the CI runner: it failed there with `KeyError: 'tag'` and would have written into the test job's own outputs.
+- Product releases are now signed with the project's key and published only after the signature verifies (ADR-075): the release workflow signs `bundle.zip` in a separate job that holds the key, uploads `bundle.zip.sig`, and `python install.py verify-signature bundle.zip bundle.zip.sig` checks a download by hand. Installed copies do not require the signature yet; a later release will make them refuse an unsigned one.
 - AGY's Gemini 3.8 is not an alternative writer of heads-up notes after all: measured as the writer, it took a median of 76 seconds a call against 9 for Claude Sonnet, and a quarter of its calls failed, so its notes would arrive after you had already acted. The default is Claude Sonnet 5.5 at high reasoning, then Codex GPT-6.1 Sol.
 - Heads-up notes are now written, by default, by Claude Sonnet 5.5 at high reasoning, with Codex GPT-6.1 Sol and then AGY's Gemini 3.8 as the alternatives when it is unavailable. Claude Haiku no longer stands in: when none of the three can answer, no note is written. `/routes` still changes the list and the level.
 - A heads-up note you send to the agent now counts as confirmed only when the agent ran at least one step before answering. A reply that just agrees ("you are right, I will fix it") read as a confirmation; the record now keeps how many steps ran, and the calibration report shows those replies apart as agreed without checking.
