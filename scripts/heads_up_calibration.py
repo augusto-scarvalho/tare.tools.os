@@ -251,7 +251,7 @@ def claude_writers(cases, writer, quiet):
         rows = []
         chosen = [c for c in cases if c[3]] + [c for c in cases if not c[3]][:quiet]
         for session, index, turn, note in chosen:
-            new, attempts = heads_up.write(heads_up.writer_record(turn), [])
+            new, attempts = heads_up.write(heads_up.writer_record(turn), [], heads_up.certain(turn))
             row = {'writer': writer, 'session': session, 'turn': index, 'noted': bool(note), 'notes': len(new),
                    'ok': any(a['ok'] for a in attempts), 'ms': sum(a['ms'] for a in attempts)}
             if note and new:
@@ -338,6 +338,15 @@ def report(rows):
           f"{sum(r['reply_sha256'] in asked for r in noted)} sent to the agent; "
           f"{sum((r.get('redundant') or 0) >= REDUNDANT_AT for r in ran)} dropped as already said.")
     labels = {r.get('reply_sha256'): r.get('value') for r in rows if r.get('event') == 'label'}  # the last one wins
+    why = []  # by the reason the writer ran: turns forwarded, those that got a note, and how the user labelled them
+    for reason in ('event', 'score', 'cadence'):
+        sent, got = ([r for r in rs if r.get('forwarded') == reason] for rs in (turns, noted))
+        if sent:
+            why.append(f"{reason} {len(sent)} forwarded, {len(got)} with a note "
+                       f"({sum(labels.get(r['reply_sha256']) == 'useful' for r in got)} useful, "
+                       f"{sum(labels.get(r['reply_sha256']) == 'not_useful' for r in got)} not useful)")
+    if why:
+        print('By reason: ' + '; '.join(why) + '.')
     checked = [r.get('confirmed') for r in rows if r.get('event') == 'checked']
     print(f"{sum(v == 'useful' for v in labels.values())} notes labelled useful, "
           f"{sum(v == 'not_useful' for v in labels.values())} not useful; "

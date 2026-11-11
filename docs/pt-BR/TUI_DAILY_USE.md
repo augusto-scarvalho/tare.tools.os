@@ -208,8 +208,9 @@ painel antes de **Add to draft** descarta o comentário não enviado.
 
 ### Avisos (heads-up)
 
-Depois de algumas respostas, o tare acrescenta um aviso curto: algo que a resposta
-deixou pouco claro. **Ask the agent** apenas coloca o aviso no compositor como uma
+Depois de uma resposta que segue trabalho entregue ou tentado (uma implementação, uma edição ou uma
+verificação que falhou), e de vez em quando depois das outras, o tare acrescenta um aviso curto: algo que a
+resposta deixou pouco claro. **Ask the agent** apenas coloca o aviso no compositor como uma
 pergunta; o rascunho que você já tinha é mantido, e nada é enviado até você editar e
 apertar **Enter**. Um aviso conta como usado só quando você o envia e a resposta do
 agente o confirma. Você pode reescrever o aviso com as suas palavras: mantenha a
