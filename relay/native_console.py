@@ -451,7 +451,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 from .heads_up import enabled as heads_up_enabled
                 yield Checkbox('Heads-up notes after each turn (whole machine)', heads_up_enabled(), id='heads-up',
                                tooltip='After a finished turn, a model may write a note on what the reply left unsaid: '
-                                       'counts tare keeps of the turn, or a pause of a few turns, decide when it runs. '
+                                       'it runs after work was delivered or attempted, and now and then otherwise. '
                                        "A note's buttons ask the agent or rate it; /heads-up puts the last notes in the "
                                        'composer. The choice is saved.')
                 yield Static('Use Choose model → Continue task to change a saved conversation.', classes='settings-note', markup=False)

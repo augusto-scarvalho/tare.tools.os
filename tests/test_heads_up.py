@@ -95,30 +95,32 @@ def test_the_score_or_the_cadence_reaches_the_writer_and_jev_checks_the_note(tmp
     monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
     written, already = [], {'already_said': .1}
     monkeypatch.setattr(turn_engine, 'judge_many', lambda state, questions, timeout=10: {'yes': dict(already)})
-    monkeypatch.setattr(heads_up, 'write', lambda text, seen: written.append((json.loads(text), seen)) or (
+    monkeypatch.setattr(heads_up, 'write', lambda text, seen, known=(): written.append((json.loads(text), seen)) or (
         [NOTE], [{'route': 'sonnet', 'ok': True, 'ms': 5}]))
     explained = {'request': 'Explain the parser', 'reply': 'It is a recursive descent parser. ' * 150, 'steps': [
         heads_up.step('read', {'path': 'src/p.py'}, 'succeeded', {})]}
     worked = heads_up.from_journal([(session(tmp_path), 'inv')])
     assert heads_up.score(explained, []) < heads_up.FORWARD_AT <= heads_up.score(worked, heads_up.facts(worked))
-    tested = {**explained, 'request': 'Run the tests', 'steps': [heads_up.step('terminal_read', {}, 'failed', {
-        'exit_code': 1, 'command': PYTEST, 'output': '1 failed'})]}
+    tested = {**explained, 'request': 'Run the tests', 'steps': [heads_up.step('terminal_read', {}, 'succeeded', {
+        'exit_code': 0, 'command': PYTEST, 'output': '4 passed'})]}  # a failed run would be an event, not a quiet turn
     assert heads_up.score(tested, heads_up.facts(tested)) < heads_up.FORWARD_AT
+    assert heads_up.events(tested, []) == heads_up.events(explained, []) == []
     pace = {}  # quiet turns reach the writer every EVERY-th turn since it last ran, with the steps of the turns between
     assert [heads_up.notes(t, pace=pace) for t in (tested, explained, explained, explained)] == [[], [], [], [NOTE]]
     assert pace == {'since': 0, 'held': []} and len(written) == 1
     window = written[0][0]['recorded_steps']
     assert window[0] == 'earlier turn Run the tests -> started' and window[1].startswith('terminal_read ' + PYTEST)
-    assert window[1].endswith(':: 1 failed') and window[-2:] == ['this turn Explain the parser -> started',
+    assert window[1].endswith(':: 4 passed') and window[-2:] == ['this turn Explain the parser -> started',
                                                                  'read src/p.py -> succeeded']
-    assert heads_up.notes(worked, seen=['old note'], pace=pace) == [NOTE]  # a busy turn: the score
+    assert heads_up.notes(worked, seen=['old note'], pace=pace) == [NOTE]  # edits and a failed check: events
     assert written[-1][1] == ['old note'] and 'facts_checked_by_tare' not in written[-1][0]  # process facts: never
     assert written[-1][0]['earlier_in_conversation'][0]['assistant'] == 'Measured on the stub model only.'
     already['already_said'] = .9  # the reply already says it: the note goes
     assert heads_up.notes(worked) == []
     rows = [json.loads(line) for line in (tmp_path/'storage'/'serve'/'heads-up.jsonl').read_text(
         encoding='utf-8').splitlines()]
-    assert [r['forwarded'] for r in rows] == [None, None, None, 'cadence', 'score', 'score']
+    assert [r['forwarded'] for r in rows] == [None, None, None, 'cadence', 'event', 'event']
+    assert [r['events'] for r in rows] == [[], [], [], [], ['edit', 'check'], ['edit', 'check']]
     assert [r['since'] for r in rows[:5]] == [1, 2, 3, 4, 1] and [r['held'] for r in rows[:4]] == [0, 2, 4, 6]
     assert rows[4]['writers'][0]['route'] == 'sonnet' and rows[4]['counts']['edits'] == 4
     assert rows[5]['redundant'] == .9 and rows[5]['notes'] == 0
@@ -175,10 +177,12 @@ def test_calibration_reports_what_each_threshold_saves_and_drops(capsys):
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == ('5 logged turns; the writer answered 4 (2 by cadence below the score); 2 got a note, 1 sent '
                         'to the agent; 1 dropped as already said.')
-    assert lines[1] == ('0 notes labelled useful, 0 not useful; 1 sent to the agent (0 with the note rewritten), '
+    assert lines[1] == ('By reason: score 2 forwarded, 1 with a note (0 useful, 0 not useful); '
+                        'cadence 2 forwarded, 1 with a note (0 useful, 0 not useful).')
+    assert lines[2] == ('0 notes labelled useful, 0 not useful; 1 sent to the agent (0 with the note rewritten), '
                         '0 confirmed by its reply, 0 not confirmed, 0 without an answer.')
-    assert lines[2].startswith('0 replies flagged as missing a note')  # no /missed yet
-    assert lines[4].split() == ['0.050', '0/4', '0/2'] and lines[7].split() == ['0.250', '2/4', '1/2']
+    assert lines[3].startswith('0 replies flagged as missing a note')  # no /missed yet
+    assert lines[5].split() == ['0.050', '0/4', '0/2'] and lines[8].split() == ['0.250', '2/4', '1/2']
     assert lines[-1] == 'sonnet: 4/4 answered, median 2.0 s'
 
 
@@ -469,7 +473,7 @@ def test_the_calibration_report_counts_the_flagged_replies_and_never_as_turns(ca
             {'event': 'miss', 'reply_sha256': 'z'}])  # a turn this log does not hold
     lines = capsys.readouterr().out.splitlines()
     assert lines[0].startswith('3 logged turns; the writer answered 2')
-    assert lines[2] == ('4 replies flagged as missing a note: 1 where the writer ran and wrote none, '
+    assert lines[3] == ('4 replies flagged as missing a note: 1 where the writer ran and wrote none, '
                         '1 where a note was shown anyway, 1 where the writer did not run, 1 not in this log.')
 
 
@@ -497,3 +501,126 @@ def test_the_writer_uses_the_owners_heads_up_effort(monkeypatch, tmp_path):
     (tmp_path/'routing.json').write_text(json.dumps({'heads_up': ['claude-sonnet-5-5-cli'], 'heads_up_effort': 'high'}))
     saved = turn_engine.save_policy({'heads_up': [['codex-cli-gpt-6-1-sol']]})
     assert saved['heads_up'] == ['codex-cli-gpt-6-1-sol'] and saved['heads_up_effort'] == 'high'
+
+
+def implemented(files=None, verdict=None, status='succeeded', reason=None):
+    """An `implement` step as the journal records it: files_scope says whether the change reached the project."""
+    output = {**({'verdict': verdict} if verdict else {}), **({'reason': reason} if reason else {}),
+              **({'files': ['a.py'], 'files_scope': files} if files else {})}
+    return heads_up.step('implement', {'note': 'Do it.'}, status, output)
+
+
+UNAPPLIED = 'unapplied candidate, not project files'
+
+
+def test_an_implement_step_keeps_its_verdict_and_where_its_files_went():
+    step = implemented(UNAPPLIED, 'NOT_REVIEWED')
+    assert (step['verdict'], step['files']) == ('NOT_REVIEWED', UNAPPLIED)
+    assert step['summary'] == f'verdict NOT_REVIEWED; files {UNAPPLIED}'  # unchanged
+    assert implemented('project')['files'] == 'project' and 'verdict' not in implemented('project')
+    assert 'files' not in heads_up.step('implement', {}, 'succeeded', {'verdict': 'PASS', 'files_scope': 'project'})
+    other = heads_up.step('demand', {}, 'succeeded', {'verdict': 'PASS', 'files': ['a.py'], 'files_scope': 'project'})
+    assert 'verdict' not in other and 'files' not in other and other['summary'] == 'verdict PASS; files project'
+    refused = implemented(status='refused', reason='no budget')
+    assert 'verdict' not in refused and refused['reason'] == 'no budget'
+
+
+def test_certain_says_what_the_last_implementation_did_then_what_tare_checked():
+    def turn(*steps):
+        return {'request': 'x', 'reply': 'y', 'steps': list(steps)}
+    failed = heads_up.step('terminal_read', {}, 'failed', {'exit_code': 1, 'command': PYTEST, 'output': '1 failed'})
+    assert heads_up.certain(turn(heads_up.step('read', {'path': 'a'}, 'succeeded', {}))) == []
+    assert heads_up.certain(turn(failed)) == heads_up.facts(turn(failed)) == [
+        'The last run of `' + PYTEST + '` failed (exit 1): 1 failed.']
+    assert heads_up.certain(turn(implemented(status='refused', reason='no budget'))) == [
+        'The last implementation attempt did not run (refused: no budget); it changed nothing.']
+    assert heads_up.certain(turn(implemented(status='failed'))) == [
+        'The last implementation attempt did not run (failed); it changed nothing.']
+    assert heads_up.certain(turn(implemented(UNAPPLIED, 'NOT_REVIEWED'))) == [
+        'The last implementation attempt is a kept candidate (verdict NOT_REVIEWED): its changes are NOT in the '
+        'project files.']
+    assert heads_up.certain(turn(implemented(UNAPPLIED))) == [
+        'The last implementation attempt is a kept candidate: its changes are NOT in the project files.']
+    assert heads_up.certain(turn(implemented('project', 'PASS'))) == [
+        'The last implementation attempt was applied to the project files (verdict PASS).']
+    assert heads_up.certain(turn(implemented('project'))) == [
+        'The last implementation attempt was applied to the project files.']
+    assert heads_up.certain(turn(implemented())) == []  # no outcome recorded: nothing is certain
+    # the last implement step wins, and the delivery sentence comes before the facts
+    both = turn(implemented('project', 'PASS'), failed, implemented(UNAPPLIED, 'REVISE'))
+    assert heads_up.certain(both) == [
+        'The last implementation attempt is a kept candidate (verdict REVISE): its changes are NOT in the project '
+        'files.', 'The last run of `' + PYTEST + '` failed (exit 1): 1 failed.']
+
+
+def test_events_name_the_points_where_the_writer_runs():
+    def kinds(*steps):
+        turn = {'request': 'x', 'reply': 'y', 'steps': list(steps)}
+        return heads_up.events(turn, heads_up.facts(turn))
+    edit = heads_up.step('edit', {'path': 'a.py'}, 'succeeded', {})
+    failed = heads_up.step('terminal_read', {}, 'failed', {'exit_code': 1, 'command': PYTEST, 'output': '1 failed'})
+    assert kinds(implemented(status='refused')) == ['delivery']  # whatever its outcome
+    assert kinds(edit) == ['edit'] and kinds(failed) == ['check']
+    assert kinds(failed, implemented('project'), edit) == ['delivery', 'edit', 'check']
+    for status in ('failed', 'refused'):  # not an edit event; tare's fact that it was not redone is a check
+        assert kinds(heads_up.step('edit', {'path': 'a.py'}, status, {'reason': 'no'})) == ['check']
+    assert kinds(heads_up.step('read', {'path': 'a.py'}, 'succeeded', {}),
+                 heads_up.step('delegate_plan', {}, 'succeeded', {'verdict': 'PASS'})) == []
+
+
+def test_an_event_runs_the_writer_below_the_score_and_the_cadence_and_tells_it_the_facts(tmp_path, monkeypatch, log):
+    told = []  # heads_up.write is stubbed: this test is about what notes() hands it
+    monkeypatch.setattr(heads_up, 'write', lambda text, seen, known=(): told.append((json.loads(text), list(known))) or (
+        [], [{'route': 'sonnet', 'ok': True, 'ms': 5}]))
+    delivered = {'request': 'Add the flag', 'reply': 'Done.', 'steps': [implemented(UNAPPLIED, 'NOT_REVIEWED')]}
+    quiet = {'request': 'Explain', 'reply': 'It is a parser.', 'steps': [heads_up.step('read', {'path': 'a'}, 'succeeded', {})]}
+    assert heads_up.score(delivered, []) < heads_up.FORWARD_AT
+    pace = {}
+    heads_up.notes(delivered, pace=pace)  # since is 1: the cadence is not due
+    assert len(told) == 1 and pace == {'since': 0, 'held': []}
+    assert told[0][1] == ['The last implementation attempt is a kept candidate (verdict NOT_REVIEWED): its changes are '
+                          'NOT in the project files.']
+    heads_up.notes(quiet, pace=pace)  # no event, a low score, the cadence not due: the writer does not run
+    assert len(told) == 1 and pace['since'] == 1
+    held = {'request': 'Earlier', 'reply': 'r', 'steps': [implemented('project', 'PASS')]}
+    heads_up.notes(quiet, pace={'since': 0, 'held': heads_up.hold([], held)})  # a held turn's delivery is not this turn's
+    assert len(told) == 1
+    rows = log()
+    assert [(r['forwarded'], r['events']) for r in rows] == [('event', ['delivery']), (None, []), (None, [])]
+    assert 'known' not in json.dumps(rows) and 'NOT in the project' not in json.dumps(rows)  # never the texts
+
+
+def test_the_writer_prompt_carries_the_facts_between_the_notes_shown_and_the_record(monkeypatch):
+    monkeypatch.setattr(turn_engine, 'policy', lambda: {'heads_up': ['sonnet']})
+    monkeypatch.setattr(turn_engine, 'available', lambda name: ({'id': name, 'native_profile': {'model': name}}, None))
+    prompts = []
+    monkeypatch.setattr('relay.native_generation.generate_text',
+                        lambda deployment, model, prompt, timeout, **kw: prompts.append(prompt) or (True, 'NONE', {}))
+    heads_up.write('{}', ['Old note.'], ['A is true.', 'B is true.'])
+    heads_up.write('{}', ['Old note.'])
+    assert prompts[0] == ('Notes already shown to the user (never repeat these):\n- Old note.\n\n'
+                          'Facts the host is certain of (never contradict them):\n- A is true.\n- B is true.'
+                          '\n\nTurn record (JSON):\n{}')
+    assert 'Facts the host' not in prompts[1]  # nothing known: no block
+
+
+def test_the_writer_is_told_to_trust_the_facts_and_not_to_predict():
+    assert 'never contradict them, and say a change is in the project only when they say it was applied' in heads_up.SYSTEM
+    assert 'Never predict what the host or the agent will do next' in heads_up.SYSTEM
+
+
+def test_the_report_counts_each_reason_the_writer_ran(capsys):
+    from scripts.heads_up_calibration import report
+    writer = [{'route': 'sonnet', 'ok': True, 'ms': 2000}]
+
+    def row(reason, notes, sha):
+        return {'score': .1, 'forwarded': reason, 'notes': notes, 'writers': writer, 'reply_sha256': sha}
+    report([row('event', 1, 'a'), row('event', 1, 'b'), row('event', 0, 'c'), row('cadence', 1, 'd'),
+            row('score', 0, 'e'), {'score': .1, 'forwarded': None, 'notes': 0, 'writers': [], 'reply_sha256': 'f'},
+            {'event': 'label', 'value': 'not_useful', 'reply_sha256': 'a'},
+            {'event': 'label', 'value': 'useful', 'reply_sha256': 'a'},  # the last label of a reply wins
+            {'event': 'label', 'value': 'not_useful', 'reply_sha256': 'b'},
+            {'event': 'label', 'value': 'useful', 'reply_sha256': 'd'}])
+    assert capsys.readouterr().out.splitlines()[1] == (
+        'By reason: event 3 forwarded, 2 with a note (1 useful, 1 not useful); score 1 forwarded, 0 with a note '
+        '(0 useful, 0 not useful); cadence 1 forwarded, 1 with a note (1 useful, 0 not useful).')

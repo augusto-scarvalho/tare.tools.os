@@ -3,13 +3,15 @@
 A funnel, cheapest stage first:
 1. Collect, no model: the turn's recorded steps, what code counts in them, and the facts tare checks itself (a test
    whose last run failed, files changed after the last test ran, an edit refused and never redone).
-2. Pace, no model: a logistic score over those counts (FILTER) sends a turn to the writer at FORWARD_AT or more, and
-   otherwise every EVERY-th turn since the writer last ran. A note is about the conversation more often than about
-   the turn it follows, and the writer reads the whole window since it last ran (the skipped turns' steps with the
-   earlier exchanges), so a pause loses little.
+2. Pace, no model: the writer runs after a turn where work was delivered or attempted (a delegated implementation
+   finished, an agent edited files itself, or a check tare can read failed: events()). Otherwise a logistic score
+   over those counts (FILTER) sends a turn to it at FORWARD_AT or more, and failing that every EVERY-th turn since
+   it last ran. The writer reads the whole window since it last ran (the skipped turns' steps with the earlier
+   exchanges), so a pause loses little.
 3. Write: the first available route of the routing policy's `heads_up` role (/routes changes it) writes at most
    MAX_NOTES note, or none, about consequences: a measurement that may not hold, a cost to come, a changed default,
-   a rule that can catch too much, a silent failure. It reads what the work did, from what tare already recorded
+   a rule that can catch too much, a silent failure. It is told the facts the host is certain of (certain()). It
+   reads what the work did, from what tare already recorded
    (each edit's text, a demand's objective and criteria, what explorers were asked and found, delegated reports,
    commands' last output), so it needs no tools and no calls of its own.
 4. Check: hosted Jev drops a note the reply already says (a Noul, REDUNDANT_AT). Without Jev the note stands.
@@ -46,6 +48,8 @@ import time
 # notes are lost by it: on 49 noted turns, Sonnet raised the side agent's concern on 2 reading the turn alone and on
 # at most 2 reading the 4-turn window (hosted Jev's match, one of them doubtful), so the writer, not the pace, is
 # what limits how many such notes are found.
+# 2026-11-11: events (events()) now come first. On 115 real TUI turns, all 21 notes judged useful followed a turn where
+# work was delivered or attempted, and the score skipped 34 of the 97 such turns; the score is only a fallback now.
 # ponytail: fitted on another agent's transcripts; refit on tare's own log (cadence turns, /heads-up) as it grows
 FILTER = {'facts': (.157, .405, .205), 'edits': (2.566, 5.373, .235), 'steps': (24.61, 42.822, .043),
           'tests': (3.426, 7.791, .181), 'failures': (.486, 1.155, .164), 'delegated': (.141, .411, .061),
@@ -53,6 +57,7 @@ FILTER = {'facts': (.157, .405, .205), 'edits': (2.566, 5.373, .235), 'steps': (
 FILTER_BIAS = -1.517
 FORWARD_AT = .25
 EVERY = 4  # below the score, the writer runs on every EVERY-th turn since it last ran
+PACE = 'events-1'  # the pace changed (events first): calibration compares only rows after it
 HELD_STEPS = 100  # steps of the turns since then that the conversation keeps for it (pace['held'])
 ALREADY_SAID = 'Does `assistant_final_reply` already tell the user what `note` says?'
 REDUNDANT_AT = .7  # TypeSafe's starting threshold for a Noul's yes
@@ -97,14 +102,17 @@ SYSTEM = ("You watch a coding agent's conversation from the side, for its user, 
           "steps show. The one exception is a check the reply claims: when it says something was tested, verified "
           "or passes and the steps show that check failed, never ran, or ran before later edits to what it checks, "
           "say so, unless earlier steps were left out of the record. Never give advice, suggestions or style "
-          "opinions, and never repeat a note already shown. Most turns need nothing: then answer exactly NONE. "
+          "opinions, and never repeat a note already shown. The message may list facts the host is certain of: "
+          "never contradict them, and say a change is in the project only when they say it was applied. Never "
+          "predict what the host or the agent will do next (whether another confirmation, a retry or a new plan "
+          "will work): say what holds now. Most turns need nothing: then answer exactly NONE. "
           "Otherwise answer one line starting with '- ': one or two plain sentences in the language of the user's "
           "messages, saying what holds and why it matters, without the transcript's jargon.")
 
 
 def funnel():
     """The funnel's version in each log row: calibration compares only rows that ran the same texts and pace."""
-    value = [SYSTEM, FILTER, FILTER_BIAS, FORWARD_AT, EVERY, ALREADY_SAID, REDUNDANT_AT, RECORD]
+    value = [SYSTEM, FILTER, FILTER_BIAS, FORWARD_AT, EVERY, PACE, ALREADY_SAID, REDUNDANT_AT, RECORD]
     return hashlib.sha256(json.dumps(value).encode('utf-8')).hexdigest()[:12]
 
 ASK_HEAD = "tare's heads-up after your last reply:"  # followed() knows a message that rewrote the note by this line
@@ -219,6 +227,9 @@ def step(tool, args, status, output):
         said = [f'{key} {output[key]}' for key in ('verdict', 'status', 'reason') if isinstance(output.get(key), str)]
         if output.get('files') and isinstance(output.get('files_scope'), str):  # without it, a refused candidate read as applied
             said.append(f"files {output['files_scope']}")
+        if tool == 'implement':  # the raw values, for certain()
+            value.update({k: output[s] for k, s in (('verdict', 'verdict'), ('files', 'files_scope'))
+                          if isinstance(output.get(s), str) and (k == 'verdict' or output.get('files'))})
         stop = output.get('implementation_stop')
         if isinstance(stop, dict) and isinstance(stop.get('reason'), str):  # an attempt that changed nothing
             said.append(f"implementer stopped {stop['reason']}")
@@ -339,6 +350,34 @@ def facts(turn):
     return found
 
 
+def certain(turn):
+    """What the host knows for sure about the turn, as sentences for the writer: the outcome of the last delegated
+    implementation (an unapplied candidate is not in the project files), then facts()."""
+    last = next((s for s in reversed(turn['steps']) if s['tool'] == 'implement'), None)
+    said = f" (verdict {last['verdict']})" if last and last.get('verdict') else ''
+    if last is None:
+        sentence = []
+    elif last['status'] in ('refused', 'failed'):
+        sentence = [f"The last implementation attempt did not run ({last['status']}"
+                    + (f": {last['reason']}" if last.get('reason') else '') + '); it changed nothing.']
+    elif str(last.get('files', '')).startswith('unapplied'):
+        sentence = [f'The last implementation attempt is a kept candidate{said}: its changes are NOT in the project files.']
+    elif last.get('files') == 'project':
+        sentence = [f'The last implementation attempt was applied to the project files{said}.']
+    else:
+        sentence = []
+    return sentence + facts(turn)
+
+
+def events(turn, found):
+    """The points where the writer runs: a delegated implementation finished (whatever its outcome), an agent edited
+    files itself, a check tare can read failed (`found`, facts(turn))."""
+    steps = turn['steps']
+    return [kind for kind, here in (('delivery', any(s['tool'] == 'implement' for s in steps)),
+                                    ('edit', any(s['tool'] == 'edit' and s['status'] == 'succeeded' for s in steps)),
+                                    ('check', bool(found))) if here]
+
+
 def _clip(text, limit):
     return (text or '').encode('utf-8')[:max(int(limit), 0)].decode('utf-8', 'ignore')
 
@@ -399,11 +438,14 @@ def parse(answer, seen):
     return [n for n in dict.fromkeys(notes) if n and n.casefold() not in known][:MAX_NOTES]
 
 
-def write(text, seen):
-    """(notes, attempts): the first available `heads_up` route that answers writes them; one handover on failure."""
+def write(text, seen, known=()):
+    """(notes, attempts): the first available `heads_up` route that answers writes them; one handover on failure.
+    `known`: sentences the host is certain of (certain()), which the note must not contradict."""
     from .native_generation import generate_text, vault_secret
     from .turn_engine import DEFAULT_POLICY, available, policy, with_effort
     prompt = ('Notes already shown to the user (never repeat these):\n' + ('\n'.join('- ' + s for s in seen) or 'none')
+              + ('\n\nFacts the host is certain of (never contradict them):\n' + '\n'.join('- ' + s for s in known)
+                 if known else '')
               + '\n\nTurn record (JSON):\n' + text)
     attempts, effort = [], policy().get('heads_up_effort')  # unset: each route's own default
     for name in policy().get('heads_up') or DEFAULT_POLICY['heads_up']:
@@ -484,14 +526,15 @@ def notes(turn, *, seen=(), observed=None, pace=None):
         found = facts(turn)
         p = score(turn, found)
         since, held = pace.get('since', 0) + 1, list(pace.get('held') or [])
-        why = 'score' if p >= FORWARD_AT else 'cadence' if since >= EVERY else None
+        kinds = events(turn, found)
+        why = 'event' if kinds else 'score' if p >= FORWARD_AT else 'cadence' if since >= EVERY else None
         pace.update(since=0 if why else since, held=[] if why else hold(held, turn))
-        new, attempts = write(writer_record(window(turn, held)), list(seen)) if why else ([], [])
+        new, attempts = write(writer_record(window(turn, held)), list(seen), certain(turn)) if why else ([], [])
         redundant = said_already(turn, new[0]) if new else None
         if redundant is not None and redundant >= REDUNDANT_AT:
             new = []
         row = {'facts': len(found), 'score': round(p, 4), 'counts': counts(turn, found), 'since': since,
-               'held': len(held), 'forwarded': why, 'writers': attempts, 'redundant': redundant, 'notes': len(new)}
+               'held': len(held), 'forwarded': why, 'events': kinds, 'writers': attempts, 'redundant': redundant, 'notes': len(new)}
     except Exception as exc:  # ponytail: a heads-up never fails the turn it reports on; the reason is logged
         new, row = [], {'failure': f'{type(exc).__name__}: {str(exc)[:120]}'}
     judge_log('heads-up', {'ts': datetime.now(timezone.utc).isoformat(timespec='seconds'), 'funnel': funnel(),
