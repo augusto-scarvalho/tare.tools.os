@@ -325,6 +325,7 @@ def test_native_git_pin_and_safe_extraction(tmp_path,monkeypatch,unsafe):
 def test_only_ci_publishes_unless_told_here(tmp_path, monkeypatch, capsys):
     # The maintainers' scheduled task runs main's publisher: once CI publishes, it must not publish too.
     monkeypatch.delenv('GITHUB_ACTIONS', raising=False)
+    monkeypatch.delenv('GITHUB_OUTPUT', raising=False)  # under CI this would write the test job's own outputs
     monkeypatch.setattr(publisher, 'publish', lambda *a, **k: pytest.fail('published outside CI'))
     assert publisher.main(['--state', str(tmp_path)]) == 0
     assert 'CI publishes releases' in capsys.readouterr().out
