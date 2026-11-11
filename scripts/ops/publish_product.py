@@ -13,7 +13,9 @@ changed.
   python scripts/ops/publish_product.py [--state DIR] [--force] [--commit SHA] [--state-from-release]
                                         [--bundle-out PATH] [--draft] [--here]
 
-With --draft the release stays a draft until the workflow's `sign` job has signed it (ADR-075).
+With --draft the release stays a draft until the workflow's `sign` job has signed it (ADR-075). A release published
+with --here is always a draft: this machine has no signing key, and installed copies ignore a release without
+bundle.zip.sig. Sign it with the recovery key and publish it (the commands are in release_signing_key.py).
 """
 import argparse
 from datetime import datetime, timezone
@@ -346,9 +348,11 @@ def main(argv=None):
     parser.add_argument('--bundle-out', type=Path, help='also copy the published bundle.zip here (provenance)')
     parser.add_argument('--draft', action='store_true',
                         help='create the release as a draft, and first delete leftover product-* drafts')
-    parser.add_argument('--here', action='store_true', help='publish from this machine; CI normally does')
+    parser.add_argument('--here', action='store_true', help='publish from this machine, as a draft to sign by hand; '
+                        'CI normally publishes')
     args = parser.parse_args(argv)
-    if not os.environ.get('GITHUB_ACTIONS') and not args.here:
+    here = not os.environ.get('GITHUB_ACTIONS')
+    if here and not args.here:
         # The maintainers' scheduled task runs main's publisher: it stops publishing once CI does.
         print(json.dumps({'status': 'skipped: CI publishes releases (.github/workflows/release.yml)'}), flush=True)
         return 0
@@ -358,8 +362,13 @@ def main(argv=None):
     if args.latest_tools:
         return refresh_tools(args.state.resolve(),force=args.force,peers=args.peer)
     result = publish(args.state.resolve(), force=args.force, peers=args.peer, tooling_commit=args.tooling_commit,
-                     commit=args.commit, bundle_out=args.bundle_out, draft=args.draft)
+                     commit=args.commit, bundle_out=args.bundle_out, draft=args.draft or here)
     print(json.dumps(result, indent=2), flush=True)
+    if here and result['status'] == 'published':
+        # Only CI holds the signing key, and installed copies skip a release without bundle.zip.sig without a word.
+        print(f"{result.get('tag', 'The release')} is a DRAFT without bundle.zip.sig: no installed copy takes it yet. "
+              'Sign it with the recovery key and publish it; the commands are at the top of '
+              'scripts/ops/release_signing_key.py.', file=sys.stderr, flush=True)
     if os.environ.get('GITHUB_OUTPUT'):  # the workflow's `sign` job runs only for a release this run created
         with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as outputs:
             outputs.write(f"published=true\ntag={result['tag']}\n" if result['status'] == 'published'
