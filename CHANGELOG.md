@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- Installed copies now refuse a product release that has no valid signature (ADR-075, second step): the updater considers only releases that carry `bundle.zip.sig`, verifies it against the built-in keys before extracting the bundle, and when it does not verify installs nothing, leaves the installation untouched and reports `refused` with the release tag, so an unsigned or tampered release can no longer reach an installed copy.
 - The publisher's test of who may publish no longer inherits `GITHUB_OUTPUT` from the CI runner: it failed there with `KeyError: 'tag'` and would have written into the test job's own outputs.
 - Product releases are now signed with the project's key and published only after the signature verifies (ADR-075): the release workflow signs `bundle.zip` in a separate job that holds the key, uploads `bundle.zip.sig`, and `python install.py verify-signature bundle.zip bundle.zip.sig` checks a download by hand. Installed copies do not require the signature yet; a later release will make them refuse an unsigned one.
 - AGY's Gemini 3.8 is not an alternative writer of heads-up notes after all: measured as the writer, it took a median of 76 seconds a call against 9 for Claude Sonnet, and a quarter of its calls failed, so its notes would arrive after you had already acted. The default is Claude Sonnet 5.5 at high reasoning, then Codex GPT-6.1 Sol.

@@ -357,3 +357,110 @@ def test_the_publish_job_makes_a_draft_and_the_release_goes_public_only_after_ve
     assert order == sorted(order)
     assert sign_job.count('--draft=false') == 1
     assert '--draft=false' not in publish_job
+
+
+def row(tag, published, signed=True):
+    return {'tag_name': tag, 'created_at': published, 'published_at': published, 'draft': False,
+            'assets': [{'name': 'bundle.zip.sig'}] if signed else [{'name': 'bundle.zip'}],
+            'body': product.CI_PASSED + 'https://ci/runs/1'}
+
+
+def test_an_unsigned_release_is_never_selected_but_still_serves_as_a_floor():
+    listed = [row('product-' + 'c' * 16, '3', signed=False), row('product-' + 'b' * 16, '2'),
+              row('product-' + 'a' * 16, '1', signed=False)]
+    api = lambda path: listed
+    # The newest release is unsigned (and says CI passed): the newest signed one is returned instead.
+    assert product.latest_published('o/r', api=api) == 'product-' + 'b' * 16
+    # An unsigned current release still places itself in time; the signed release after it is taken.
+    assert product.latest_published('o/r', 'a' * 64, api=api) == 'product-' + 'b' * 16
+    # Nothing signed after the floor: nothing, never the unsigned newest.
+    assert product.latest_published('o/r', 'b' * 64, api=api) is None
+    assert product.latest_published('o/r', after='c' * 64, api=api) is None
+    assert product.latest_published('o/r', api=lambda path: [{k: v for k, v in r.items() if k != 'assets'}
+                                                              for r in listed]) is None
+
+
+class Reply:
+    def __init__(self, data):
+        self.data = data
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self, size=-1):
+        data, self.data = (self.data, b'') if size < 0 else (self.data[:size], self.data[size:])
+        return data
+
+
+def fake_urlopen(monkeypatch, signature):
+    """urlopen serving bundle.zip, and `signature` (bytes, or an HTTP status) for bundle.zip.sig."""
+    import shutil
+    import urllib.error
+    asked = []
+
+    def urlopen(request, timeout=None):
+        asked.append(request.full_url)
+        if request.full_url.endswith('/bundle.zip'):
+            return Reply(b'PK bundle bytes')
+        if isinstance(signature, int):
+            raise urllib.error.HTTPError(request.full_url, signature, 'status', {}, None)
+        return Reply(signature)
+    monkeypatch.setattr('urllib.request.urlopen', urlopen)
+    return asked
+
+
+def test_download_bundle_passes_a_valid_signature(tmp_path, monkeypatch):
+    _, public, message, signature = RFC_VECTORS[1]
+    monkeypatch.setattr(product, 'RELEASE_KEYS', (public,))
+    monkeypatch.setattr(product, 'signed_message', lambda archive: bytes.fromhex(message))
+    asked = fake_urlopen(monkeypatch, base64.b64encode(bytes.fromhex(signature)) + b'\n')
+    product.download_bundle('o/r', 'product-x', tmp_path)
+    assert (tmp_path/'bundle.zip').read_bytes() == b'PK bundle bytes'
+    assert asked == ['https://github.com/o/r/releases/download/product-x/bundle.zip.sig',
+                     'https://github.com/o/r/releases/download/product-x/bundle.zip']
+
+
+@pytest.mark.parametrize('served', [
+    base64.b64encode(bytes(64)),  # well formed, signed by nobody
+    base64.b64encode(bytes.fromhex(RFC_VECTORS[1][3])),  # a real signature, but of another message
+    b'not a signature', b'', 404, 'caf\u00e9'.encode()], ids=['wrong', 'other-message', 'garbage', 'empty', '404', 'non-ascii'])
+def test_download_bundle_refuses_a_bad_or_missing_signature(tmp_path, monkeypatch, served):
+    monkeypatch.setattr(product, 'RELEASE_KEYS', (RFC_VECTORS[1][1],))
+    asked = fake_urlopen(monkeypatch, served)
+    with pytest.raises(product.SignatureError, match='product-x'):
+        product.download_bundle('o/r', 'product-x', tmp_path)
+    # Without a readable signature the 76 MB bundle is never fetched.
+    assert len(asked) == (1 if served in (404, 'café'.encode()) else 2)
+
+
+def test_a_signature_server_error_is_not_a_refusal(tmp_path, monkeypatch):
+    import urllib.error
+    fake_urlopen(monkeypatch, 503)
+    with pytest.raises(urllib.error.HTTPError):
+        product.download_bundle('o/r', 'product-x', tmp_path)
+
+
+def test_auto_update_installs_nothing_from_an_unsigned_bundle_and_sets_no_barrier(tmp_path, monkeypatch):
+    home = tmp_path/'product'
+    home.mkdir()
+    (home/'active.json').write_text(json.dumps({'current': 'a' * 64, 'previous': None}), encoding='utf-8')
+    before = (home/'active.json').read_bytes()
+
+    def download(repo, tag, folder):
+        raise product.SignatureError(f'{tag} has no valid signature')
+
+    def never(*args, **kwargs):
+        pytest.fail('extracted or installed after a failed signature')
+    monkeypatch.setattr(product, '_restart_locked', lambda *a, **k: 'no serve task')
+    monkeypatch.setattr(product, 'status', lambda home: product.state(home))
+    monkeypatch.setattr(product, 'latest_published', lambda *a, **k: 'product-' + 'b' * 16)
+    monkeypatch.setattr(product, 'download_bundle', download)
+    monkeypatch.setattr(product, '_install_locked', never)
+    monkeypatch.setattr(product.zipfile, 'ZipFile', never)
+    result = product.auto_update(home)
+    assert result['installed'] is None and 'product-' + 'b' * 16 in result['refused']
+    assert (home/'active.json').read_bytes() == before  # no `after` barrier: a repaired release installs later
+    assert not list(home.glob('download-*'))
