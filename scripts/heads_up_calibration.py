@@ -336,7 +336,8 @@ def report(rows):
     checked = [r.get('confirmed') for r in rows if r.get('event') == 'checked']
     print(f"{sum(v == 'useful' for v in labels.values())} notes labelled useful, "
           f"{sum(v == 'not_useful' for v in labels.values())} not useful; "
-          f"{sum(r.get('event') == 'asked' for r in rows)} sent to the agent, "
+          f"{sum(r.get('event') == 'asked' for r in rows)} sent to the agent "
+          f"({sum(r.get('event') == 'asked' and bool(r.get('edited')) for r in rows)} with the note rewritten), "
           f"{sum(c is not None and c >= CONFIRMED_AT for c in checked)} confirmed by its reply, "
           f"{sum(c is not None and c < CONFIRMED_AT for c in checked)} not confirmed, "
           f"{sum(c is None for c in checked)} without an answer.")

@@ -17,7 +17,8 @@ A funnel, cheapest stage first:
 Each decision is logged for calibration (<storage>/serve/heads-up.jsonl: scores, probabilities, routes, times and
 sizes, never the texts); the turns the cadence sends below the score measure what the score misses. The TUI shows a
 note with three buttons. Ask the agent (like /heads-up) only fills the composer and logs nothing: after each turn,
-followed() logs an 'asked' row for a note whose text the request carries (the user really sent it) and a 'checked'
+followed() logs an 'asked' row for a note the request carries (its text, or a rewrite of it under ASK's first line:
+the user really sent it) and a 'checked'
 row with Jev's probability that the reply confirms it. Useful and Not useful log a 'label' event (label(); the last
 one wins). All are labels from use, joined to the note's turn by the reply digest. The TUI also keeps each note it
 showed with its turn (the request's end, the reply's start), its funnel, label and what followed() found in the
@@ -104,8 +105,8 @@ def funnel():
     value = [SYSTEM, FILTER, FILTER_BIAS, FORWARD_AT, EVERY, ALREADY_SAID, REDUNDANT_AT, RECORD]
     return hashlib.sha256(json.dumps(value).encode('utf-8')).hexdigest()[:12]
 
-ASK = ("tare's heads-up after your last reply:\n{notes}\nCheck whether each point holds, using the tools, "
-       "and tell me what you find.")
+ASK_HEAD = "tare's heads-up after your last reply:"  # followed() knows a message that rewrote the note by this line
+ASK = (ASK_HEAD + "\n{notes}\nCheck whether each point holds, using the tools, and tell me what you find.")
 
 # ponytail: a command name list, not a parser; a terminal command that matches is a test the "changed after" fact
 # compares edits against (named verifiers always are)
@@ -550,15 +551,28 @@ def label(session, note, value, source='tui'):
     return True
 
 
-def asked(session, source='tui', note=None):
+def loaded(session, notes):
+    """The composer was given these notes (the note's button, /heads-up). Kept on their entries and never logged:
+    nothing counts until a message is sent, and followed() uses it to tell which note a message that rewrote the
+    note's text is about."""
+    state, at = shown(session), datetime.now(timezone.utc).isoformat(timespec='seconds')
+    found = [entry for entry in state['noted'] if entry.get('note') in notes]
+    for entry in found:
+        entry['loaded'] = at
+    if found:
+        _save(session, state)
+
+
+def asked(session, source='tui', note=None, edited=False):
     """The user sent a note to the agent (followed() finds out): a label from use, joined to its turn's row by the
-    reply digest and funnel (the note's own when `note` is given and kept with them, else the session's last turn)."""
+    reply digest and funnel (the note's own when `note` is given and kept with them, else the session's last turn).
+    `edited`: the message rewrote the note's text."""
     from .turn_engine import judge_log
     state = shown(session)
     entry = next((e for e in reversed(state['noted']) if note and e.get('note') == note), {})
     judge_log('heads-up', {'ts': datetime.now(timezone.utc).isoformat(timespec='seconds'),
                            'funnel': entry.get('funnel') or funnel(), 'event': 'asked', 'source': source,
-                           'reply_sha256': entry.get('turn') or state['turn']})
+                           'edited': bool(edited), 'reply_sha256': entry.get('turn') or state['turn']})
 
 
 def confirms(turn, note):
@@ -572,22 +586,29 @@ def confirms(turn, note):
 
 
 def followed(session, turn, source='tui'):
-    """After a finished turn: the kept notes its request carries (the ASK text embeds one verbatim, whatever put it
-    in the composer; a note the user deleted or rewrote does not match) were really sent. Each is logged once as
-    'asked', then 'checked': whether the agent's reply confirms it. Returns those notes."""
+    """After a finished turn: the kept notes its request carries were really sent. A note's own text in the request
+    is enough, whatever put it there. A request that rewrote the text still counts while it keeps ASK's first line:
+    it is about the note last put in the composer (loaded()) and not sent yet, and that entry keeps the message as
+    sent beside the original. Each note is logged once as 'asked', then 'checked': whether the agent's reply confirms
+    the note as it was written. Returns those notes."""
     from .turn_engine import judge_log
     state, sent = shown(session), []
     request = ' '.join((turn.get('request') or '').split())
-    for entry in state['noted']:
-        note = ' '.join(str(entry.get('note') or '').split())
-        if 'asked' in entry or not note or note not in request:
-            continue
+    open_notes = [e for e in state['noted'] if 'asked' not in e and ' '.join(str(e.get('note') or '').split())]
+    carried = [e for e in open_notes if ' '.join(e['note'].split()) in request]
+    rewritten = []
+    if not carried and ASK_HEAD in request:
+        rewritten = sorted((e for e in open_notes if e.get('loaded')), key=lambda e: e['loaded'])[-1:]
+    for entry in carried + rewritten:
+        edited = entry in rewritten
         entry['asked'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
-        asked(session, source, entry['note'])
+        if edited:  # what the agent read instead of the note, for whoever reviews the two side by side
+            entry.update(edited=True, sent=_tail(turn.get('request'), 900).strip())
+        asked(session, source, entry['note'], edited)
         entry['confirmed'] = confirms(turn, entry['note'])
         judge_log('heads-up', {'ts': entry['asked'], 'funnel': entry.get('funnel') or funnel(), 'event': 'checked',
                                'confirmed': None if entry['confirmed'] is None else round(entry['confirmed'], 4),
-                               'source': source, 'reply_sha256': entry.get('turn') or state['turn'],
+                               'source': source, 'edited': edited, 'reply_sha256': entry.get('turn') or state['turn'],
                                'answer_sha256': _digest(turn.get('reply'))})
         sent.append(entry['note'])
     if sent:

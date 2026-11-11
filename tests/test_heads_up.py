@@ -175,8 +175,8 @@ def test_calibration_reports_what_each_threshold_saves_and_drops(capsys):
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == ('5 logged turns; the writer answered 4 (2 by cadence below the score); 2 got a note, 1 sent '
                         'to the agent; 1 dropped as already said.')
-    assert lines[1] == ('0 notes labelled useful, 0 not useful; 1 sent to the agent, 0 confirmed by its reply, '
-                        '0 not confirmed, 0 without an answer.')
+    assert lines[1] == ('0 notes labelled useful, 0 not useful; 1 sent to the agent (0 with the note rewritten), '
+                        '0 confirmed by its reply, 0 not confirmed, 0 without an answer.')
     assert lines[3].split() == ['0.050', '0/4', '0/2'] and lines[6].split() == ['0.250', '2/4', '1/2']
     assert lines[-1] == 'sonnet: 4/4 answered, median 2.0 s'
 
@@ -351,6 +351,32 @@ def test_a_note_counts_as_asked_only_when_a_request_carries_it(tmp_path, log, mo
     assert [(bool(n['asked']), n['confirmed']) for n in heads_up.shown(folder)['noted']] == [(True, .9), (True, .9)]
 
 
+def test_a_message_that_rewrote_the_note_still_counts_while_it_keeps_the_first_line(tmp_path, log, monkeypatch):
+    folder = kept(tmp_path, [('First note.', 'reply one'), ('Second note.', 'reply two')])
+    judged = []
+    monkeypatch.setattr(heads_up, 'confirms', lambda turn, note: judged.append(note) or .8)
+    rewritten = heads_up.ASK_HEAD + '\n- My own words about the second point, with more detail.\nCheck it.'
+    # the first line alone names no note: nothing was put in the composer yet
+    assert heads_up.followed(folder, {'request': rewritten, 'reply': 'r'}) == [] and log() == []
+    heads_up.loaded(folder, ['First note.'])
+    heads_up.loaded(folder, ['Second note.'])  # the newest one put in the composer is the one a rewrite is about
+    assert log() == [] and [bool(n.get('loaded')) for n in heads_up.shown(folder)['noted']] == [True, True]
+    # rewritten without the first line: nothing ties the message to a note
+    assert heads_up.followed(folder, {'request': 'My own words about the second point.', 'reply': 'r'}) == []
+    assert heads_up.followed(folder, {'request': rewritten, 'reply': 'It holds.'}) == ['Second note.']
+    first, second = heads_up.shown(folder)['noted']
+    assert second['edited'] is True and second['sent'] == rewritten and second['confirmed'] == .8
+    assert 'asked' not in first and judged == ['Second note.']  # the judge reads the note as it was written
+    asked_row, checked = log()
+    assert (asked_row['event'], asked_row['edited'], asked_row['reply_sha256']) == ('asked', True, digest('reply two'))
+    assert (checked['event'], checked['edited'], checked['confirmed']) == ('checked', True, .8)
+    assert 'second point' not in json.dumps(log()) and 'Second note' not in json.dumps(log())
+    # a message that carries a note's own text is about that note, whatever was loaded
+    heads_up.loaded(folder, ['First note.'])
+    assert heads_up.followed(folder, {'request': heads_up.ask(['First note.']), 'reply': 'r'}) == ['First note.']
+    assert log()[-2]['edited'] is False and 'edited' not in heads_up.shown(folder)['noted'][0]
+
+
 @pytest.mark.parametrize('fails', [False, True])
 def test_a_judge_without_an_answer_still_logs_the_note_as_asked(tmp_path, log, monkeypatch, fails):
     def judge(*args, **kwargs):
@@ -371,13 +397,14 @@ def test_the_calibration_report_sums_the_labels_and_what_use_confirmed(capsys):
             {'event': 'label', 'value': 'useful', 'reply_sha256': 'b'},
             {'event': 'label', 'value': 'useful', 'reply_sha256': 'c'},
             {'event': 'label', 'value': 'not_useful', 'reply_sha256': 'd'},
-            {'event': 'asked', 'reply_sha256': 'a'}, {'event': 'asked', 'reply_sha256': 'b'},
+            {'event': 'asked', 'reply_sha256': 'a'}, {'event': 'asked', 'reply_sha256': 'b', 'edited': True},
             {'event': 'asked', 'reply_sha256': 'c'},
             {'event': 'checked', 'confirmed': .9}, {'event': 'checked', 'confirmed': .2},
             {'event': 'checked', 'confirmed': None}])
     lines = capsys.readouterr().out.splitlines()
     assert lines[0].startswith('0 logged turns;')  # no event row is a turn
-    assert lines[1] == ('2 notes labelled useful, 2 not useful; 3 sent to the agent, 1 confirmed by its reply, '
+    assert lines[1] == ('2 notes labelled useful, 2 not useful; 3 sent to the agent (1 with the note rewritten), '
+                        '1 confirmed by its reply, '
                         '1 not confirmed, 1 without an answer.')
 
 

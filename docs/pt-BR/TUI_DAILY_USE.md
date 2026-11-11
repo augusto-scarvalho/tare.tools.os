@@ -212,7 +212,10 @@ Depois de algumas respostas, o tare acrescenta um aviso curto: algo que a respos
 deixou pouco claro. **Ask the agent** apenas coloca o aviso no compositor como uma
 pergunta; o rascunho que você já tinha é mantido, e nada é enviado até você editar e
 apertar **Enter**. Um aviso conta como usado só quando você o envia e a resposta do
-agente o confirma. **Useful** e **Not useful** registram se o aviso ajudou (o botão
+agente o confirma. Você pode reescrever o aviso com as suas palavras: mantenha a
+primeira linha (`tare's heads-up after your last reply:`) e o tare continua sabendo de
+qual aviso a mensagem trata, e guarda a sua versão ao lado da original. **Useful** e
+**Not useful** registram se o aviso ajudou (o botão
 escolhido mostra um visto, e você pode mudar a escolha). Esses registros ficam nesta
 máquina, o log não guarda o texto do aviso, e eles servem para ajustar quando os avisos
 são escritos. Um aviso aparece só enquanto a conversa está aberta; `/heads-up` coloca

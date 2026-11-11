@@ -42,6 +42,7 @@ def test_the_note_buttons_fill_the_composer_and_record_labels(tmp_path, monkeypa
             await pilot.click('#heads-up-ask'); await pilot.pause()
             assert prompt.text == 'My draft\n\n' + heads_up.ask([NOTE]) and app.focused is prompt
             assert not app.busy and rows() == []  # nothing sent, nothing logged: only a sent note counts
+            assert heads_up.shown(session)['noted'][0]['loaded']  # kept, so a rewritten message still finds its note
             prompt.load_text('/heads-up'); app.execute(False); await pilot.pause(.3)  # the composer resized the transcript
             assert prompt.text == heads_up.ask([NOTE]) and rows() == []
 

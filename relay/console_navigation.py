@@ -266,7 +266,7 @@ class ConversationNavigation:
             self.execute(True, assistant=True, resume_only=True,
                          recheck_candidate=name=='/recheck',retry_delivery=name=='/retry_delivery',repair_plan=name=='/repair_plan')
         elif name == '/heads-up':  # the agent hears the notes only when the operator sends them
-            from .heads_up import ask, shown
+            from .heads_up import ask, loaded, shown
             last = shown(self.assistant_session)['last'] if self.assistant_session else []
             if not last:
                 prompt.clear()
@@ -274,6 +274,10 @@ class ConversationNavigation:
             else:
                 prompt.load_text(ask(last))
                 prompt.focus()  # logged only if the message is sent (heads_up.followed)
+                try:
+                    loaded(self.assistant_session, last)
+                except OSError:
+                    pass  # then only a message that keeps the note's text counts
         elif name == '/files':  # read-only: it opens the pane, never closes it
             prompt.clear()
             if not self.files_open:

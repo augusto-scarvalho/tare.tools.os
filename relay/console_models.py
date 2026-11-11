@@ -286,7 +286,12 @@ class ConversationModels:
             prompt.load_text(prompt.text.rstrip() + '\n\n' + text if prompt.text.strip() else text)
         prompt.move_cursor(prompt.document.end)
         prompt.focus()
-        self.set_status('The heads-up is in the composer: edit it and press Enter to send it; nothing is sent until then.')
+        try:  # not a label: only tells followed() which note a message that rewrites it is about
+            heads_up.loaded(source, [note])
+        except OSError:
+            pass  # then only a message that keeps the note's text counts
+        self.set_status('The heads-up is in the composer: edit it and press Enter to send it; nothing is sent until then. '
+                        'Keep its first line and tare knows the message is about this note.')
 
     def heads_up_label(self, note, source, value):
         from . import heads_up

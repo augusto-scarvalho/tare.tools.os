@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- A heads-up note you rewrite in the composer still counts when you send it: keep the question's first line (`tare's heads-up after your last reply:`) and tare knows the message is about the note it last put in the composer, checks the agent's reply against the note as it was written, and keeps your version beside the original in the conversation's records.
 - A heads-up note in the TUI now carries three buttons: **Ask the agent** only puts the note in the composer as a question you can edit (it keeps any draft and sends nothing), and **Useful** and **Not useful** record whether the note helped. A note counts as used only when you send it and the agent's reply confirms it; the records stay on this machine, without the note's text, to tune when notes are written.
 - The backlog now records two delivered Ship items as done, with their evidence: the alert and shepherd lifecycle (#71) and the push preflight (#104). `backlog next` no longer offers them.
 - The push hook's identity test now adds a changelog entry the changelog guard accepts on every platform. Its accepted case failed on Linux because the entry was too short; on Windows a line-ending rewrite hid that.
