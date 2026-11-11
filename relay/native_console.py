@@ -291,6 +291,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                  resume_coordinator_seconds=0,resume_coordinator_calls=0,default_coordinator=''):
         super().__init__()
         self.discover_clis = discover_clis
+        self.asks_providers = discover_clis  # the interactive entry: /usage reads the providers' quota again
         self.resume_coordinator_seconds=resume_coordinator_seconds
         self.resume_coordinator_calls=resume_coordinator_calls
         from .execution_scope import Scope, current

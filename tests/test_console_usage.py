@@ -118,11 +118,13 @@ def test_flow_usage_available_before_execution_in_choose_flow(tmp_path, monkeypa
             assert app.assistant_session is None
             assert app.open_workbench('usage')
             await pilot.pause()
-            assert len(app.screen.rows) == 4 and app.screen.rows[-1]['id'] == 'quota'  # the provider readings come last
-            assert app.screen.rows[-2]['id'] == 'behavioral-profiles'
-            assert 'Completed Work executions: 0/10' in app.screen.rows[-2]['body']
-            assert 'CPU_INPUT_PREFLIGHT' in app.screen.query_one('#workbench-preview', TextArea).text
+            assert len(app.screen.rows) == 4 and app.screen.rows[0]['id'] == 'quota'  # the provider readings come first
+            assert app.screen.rows[-1]['id'] == 'behavioral-profiles'
+            assert 'Completed Work executions: 0/10' in app.screen.rows[-1]['body']
+            assert app.screen.query_one('#workbench-preview', TextArea).text.startswith('No reading yet.')
             await pilot.click('#workbench-list', offset=(1, 0))
+            await pilot.press('down'); await pilot.pause()
+            assert 'CPU_INPUT_PREFLIGHT' in app.screen.query_one('#workbench-preview', TextArea).text
             await pilot.press('down'); await pilot.pause()
             assert 'Input tokens: 517' in app.screen.query_one('#workbench-preview', TextArea).text
             await pilot.press('escape'); await pilot.pause()
@@ -186,10 +188,12 @@ def test_usage_command_preserves_draft_and_scope_and_empty_state(tmp_path, monke
             app.action_usage(); await pilot.pause()
             panel = app.screen
             assert isinstance(panel, WorkbenchPanel)
+            # The panel opens on what each provider last reported as left, read from the saved readings only.
+            assert panel.rows[0]["id"] == "quota" and panel.rows[0]["body"].startswith("No reading yet.")
+            assert panel.query_one("#workbench-preview", TextArea).text.startswith("No reading yet.")
+            panel.show_row(1)
             assert "No saved native session" in panel.query_one("#workbench-preview", TextArea).text
             assert panel.region.contains_region(panel.query_one("#workbench-preview").region)
-            # The panel also carries what each provider last reported as left, read from the saved readings only.
-            assert panel.rows[-1]["id"] == "quota" and panel.rows[-1]["body"].startswith("No reading yet.")
             await pilot.press("escape"); await pilot.pause()
             assert prompt.text == "unsent draft"
             assert app.workbench_scope() == scope
@@ -216,7 +220,7 @@ def test_usage_panel_shows_the_saved_provider_readings_without_asking_a_provider
     row = quota_row()
     assert row["label"] == "Provider quota and credit"
     for text in ("Gemini 4 Argon, week", "none left", "OpenRouter: US$ 5.23 left of US$ 20.00",
-                 "Run tare quota in a terminal to read again."):
+                 "Reopen /usage to read again."):
         assert text in row["body"]
 
 
@@ -235,6 +239,7 @@ def test_busy_usage_never_reads_session_and_preserves_draft(tmp_path, monkeypatc
             app.assistant_session = tmp_path/"session"
             app.controls(True)
             prompt.load_text("/usage"); app.execute(False); await pilot.pause()
+            app.screen.show_row(1)  # the provider readings come first
             assert "does not read an active writer" in app.screen.query_one("#workbench-preview", TextArea).text
             await pilot.press("escape"); await pilot.pause()
             assert not prompt.text
@@ -284,6 +289,7 @@ def test_saved_usage_panel_and_explicit_profile_tasks_label(tmp_path, monkeypatc
             await app.workers.wait_for_complete()
             app.assistant_session = session
             app.action_usage(); await pilot.pause()
+            app.screen.show_row(1)  # the provider readings come first
             assert "Model calls: 1" in app.screen.query_one("#workbench-preview", TextArea).text
             await pilot.press("escape"); await pilot.pause()
             app.active = SimpleNamespace(profile={"native_profile": {"model": "gpt-5.6-sol"}},
@@ -331,4 +337,36 @@ def test_usage_rejection_is_contained_at_ui_boundary(tmp_path, monkeypatch):
             app.assistant_session = session
             assert app.open_workbench("usage") is False
             assert not isinstance(app.screen, WorkbenchPanel)
+    asyncio.run(scenario())
+
+
+def test_interactive_usage_panel_reads_the_providers_again_when_it_opens(tmp_path, monkeypatch):
+    import json
+    from relay import provider_quota
+    monkeypatch.setenv("TARE_STORAGE_ROOT", str(tmp_path/"state"))
+    monkeypatch.delenv("TARE_CLI_DISCOVERY", raising=False)
+    root = tmp_path/"project"; root.mkdir()
+
+    def refresh():
+        provider_quota.cache_path().parent.mkdir(parents=True, exist_ok=True)
+        provider_quota.cache_path().write_text(json.dumps({
+            "schema": provider_quota.SCHEMA, "observed_at": 1794300000, "accounts": [
+                {"account": "openrouter", "name": "OpenRouter", "kind": "credit", "status": "OBSERVED",
+                 "credit": {"currency": "USD", "total": 20, "remaining": 5.23}}]}), encoding="utf-8")
+    monkeypatch.setattr(provider_quota, "refresh", refresh)
+
+    async def scenario():
+        app = WorkConsole(root, backend=FakeBackend(), initial_mode="assistant")
+        async with app.run_test() as pilot:
+            await app.workers.wait_for_complete()
+            app.asks_providers = True  # what the interactive entry sets, without its CLI discovery
+            app.action_usage(); await pilot.pause()
+            panel = app.screen
+            assert panel.rows[0]["body"].startswith("No reading yet. Reading each provider again")
+            await app.workers.wait_for_complete()
+            panel.refresh_observations()  # the panel's own timer does this every second
+            assert "OpenRouter: US$ 5.23 left of US$ 20.00" in panel.rows[0]["body"]
+            assert panel.rows[0]["body"].endswith("Reopen /usage to read again.")
+            assert "OpenRouter" in panel.query_one("#workbench-preview", TextArea).text
+            assert [r["id"] for r in panel.rows[1:]] and panel.rows[1]["id"] != "quota"
     asyncio.run(scenario())

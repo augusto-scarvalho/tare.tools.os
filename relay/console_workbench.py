@@ -2,6 +2,7 @@
 import asyncio
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
 
 from rich.text import Text
@@ -99,13 +100,13 @@ def usage_rows(report):
     return [{'id': 'usage', 'label': 'Conversation totals and limits', 'body': '\n'.join(lines)}]
 
 
-def quota_row():
-    """What each provider last reported as left (tare quota), as saved: opening the panel asks no provider."""
+def quota_row(reading=False):
+    """What each provider last reported as left (tare quota), as saved. `reading`: a new reading is on its way."""
     from . import provider_quota
     report = provider_quota.cached()
-    return {'id': 'quota', 'label': 'Provider quota and credit', 'body': (
-        provider_quota.render(report) + '\nRun tare quota in a terminal to read again.' if report else
-        'No reading yet. tare reads each provider when the console starts; run tare quota in a terminal to read now.')}
+    note = 'Reading each provider again; no model call is made.' if reading else 'Reopen /usage to read again.'
+    return {'id': 'quota', 'label': 'Provider quota and credit',
+            'body': provider_quota.render(report) + '\n' + note if report else 'No reading yet. ' + note}
 
 
 def observed_tasks(history, *, busy=False, result=None, profile=''):
@@ -472,6 +473,15 @@ class ConversationWorkbench:
         except Exception:  # optional: without a reading tare learns a spent plan from the failed call, as before
             pass
 
+    @work(thread=True, group='provider-quota')
+    def read_provider_quota(self, state):
+        try:  # no model call; the panel shows the saved reading until this one lands
+            from . import provider_quota
+            provider_quota.refresh()
+        except Exception:  # optional: the saved reading stays on screen
+            pass
+        state['reading'] = False
+
     def check_storage_space(self):
         from .storage import GIB, low_space
         from .native_product import product_home
@@ -608,9 +618,15 @@ class ConversationWorkbench:
                             panel.render_rows()
                 self.push_screen(DeliveryReviewPanel(control, row['review_targets']), saved)
 
-            rows = [*rows, quota_row()]
-            panel = WorkbenchPanel('Usage · conversation, flow selection and saved Work', rows, kind=kind,
-                                   review=review_delivery if not self.busy and not self.sending_message else None)
+            # Only the interactive entry asks the vendors' CLIs (like CLI discovery); tests show the saved reading.
+            quota = {'reading': self.asks_providers and os.environ.get('TARE_CLI_DISCOVERY') != '0'}
+            panel = WorkbenchPanel('Usage · provider quota, conversation, flow selection and saved Work',
+                                   [quota_row(quota['reading']), *rows], kind=kind,
+                                   review=review_delivery if not self.busy and not self.sending_message else None,
+                                   refresh_rows=(lambda: [quota_row(quota['reading']), *panel.rows[1:]])
+                                   if quota['reading'] else None)
+            if quota['reading']:
+                self.read_provider_quota(quota)
         elif kind == 'artifacts':
             if rows is None:
                 rows = [artifact('Response '+str(i+1), v['body'], history_index=i)

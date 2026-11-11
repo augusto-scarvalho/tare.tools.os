@@ -208,12 +208,13 @@ painel antes de **Add to draft** descarta o comentário não enviado.
 
 ### Consultar uso, tarefas, ferramentas e skills do projeto
 
-- `/usage` mostra as chamadas registradas da conversa, tokens, leituras/gravações de cache, custos
-  conhecidos por moeda e os limites configurados. Contagens ausentes e chamadas sem preço
-  continuam explícitas. A última linha, **Provider quota and credit**, mostra o que cada
-  assinatura e cada conta de API informou por último como restante, com a hora da leitura;
-  abrir o painel não consulta nenhum fornecedor (veja
-  [Provider quota and credit](../guides/PROVIDER_QUOTA.md)). Abra
+- `/usage` abre na primeira linha, **Provider quota and credit**: o que resta em cada assinatura
+  e em cada conta de API, com a hora da leitura. A leitura salva aparece na hora e o painel
+  consulta cada fornecedor de novo em segundo plano, sem chamada de modelo (veja
+  [Provider quota and credit](../guides/PROVIDER_QUOTA.md)). As linhas seguintes mostram as
+  chamadas registradas da conversa, tokens, leituras/gravações de cache, custos conhecidos por
+  moeda e os limites configurados; contagens ausentes e chamadas sem preço continuam
+  explícitas. Abra
   o painel de novo depois que uma tarefa em execução terminar para ler os totais salvos.
 - `/tasks` mostra a execução atual e a atividade de ferramentas retida, agrupadas por
   sessão filha/etapa. Ele se atualiza enquanto está aberto e pode cancelar a **execução
