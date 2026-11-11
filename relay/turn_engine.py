@@ -66,9 +66,11 @@ DEFAULT_POLICY = {
     # 31% and 22% of them; Sol rarely speaks (6%, 2%) but is precise; Haiku, Luna and the local model mostly flag
     # process details, as often on quiet turns as on noted ones.
     # The side agent needs the whole picture, so it is a mid-to-high model at medium-to-high effort (operator, 2026-11-11):
-    # Sonnet at high is the entry level, Sol and AGY's Gemini 3.8 are the alternatives, and no small model stands in
-    # (a note from Haiku is worse than no note).
-    'heads_up': ['claude-sonnet-5-5-cli', 'codex-cli-gpt-6-1-sol', 'agy-cli'],
+    # Sonnet at high is the entry level, Sol is the alternative, and no small model stands in (a note from Haiku is
+    # worse than no note). AGY's Gemini 3.8 (agy-cli) was to be the third and is out: as the writer at high effort it
+    # took a median of 76 s a call (38 to 121; Sonnet 9 s) and 2 of 8 calls failed (2026-11-11, the same 8 TUI turns),
+    # and a note that late arrives after the user has acted.
+    'heads_up': ['claude-sonnet-5-5-cli', 'codex-cli-gpt-6-1-sol'],
     'heads_up_effort': 'high',
 }
 

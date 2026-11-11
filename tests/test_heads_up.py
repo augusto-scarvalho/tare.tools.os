@@ -636,6 +636,6 @@ def test_the_report_counts_each_reason_the_writer_ran(capsys):
 
 def test_the_default_writer_is_a_mid_to_high_model_at_high_effort_and_no_small_model_stands_in():
     default = turn_engine.DEFAULT_POLICY
-    assert default['heads_up'] == ['claude-sonnet-5-5-cli', 'codex-cli-gpt-6-1-sol', 'agy-cli']
+    assert default['heads_up'] == ['claude-sonnet-5-5-cli', 'codex-cli-gpt-6-1-sol']
     assert default['heads_up_effort'] == 'high'
     assert not any('haiku' in name or 'luna' in name or 'local' in name for name in default['heads_up'])
