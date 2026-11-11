@@ -462,6 +462,9 @@ já usa a nova versão; conversas continuam de onde pararam.
 
 A release é assinada (ADR-075). O workflow a cria como rascunho; um job separado, o único que guarda a chave
 Ed25519 do projeto, assina o bundle, confere a assinatura e só então envia `bundle.zip.sig` e publica o rascunho.
+Uma release publicada à mão com `publish_product.py --here` é sempre criada como rascunho: essa máquina não tem a
+chave de assinatura, e as cópias instaladas ignoram uma release sem assinatura. Assine o rascunho com a chave de
+recuperação e publique-o com os comandos no topo de `scripts/ops/release_signing_key.py`.
 A assinatura cobre `tare.tools product bundle` e uma quebra de linha, seguidos do SHA-256 de `bundle.zip` em
 hexadecimal. Para conferir um download à mão, a partir do bundle extraído:
 `python install.py verify-signature bundle.zip bundle.zip.sig` (ou `python relay/native_product.py

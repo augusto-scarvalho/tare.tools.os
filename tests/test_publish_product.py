@@ -331,7 +331,11 @@ def test_only_ci_publishes_unless_told_here(tmp_path, monkeypatch, capsys):
     assert 'CI publishes releases' in capsys.readouterr().out
     monkeypatch.setattr(publisher, 'publish', lambda state, **k: {'status': 'published', **k})
     assert publisher.main(['--state', str(tmp_path), '--here', '--commit', 'c'*40]) == 0
-    assert '"commit": "' + 'c'*40 in capsys.readouterr().out
+    shown = capsys.readouterr()
+    assert '"commit": "' + 'c'*40 in shown.out
+    # No signing key here, and installed copies skip an unsigned release in silence: a draft, and the way out.
+    assert '"draft": true' in shown.out and 'DRAFT without bundle.zip.sig' in shown.err
+    assert 'release_signing_key.py' in shown.err
 
 
 def test_ci_publishes_only_a_commit_of_main(tmp_path, monkeypatch):

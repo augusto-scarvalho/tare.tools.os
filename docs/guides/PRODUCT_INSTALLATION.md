@@ -450,7 +450,9 @@ development checkout), tests the installation in a disposable folder and publish
 `product-<id>` with `bundle.zip` and `published.json` (the heads it was built from, which the next run compares
 with); its notes end with `CI passed on main: <run>`. The workflow attests the bundle's build provenance: check a
 download with `gh attestation verify bundle.zip -R augusto-scarvalho/tare.tools.os`. Outside GitHub Actions the
-publisher publishes nothing unless given `--here`.
+publisher publishes nothing unless given `--here`, and then only a draft: that machine has no signing key, and
+installed copies ignore a release without a signature. Sign the draft with the recovery key and publish it with the
+commands at the top of `scripts/ops/release_signing_key.py`.
 
 The release is signed ([ADR-075](../adr/ADR-075_SIGNED_PRODUCT_RELEASES.md)). The workflow creates it as a draft;
 a separate job that alone holds the project's Ed25519 signing key signs the bundle, checks the signature and only
