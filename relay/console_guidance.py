@@ -38,7 +38,9 @@ def describe(item):
         how = 'An edit reaches new sessions; sessions already running keep the text they started with.'
     else:
         how = ('You can ' + ' or '.join({'remove': 'remove it', 'replace': 'replace it'}[c] for c in item['controls'])
-               + '; a change applies from the next turn.')
+               + '; a change applies from the next turn.'
+               + (' Keep placeholders such as <date> where you want the real value: tare fills them when it sends'
+                  ' your text.' if 'replace' in item['controls'] else ''))
     state = {'yours': 'Your text is in use. ', 'removed': 'Removed: tare asks the CLI to leave it out. ',
              'new': 'New: the CLI started sending this; it goes out as the CLI writes it. ',
              'changed': ('The default changed since you chose. Your version is still the one sent. Keep yours, use '

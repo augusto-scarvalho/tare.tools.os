@@ -36,6 +36,10 @@ panel's first line says which CLI version each text was read from and when.
 Values that belong to your machine or to the day, such as your email, folders, dates and model names, are shown as
 placeholders like `<account email>`. That way two readings of the same CLI version match.
 
+When you edit a Claude Code block, keep the placeholders where you want the real values: your text is sent
+with the values Claude Code wrote in that same block, so "Today is `<date>`." reaches the model with the real
+date. A placeholder whose value is not in that block is sent as written.
+
 When a block's text changes between readings, the panel keeps the earlier text and shows the difference. Only the
 previous text is kept; there is no archive of older ones. If a CLI cannot be read, the panel keeps the last reading
 and says so.
