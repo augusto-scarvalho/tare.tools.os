@@ -355,6 +355,8 @@ class ConversationModels:
         name = (details.display_model or details.model) if details else 'Model'
         effort = details.reasoning if details else ''
         model = self.query_one('#choose-model', Button)
+        if name.startswith('Reading '):  # the header is still reading the saved model: the button keeps its name
+            name = str(model.label).removesuffix(' ▾')
         model.label = name+' ▾'
         model.tooltip = 'Choose a model or continue this task with another provider'
         reasoning = self.query_one('#choose-reasoning', Button)
