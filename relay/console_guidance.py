@@ -2,14 +2,24 @@
 import asyncio
 import difflib
 
+from rich.text import Text
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Button, Select, Static, TextArea
+from textual.widgets import Button, OptionList, Static, TextArea
+from textual.widgets.option_list import Option
 
 from .console_panels import SupportPanel
 
-STATES = {'default': '', 'yours': ' · yours', 'removed': ' · removed', 'changed': ' · changed underneath',
-          'new': ' · new'}
+# The list's groups, in this order; a CLI heading carries the version its texts were read from.
+GROUPS = {'role': 'tare · role guidance', 'protocol': 'tare · protocol texts (read-only)',
+          'cli://claude': 'Claude Code', 'cli://codex': 'Codex', 'cli://agy': 'AGY'}
+CLIS = ('cli://claude', 'cli://codex', 'cli://agy')
+# As the Files pane (F8) marks a changed file: the name in a theme colour, then one bold letter. M and D as git
+# says them for a file; C for a default that changed under the owner's choice; U, as untracked, for a block the
+# owner has not seen yet. (theme variable, fallback colour)
+MARKS = {'yours': ('M', 'warning', 'yellow'), 'removed': ('D', 'error', 'red'),
+         'changed': ('C', 'accent', 'magenta'), 'new': ('U', 'success', 'green')}
+LEGEND = 'M edited · D removed · C default changed under your edit · U new · grey: not in the latest reading'
 
 
 def compare(before, after, old, new):
@@ -51,32 +61,35 @@ def describe(item):
     return f'{state.get(item["state"], "")}{origin}{seen} Sent as: {item["sent_as"]}. {how}{note}'
 
 
-def read_line():
-    """Which CLI version each vendor text was read from, how and when, in plain words."""
-    from .guidance import readings, starting_point
-    parts = []
-    for endpoint, value in readings().items():
-        real = value.get('real') or {}
-        if endpoint == 'cli://agy':
-            part = f'AGY {value.get("cli_version")}: '
-            start = starting_point()
-            part += (f'read in a real call {real["read_at"]} (AGY {real.get("cli_version")})' if real.get('read_at') else
-                     f'shown as AGY {start["cli_version"]} sent it on {start["read_at"]}, until tare reads yours')
-        else:
-            part = f'{value.get("cli")} {value.get("cli_version")}: read without tokens {value.get("read_at")}'
-            if real.get('read_at'):
-                part += f', in a real call {real["read_at"]} ({real.get("cli_version")})'
-        if value.get('error'):
-            part += f'; could not read it again at {value.get("failed_at")}: {value["error"][:100]}'
-        if real.get('error'):
-            part += f'; the real call could not be made at {real.get("failed_at")}: {real["error"][:100]}'
-        parts.append(part)
-    return 'Vendor texts: ' + ('; '.join(parts) if parts else 'not read yet (tare reads them when the TUI opens).')
+def group_lines(endpoint, value, reading):
+    """Under a CLI's heading: how and when its texts were read, or that they are being read now, in plain words."""
+    if reading:
+        return ['Being read now: its blocks appear here when the reading is done.']
+    if not value:
+        return ['Not read yet: tare reads it when the TUI opens.']
+    real, lines = value.get('real') or {}, []
+    if endpoint == 'cli://agy':
+        from .guidance import starting_point
+        start = starting_point()
+        lines.append(f'Read in a real call {real["read_at"]} (AGY {real.get("cli_version")}).' if real.get('read_at')
+                     else f'Shown as AGY {start["cli_version"]} sent it on {start["read_at"]}, until tare reads yours.')
+    else:
+        lines.append(f'Read without tokens {value.get("read_at")}'
+                     + (f', in a real call {real["read_at"]} ({real.get("cli_version")}).' if real.get('read_at') else '.'))
+    if value.get('error'):
+        lines.append(f'Could not read it again at {value.get("failed_at")}: {value["error"][:100]}. Showing the last '
+                     'reading.')
+    if real.get('error'):
+        lines.append(f'The real call could not be made at {real.get("failed_at")}: {real["error"][:100]}.')
+    return lines
 
 
 class GuidancePanel(SupportPanel):
     BINDINGS = [Binding('escape', 'close', 'Back', priority=True)]
     DEFAULT_CSS = '''
+    GuidancePanel #guidance-body { height: 1fr; }
+    GuidancePanel #guidance-item { width: 2fr; height: 1fr; }
+    GuidancePanel #guidance-detail { width: 3fr; height: 1fr; }
     GuidancePanel #guidance-text, GuidancePanel #guidance-diff { height: 1fr; }
     GuidancePanel #guidance-read, GuidancePanel #guidance-about, GuidancePanel #guidance-status { height: auto;
         max-height: 4; }
@@ -84,17 +97,18 @@ class GuidancePanel(SupportPanel):
     '''
 
     def compose(self):
-        from .guidance import items
-        self.items = {item['id']: item for item in items()}
+        self.items, self.current = {}, None
         with Vertical(classes='support-body'):
             with Horizontal(classes='panel-header'):
                 yield Static('Guidance sent to the models', classes='panel-title')
                 yield Button('Back · Esc', id='guidance-close')
-            yield Static(read_line(), id='guidance-read', markup=False)
-            yield Select(self.options(), value=next(iter(self.items)), allow_blank=False, id='guidance-item')
-            yield Static('', id='guidance-about', markup=False)
-            yield TextArea('', soft_wrap=True, id='guidance-text')
-            yield TextArea('', soft_wrap=True, read_only=True, id='guidance-diff')
+            yield Static('', id='guidance-read', markup=False)
+            with Horizontal(id='guidance-body'):
+                yield OptionList(id='guidance-item')
+                with Vertical(id='guidance-detail'):
+                    yield Static('', id='guidance-about', markup=False)
+                    yield TextArea('', soft_wrap=True, id='guidance-text')
+                    yield TextArea('', soft_wrap=True, read_only=True, id='guidance-diff')
             yield Static('Pick a text to read it. Role guidance changes reach new sessions; vendor blocks change '
                          'from the next turn.', id='guidance-status', markup=False)
             with Horizontal(classes='panel-actions'):
@@ -104,14 +118,68 @@ class GuidancePanel(SupportPanel):
                 yield Button("tare's default", id='guidance-default')
                 yield Button('Reset everything', id='guidance-reset-all', classes='panel-danger')
 
-    def options(self):
-        return [(item['title'] + STATES[item['state']], key) for key, item in self.items.items()]
-
     def on_mount(self):
-        self.watch(self.query_one('#guidance-item', Select), 'value', self.show)
+        self.reload()
+
+    def reload(self, keep_text=True):
+        """List every text again (the app calls this when the startup reading lands), keeping the selection and,
+        unless asked not to, text typed and not saved yet."""
+        from .guidance import items, readings
+        editor = self.query_one('#guidance-text', TextArea)
+        typed = (editor.text if keep_text and self.current in self.items
+                 and editor.text != self.items[self.current]['text'] else None)
+        self.items = {row['id']: row for row in items()}
+        reading = bool(getattr(self.app, 'guidance_reading', False))
+        self.query_one('#guidance-read', Static).update(
+            LEGEND + ('. Reading what each CLI adds now; it fills in by itself.' if reading else '.'))
+        options = self.query_one('#guidance-item', OptionList)
+        options.clear_options()
+        options.add_options(self.options(readings(), reading))
+        listed = [k for k, row in self.items.items() if not (reading and row['group'] in CLIS)]
+        self.select(self.current if self.current in listed else listed[0])
+        if typed is not None:
+            editor.load_text(typed)
+
+    def options(self, read, reading):
+        """Each group's heading (not selectable), then its texts; a CLI's texts only once its reading is done."""
+        groups = {'role', 'protocol', *(CLIS if reading else ()), *(row['group'] for row in self.items.values())}
+        entries = []
+        for group in sorted(groups, key=lambda g: list(GROUPS).index(g) if g in GROUPS else len(GROUPS)):
+            value = read.get(group) or {}
+            version = f' {value["cli_version"]}' if group in CLIS and value.get('cli_version') and not reading else ''
+            entries.append(Option(Text(GROUPS.get(group, group) + version, style='bold'), id='group#' + group,
+                                  disabled=True))
+            if group in CLIS:
+                entries += [Option(Text('  ' + line, style='dim'), id=f'note#{group}#{n}', disabled=True)
+                            for n, line in enumerate(group_lines(group, value, reading))]
+                if reading:
+                    continue
+            entries += [Option(self.label(row), id=key) for key, row in self.items.items() if row['group'] == group]
+        return entries
+
+    def label(self, row):
+        """A text's title as the Files pane shows a changed file: in the state's colour, its letter after it."""
+        text = Text('  ' + row['title'], style='dim' if row.get('absent') else '')
+        if row['state'] in MARKS:
+            letter, variable, fallback = MARKS[row['state']]
+            colour = self.app.theme_variables.get(variable) or fallback
+            text.stylize(colour, 2)
+            text.append('  ' + letter, style='bold ' + colour)
+        return text
+
+    def select(self, key):
+        self.current = key
+        options = self.query_one('#guidance-item', OptionList)
+        options.highlighted = options.get_option_index(key)
+        self.show()
+
+    def on_option_list_option_highlighted(self, event):
+        if event.option.id in self.items and event.option.id != self.current:
+            self.current = event.option.id
+            self.show()
 
     def show(self):
-        item = self.items.get(self.query_one('#guidance-item', Select).value)
+        item = self.items.get(self.current)
         if item is None:
             return
         self.query_one('#guidance-about', Static).update(describe(item))
@@ -132,12 +200,11 @@ class GuidancePanel(SupportPanel):
 
     async def on_button_pressed(self, event):
         event.stop()
-        from .guidance import items, keep, reset, save
+        from .guidance import keep, reset, save
         if event.button.id == 'guidance-close':
             self.action_close()
             return
-        choice = self.query_one('#guidance-item', Select)
-        key = choice.value
+        key = self.current
         item = self.items[key]
         later = 'New sessions use it.' if item['owner'] == 'tare' else 'It applies from the next turn.'
         try:
@@ -157,11 +224,7 @@ class GuidancePanel(SupportPanel):
             else:
                 await asyncio.to_thread(reset)
                 message = "Every text is back to its default: tare's for role guidance, the vendor's for vendor blocks."
-            self.items = {row['id']: row for row in await asyncio.to_thread(items)}
-            with choice.prevent(Select.Changed):
-                choice.set_options(self.options())
-                choice.value = key
-            self.show()
+            self.reload(keep_text=False)
         except (ValueError, OSError) as exc:
             message = str(exc)
         if self.is_mounted:

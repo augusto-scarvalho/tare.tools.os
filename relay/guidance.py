@@ -82,18 +82,26 @@ def _failure(exc):
 
 
 def _merge(last, value):
-    """A reading as stored: each item's sha256, its earlier text when it changed (one level, no archive) and `new`
-    when the last reading of the same kind lacked it."""
-    known, items = last.get('items'), {}
+    """A reading as stored: each item's sha256, when and on which CLI version it was last seen, its earlier text when
+    it changed (one level, no archive) and `new` when the last reading of the same kind lacked it. A block the newest
+    reading lacks stays, marked `absent`, with its controls: some come and go (Claude Code's tokens-left reminder was
+    in five real readings and missing from a sixth), and the owner can still leave one out. The list only grows with
+    distinct block ids, which are few."""
+    now, known, items = time.strftime('%Y-%m-%d %H:%M'), last.get('items'), {}
     for item in value['items']:
         old, sha = (known or {}).get(item['id']), digest(item['text'])
         previous = ({'text': old['text'], 'sha256': old['sha256']} if old and old['sha256'] != sha
                     else (old or {}).get('previous'))
-        items[item['id']] = {**item, 'controls': list(item['controls']), 'sha256': sha,
-                             **({'previous': previous} if previous else {}),
+        items[item['id']] = {**item, 'controls': list(item['controls']), 'sha256': sha, 'seen_at': now,
+                             'seen_version': value.get('cli_version'), **({'previous': previous} if previous else {}),
                              **({'new': True} if known is not None and old is None else {})}
+    for key, old in (known or {}).items():
+        if key not in items:  # seen before, not now
+            items[key] = {**{k: v for k, v in old.items() if k != 'new'}, 'absent': True,
+                          'seen_at': old.get('seen_at') or last.get('read_at'),
+                          'seen_version': old.get('seen_version') or last.get('cli_version')}
     return {**{k: value[k] for k in ('cli', 'cli_version', 'note', 'usage') if k in value},
-            'read_at': time.strftime('%Y-%m-%d %H:%M'), 'items': items}
+            'read_at': now, 'items': items}
 
 
 def starting_point():
@@ -158,9 +166,15 @@ def _blocks(reading):
     if real.get('starting_point'):
         seen = (f'From what AGY {real["cli_version"]} sent on {real["read_at"]}: tare has not read your AGY in a '
                 'real call yet.')
-    local = reading.get('items') or {}
-    return {**{k: {**v, 'seen': ''} for k, v in local.items()},
-            **{k: {**v, 'seen': seen} for k, v in (real.get('items') or {}).items() if k not in local}}
+    local, found = reading.get('items') or {}, (real.get('items') or {}).items()
+    shown = {k: {**v, 'seen': ''} for k, v in local.items() if not v.get('absent')}
+    shown.update({k: {**v, 'seen': seen} for k, v in found if not v.get('absent') and k not in shown})
+    gone = {}
+    for key, item in [*local.items(), *found]:  # in neither of the latest readings: as last seen, by either
+        if key not in shown and (key not in gone or item.get('seen_at', '') > gone[key].get('seen_at', '')):
+            gone[key] = {**item, 'seen': (f'Not in the latest reading: last seen {item.get("seen_at")} on '
+                                          f'{reading.get("cli")} {item.get("seen_version")}.')}
+    return {**shown, **gone}
 
 
 def capsule_edits():
@@ -200,8 +214,9 @@ def _row(item_id, owner, choice, default, **rest):
 
 
 def items():
-    """Every text the panel lists: tare's role guidance (editable), the blocks each vendor CLI adds as last read
-    (with the controls the CLI allows) and tare's transport protocol texts (read-only)."""
+    """Every text the panel lists, each with its `group`: tare's role guidance ('role', editable), the blocks each
+    vendor CLI adds as last read (its endpoint, with the controls the CLI allows, in the order they are sent) and
+    tare's transport protocol texts ('protocol', read-only)."""
     from compute_plane.vendor_guidance import controls, transport_texts
     saved, read = load(), readings()
     rows = []
@@ -211,7 +226,7 @@ def items():
             if field in capsule:
                 rows.append(_row(f'role#{capsule["id"]}#{field}', 'tare',
                                  saved['capsules'].get(capsule['id'], {}).get(field), capsule[field],
-                                 controls=('edit',), sent_as=sent_as, effect='new sessions',
+                                 controls=('edit',), sent_as=sent_as, effect='new sessions', group='role',
                                  title=f'{capsule["role"].replace("*", "every role")}'
                                        f'{" (" + scope + ")" if scope else ""} · {label}'))
     for endpoint in dict.fromkeys([*read, *saved['vendor']]):
@@ -223,14 +238,15 @@ def items():
             default = item['text'] if item else '' if reading.get('items') is not None else choice['base']['text']
             rows.append(_row(f'vendor#{endpoint}#{key}', 'vendor', choice, default, new=bool(item and item.get('new')),
                              controls=tuple(item['controls']) if item else controls(endpoint, key),
-                             title=f'{reading.get("cli", endpoint)} · {item["title"] if item else key}',
+                             title=item['title'] if item else key, group=endpoint,
+                             absent=bool(item and item.get('absent')),
                              sent_as=item['sent_as'] if item else 'no longer sent by this CLI',
                              previous=(item.get('previous') or {}).get('text') if item else None,
                              seen=item['seen'] if item else '', effect='the next turn',
                              note=reading.get('note', '')))
     for text in transport_texts():
         rows.append(_row(f'transport#{text["id"]}', 'tare', None, text['text'], controls=(), title=text['title'],
-                         sent_as=f'tare\'s protocol text for {text["endpoint"]}', effect=None))
+                         sent_as=f'tare\'s protocol text for {text["endpoint"]}', effect=None, group='protocol'))
     return rows
 
 

@@ -292,6 +292,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         super().__init__()
         self.discover_clis = discover_clis
         self.asks_providers = discover_clis  # the interactive entry: /usage reads the providers' quota again
+        # Until the startup reading of what each CLI adds lands, /guidance says it is being read (guidance_landed).
+        self.guidance_reading = discover_clis and os.environ.get('TARE_CLI_DISCOVERY') != '0'
         self.resume_coordinator_seconds=resume_coordinator_seconds
         self.resume_coordinator_calls=resume_coordinator_calls
         from .execution_scope import Scope, current
