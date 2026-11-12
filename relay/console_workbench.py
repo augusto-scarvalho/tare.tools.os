@@ -454,6 +454,10 @@ class ConversationWorkbench:
         from .console_routes import RoutesPanel
         self.push_screen(RoutesPanel())
 
+    def action_guidance(self):
+        from .console_guidance import GuidancePanel
+        self.push_screen(GuidancePanel())
+
     def action_fleet(self):
         from .console_fleet import FleetPanel
         self.push_screen(FleetPanel())

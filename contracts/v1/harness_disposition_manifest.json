@@ -2,7 +2,7 @@
   "$schema": "https://tare.tools/schemas/v1/disposition-manifest.json",
   "version": "1.0.0",
   "generated_at": "2026-10-04T03:10:28.054735+00:00",
-  "total_modules": 441,
+  "total_modules": 443,
   "modules": [
     {
       "name": "consent_decisions.py",
@@ -2151,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 123245,
-      "sha256": "98a5ef573dd5f1142d0b1d7a5bb312a0cb0dc94b893de0aed4e59bcbc78fc0e5"
+      "size_bytes": 123809,
+      "sha256": "aa406a9ca273c9d153c996b4aed53eabd92b827a994e77c8341360c1746adfa7"
     },
     {
       "name": "native_artifacts.py",
@@ -2231,8 +2231,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 21744,
-      "sha256": "dbb11bbea571a817bb1494880f3fcef06a9acac777e8a5eb20a8139eeadae99e"
+      "size_bytes": 21910,
+      "sha256": "e690cbe89411c3b610a70791b8965087c5638ae61dd9f49536bc5a9e0f2f2499"
     },
     {
       "name": "native_installation.py",
@@ -2861,8 +2861,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns experience and flow selection; native text inference and execution owners are reused.",
-      "size_bytes": 18447,
-      "sha256": "126f86d388fa76346f6d8577ae5304755e9c2a642c70ad476a47a31a1c8d2fa7"
+      "size_bytes": 18874,
+      "sha256": "396f54821cd2e5ab7b8496a5b816233eccc62a41bcd89e365e6c9c99b4c571ba"
     },
     {
       "name": "work_intake.py",
@@ -3101,8 +3101,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS presents existing conversation checkpoints; execution and recovery remain with their owners.",
-      "size_bytes": 24408,
-      "sha256": "0a45ec080ea9661f09d3fc3929e720a365265afc4c7fffe428ef96b928d8c782"
+      "size_bytes": 24517,
+      "sha256": "688f8a9ce4d9f34ccf93b5f286f2c05e4ec3256a916f88c236a48b72099fc205"
     },
     {
       "name": "console_appearance.py",
@@ -3421,8 +3421,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator views and draft composition; Runtime retains execution authority.",
-      "size_bytes": 38527,
-      "sha256": "79ce7fd1d764208994e7bb1b12b4e7df0e8284a331c90663565e3ddf723e6842"
+      "size_bytes": 38653,
+      "sha256": "6512e6788bd660fe7a1c635f626aecfbdf86be99e5587d651b831e4dbc6677d2"
     },
     {
       "name": "adaptive_routes.py",
@@ -4413,6 +4413,26 @@
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
       "size_bytes": 3037,
       "sha256": "61eba0f5d75f49705b05dfdab46acc4ea71af92ac2c6fa44fa83d28e02bb9275"
+    },
+    {
+      "name": "guidance.py",
+      "path": "tare.tools.os/relay/guidance.py",
+      "summary": "The owner's guidance choices (/guidance): role-guidance edits and vendor CLI block choices, stored and listed.",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
+      "size_bytes": 6450,
+      "sha256": "509ebee49e291ce25cd33bd9d0cf85e6d6dbcaea49153bd3152d9ce95c57f7ad"
+    },
+    {
+      "name": "console_guidance.py",
+      "path": "tare.tools.os/relay/console_guidance.py",
+      "summary": "The /guidance TUI panel: read, edit, remove and reset the guidance that reaches the models.",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
+      "size_bytes": 5639,
+      "sha256": "98f47c327a50a7889e6842c700530a788204f0c3b414beb4b83f6dc70cdd8bb0"
     }
   ]
 }

@@ -231,9 +231,17 @@ def prompt_capsule(deployment, role, kind='session'):
     the system and to the first message. A capsule names its role (or '*') and may name a kind; it never carries
     another role's text. In each layer an exact kind wins over none, a deployment over an endpoint and an exact
     role over '*'; two at the same rank are refused. The session freezes the result with its sha256, so a later
-    registry change never reaches a session already running."""
+    registry change never reaches a session already running. The owner's edits (/guidance) replace a capsule's texts
+    before selection, so the frozen result, its sha256 and its version ('-edited') show them."""
+    from .guidance import TEXT_FIELDS, capsule_edits
     keys = {'deployment': deployment.get('id'), 'endpoint': (deployment.get('native_profile') or {}).get('endpoint')}
-    rows = [c for c in json.loads(PROMPT_CAPSULES.read_text(encoding='utf-8'))['capsules']
+    edits = capsule_edits()
+
+    def edited(capsule):
+        texts = {f: t for f, t in edits.get(capsule['id'], {}).items() if f in TEXT_FIELDS and f in capsule
+                 and isinstance(t, str) and t.strip()}  # an empty edit is tare's default
+        return {**capsule, **texts, 'version': capsule['version'] + '-edited'} if texts else capsule
+    rows = [edited(c) for c in json.loads(PROMPT_CAPSULES.read_text(encoding='utf-8'))['capsules']
             if c['role'] in (role, '*') and c.get('kind', kind) == kind]
 
     def pick(candidates, rank):

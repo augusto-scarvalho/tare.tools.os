@@ -54,6 +54,7 @@ COMMANDS = (('/new', '', 'Save this conversation and start a new one'),
             ('/challenger', '', 'Configure automatic experiments and review challenger results'),
             ('/delegation', '', 'Choose delegated planner and explorer models and shared task limits'),
             ('/routes', '', 'Choose the routes per role and their fallback order'),
+            ('/guidance', '', 'Read and change the guidance tare and each CLI send to the models'),
             ('/fleet', '', 'Choose the local models the GPU node serves and the one tare auto runs'),
             ('/setup', '', 'Choose what tare uses on this machine: local models, CLIs, API providers'),
             ('/tools', '', 'Inspect effective tools and project instructions'),
@@ -74,7 +75,7 @@ COMMANDS = (('/new', '', 'Save this conversation and start a new one'),
             ('/attach', '[PATH]', 'Preview and attach a file or image'),
             ('/help', '', 'Show command help'))
 CONVERSATION_COMMANDS = {'/new', '/model', '/reasoning', '/diff', '/sessions', '/project', '/permissions', '/backlog', '/terminal', '/files', '/resume', '/attach', '/delivery'}
-CONVERSATION_COMMANDS |= {'/artifacts', '/tasks', '/team', '/usage', '/tools', '/skills', '/challenger', '/storage', '/delegation', '/routes', '/fleet', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up', '/missed'}
+CONVERSATION_COMMANDS |= {'/artifacts', '/tasks', '/team', '/usage', '/tools', '/skills', '/challenger', '/storage', '/delegation', '/routes', '/guidance', '/fleet', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up', '/missed'}
 COMMAND_SHORTCUTS = {'/diff': 'F3', '/sessions': 'F1', '/terminal': 'F4', '/project': 'F5', '/files': 'F8'}
 
 
@@ -116,6 +117,9 @@ HELP = ('Conversation sends ordinary messages directly to the assistant, with wo
         '/storage shows disk usage and previews safe cleanup. '
         '/delegation configures read-only planning and exploration with separate models inside new native sessions. '
         '/routes chooses the routes per role and the order tare falls back through when one is unavailable. '
+        '/guidance shows the guidance that reaches the models: tare\'s role texts, which you can edit, the blocks '
+        'Claude Code and Codex add on their own, which you can remove or replace where the CLI allows, and tare\'s '
+        'protocol texts; each change goes back to its default with one button. '
         '/fleet chooses the local models the GPU node serves (those tare.tools qualified first, your own too) and '
         'the default tare auto runs. '
         '/setup chooses what tare uses on this machine (local models, CLIs, API providers, decision models) and '

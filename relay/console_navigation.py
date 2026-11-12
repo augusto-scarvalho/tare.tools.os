@@ -246,7 +246,7 @@ class ConversationNavigation:
     def dispatch_conversation_command(self, name, arguments):
         """Handle UI commands without passing them to the model or flow router."""
         workbench = {'/artifacts', '/tasks', '/team', '/usage', '/tools', '/skills'}
-        if name not in {'/new', '/model', '/reasoning', '/diff', '/sessions', '/terminal', '/files', '/project', '/permissions', '/backlog', '/delivery', '/challenger', '/storage', '/delegation', '/routes', '/fleet', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up', '/missed'} | workbench:
+        if name not in {'/new', '/model', '/reasoning', '/diff', '/sessions', '/terminal', '/files', '/project', '/permissions', '/backlog', '/delivery', '/challenger', '/storage', '/delegation', '/routes', '/guidance', '/fleet', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up', '/missed'} | workbench:
             return False
         if arguments and name != '/missed':  # /missed takes the words the reply should have said
             self.set_status(name+' takes no arguments. Your draft has been kept.')
@@ -300,6 +300,9 @@ class ConversationNavigation:
         elif name == '/routes':
             prompt.clear()
             self.action_routes()
+        elif name == '/guidance':
+            prompt.clear()
+            self.action_guidance()
         elif name == '/fleet':
             prompt.clear()
             self.action_fleet()
