@@ -1,7 +1,7 @@
 import hashlib,json
 from pathlib import Path
 import pytest
-from test_work_run import os_root
+from test_work_run import os_root,evidence,_git
 from test_work_resume import host,run
 from relay import native_agent,relay_mesh,work_run
 
@@ -164,3 +164,15 @@ def test_explicit_audit_retry_preserves_failure_and_uses_saved_routes(host,revie
     result=json.loads(capsys.readouterr().out)
     assert result['status']=='SETTLED' and calls==['one','one'] and old.read_bytes()==raw
     assert result['audit']['session']!=first['audit']['session']
+
+
+def test_accepted_audit_alone_lands_nothing_when_admission_refuses(host,reviewers,monkeypatch,capsys):
+    profiles,calls,_,_=reviewers
+    base=_git('rev-parse','HEAD',cwd=host[1])
+    monkeypatch.setattr(relay_mesh,'materialize_admission_evidence',lambda tid:evidence(tid,('cas_ready',)))
+    assert run(host,'--auditor-profile',str(profiles[0]))==1
+    result=json.loads(capsys.readouterr().out)
+    assert result['audit']['verdict']=='ACCEPT' and calls==['one']
+    assert result['status']=='ADMISSION_REFUSED' and 'CHECK_FAILED:cas_ready' in result['admission']['reason_codes']
+    assert not result['landing'] and _git('rev-parse','HEAD',cwd=host[1])==base
+    assert json.loads((work_run.train_dir_for('work-one')/'STATE.json').read_bytes())['status']=='AUDIT_PENDING'

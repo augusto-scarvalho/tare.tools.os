@@ -38,8 +38,11 @@ def _git(*args: str, cwd: Path) -> str:
 @pytest.mark.parametrize("landing_mode,scenario", [
     ("human-audit", "normal"),
     ("smart-optional", "normal"),
+    ("smart-optional", "roster-changed"),
     ("human-audit", "minimum-A"),
     ("human-audit", "conflict"),
+    ("human-audit", "stale-base"),
+    ("human-audit", "report-changed"),
     ("human-audit", "replay"),
     ("human-audit", "legacy-replay"),
     ("human-audit", "replay-diverged"),
@@ -178,6 +181,16 @@ def test_disposable_strict_train_uses_one_candidate_through_admission_and_cas(
             verdict = relay_mesh.prepare_admission_verdict(train_id)
             assert verdict.verdict == "ADMITTED"
             assert verdict.payload["audit"]["recommended"] is True
+            if scenario == "roster-changed":
+                # Admitted, not yet landed: the landing owner recomputes the bundle, so a roster that no longer
+                # matches the recorded identities stops the landing.
+                assert relay_mesh.admit_train(train_id, auto_land=False)
+                roster = relay_mesh.RELAY_DIR / "round_table_roster.json"
+                roster.write_bytes(roster.read_bytes() + b"\n")
+                assert not relay_mesh.land_train(train_id, signoff="SMART_POLICY")
+                assert _git("rev-parse", "refs/heads/main", cwd=repository) == base
+                assert artifacts.lease.root.exists()
+                return
             assert relay_mesh.admit_train(train_id)
             assert _git("rev-parse", "refs/heads/main", cwd=repository) == receipt.payload[
                 "candidate_commit"
@@ -219,6 +232,11 @@ def test_disposable_strict_train_uses_one_candidate_through_admission_and_cas(
         candidate_file.write_bytes(canonical_json_bytes(swapped))
         assert not relay_mesh.land_train(train_id, nonce=capability["nonce"])
         assert _git("rev-parse", "refs/heads/main", cwd=repository) == base
+        # Admission re-derives the candidate from Git too: a swapped receipt is neither admitted nor evidenced.
+        ok, why = relay_mesh.admission_valid(train_id)
+        assert not ok and "CANDIDATE_IDENTITY_MISMATCH" in why
+        with pytest.raises(RuntimeError, match="CANDIDATE_IDENTITY_MISMATCH"):
+            relay_mesh.materialize_admission_evidence(train_id)
         candidate_file.write_bytes(candidate_bytes)
         from relay import candidate_change
         from unittest.mock import Mock
@@ -249,6 +267,34 @@ def test_disposable_strict_train_uses_one_candidate_through_admission_and_cas(
             assert _git("rev-parse", "refs/heads/main", cwd=repository) == base
             assert artifacts.lease.root.exists()
             relay_mesh.WORK_GRAPH_FILE.write_bytes(original_graph)
+        if scenario == "report-changed":
+            # Approval is bound to the audit bytes it saw: an edited report cannot ride on the old capability.
+            report_file = train / "AUDIT_REPORT.md"
+            report_bytes = report_file.read_bytes()
+            report_file.write_bytes(report_bytes + b" ")
+            assert not relay_mesh.land_train(train_id, nonce=capability["nonce"])
+            assert _git("rev-parse", "refs/heads/main", cwd=repository) == base
+            land_spy.assert_not_called()
+            assert cap_file.read_bytes() == cap_bytes
+            report_file.write_bytes(report_bytes)
+            assert relay_mesh.land_train(train_id, nonce=capability["nonce"])
+            return
+        if scenario == "stale-base":
+            # The target moved after the candidate was recorded and approved: CAS refuses, nothing is rebased.
+            (repository / "other.txt").write_text("other\n", encoding="utf-8")
+            _git("add", "other.txt", cwd=repository)
+            _git("commit", "-qm", "target moved", cwd=repository)
+            moved = _git("rev-parse", "refs/heads/main", cwd=repository)
+            before = relay_mesh.WORK_GRAPH_FILE.read_bytes()
+            capsys.readouterr()
+            assert not relay_mesh.land_train(train_id, nonce=capability["nonce"])
+            assert "BASE_REF_DIVERGED" in capsys.readouterr().out
+            land_spy.assert_called_once()
+            assert _git("rev-parse", "refs/heads/main", cwd=repository) == moved
+            assert relay_mesh.WORK_GRAPH_FILE.read_bytes() == before
+            assert cap_file.read_bytes() == cap_bytes
+            assert artifacts.lease.root.exists()
+            return
         expected_target = receipt.payload["candidate_commit"]
         if scenario in {"replay", "legacy-replay", "replay-diverged", "replay-descendant"}:
             with monkeypatch.context() as interrupted:

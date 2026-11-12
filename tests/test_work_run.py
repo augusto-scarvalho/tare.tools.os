@@ -503,7 +503,7 @@ def os_root(tmp_path, tmp_path_factory, monkeypatch):
     relay_mesh.rebind_root(original)
 
 
-def evidence(train_id):
+def evidence(train_id, failed=()):
     from relay.train_execution import read_execution_descriptor
     from relay.candidate_change import read_candidate_receipt
     train = relay_mesh.TRAINS_DIR / train_id
@@ -512,7 +512,7 @@ def evidence(train_id):
     write_evidence(train / "LANDING_EVIDENCE.json", create_evidence(
         train_id=train_id, descriptor_sha256=descriptor.sha256, candidate_sha256=receipt.sha256,
         work_scope_sha256="3" * 64, specgraph_scope_sha256="4" * 64,
-        checks={k: True for k in ("candidate_immutable", "scope_complete", "work_current", "specgraph_current",
+        checks={k: k not in failed for k in ("candidate_immutable", "scope_complete", "work_current", "specgraph_current",
                                   "verification_complete", "protected_paths_clear", "secrets_clear", "cas_ready")}))
 
 
@@ -555,6 +555,10 @@ def test_run_settles_one_work_with_the_existing_train_lifecycle(os_root, capsys)
     saved = json.loads((root.parent / ".reconciliation" / "work-runs" / receipt["run_id"] / "run.json").read_bytes())
     assert saved['task_class'] == receipt['task_class']
     assert saved['recorded_audit_outcome'] == receipt['recorded_audit_outcome']
+    # The landing receipt names the Work, the candidate, the admission and the landing it saw (target and result).
+    assert saved['work_id'] == 'work-one' and saved['candidate_commit'] == receipt['candidate_commit']
+    assert saved['admission']['verdict'] == 'ADMITTED' and saved['landing'] == receipt['landing']
+    assert saved['landing']['landed'] is True and saved['landing']['target_ref'] == 'refs/heads/main'
 
 
 @pytest.mark.parametrize('invalid_delivery', [False, True])
@@ -961,3 +965,61 @@ def test_a_local_file_where_the_landing_needs_a_directory_is_stale(tmp_path):
     (repo / "src" / "new").unlink()  # without the collision the same landing refreshes
     assert work_run.refresh_checkout(repo, "refs/heads/main", ["src"], base) == {"refreshed": ["src"], "stale": []}
     assert (repo / "src" / "new" / "landed.txt").read_bytes().replace(b"\r\n", b"\n") == b"landed" + b"\n"  # autocrlf may write CRLF
+
+
+@pytest.mark.parametrize('case', ['hard_check_failed', 'audit_required_but_absent'])
+def test_run_stops_before_landing_unless_admitted(os_root, monkeypatch, case):
+    root, repo = os_root
+    base = _git('rev-parse', 'refs/heads/main', cwd=repo)
+    failed = ('cas_ready',) if case == 'hard_check_failed' else ()
+    if case == 'audit_required_but_absent':
+        monkeypatch.setenv('TARE_LANDING_AUDIT_MODE', 'required')
+
+    def implement(worktree, descriptor):
+        (worktree / 'src' / 'value.txt').write_text('strict\n', encoding='utf-8')
+        return {'status': 'SUCCEEDED'}
+
+    receipt = work_run.run_work('work-one', repository_root=repo, implementer=implement,
+                                plan_auditor=lambda td, rr: {'verdict': 'ACCEPT', 'findings': []},
+                                evidence_factory=lambda tid: evidence(tid, failed))
+    status, reason = (('ADMISSION_REFUSED', 'CHECK_FAILED:cas_ready') if failed
+                      else ('ADMISSION_INCONCLUSIVE', 'INDEPENDENT_AUDIT_REQUIRED'))
+    assert receipt['status'] == status and reason in receipt['admission']['reason_codes'], receipt
+    assert not receipt.get('landing') and receipt['stages'][-1]['stage'] == 'admission'
+    train = work_run.train_dir_for('work-one')
+    assert json.loads((train / 'STATE.json').read_text(encoding='utf-8'))['status'] == 'AUDIT_PENDING'
+    assert not (train / 'ADMISSION_VERDICT.json').exists()
+    # The owner of settlement refuses on its own, not only because this caller stopped.
+    assert not relay_mesh.admit_train(receipt['train_id'])
+    assert json.loads((train / 'STATE.json').read_text(encoding='utf-8'))['status'] == 'AUDIT_PENDING'
+    assert _git('rev-parse', 'refs/heads/main', cwd=repo) == base
+    graph = json.loads(relay_mesh.WORK_GRAPH_FILE.read_text(encoding='utf-8'))
+    assert graph['nodes'][0]['work_status'] != 'done'
+
+
+def test_run_reports_landing_refused_when_the_target_moves_after_admission(os_root, monkeypatch):
+    root, repo = os_root
+    commits = int(_git('rev-list', '--count', 'refs/heads/main', cwd=repo))
+    original = relay_mesh.prepare_admission_verdict
+
+    def admit_then_move_target(*args, **kwargs):
+        verdict = original(*args, **kwargs)
+        _git('commit', '--allow-empty', '-qm', 'target moved', cwd=repo)
+        return verdict
+
+    monkeypatch.setattr(relay_mesh, 'prepare_admission_verdict', admit_then_move_target)
+
+    def implement(worktree, descriptor):
+        (worktree / 'src' / 'value.txt').write_text('strict\n', encoding='utf-8')
+        return {'status': 'SUCCEEDED'}
+
+    receipt = work_run.run_work('work-one', repository_root=repo, implementer=implement, evidence_factory=evidence,
+                                plan_auditor=lambda td, rr: {'verdict': 'ACCEPT', 'findings': []})
+    moved = _git('rev-parse', 'refs/heads/main', cwd=repo)
+    assert receipt['admission']['verdict'] == 'ADMITTED'
+    assert receipt['status'] == 'LANDING_REFUSED' and receipt['landing']['landed'] is False, receipt
+    assert moved != receipt['candidate_commit'] and int(_git('rev-list', '--count', moved, cwd=repo)) == commits + 1  # not rebased
+    train = work_run.train_dir_for('work-one')
+    assert json.loads((train / 'STATE.json').read_text(encoding='utf-8'))['status'] == 'READY_FOR_LANDING'
+    graph = json.loads(relay_mesh.WORK_GRAPH_FILE.read_text(encoding='utf-8'))
+    assert graph['nodes'][0]['work_status'] != 'done'
