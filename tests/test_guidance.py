@@ -338,8 +338,8 @@ def test_guidance_waits_for_the_startup_reading_then_groups_and_marks_every_text
             def listed():
                 return [options.get_option_at_index(i).id for i in range(options.option_count)]
             headings = [key for key in listed() if key.startswith('group#')]
-            assert headings == ['group#role', 'group#protocol', 'group#cli://claude', 'group#cli://codex',
-                                'group#cli://agy']  # tare's texts first, then each CLI's
+            assert headings == ['group#common', 'group#variables', 'group#role', 'group#protocol', 'group#cli://claude',
+                                'group#cli://codex', 'group#cli://agy']  # what is written once, tare's texts, each CLI's
             assert all(options.get_option(key).disabled for key in headings)
             for cli in ('claude', 'codex', 'agy'):
                 assert str(options.get_option(f'note#cli://{cli}#0').prompt).strip().startswith('Being read now')
@@ -413,8 +413,8 @@ def test_tare_leaves_the_codex_skills_list_out_only_where_a_reading_proved_it(mo
     row = {r['id']: r for r in guidance.items()}[SKILLS]
     assert row['state'] == 'default' and not row['tare_proved'] and row['tare_default']
     read_as(monkeypatch, with_skills())  # this Codex leaves it out when asked: proved for 0.166.0
-    assert guidance.readings()['cli://codex']['defaults'] == {'cli_version': '0.166.0',
-                                                              'proved': ['skills_instructions']}
+    assert guidance.readings()['cli://codex']['defaults'] == {  # what Context stands for is proved as well
+        'cli_version': '0.166.0', 'proved': ['environment_context', 'skills_instructions']}
     assert guidance.vendor_choices('cli://codex') == {'skills_instructions': None}
     row = {r['id']: r for r in guidance.items()}[SKILLS]
     assert row['state'] == 'tare-default' and row['text'].startswith('<skills_instructions>')
@@ -466,5 +466,150 @@ def test_the_panel_shows_what_tare_leaves_out_and_brings_it_back(tmp_path, monke
             await pilot.click('#guidance-default')
             await pilot.pause()
             assert guidance.vendor_choices('cli://codex') == {'skills_instructions': None}
+            await pilot.press('escape')
+    asyncio.run(scenario())
+
+
+# The fixture session's system text before common texts and variables existed (2b7bf30c): with none turned on and no
+# variable used, a session sends exactly this.
+SYSTEM_BEFORE = 'e54aed13f2c3e13ac443688cf0a2778771afca33ab9e14b137663a106e0f8b44'
+
+
+def session_system(config, custody):
+    import hashlib
+    client = Client(steps=steps())
+    native_agent.run_session(config, deployment(), custody, 'Change the value to 2.', client=client,
+                             local_counter=client)
+    system = next(body for path, body in client.calls if path == '/chat/completions')['messages'][0]['content']
+    return system, hashlib.sha256(system.encode()).hexdigest()
+
+
+def test_without_a_common_text_on_or_a_variable_used_a_session_sends_the_same_system_text(setup):  # noqa: F811
+    config, custody, root = setup
+    guidance.create('variable', 'language')
+    guidance.save('variable#language', 'Portuguese')  # defined, used nowhere
+    guidance.create('common', 'Rules')
+    guidance.save('common#Rules', 'Answer in <language>.')  # written, not turned on
+    assert session_system(config, custody)[1] == SYSTEM_BEFORE
+
+
+def test_a_variable_is_filled_only_where_its_exact_name_is_written():
+    found = {'language': 'Portuguese <date>', 'date': '2026-11-12'}
+    assert guidance.fill('Answer in <language> on <date>; keep <permissions instructions> and <x>.', found) == (
+        'Answer in Portuguese <date> on 2026-11-12; keep <permissions instructions> and <x>.')  # one pass
+    for name in ('date', 'model name', 'context', 'bad<name>', ''):
+        with pytest.raises(ValueError):
+            guidance.create('variable' if name != 'context' else 'common', name)  # built-in names cannot be shadowed
+    assert guidance.create('variable', 'language') == 'variable#language'
+    with pytest.raises(ValueError, match='exists'):
+        guidance.create('variable', 'language')
+    with pytest.raises(ValueError):
+        guidance.save('variable#date', 'tomorrow')  # tare fills its own
+
+
+def test_context_on_reaches_new_sessions_filled_and_frozen_with_its_digest(setup):  # noqa: F811
+    import datetime
+    config, custody, root = setup
+    guidance.toggle('common#context')
+    guidance.create('variable', 'language')
+    guidance.save('variable#language', 'Portuguese')
+    guidance.create('common', 'Language')
+    guidance.save('common#Language', 'Answer in <language>.')
+    guidance.toggle('common#Language')
+    system, _ = session_system(config, custody)
+    today = datetime.datetime.now().astimezone().strftime('%Y-%m-%d')
+    assert system.endswith(f" Today's date is {today}. You are fixture (model id fixture). Answer in Portuguese.")
+    state = json.loads((custody/'native-agent.json').read_bytes())
+    assert [(c['id'], c['sha256']) for c in state['common_guidance']] == [
+        ('context', guidance.digest(guidance.CONTEXT_DEFAULT)), ('Language', guidance.digest('Answer in <language>.'))]
+    assert state['guidance_variables'] == {'language': 'Portuguese'}  # frozen: a later edit reaches new sessions only
+
+
+def test_context_on_leaves_out_the_blocks_it_stands_for_where_the_cli_allows(monkeypatch):
+    claude_blocks = [{'id': f'attachment:{name}', 'title': name, 'sent_as': 'system message',
+                      'controls': ('remove', 'replace'), 'text': name} for name in ('environment', 'model')]
+    value = with_skills()
+    value['cli://claude']['items'] += claude_blocks
+    value['cli://codex']['items'].append({'id': 'environment_context', 'title': 'Block <environment_context>',
+                                          'sent_as': 'user message', 'controls': ('remove',), 'text': 'x'})
+    value['cli://codex']['items'] = list({i['id']: i for i in value['cli://codex']['items']}.values())
+    read_as(monkeypatch, value)
+    assert guidance.vendor_choices('cli://claude') == {}  # Context is off by default
+    assert [r['state'] for r in guidance.items() if r['id'] == DATE] == ['default']
+    guidance.toggle('common#context')
+    assert guidance.vendor_choices('cli://claude', context=True) == dict.fromkeys(
+        ['attachment:environment', 'attachment:model', 'attachment:date'])
+    assert guidance.vendor_choices('cli://codex', context=True) == dict.fromkeys(
+        ['skills_instructions', 'environment_context'])
+    assert guidance.vendor_choices('cli://claude') == {}  # a call without the Context text keeps the CLI's blocks
+    rows = {r['id']: r for r in guidance.items()}
+    assert rows['vendor#cli://codex#environment_context']['state'] == 'tare-default'
+    assert '"Context"' in rows['vendor#cli://codex#environment_context']['tare_default']
+    guidance.send_again(DATE)  # an explicit keep wins
+    guidance.save('vendor#cli://claude#attachment:model', 'Answer in <language>; the model is <model name>.')
+    guidance.create('variable', 'language')
+    guidance.save('variable#language', 'Portuguese')
+    assert guidance.vendor_choices('cli://claude', context=True) == {  # the owner's choice wins, variables filled
+        'attachment:environment': None,
+        'attachment:model': 'Answer in Portuguese; the model is <model name>.'}  # the mod fills the vendor's own
+    read_as(monkeypatch, value, honours=False)  # a Codex that ignores the switches: nothing unproved is left out
+    assert guidance.vendor_choices('cli://codex', context=True) == {}
+    guidance.reset()  # Context off again for new sessions; the owner's own variables stay
+    assert guidance.common_texts() == [] and guidance.vendor_choices('cli://claude') == {}
+    assert guidance.load()['variables'] == {'language': 'Portuguese'}
+
+
+def test_only_a_call_that_carries_context_loses_the_blocks_context_stands_for(tmp_path, monkeypatch):
+    from relay.native_generation import inference_client
+    value = reading()
+    value['cli://claude']['items'].append({'id': 'attachment:environment', 'title': 'environment',
+                                           'sent_as': 'system message', 'controls': ('remove', 'replace'),
+                                           'text': 'environment'})
+    read_as(monkeypatch, value)
+    guidance.toggle('common#context')
+    guidance.save(EMAIL, None)  # the owner's own removal reaches every call
+    route = ({'native_cli': {'executable': str(tmp_path/'claude.exe'), 'version': '2.1.322'}},
+             SimpleNamespace(protocol='vendor-cli', endpoint='cli://claude'))
+    outside = inference_client(*route, credential=None, metadata_only=True)  # a heads-up note, a summary, research
+    assert outside.vendor_guidance == {'context:userEmail': None}
+    inside = inference_client(*route, credential=None, metadata_only=True, context_guidance=True)  # a session
+    assert inside.vendor_guidance == {'context:userEmail': None, 'attachment:environment': None,
+                                      'attachment:date': None}
+
+
+def test_the_panel_lists_common_texts_and_variables_first_and_creates_them(tmp_path, monkeypatch):
+    read_as(monkeypatch, reading())
+
+    async def scenario():
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(80, 24)) as pilot:
+            await app.workers.wait_for_complete()
+            assert app.dispatch_conversation_command('/guidance', '')
+            await pilot.pause()
+            panel = app.screen
+            options, text = panel.query_one('#guidance-item', OptionList), panel.query_one('#guidance-text', TextArea)
+            buttons = {b.id: b for b in panel.query(Button)}
+            assert panel.current == 'common#context' and text.text == guidance.CONTEXT_DEFAULT
+            assert str(buttons['guidance-keep'].label) == 'Turn on'
+            await pilot.click('#guidance-keep')
+            await pilot.pause()
+            assert [c['id'] for c in guidance.common_texts()] == ['context']
+            assert str(options.get_option('common#context').prompt).strip().startswith('Context · on')
+            options.highlighted = options.get_option_index('variable#date')
+            await pilot.pause()
+            assert text.read_only and buttons['guidance-remove'].disabled
+            panel.query_one('#guidance-name').value = 'language'
+            await pilot.click('#guidance-add')
+            await pilot.pause()
+            assert panel.current == 'variable#language' and not text.read_only
+            text.load_text('Portuguese')
+            await pilot.click('#guidance-save')
+            await pilot.pause()
+            assert guidance.load()['variables'] == {'language': 'Portuguese'}
+            assert str(options.get_option('variable#language').prompt).endswith('  M')
+            assert str(buttons['guidance-remove'].label) == 'Delete'
+            await pilot.click('#guidance-remove')
+            await pilot.pause()
+            assert guidance.load()['variables'] == {}
             await pilot.press('escape')
     asyncio.run(scenario())

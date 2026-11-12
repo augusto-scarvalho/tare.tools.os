@@ -145,8 +145,9 @@ def streaming(deployment):
     return deployment.get('native_streaming',False) and supports_streaming(deployment)
 
 
-def inference_client(deployment, profile, *, credential, metadata_only=False, **transport):
-    """Compose inference/auth only; the caller retains all agent execution."""
+def inference_client(deployment, profile, *, credential, metadata_only=False, context_guidance=False, **transport):
+    """Compose inference/auth only; the caller retains all agent execution. `context_guidance`: the call carries the
+    common text Context, so a vendor CLI may leave out the blocks it stands for (/guidance)."""
     if not metadata_only:
         from .execution_scope import require
         require(deployment)
@@ -165,7 +166,9 @@ def inference_client(deployment, profile, *, credential, metadata_only=False, **
         from .cli_qualification import Store  # each machine probes a new CLI release once, not each session
         from .guidance import vendor_choices  # the owner's choices about what this CLI adds on its own (/guidance)
         return VendorCliClient(profile.endpoint, **deployment['native_cli'], qualification=Store(profile.endpoint),
-                               vendor_guidance=vendor_choices(profile.endpoint), **transport)
+                               vendor_guidance=vendor_choices(profile.endpoint,
+                                                              context=context_guidance),
+                               **transport)
     from compute_plane.native_models import NativeHttpClient
     from .challenger import client_headers
     headers = client_headers(deployment)

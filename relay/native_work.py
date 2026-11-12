@@ -113,15 +113,17 @@ def implement_native(*, worktree, descriptor, node, session_id, control, journal
         observations.append(row)
         if observe is not None:
             observe(row)
+    from .guidance import fill, values as guidance_values
     adapter = NativeModelAdapter(profile, client, local_counter=local_counter, observe=observed,
         streaming=streaming, on_progress=on_progress,
         counter_protocol=counter_protocol,
         count_observations=count_observations,
         # The implementer's capsule (frozen by the attempt), then what a Work delivery is; an attempt saved before the
         # capsules has none.
-        system=((prompt_capsule or {}).get('system', '') + ' ' if (prompt_capsule or {}).get('system') else '') +
+        # Variables (/guidance) in the capsule: the owner's and the built-in ones this call knows.
+        system=fill(((prompt_capsule or {}).get('system', '') + ' ' if (prompt_capsule or {}).get('system') else '') +
                'Implement the bounded Work using the admitted tools. A delivery is a proposal for independent verification.' +
-               (prompt_capsule or {}).get('system_append', ''),
+               (prompt_capsule or {}).get('system_append', ''), guidance_values(model_id=profile.model)),
         tool_specs_json=tools.tool_specs_json)
     from .native_spend import compose, settings
     from compute_plane.native_journal import NativeJournal

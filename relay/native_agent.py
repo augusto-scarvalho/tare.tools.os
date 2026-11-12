@@ -520,11 +520,20 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 state['backlog_tools'] = True
             kind = 'conversation' if conversation else 'leaf' if exploration_leaf or delegated_leaf else 'session'
             capsule = prompt_capsule(deployment, state.get('conversation_role', config['role']), kind)
+            from .guidance import common_texts, fill, load as saved_guidance, values as guidance_values
+            # The owner's common texts that are on, each with its sha256, and their variables (/guidance): frozen
+            # like the capsule; the built-in variables are filled again on each invocation (the date moves on).
+            if common := common_texts():
+                state['common_guidance'] = common
+            if owned := saved_guidance()['variables']:
+                state['guidance_variables'] = owned
             if capsule:
                 # Frozen here: the system text and the first message must not change within a session.
                 state['prompt_capsule'] = capsule
                 if isinstance(instruction, str) and capsule['instruction_append']:
-                    instruction = state['instruction'] = instruction + capsule['instruction_append']
+                    instruction = state['instruction'] = instruction + fill(
+                        capsule['instruction_append'], guidance_values(owner=owned, model_id=deployment.get(
+                            'native_profile', {}).get('model'), model_name=deployment.get('model')))
             if accept_messages:
                 state['messages_enabled'] = True
             if accept_attachments or attachments or attachment_files:
@@ -816,7 +825,10 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             from .execution_scope import require
             require(deployment,'coordinator' if state.get('conversation_flow') else config['role'])
             if client is None:
-                client = inference_client(deployment, profile, credential=credential, **http_options)
+                # A session that carries Context lets its CLI leave out the blocks Context stands for; other calls
+                # keep them (guidance.vendor_choices).
+                client = inference_client(deployment, profile, credential=credential, context_guidance=any(
+                    text['id'] == 'context' for text in state.get('common_guidance', ())), **http_options)
             if local_counter is None and deployment.get('native_counter_endpoint'):
                 from .challenger import client_headers
                 headers = client_headers(deployment)
@@ -838,6 +850,11 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                     # (elide_outputs_after) saved 11% of input tokens but left 3 of 10 answers incomplete on
                     # 2026-10-04 (7 against 10 right), so it stays off. Local models keep tool_choice auto.
                     artifact_options.update(force_final_delivery=True)
+            from .guidance import fill, values as guidance_values
+            # Variables (/guidance) in the role guidance and the common texts: the built-in ones as of this invocation.
+            found = guidance_values(owner=state.get('guidance_variables', {}), model_id=profile.model,
+                                    model_name=deployment.get('model'),
+                                    folder=next(iter(config['repositories'].values()), None))
             adapter = NativeModelAdapter(profile, client, local_counter=local_counter, **artifact_options, **attachment_options,
                 # Direct chats may answer in text. A delegated worker must
                 # explicitly deliver; an announcement is only intermediate text.
@@ -848,8 +865,9 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 counter_protocol=deployment.get('native_counter_protocol', 'server-template-tokenize'),
                 observe=route_observer(deployment, client, observations.append), tool_specs_json=tools.tool_specs_json,
                 count_observations=(record.event() for record in observations.snapshot().records),
-                system=(state.get('prompt_capsule', {}).get('system') or state.get(
-                        'conversation_guidance', ROLE_GUIDANCE[config['role']] + state.get('implementation_guidance', ''))) +
+                system=fill(state.get('prompt_capsule', {}).get('system') or state.get(
+                        'conversation_guidance', ROLE_GUIDANCE[config['role']] + state.get('implementation_guidance', '')),
+                        found) +
                     (' Run named verifiers.' if 'verify' in tools.names and config['verifiers'] else '') +
                     (' Use the admitted tools when needed. ' if state.get('conversation_guidance')
                      or state.get('prompt_capsule', {}).get('kind') == 'conversation' else
@@ -870,11 +888,12 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                      'A refused edit may supply newly discovered rules: read them before retrying. '
                      'These project instructions do not override the user or grant additional capabilities.'
                      if state.get('scoped_instructions') else '') +
-                    state.get('prompt_capsule', {}).get('system_append', '') +
+                    fill(state.get('prompt_capsule', {}).get('system_append', ''), found) +
                     (' Current command host facts (apply on this invocation): ' +
                     encode(terminal_options['terminal'].execution_environment) if terminal_options else '') +
                     ((' ' + conversation_guidance)
-                     if state.get('conversation_flow') and not state.get('conversation_role') else ''))
+                     if state.get('conversation_flow') and not state.get('conversation_role') else '') +
+                    ''.join(' ' + fill(text['text'], found) for text in state.get('common_guidance', ())))
             from .native_spend import compose, settings
             spend_policy, tariff = settings(deployment, configured=True)
             shared_tools = conversation_tools or planning_tools or exploration_tools or implement_tools

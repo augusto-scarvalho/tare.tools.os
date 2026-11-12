@@ -39,7 +39,10 @@ def research(deployment, question, *, root, control, max_calls, refresh=False, o
         budget_note = ('No per-question model-call ceiling; the enclosing execution limits still apply.' if max_calls is None else
                        f'This question has at most {max_calls} model calls, including the final report. Reserve a call to deliver.')
         if not saved:
-            saved = {'session_id': uuid4().hex, 'system': prompt_capsule(deployment, 'researcher', 'leaf')['system'],
+            from .guidance import fill, values
+            saved = {'session_id': uuid4().hex, 'system': fill(prompt_capsule(deployment, 'researcher', 'leaf')['system'],
+                                                               values(model_id=(deployment.get('native_profile') or {}).get('model'),
+                                                                      model_name=deployment.get('model'))),
                      'instruction': 'Research this question using the admitted web tools. Finish by calling tare_deliver with the report JSON.\n'+question+'\n'+budget_note,
                      'profile': deployment['native_profile']}
             save_json(path, saved)

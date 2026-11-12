@@ -22,15 +22,93 @@ In the panel the block is marked `T`. The view below it shows what is left out, 
 again as the CLI writes it. Then it is marked `M`, and **tare's default** leaves it out again. **Reset everything**
 also goes back to tare's defaults. A choice of your own for that block always wins over tare's.
 
+## Common texts and variables
+
+The CLIs say the same things in different words: the environment, the date, the model. A common text is written
+once and tare adds it to its own system text for every route, CLI or API alike.
+
+### Variables
+
+A variable is a name and a text. You use one inside any text you can edit by writing its name in angle brackets,
+as in `<language>`. tare replaces it only where the exact name is written; any other text in angle brackets stays
+as it is, and a variable's own text is not searched for further names.
+
+These variables are built in. tare fills them, and they cannot be edited:
+
+| Variable | What it stands for | When it is filled |
+| --- | --- | --- |
+| `<date>` | today's date | on each turn |
+| `<local time>` | the date and time here, with the time zone | on each turn |
+| `<OS version>` | this machine's operating system | on each turn |
+| `<working directory>` | the session's project folder | on each turn |
+| `<model id>` | the session model's id | on each turn |
+| `<model name>` | the model's name in tare | on each turn |
+
+Your own variables are created, edited and deleted in the panel's Variables group. Write a name and press Add. A
+name cannot be one of the built-in ones.
+
+### Common texts
+
+The built-in common text is **Context**: "Today's date is `<date>`. You are `<model name>` (model id
+`<model id>`)."
+
+- It is off by default. Turn it on with **Turn on**.
+- Edit its text as you like, adding other variables. **tare's default** brings tare's text back.
+- Your own common texts are created in the Common group and turned on or off the same way. They only add text.
+
+A common text that is on is added at the end of the system text of each new session. Sessions are conversations
+and the work they delegate. Each session keeps the texts it started with and records each text's SHA-256 beside its
+role guidance; a change reaches new sessions only. The built-in variables are filled again on each turn, so a
+conversation resumed the next day has the right date.
+
+### What Context replaces
+
+While Context is on, the calls of a session that carries it leave out the vendor blocks that say the same:
+
+| CLI | Left out | Condition |
+| --- | --- | --- |
+| Claude Code | `attachment:environment`, `attachment:model`, `attachment:date` | when its latest reading has the block |
+| Codex | `environment_context` | where the startup reading checked that this Codex version leaves it out |
+| AGY | nothing | `request:ADDITIONAL_METADATA` and `request:USER_SETTINGS_CHANGE` cannot be left out; the panel says so |
+
+Such a block is marked `T` in the panel, with the common text that stands for it. **Vendor's default** sends it
+again. A choice of your own for the block wins.
+
+**Both or neither.** Calls outside a session keep the CLI's own blocks, because they do not get the Context text
+either. These are heads-up notes, image descriptions, research and conversation summaries made outside a session.
+A call never loses those blocks without Context in their place. Your own removals still apply to every call.
+
+### Where variables are filled
+
+| Path | What is filled |
+| --- | --- |
+| tare's sessions (`run_session`) | variables in the role guidance, and the common texts that are on |
+| a Work attempt (`native_work`) | variables in the implementer's guidance |
+| tare serve (`native_serve`) | variables in its working rules |
+| the researcher (`research_api`, `research_cli`) | variables in its guidance |
+| your replacement of a Claude Code block | your variables, before it goes to the Kernel; the CLI's own values (`<date>`, ...) are filled by tare's mod |
+
+The common texts reach sessions only.
+
+### Not covered
+
+- conditions or schedules for a text (every few turns, after a tool);
+- common texts for one role only;
+- choosing which vendor blocks a common text replaces;
+- prompts outside sessions (heads-up notes, vision, research map and reduce);
+- a position for a common text other than the end of the system text.
+
 ## The panel
 
 The list on the left is in groups, in this order:
 
-1. tare · role guidance
-2. tare · protocol texts (read-only)
-3. Claude Code
-4. Codex
-5. AGY
+1. Common · sent to every CLI
+2. Variables
+3. tare · role guidance
+4. tare · protocol texts (read-only)
+5. Claude Code
+6. Codex
+7. AGY
 
 A heading cannot be selected. Under each CLI's heading are the version its texts were read from, how and when they
 were read, and its blocks in the order the CLI sends them.
