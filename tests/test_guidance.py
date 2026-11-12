@@ -18,6 +18,17 @@ EMAIL = 'vendor#cli://claude#context:userEmail'
 DATE = 'vendor#cli://claude#attachment:date'
 
 
+async def highlight(pilot, panel, options, key):
+    """Highlight a text and wait until the panel shows it: the panel handles the highlight a moment later, and on a
+    busy CI runner one pause was not always enough (the guidance test failed that way on main, 2026-11-12)."""
+    options.highlighted = options.get_option_index(key)
+    for _ in range(50):
+        await pilot.pause()
+        if panel.current == key:
+            return
+    raise AssertionError(f'the panel never showed {key}')
+
+
 def reading(date="Today's date is <date>.", extra=()):
     """What compute_plane.vendor_guidance.read returns, for two CLIs (texts already with placeholders)."""
     return {'cli://claude': {'cli': 'Claude Code', 'cli_version': '2.1.322', 'note': 'Read on this machine.',
@@ -232,8 +243,7 @@ def test_guidance_in_the_tui_shows_before_and_after_and_settles_each_change(tmp_
             assert str(choice.get_option('note#cli://claude#0').prompt).strip().startswith('Read without tokens')
 
             async def pick(key):
-                choice.highlighted = choice.get_option_index(key)
-                await pilot.pause()
+                await highlight(pilot, panel, choice, key)
             diff = panel.query_one('#guidance-diff')
             buttons = {b.id: b for b in panel.query(Button)}
             assert panel.region.contains_region(buttons['guidance-save'].region)
@@ -350,8 +360,7 @@ def test_guidance_waits_for_the_startup_reading_then_groups_and_marks_every_text
                 assert str(options.get_option(f'note#cli://{cli}#0').prompt).strip().startswith('Being read now')
             assert not any(key.startswith('vendor#') for key in listed())  # tare's own groups are usable at once
             assert 'M your choice' in str(panel.query_one('#guidance-read', Static).render())
-            options.highlighted = options.get_option_index(IMPLEMENTER)
-            await pilot.pause()
+            await highlight(pilot, panel, options, IMPLEMENTER)
             text.load_text('Typed, not saved yet.')
 
             read_as(monkeypatch, reading())  # the reading lands while the panel is open
@@ -458,8 +467,7 @@ def test_the_panel_shows_what_tare_leaves_out_and_brings_it_back(tmp_path, monke
             options, diff = panel.query_one('#guidance-item', OptionList), panel.query_one('#guidance-diff')
             default = panel.query_one('#guidance-default', Button)
             assert str(options.get_option(SKILLS).prompt).endswith('  T')
-            options.highlighted = options.get_option_index(SKILLS)
-            await pilot.pause()
+            await highlight(pilot, panel, options, SKILLS)
             assert "Left out by tare's default" in str(panel.query_one('#guidance-about', Static).render())
             assert '-- imagegen: Generate images.' in diff.query_one(Static).content.code  # what is left out
             assert str(default.label) == "Vendor's default" and not default.disabled
@@ -602,8 +610,7 @@ def test_the_panel_lists_common_texts_and_variables_first_and_creates_them(tmp_p
             await pilot.pause()
             assert [c['id'] for c in guidance.common_texts()] == ['context']
             assert str(options.get_option('common#context').prompt).strip().startswith('Context · on')
-            options.highlighted = options.get_option_index('variable#date')
-            await pilot.pause()
+            await highlight(pilot, panel, options, 'variable#date')
             assert text.read_only and buttons['guidance-remove'].disabled
             panel.query_one('#guidance-name').value = 'language'
             await pilot.click('#guidance-add')

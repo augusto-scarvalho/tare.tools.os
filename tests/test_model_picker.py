@@ -171,6 +171,8 @@ def test_model_button_grows_with_its_label_and_ellipsizes_only_when_the_row_is_f
             app.render_model_controls(HeaderDetails('main', 'Reading saved model\u2026', 'Saved model'))
             # Checked at once: after a pause the app's own header refresh may have relabelled the button.
             assert str(button.label) == 'Claude Sonnet 5.5 Extended \u25be'  # the name stays while the header reads the model
+            app.render_model_controls(None)
+            assert str(button.label) == 'Claude Sonnet 5.5 Extended \u25be'  # and when the header has nothing to show yet
             app.render_model_controls(HeaderDetails('main', 'x', 'Saved model', display_model='very-long-model-name-' * 5))
             await pilot.pause()
             assert row.region.contains_region(button.region)
