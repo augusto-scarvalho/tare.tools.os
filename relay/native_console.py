@@ -282,8 +282,10 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
     #model-controls { height: 1; margin-bottom: 1; display: none; }
     Screen.assistant #model-controls { display: block; }
     #model-controls Button { height: 1; min-height: 1; width: auto; max-width: 65%; min-width: 0;
-        border: none; padding: 0 1 0 0; margin-right: 2; background: transparent; color: $text-muted; }
+        border: none; padding: 0 1 0 0; margin-right: 2; background: transparent; color: $text-muted;
+        text-wrap: nowrap; text-overflow: ellipsis; }
     #model-controls Button:hover, #model-controls Button:focus { color: $primary; }
+    #activity-near-composer { width: 1fr; height: 1; color: $primary; }
     '''
 
     def __init__(self, root=None, *, backend=None, initial_mode='session', guided=False,
@@ -640,6 +642,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 with Horizontal(id='model-controls'):
                     yield Button('Model ▾', id='choose-model')
                     yield Button('Default ▾', id='choose-reasoning')
+                    yield Static('', id='activity-near-composer', markup=False)
                 with VerticalScroll(id='composer'):
                     with Vertical(id='outcome-options'):
                         yield Label('Result against the original request')
@@ -1345,7 +1348,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             transcript.write(value)
 
     def set_status(self, value):
-        show(self.query_one('#status', Static), plain(value))
+        self.status_text = plain(value)
+        show(self.query_one('#status', Static), self.status_text)
         self.refresh_presence()
 
     def show_plan(self, result):

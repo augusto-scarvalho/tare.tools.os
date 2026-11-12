@@ -43,6 +43,10 @@ def test_silent_execution_animates_until_result_or_cancellation_cleanup(tmp_path
             assert len(set(titles[before:])) >= 2
             symbol = app.query_one('#activity-symbol', Static)
             assert str(symbol.render()) in SPINNER
+            near = app.query_one('#activity-near-composer', Static)
+            assert str(near.render())[0] in SPINNER and str(near.render())[2:]  # never the model button's label
+            assert app.query_one('#model-controls').region.contains_region(near.region)
+            assert app.query_one('#model-controls').region.bottom <= app.query_one('#composer').region.y
             assert app.screen.region.contains_region(symbol.region)
             assert app.query_one('#start').region.bottom <= size[1]
             assert len(backend.launches) == 1
@@ -55,6 +59,7 @@ def test_silent_execution_animates_until_result_or_cancellation_cleanup(tmp_path
             await app.workers.wait_for_complete(); await pilot.pause()
             expected = 'finished' if outcome == 'PROPOSED' else 'cancelled' if outcome == 'CANCELLED' else 'error'
             assert not app.busy and app.presence_kind == expected
+            assert str(near.render()) == ''  # nothing stale once the work stops
             assert prompt.text == 'Preserve this unsent correction'
             settled = str(symbol.render())
             emitted = len(titles)
@@ -138,3 +143,43 @@ def test_terminal_driver_saves_deduplicates_restores_and_tolerates_closed_output
     header._driver.write = closed
     header.write_terminal_title('next')
     header.restore_terminal_title()
+
+
+@pytest.mark.parametrize('size', [(80, 24), (130, 44)])
+def test_line_above_the_input_box_is_the_top_status_row_with_the_working_delegate(tmp_path, monkeypatch, size):
+    from relay.execution_team import observe_session
+    from test_execution_team import state
+    monkeypatch.setattr('relay.native_agent.session_root', lambda: tmp_path/'custody')
+
+    class Silent(Process):
+        async def communicate(self):
+            await self.done.wait()
+            self.returncode = 0
+            return json.dumps({'status': 'PROPOSED'}).encode(), b''
+
+    async def scenario():
+        backend = FakeBackend(); backend.process = Silent()
+        app = WorkConsole(tmp_path, backend=backend, initial_mode='assistant')
+        async with app.run_test(size=size) as pilot:
+            await app.workers.wait_for_complete()
+            prompt = app.query_one('#prompt', TextArea)
+            prompt.load_text('Explain this project'); prompt.focus()
+            await pilot.press('enter'); await pilot.pause(.15)
+            assert app.busy
+            events = []
+            with observe_session(state('planner'), {'id': 'one'}, events.append):
+                running = list(events)  # the planner is working: its row is still "Awaiting result"
+            for event in running:
+                app.assistant_activity(event)
+            top, near = app.query_one('#status', Static), app.query_one('#activity-near-composer', Static)
+            deadline = asyncio.get_running_loop().time() + 4
+            while 'Planner' not in str(top.render()) and asyncio.get_running_loop().time() < deadline:
+                await pilot.pause(.1)
+            status, line = str(top.render()), str(near.render())
+            assert 'Planner' in status  # the delegate, not the coordinator, is what the top row names
+            assert line[0] in SPINNER and line[1] == ' '
+            assert status == line[2:] or line.endswith('…') and status.startswith(line[2:-1])  # one source
+            backend.process.done.set()
+            await app.workers.wait_for_complete(); await pilot.pause()
+            assert not app.busy and str(near.render()) == ''
+    asyncio.run(scenario())
