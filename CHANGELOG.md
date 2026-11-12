@@ -4,7 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
-- `/guidance`: an edited Claude Code block is sent with the real values in place of placeholders such as `<date>` and `<OS version>`; before, the placeholders reached the model as written. The panel and the guide say to keep a placeholder where you want the real value.
+- `/guidance`: an edited Claude Code block now reaches the model with the real date, system version, folder and model name where the panel shows `<date>`, `<OS version>` and the like; before, those markers were sent as written. The panel and the guide say to keep a marker where you want the real value.
 - `/guidance`: the before and after view puts each line on its own row, the description says what you can do before the CLI's long note, and the reset button fits its longest label.
 - `/guidance` now reads what Claude Code and Codex add each time the TUI opens, in the background and without tokens (Claude Code is pointed at a recorder on this machine, so its login token never leaves the computer and nothing reaches the provider), and keeps the reading in `<storage>/serve/vendor-guidance.json` with the previous text of each block that changed. A saved choice records the default it was made against: when a CLI or tare update changes that default, the panel shows the difference and you keep yours, use the new default, or edit and Save; until then tare keeps sending your version. A block a CLI starts sending shows as new and goes out as the CLI writes it. Every changed text shows before × after. The TUI says once when a reading found something changed or new.
 - `/guidance`: the button that takes a vendor block back to its default shows its whole label ("Vendor's default" was cut to "Vendor's").
