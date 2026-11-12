@@ -7,7 +7,7 @@ from threading import Event
 
 import pytest
 
-from relay import native_work_host, relay_mesh
+from relay import native_limits, native_work_host, relay_mesh
 from test_work_run import os_root, durable_fixture
 from test_native_agent import Client, deployment
 
@@ -19,7 +19,12 @@ def test_stage_limits_inherit_profile_and_explicit_flags_override_unlimited():
                                             limits={'max_model_calls': 5, 'read_seconds': 8})
     assert resolved['max_model_calls'] == 5 and resolved['read_seconds'] == 8
     assert resolved['max_seconds'] is None and resolved['request_seconds'] is None
-    assert resolved['max_stagnant_turns'] is None and resolved['max_model_retries'] == 0
+    assert resolved['max_stagnant_turns'] == native_limits.UNLIMITED_STAGNANT_TURNS and resolved['max_model_retries'] == 0
+    # Only an explicit null lifts the no-progress stop; naming it in the unlimited list loosens it like plain Unlimited.
+    explicit = native_work_host.stage_limits(profile, 'implement', unlimited=True, limits={'max_stagnant_turns': None})
+    assert explicit['max_stagnant_turns'] is None and explicit['max_model_calls'] is None
+    listed = native_work_host.stage_limits(profile, 'implement', unlimited=('calls', 'stagnation'))
+    assert listed['max_stagnant_turns'] == native_limits.UNLIMITED_STAGNANT_TURNS and listed['max_model_calls'] is None
 
 
 @pytest.mark.parametrize('unlimited', [False, True])

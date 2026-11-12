@@ -46,7 +46,7 @@ def create(directory, root, question, urls, deployment, *, unlimited=False, orig
         'typed_output': True, 'context_policy': execution_resources.context({'max_compactions': None} if execution_resources.selected('compactions', unlimited) else {})})
     state = {'schema': 'tare.tools/research-flow/1', 'directory': str(directory), 'root': str(root),
         'question': question, 'urls': urls, 'deployment': deployment, 'config': config,
-        'limits': ({k: None for k in native_limits.FIELDS} | {'max_model_retries': 0}) if unlimited is True else execution_resources.limits({}, unlimited),
+        'limits': ({k: None for k in native_limits.FIELDS} | {'max_model_retries': 0, 'max_stagnant_turns': native_limits.UNLIMITED_STAGNANT_TURNS}) if unlimited is True else execution_resources.limits({}, unlimited),
         'status': 'READY', 'attempts': [], 'snapshot': None}
     if origin is not None:
         state['origin'] = origin

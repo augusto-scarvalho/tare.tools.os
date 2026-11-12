@@ -15,7 +15,7 @@ import time
 import pytest
 
 from compute_plane.native_journal import NativeJournal, custody_lock, save_json
-from relay import native_agent
+from relay import native_agent, native_limits
 from tare_tools_agent_runtime import CancellationToken, NativeBudget
 
 
@@ -712,6 +712,7 @@ raise SystemExit(main(sys.argv[1:]))
         effective = json.loads(first.stdout)['effective_limits']
         assert effective['max_seconds'] == (None if unlimited else 300)
         assert effective['max_model_calls'] == (None if unlimited else 16)
+        assert effective['max_stagnant_turns'] == (native_limits.UNLIMITED_STAGNANT_TURNS if plain else 3)
         assert json.loads(first.stdout)['status'] == 'PROPOSED' and fixture.generations == 4
         if plain:
             stored = json.loads((custody/'native-agent.json').read_text())
@@ -1223,3 +1224,19 @@ def test_coordinator_v15_preserves_boundaries_and_direct_conversation_policy():
     ):
         assert requirement in text
     assert 'For substantive design comparisons or recommendations' not in text
+
+
+def test_a_no_progress_pause_continues_with_a_new_message(setup):
+    config, custody, root = setup
+    config['verifiers'] = {}
+    read = ('read', {'repository': 'repo', 'path': 'a.py'})
+    stuck = Client(steps=[read, read, read])  # the first read is new; the next two repeat it
+    first = run(config, custody, stuck, conversation=True, limits={'max_model_calls': None, 'max_seconds': None, 'max_stagnant_turns': 2})
+    assert first['status'] == 'BLOCKED' and first['reason'] == 'NO_PROGRESS' and first['model_calls'] == 3
+    assert first['effective_limits']['max_stagnant_turns'] == 2
+    # One more repeat is below the limit again: the message started a new count.
+    unstuck = Client(steps=[read, ('tare_deliver', {'summary': 'Looked again; nothing to change.'})])
+    again = native_agent.run_session(None, None, custody, resume=True, follow_up='continue', message_id='go-on',
+                                    client=unstuck, local_counter=unstuck)
+    assert unstuck.generations == 2 and again['model_calls'] == 5
+    assert again['status'] == 'PROPOSED', again

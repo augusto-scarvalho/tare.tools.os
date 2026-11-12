@@ -6,6 +6,11 @@ UNSET = object()
 # One retry of a retryable model failure (429, 502 to 504, a connection refused before sending): a single 503
 # ended a session in the phase 3 comparison (2026-10-06). Explorers and challengers keep their own 0.
 BUDGET_DEFAULTS = {'max_model_calls': 16, 'max_stagnant_turns': 3, 'max_model_retries': 1}
+# Unlimited lifts calls and time, not the no-progress stop: a model that repeats itself with nobody watching
+# would never end. 3 (the default) was too tight: replaying 372 saved sessions (2026-11-12), the longest run of
+# replies without progress inside a session that then delivered was 4. At the limit the session pauses and
+# any message continues it.
+UNLIMITED_STAGNANT_TURNS = 6
 TIME_FIELDS = ('max_seconds', 'request_seconds', 'connect_seconds', 'read_seconds')
 FIELDS = {*BUDGET_DEFAULTS, *TIME_FIELDS}
 

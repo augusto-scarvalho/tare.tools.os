@@ -34,6 +34,7 @@ def stage_limits(deployment, stage, *, limits=None, unlimited=False, budget=None
     values = {**defaults, **native_limits.validate(deployment.get('native_execution_limits', {}))}
     if unlimited is True:
         values.update({name: None for name in native_limits.FIELDS})
+        values['max_stagnant_turns'] = native_limits.UNLIMITED_STAGNANT_TURNS
         values['max_model_retries'] = 0  # removing ceilings does not request retries
     else:
         values = resources.limits(values, unlimited)

@@ -34,7 +34,7 @@ def create(directory, root, questions, deployment, *, workers=1, unlimited=False
         raise ValueError('Batch custody must be outside the project.')
     state = {'schema': 'tare.tools/parallel-exploration/2' if limits else 'tare.tools/parallel-exploration/1', 'directory': str(directory),
         'root': str(root), 'workers': workers, 'config': config, 'deployment': deployment,
-        'limits': (({k: None for k in native_limits.FIELDS} | {'max_model_retries': 0}) if unlimited is True else execution_resources.limits({}, unlimited)) | limits,
+        'limits': (({k: None for k in native_limits.FIELDS} | {'max_model_retries': 0, 'max_stagnant_turns': native_limits.UNLIMITED_STAGNANT_TURNS}) if unlimited is True else execution_resources.limits({}, unlimited)) | limits,
         'status': 'READY', 'items': [{'id': str(i+1), 'question': q, 'status': 'PENDING',
             'attempts': []} for i, q in enumerate(questions)]}
     directory.mkdir(parents=True, exist_ok=True)

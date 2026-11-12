@@ -9,7 +9,7 @@ from threading import Barrier
 import pytest
 from compute_plane.native_journal import custody_lock
 from tare_tools_agent_runtime import CancellationToken
-from relay import native_agent, parallel_explore as batch
+from relay import native_agent, native_limits, parallel_explore as batch
 from test_native_agent import setup, Client, deployment
 
 
@@ -46,7 +46,8 @@ def test_native_sessions_overlap_and_resume_does_not_repeat(exploration):
         assert row['report']['sources'][0]['path'] == 'a.py'
         state = json.loads((Path(row['session'])/'native-agent.json').read_bytes())
         assert state['limits']['max_model_retries'] == 0
-        assert all(v is None for k, v in state['limits'].items() if k != 'max_model_retries')
+        assert state['limits']['max_stagnant_turns'] == native_limits.UNLIMITED_STAGNANT_TURNS
+        assert all(v is None for k, v in state['limits'].items() if k not in ('max_model_retries', 'max_stagnant_turns'))
         assert state['config']['capabilities'] == ['read', 'list', 'search']
     assert batch.execute(directory)['status'] == 'COMPLETED'
     assert len(calls) == 2

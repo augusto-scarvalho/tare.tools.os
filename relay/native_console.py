@@ -470,6 +470,11 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                     if resources:
                         yield Static('Set by --unlimited for this terminal instance and its workers.',
                                      classes='settings-note', markup=False)
+                    else:
+                        from .native_limits import UNLIMITED_STAGNANT_TURNS
+                        yield Static(f'An unlimited conversation still pauses after {UNLIMITED_STAGNANT_TURNS} replies '
+                                     'in a row without progress, and continues when you send a message.',
+                                     classes='settings-note', markup=False)
                     yield Label('Model call limit')
                     yield Input(placeholder='Blank: model profile limit', id='max-model-calls', disabled=True)
                     yield Label('Time limit · seconds')

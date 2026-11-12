@@ -3,13 +3,16 @@ import math
 import re
 from functools import wraps
 
+from .native_limits import UNLIMITED_STAGNANT_TURNS
+
 RESOURCES = ('calls', 'time', 'money', 'compactions', 'stagnation')
 LEGACY = ('calls', 'time', 'compactions', 'stagnation')
 ALIASES = {'turns': 'calls', 'budget': 'money', 'cost': 'money', 'usd': 'money',
            'seconds': 'time', 'duration': 'time', 'compaction': 'compactions',
            'no-progress': 'stagnation'}
 HELP = ('Remove selected execution ceilings for this instance and its workers: '
-        'calls time money compactions stagnation. No list means all; '
+        'calls time money compactions stagnation (stagnation loosens the no-progress pause to '
+        f'{UNLIMITED_STAGNANT_TURNS} replies; --max-stagnant-turns unlimited removes it). No list means all; '
         'use spaces or commas. Provider limits, request timeouts and permissions still apply.')
 
 
@@ -112,10 +115,11 @@ def normalize_arguments(values):
 
 def limits(values, resources=None):
     result = dict(values)
-    for resource, field in [('calls', 'max_model_calls'), ('time', 'max_seconds'),
-                            ('stagnation', 'max_stagnant_turns')]:
+    for resource, field in [('calls', 'max_model_calls'), ('time', 'max_seconds')]:
         if selected(resource, resources):
             result[field] = None
+    if selected('stagnation', resources):  # looser, not gone; an explicit --max-stagnant-turns still wins
+        result['max_stagnant_turns'] = UNLIMITED_STAGNANT_TURNS
     return result
 
 

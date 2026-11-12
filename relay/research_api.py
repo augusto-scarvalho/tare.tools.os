@@ -99,9 +99,10 @@ def research(deployment, question, *, root, control, max_calls, refresh=False, o
             model = BoundedModel()
             journal = NativeJournal(directory/'journal.jsonl')
             from .execution_resources import selected
+            from .native_limits import UNLIMITED_STAGNANT_TURNS
             session = NativeSession(session_id=session_id, instruction=saved['instruction'], capabilities=tools.names,
                 model=model, tools=tools, journal=journal, budget=NativeBudget(max_model_calls=None,
-                    max_stagnant_turns=None if selected('stagnation') else 3),
+                    max_stagnant_turns=UNLIMITED_STAGNANT_TURNS if selected('stagnation') else 3),
                 context=NativeContext(ContextPolicy(window=profile.context_window, output_reserve=profile.output_tokens,
                     margin=4096, allow_estimated_counts=True, max_compactions=None), counter=model.count, summarizer=model))
             if existed:

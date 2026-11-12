@@ -192,7 +192,9 @@ class ExplorationTools:
             value['overlap'] = {'files': list(shared)[:20], 'note': 'Read by more than one explorer in this call: '
                                 'split later questions so they do not cover the same code.'}
         status = 'succeeded' if any(row['status'] == 'COMPLETED' for row in rows) else 'refused'
-        return self.annotate(EffectResult(request.effect_id, status, encode(value)))
+        # A new completed report is progress; a reused (cached) one is the model asking the same question again.
+        progressed = any(row['status'] == 'COMPLETED' and 'reused' not in row for row in rows)
+        return self.annotate(EffectResult(request.effect_id, status, encode(value), progressed))
 
     def annotate(self, result):
         maximum = self.state['limits']['max_model_calls']

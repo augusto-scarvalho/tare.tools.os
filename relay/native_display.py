@@ -126,6 +126,18 @@ def recovery_guidance(result):
             'inspect its process and output in the terminal.')
 
 
+def paused_no_progress(result):
+    return result.get('status') == 'BLOCKED' and result.get('reason') == 'NO_PROGRESS'
+
+
+def no_progress_notice(result):
+    limit = (result.get('effective_limits') or {}).get('max_stagnant_turns')
+    count = f'{limit} times' if type(limit) is int else 'several times'
+    return (f'The model replied {count} in a row without getting anything new from its tools, so tare paused it. '
+            # Only a conversation takes a message here; the runtime refuses to continue any other paused session.
+            'Nothing is lost. In a conversation, send any message to continue; the count starts again.')
+
+
 def render_result(result, *, interactive=False):
     lines = ['Status: ' + result['status']]
     if result.get('unschedulable'):
@@ -138,6 +150,8 @@ def render_result(result, *, interactive=False):
     guidance = recovery_guidance(result)
     if guidance:
         lines.extend(['', 'Recovery guidance: ' + guidance])
+    if paused_no_progress(result):
+        lines.extend(['', 'Guidance: ' + no_progress_notice(result)])
     lines.extend(render_failure(result))
     limit_guidance = provider_limit_guidance(result)
     if limit_guidance:
@@ -207,6 +221,8 @@ def conversation_status(result, *, exit_code=None):
         return 'No route can start'
     if status == 'PROPOSED' and exit_code not in (None, 0):
         return 'Execution ended with an error'
+    if paused_no_progress(result):
+        return 'Paused: no progress'
     task = result.get('conversation_task') or {}
     if status == 'PROPOSED' and task:
         if task.get('question'):
@@ -260,6 +276,8 @@ def conversation_result(result, *, exit_code=None):
             notices.append('No model or project tool ran. Choose an available model or review the route setup, then send again.')
     elif status == 'CANCELLED':
         notices.insert(0, 'Cancelled. Earlier changes may still be present; review them before continuing.')
+    elif paused_no_progress(result):
+        notices.insert(0, no_progress_notice(result))
     elif guidance:
         notices.insert(0, 'Recorded reason: '+result['reason']+'. '+guidance)
     elif limit_guidance:

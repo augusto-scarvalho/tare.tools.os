@@ -232,6 +232,13 @@ para a última resposta concluída, mesmo com um turno em andamento, e não envi
 agente. O registro fica nesta máquina (o log não guarda texto) e serve, junto com as
 avaliações dos avisos, para ajustar quando e quais avisos são escritos.
 
+### Limites e a pausa por falta de progresso
+
+Novas conversas começam com **Unlimited calls and time** (chamadas e tempo ilimitados). Mesmo assim,
+elas pausam depois de 6 respostas seguidas em que o modelo não obteve nada novo das suas ferramentas.
+O estado mostra "Paused: no progress", nada se perde, e qualquer mensagem enviada continua a conversa
+com uma nova contagem.
+
 ### Consultar uso, tarefas, ferramentas e skills do projeto
 
 - `/usage` abre na primeira linha, **Provider quota and credit**: o que resta em cada assinatura

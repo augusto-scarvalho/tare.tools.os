@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from relay import execution_resources as resources, execution_scope as scope, native_agent
+from relay import execution_resources as resources, execution_scope as scope, native_agent, native_limits
 from test_native_agent import Client, deployment, setup  # noqa: F401
 from test_native_spend import Adapter, guard, request, control
 from test_terminal_project_entry import opened  # noqa: F401
@@ -92,17 +92,27 @@ def test_money_flag_does_not_release_other_limits(setup):
     assert state['limits']['max_stagnant_turns'] == 3
 
 
+def test_an_explicit_null_still_lifts_the_no_progress_stop_under_unlimited(setup):
+    config, custody, _ = setup
+    client = Client(steps=[('tare_deliver', {'summary': 'done'})])
+    with scope.activated(scope.Scope(unlimited=resources.RESOURCES)):
+        native_agent.run_session(config, deployment(), custody, 'Bounded work', client=client, local_counter=client,
+                                 limits={'max_stagnant_turns': None})
+    assert json.loads((custody/'native-agent.json').read_text())['limits']['max_stagnant_turns'] is None
+
+
 def test_new_session_runs_beyond_default_call_limit_without_disabling_cancellation(setup):
     config, custody, root = setup
-    (root/'a.txt').write_text('evidence')
-    client = Client(steps=[*[('read', {'repository': 'repo', 'path': 'a.txt'}) for _ in range(18)],
+    for number in range(18):  # new files each time: a repeated read would trip the no-progress stop
+        (root/f'a{number}.txt').write_text('evidence')
+    client = Client(steps=[*[('read', {'repository': 'repo', 'path': f'a{number}.txt'}) for number in range(18)],
                            ('tare_deliver', {'summary': 'Read all required evidence'})])
     with scope.activated(scope.Scope(unlimited=resources.RESOURCES)):
         result = native_agent.run_session(config, deployment(), custody, 'Read evidence', client=client, local_counter=client)
     state = json.loads((custody/'native-agent.json').read_text())
     assert result['status'] == 'PROPOSED' and result['model_calls'] == 19
     assert state['limits']['max_model_calls'] is None and state['deadline_utc'] is None
-    assert state['limits']['max_stagnant_turns'] is None
+    assert state['limits']['max_stagnant_turns'] == native_limits.UNLIMITED_STAGNANT_TURNS  # looser, not gone
     assert state['config']['context_policy']['max_compactions'] is None
     assert state['limits']['max_model_retries'] == 1
 
