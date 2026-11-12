@@ -79,6 +79,12 @@ public ConPTY evidence. Kernel is `4645536ec0c0d3269f64f72b3fac00505701b353`; Ru
 per platform), not a complete OS regression. The last six cells require the
 Windows/Linux CI receipts of this change's new test module.
 
+All 36 cells passed again, on both platforms, in the whole-suite
+[CI run 43208024513](https://github.com/augusto-scarvalho/tare.tools.os/actions/runs/43208024513)
+of `main` at `8682f2d9` (2026-11-12), after the changes described under "Outside the native Work path". That run
+closes FLOW-04 in the backlog: its exit criteria are this map, the observable cancellation states and the retry
+policy below. The known limits at the end of this guide are outside those criteria.
+
 Kernel's current `tests/test_native_http_cancellation.py` separately passed
 31 cases on Windows and 31 on Linux/WSL. These include real loopback stalls and
 dripping responses, credential resolution before dispatch, deadline expiration,
