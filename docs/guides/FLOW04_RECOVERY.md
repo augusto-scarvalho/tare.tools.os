@@ -111,3 +111,22 @@ It does not enforce a provider-dollar wallet. Unknown provider usage is not zero
 and local termination does not guarantee that charging stopped. This offline
 qualification spends no provider quota and does not qualify every Claude response
 format, unknown execution profile, vendor refund policy or proposed ADR/spec.
+
+## Outside the native Work path
+
+What now holds: on Windows, the TUI's conversation-turn and Work children run in one kill-on-close Job Object owned
+by the TUI process. When the TUI process ends for any reason (Task Manager, `taskkill` without `/T`, a crash), Windows
+closes the Job and ends those children and, through the Jobs the Kernel gives them, their provider processes.
+`tests/test_console_child_containment.py` checks it with real processes: it kills only the owner and asserts the
+child (and a grandchild in a nested Job) exits, and that the same owner without containment leaves the child running.
+An abrupt end still leaves the session as it was; it is picked up by the existing recovery (reopen the conversation;
+`console_recovery`).
+
+Known limits, not covered:
+
+- New conversations default to Unlimited calls and time, and delegated children inherit it.
+- There is no ceiling above one session (per day or per machine) in calls or dollars.
+- `tare serve` turns cannot be cancelled and their per-message limits renew.
+- On Linux and WSL, children and provider process groups outlive a killed owner.
+- Cancel and Quit wait for the child without escalating to a kill.
+- Image description for models that cannot see ignores Cancel for up to 240-270 s per route.

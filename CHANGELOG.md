@@ -5,6 +5,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 ## Unreleased
 
 - Heads-up notes now show what they cost: `/usage` has a Heads-up row with the calls, tokens, time and known cost of the writer, a paid API call is counted against the balance you declared, and quitting the console stops a writer call in flight instead of waiting for it.
+- Closing or killing the console no longer leaves its agent running on Windows: each turn and Work run now ends together with the console, and so do the model processes it started.
 - Backlog: the item about installed copies checking a release before installing it is done, with the project's Ed25519 signature (ADR-075) in place of the build attestation it first named.
 - A release published by hand with `publish_product.py --here` is now created as a draft, and the publisher says how to sign it with the recovery key and publish it. It used to go public without `bundle.zip.sig`, and installed copies, which now take only signed releases, skipped it without saying anything.
 - `scripts/ops/release_signing_key.py` now refuses to run when the release signing key is already set, unless you pass `--replace`: running it again replaced the CI key at once, and installed copies would then refuse every new release until one was signed by hand with the recovery key. Its help and ADR-075 now say that every key replacement needs the old recovery key.
