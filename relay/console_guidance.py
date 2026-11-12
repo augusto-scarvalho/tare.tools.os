@@ -16,10 +16,13 @@ GROUPS = {'role': 'tare · role guidance', 'protocol': 'tare · protocol texts (
 CLIS = ('cli://claude', 'cli://codex', 'cli://agy')
 # As the Files pane (F8) marks a changed file: the name in a theme colour, then one bold letter. M and D as git
 # says them for a file; C for a default that changed under the owner's choice; U, as untracked, for a block the
-# owner has not seen yet. (theme variable, fallback colour)
-MARKS = {'yours': ('M', 'warning', 'yellow'), 'removed': ('D', 'error', 'red'),
-         'changed': ('C', 'accent', 'magenta'), 'new': ('U', 'success', 'green')}
-LEGEND = 'M edited · D removed · C default changed under your edit · U new · grey: not in the latest reading'
+# owner has not seen yet; T for a block tare leaves out by default. M also marks a block the owner sends again over
+# tare's default: either way the text sent is the owner's choice. (theme variable, fallback colour)
+MARKS = {'yours': ('M', 'warning', 'yellow'), 'kept': ('M', 'warning', 'yellow'), 'removed': ('D', 'error', 'red'),
+         'tare-default': ('T', 'primary', 'blue'), 'changed': ('C', 'accent', 'magenta'),
+         'new': ('U', 'success', 'green')}
+LEGEND = ('M your choice · D removed · T left out by tare · C default changed under your edit · U new · '
+          'grey: not in the latest reading')
 
 
 def compare(before, after, old, new):
@@ -34,6 +37,8 @@ def comparison(item):
         return compare(item['base'], item['default'], 'the default you approved', 'the default now')
     if item['state'] in {'yours', 'removed'}:
         return compare(item['default'], item['text'] if item['state'] == 'yours' else '', 'default', 'yours')
+    if item['state'] == 'tare-default':  # what tare leaves out
+        return compare(item['default'], '', "the CLI's text", 'sent by tare')
     if item.get('previous'):
         return compare(item['previous'], item['default'], 'earlier reading', 'this reading')
     return ''
@@ -55,6 +60,14 @@ def describe(item):
              'new': 'New: the CLI started sending this; it goes out as the CLI writes it. ',
              'changed': ('The default changed since you chose. Your version is still the one sent. Keep yours, use '
                          'the new default, or edit and Save. ')}
+    if item.get('tare_default'):  # a block tare leaves out by default
+        state.update({
+            'tare-default': (f"Left out by tare's default: {item['tare_default']} \"Vendor's default\" sends it "
+                             'again. '),
+            'kept': "You send it as the CLI writes it, over tare's default; \"tare's default\" leaves it out again. "})
+        if not item.get('tare_proved') and item['state'] == 'default':
+            state['default'] = (f'tare leaves this out by default, but could not check that {item.get("cli")} '
+                                'leaves it out when asked, so it is still sent. ')
     # The CLI's long note comes last: this area shows a few lines, and what to do must not be the part cut off.
     note = ' ' + item['note'] if item['owner'] == 'vendor' and item.get('note') else ''
     seen = ' ' + item['seen'] if item.get('seen') else ''
@@ -191,16 +204,19 @@ class GuidancePanel(SupportPanel):
         diff.display = bool(diff.text)
         self.query_one('#guidance-save', Button).disabled = text.read_only
         self.query_one('#guidance-remove', Button).disabled = ('remove' not in item['controls']
-                                                               or item['state'] == 'removed')
+                                                               or item['state'] in {'removed', 'tare-default'})
         self.query_one('#guidance-keep', Button).disabled = item['state'] != 'changed'
         default = self.query_one('#guidance-default', Button)
+        # Back to the default: tare's own, also for a block tare leaves out; from there, the CLI's text again.
         default.label = ('Use the new default' if item['state'] == 'changed' else
-                         "tare's default" if item['owner'] == 'tare' else "Vendor's default")
+                         "Vendor's default" if item['state'] == 'tare-default' else
+                         "tare's default" if item['owner'] == 'tare' or item.get('tare_default')
+                         and item.get('tare_proved') else "Vendor's default")
         default.disabled = item['state'] in {'default', 'new'}
 
     async def on_button_pressed(self, event):
         event.stop()
-        from .guidance import keep, reset, save
+        from .guidance import keep, reset, save, send_again
         if event.button.id == 'guidance-close':
             self.action_close()
             return
@@ -217,13 +233,17 @@ class GuidancePanel(SupportPanel):
             elif event.button.id == 'guidance-keep':
                 await asyncio.to_thread(keep, key)
                 message = 'Kept your version over the new default.'
+            elif event.button.id == 'guidance-default' and item['state'] == 'tare-default':
+                await asyncio.to_thread(send_again, key)
+                message = 'Sent again as the CLI writes it. ' + later
             elif event.button.id == 'guidance-default':
                 await asyncio.to_thread(reset, key)
-                message = ("Back to tare's default. " if item['owner'] == 'tare' else
+                message = ("Back to tare's default. " if item['owner'] == 'tare' or item.get('tare_default') else
                            "Back to the vendor's default. ") + later
             else:
                 await asyncio.to_thread(reset)
-                message = "Every text is back to its default: tare's for role guidance, the vendor's for vendor blocks."
+                message = ("Every text is back to its default: tare's for role guidance and the blocks tare leaves "
+                           "out, the vendor's for the other vendor blocks.")
             self.reload(keep_text=False)
         except (ValueError, OSError) as exc:
             message = str(exc)

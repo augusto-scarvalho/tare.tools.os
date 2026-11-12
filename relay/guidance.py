@@ -7,7 +7,8 @@ the base is the default it was made against. When the default changes underneath
 panel shows base -> new default and the owner decides; until then tare keeps sending the owner's version. What each
 CLI adds is read when the TUI opens and kept in <storage>/serve/vendor-guidance.json, with one previous text per
 item: without tokens at each start, and with one small real call when a CLI version is new. Where nothing is saved,
-tare sends exactly what it sent before."""
+tare sends what it sent before, except the blocks tare leaves out by default (TARE_DEFAULTS), each only where a
+reading of the installed CLI proved it can be left out."""
 import hashlib
 import json
 import os
@@ -21,6 +22,13 @@ READ_ENDPOINTS = ('cli://claude', 'cli://codex', 'cli://agy')  # AGY: only its v
 # real call). The call runs at low effort and costs a few hundred tokens, once per CLI version.
 REAL_ROUTES = {'cli://claude': ('claude-haiku-5-5-cli', 'claude-sonnet-5-5-cli'),
                'cli://agy': ('agy-cli', 'agy-gemini-4-argon-cli')}
+# tare's own defaults for the blocks a CLI adds (None: left out), with why. Applied only where the startup reading
+# proved the installed version leaves the block out: an installed copy that updates by itself may run a CLI that
+# ignores the switch, and the Kernel then refuses every call. The owner can send a block again from /guidance.
+TARE_DEFAULTS = {'cli://codex': {'skills_instructions': None}}
+DEFAULT_REASONS = {'cli://codex': {'skills_instructions': (
+    'it lists every skill installed on this machine (about 16,000 characters here), and tare turns Codex\'s tools off, '
+    'so the model cannot open them; tare will have its own skills and its own way of calling them.')}}
 TEXT_FIELDS = {'system': ('role text', 'system text of each new session'),
                'system_append': ('added to the role text', 'end of the system text of each new session'),
                'instruction_append': ('added to the first message', 'end of the first message of each new session')}
@@ -151,8 +159,29 @@ def refresh_readings(endpoints=READ_ENDPOINTS):
         stored[endpoint] = {**_merge(last, value), **({'real': last['real']} if 'real' in last else {})}
         if endpoint in REAL_ROUTES and (last.get('real') or {}).get('cli_version') != value['cli_version']:
             stored[endpoint]['real'] = _read_real(endpoint, last.get('real'))
+        if endpoint in TARE_DEFAULTS:
+            stored[endpoint]['defaults'] = _prove_defaults(read, endpoint, executable, value)
     _write(readings_path(), {'schema': READING_SCHEMA, **stored})
     return stored
+
+
+def _prove_defaults(read, endpoint, executable, plain):
+    """One more zero-token reading, with tare's defaults as choices: a default is proved on this CLI version when its
+    block is in the plain reading and not in this one."""
+    found = {item['id'] for item in plain['items']}
+    try:
+        left = {item['id'] for item in read(endpoint, executable, choices=TARE_DEFAULTS[endpoint])['items']}
+    except Exception as exc:  # unproved: the block is still sent, and the panel says why
+        return {'cli_version': plain['cli_version'], 'proved': [], **_failure(exc)}
+    return {'cli_version': plain['cli_version'],
+            'proved': sorted(key for key in TARE_DEFAULTS[endpoint] if key in found and key not in left)}
+
+
+def _proved(endpoint, reading=None):
+    """tare's defaults proved for the CLI version of the stored reading; none before any reading."""
+    reading = readings().get(endpoint) or {} if reading is None else reading
+    defaults = reading.get('defaults') or {}
+    return set(defaults.get('proved', ())) if defaults.get('cli_version') == reading.get('cli_version') else set()
 
 
 def _blocks(reading):
@@ -186,7 +215,10 @@ def vendor_choices(endpoint):
     Kernel cannot apply stops the call with the fix first: the session shows it as its blocked reason, which keeps
     256 characters and some views cut much shorter."""
     from compute_plane.vendor_guidance import validate
-    choices = {k: c['value'] for k, c in load()['vendor'].get(endpoint, {}).items()}
+    saved = load()['vendor'].get(endpoint, {})
+    choices = {k: c['value'] for k, c in saved.items() if not c.get('keep')}  # a keep is the vendor's own text
+    proved = _proved(endpoint)
+    choices.update({k: v for k, v in TARE_DEFAULTS.get(endpoint, {}).items() if k not in saved and k in proved})
     try:
         return validate(endpoint, choices)
     except ValueError as exc:
@@ -231,19 +263,28 @@ def items():
                                        f'{" (" + scope + ")" if scope else ""} · {label}'))
     for endpoint in dict.fromkeys([*read, *saved['vendor']]):
         reading, choices = read.get(endpoint) or {}, saved['vendor'].get(endpoint, {})
-        found = _blocks(reading)
+        found, proved = _blocks(reading), _proved(endpoint, reading)
         for key in dict.fromkeys([*found, *choices]):
             item, choice = found.get(key), choices.get(key)
+            keep = bool(choice and choice.get('keep'))  # the owner sends again a block tare leaves out by default
             # A block the last reading no longer has defaults to nothing; one never read, to what the owner approved.
-            default = item['text'] if item else '' if reading.get('items') is not None else choice['base']['text']
-            rows.append(_row(f'vendor#{endpoint}#{key}', 'vendor', choice, default, new=bool(item and item.get('new')),
-                             controls=tuple(item['controls']) if item else controls(endpoint, key),
-                             title=item['title'] if item else key, group=endpoint,
-                             absent=bool(item and item.get('absent')),
-                             sent_as=item['sent_as'] if item else 'no longer sent by this CLI',
-                             previous=(item.get('previous') or {}).get('text') if item else None,
-                             seen=item['seen'] if item else '', effect='the next turn',
-                             note=reading.get('note', '')))
+            default = (item['text'] if item else '' if reading.get('items') is not None or keep
+                       else choice['base']['text'])
+            row = _row(f'vendor#{endpoint}#{key}', 'vendor', None if keep else choice, default,
+                       new=bool(item and item.get('new')),
+                       controls=tuple(item['controls']) if item else controls(endpoint, key),
+                       title=item['title'] if item else key, group=endpoint,
+                       absent=bool(item and item.get('absent')),
+                       sent_as=item['sent_as'] if item else 'no longer sent by this CLI',
+                       previous=(item.get('previous') or {}).get('text') if item else None,
+                       seen=item['seen'] if item else '', effect='the next turn', note=reading.get('note', ''),
+                       tare_default=DEFAULT_REASONS.get(endpoint, {}).get(key), tare_proved=key in proved,
+                       cli=f'{reading.get("cli", endpoint)} {reading.get("cli_version") or ""}'.strip())
+            if keep:
+                row['state'] = 'kept'
+            elif choice is None and row['tare_default'] and row['tare_proved']:
+                row['state'] = 'tare-default'
+            rows.append(row)
     for text in transport_texts():
         rows.append(_row(f'transport#{text["id"]}', 'tare', None, text['text'], controls=(), title=text['title'],
                          sent_as=f'tare\'s protocol text for {text["endpoint"]}', effect=None, group='protocol'))
@@ -299,6 +340,15 @@ def keep(item_id):
     except ValueError:
         default = ''  # the block is no longer sent: the choice stays, against nothing
     choice['base'] = {'sha256': digest(default), 'text': default}
+    _save(value)
+
+
+def send_again(item_id):
+    """Send a block tare leaves out by default as the CLI writes it: a keep, never passed to the Kernel as a choice.
+    reset(item_id) takes it back to tare's default."""
+    _, endpoint, key = item_id.split('#')
+    value = load()
+    value['vendor'].setdefault(endpoint, {})[key] = {'keep': True}
     _save(value)
 
 
