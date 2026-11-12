@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- While a conversation is running, the row just above the input box now shows the working spinner with the model in use and its role ("⠋ Claude Sonnet 5.5 · coordinator"), where your eyes are; before, the spinner was only in the status line at the top. The row is empty when nothing is running, and the top line keeps its spinner and status text.
 - The model button above the input box now shows the whole model name: it kept the width of its first label ("Model ▾") and cut the name of the model that loaded after it. It grows with the name, up to 65% of the row, and a name longer than that ends in "…" instead of being cut mid-word.
 - `/guidance` variables: a Work delivery whose inference profile names no model no longer fails while filling `<model id>`; the name is left as written, as for any value the call cannot know.
 - `/guidance`, Context: Claude Code's model block is no longer left out when Context is on, because it also gives the model's knowledge cutoff, which tare cannot fill; and Context's default text now carries, in tare's words, the caution about downloaded files that Claude Code's environment block gave.

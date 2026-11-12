@@ -285,6 +285,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         border: none; padding: 0 1 0 0; margin-right: 2; background: transparent; color: $text-muted;
         text-wrap: nowrap; text-overflow: ellipsis; }
     #model-controls Button:hover, #model-controls Button:focus { color: $primary; }
+    #activity-near-composer { width: 1fr; height: 1; color: $primary; }
     '''
 
     def __init__(self, root=None, *, backend=None, initial_mode='session', guided=False,
@@ -641,6 +642,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 with Horizontal(id='model-controls'):
                     yield Button('Model ▾', id='choose-model')
                     yield Button('Default ▾', id='choose-reasoning')
+                    yield Static('', id='activity-near-composer', markup=False)
                 with VerticalScroll(id='composer'):
                     with Vertical(id='outcome-options'):
                         yield Label('Result against the original request')

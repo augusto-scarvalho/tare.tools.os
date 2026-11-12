@@ -2681,8 +2681,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 181267,
-      "sha256": "fb853ba64f3ad1864a7bcf3c53f5af035bcdc19a52ed30d1979e3b7a864ea0d0"
+      "size_bytes": 181419,
+      "sha256": "6944d7375cbe8b8a4d1b15ad2246d8a0d89a8c10e1f5fa2588a1ce0901566c67"
     },
     {
       "name": "native_display.py",
@@ -3141,8 +3141,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns console presentation and project/session selection; observations never authorize execution.",
-      "size_bytes": 19092,
-      "sha256": "1e51fc3847fb5c5e3b9f6a760d39fb57c5b3bb43f7bdb7ff2653575b9b18a2b2"
+      "size_bytes": 19599,
+      "sha256": "0706f6a813e28a77b74af6dc3d6b3aa51c5aced71a57d910bd106494af15ce34"
     },
     {
       "name": "cli_discovery.py",
@@ -3351,8 +3351,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator model selection; Runtime retains session execution.",
-      "size_bytes": 20958,
-      "sha256": "d3a5493fb6ff06b9325d342960fb5890addd76eeb6b1b8c80404617f519140da"
+      "size_bytes": 20976,
+      "sha256": "5def031ae4966ffb85a8f67cbacd3740821369da923e34e2dd48654a202c7f34"
     },
     {
       "name": "model_choices.py",

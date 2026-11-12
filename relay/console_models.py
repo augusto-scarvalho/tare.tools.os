@@ -352,7 +352,7 @@ class ConversationModels:
     def render_model_controls(self, details):
         if not self.query_one_optional('#choose-model'):
             return
-        name = (details.display_model or details.model) if details else 'Model'
+        name = self.model_name = (details.display_model or details.model) if details else 'Model'
         effort = details.reasoning if details else ''
         model = self.query_one('#choose-model', Button)
         model.label = name+' ▾'

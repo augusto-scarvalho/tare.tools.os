@@ -43,6 +43,11 @@ def test_silent_execution_animates_until_result_or_cancellation_cleanup(tmp_path
             assert len(set(titles[before:])) >= 2
             symbol = app.query_one('#activity-symbol', Static)
             assert str(symbol.render()) in SPINNER
+            near = app.query_one('#activity-near-composer', Static)
+            text = str(near.render())
+            assert text[0] in SPINNER and app.model_name in text and text.endswith('coordinator')
+            assert app.query_one('#model-controls').region.contains_region(near.region)
+            assert app.query_one('#model-controls').region.bottom <= app.query_one('#composer').region.y
             assert app.screen.region.contains_region(symbol.region)
             assert app.query_one('#start').region.bottom <= size[1]
             assert len(backend.launches) == 1
@@ -55,6 +60,7 @@ def test_silent_execution_animates_until_result_or_cancellation_cleanup(tmp_path
             await app.workers.wait_for_complete(); await pilot.pause()
             expected = 'finished' if outcome == 'PROPOSED' else 'cancelled' if outcome == 'CANCELLED' else 'error'
             assert not app.busy and app.presence_kind == expected
+            assert str(near.render()) == ''  # nothing stale once the work stops
             assert prompt.text == 'Preserve this unsent correction'
             settled = str(symbol.render())
             emitted = len(titles)
