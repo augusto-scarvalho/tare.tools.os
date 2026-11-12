@@ -4,10 +4,11 @@ import difflib
 
 from rich.text import Text
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Input, OptionList, Static, TextArea
 from textual.widgets.option_list import Option
 
+from .console_output import diff_view
 from .console_panels import SupportPanel
 
 # The list's groups, in this order; a CLI heading carries the version its texts were read from.
@@ -155,7 +156,8 @@ class GuidancePanel(SupportPanel):
                 with Vertical(id='guidance-detail'):
                     yield Static('', id='guidance-about', markup=False)
                     yield TextArea('', soft_wrap=True, id='guidance-text')
-                    yield TextArea('', soft_wrap=True, read_only=True, id='guidance-diff')
+                    with VerticalScroll(id='guidance-diff'):  # read-only: a Static, no editor
+                        yield Static('', id='guidance-diff-text', markup=False)
             yield Static('Pick a text to read it. Role guidance changes reach new sessions; vendor blocks change '
                          'from the next turn.', id='guidance-status', markup=False)
             with Horizontal(classes='panel-actions'):
@@ -180,10 +182,12 @@ class GuidancePanel(SupportPanel):
         self.query_one('#guidance-read', Static).update(
             LEGEND + ('. Reading what each CLI adds now; it fills in by itself.' if reading else '.'))
         options = self.query_one('#guidance-item', OptionList)
-        options.clear_options()
-        options.add_options(self.options(readings(), reading))
         listed = [k for k, row in self.items.items() if not (reading and row['group'] in CLIS)]
-        self.select(self.current if self.current in listed else listed[0])
+        # Refilling the list highlights its first text; that late message would take the selection away.
+        with options.prevent(OptionList.OptionHighlighted):
+            options.clear_options()
+            options.add_options(self.options(readings(), reading))
+            self.select(self.current if self.current in listed else listed[0])
         if typed is not None:
             editor.load_text(typed)
 
@@ -234,9 +238,10 @@ class GuidancePanel(SupportPanel):
         text = self.query_one('#guidance-text', TextArea)
         text.load_text(item['text'])
         text.read_only = not {'edit', 'replace'} & set(item['controls'])
-        diff = self.query_one('#guidance-diff', TextArea)
-        diff.load_text(comparison(item))
-        diff.display = bool(diff.text)
+        diff = self.query_one('#guidance-diff')
+        shown = comparison(item)
+        self.query_one('#guidance-diff-text', Static).update(diff_view(shown, self.app.current_theme))
+        diff.display = bool(shown)
         self.query_one('#guidance-save', Button).disabled = text.read_only
         # Remove deletes the owner's own variable or common text; Keep mine turns a common text on or off.
         remove, keep = self.query_one('#guidance-remove', Button), self.query_one('#guidance-keep', Button)

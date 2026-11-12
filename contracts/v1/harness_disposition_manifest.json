@@ -3031,8 +3031,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS presents native output; Kernel and Runtime retain execution ownership.",
-      "size_bytes": 39778,
-      "sha256": "f8690f93b577c8a758e02ac01107ee1dfd0bf8d6b0e3d61432a1086e8b93f67b"
+      "size_bytes": 40401,
+      "sha256": "d753a7a3576d37b05304449602e3d98688985f651b40a4c250d40b5cecd17ba1"
     },
     {
       "name": "console_terminal.py",
@@ -3081,8 +3081,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS presents confirmed edit snapshots and composes explicit operator restoration through Kernel.",
-      "size_bytes": 29023,
-      "sha256": "b6afb2d562c695b277a355a0511da74fdf9f7398dbf0b1535c0f4b05512ab13d"
+      "size_bytes": 29225,
+      "sha256": "0dc7f45810656ba1992e30068ea6a5dba3b62f11510bd1e34f3fa51a22ce90a7"
     },
     {
       "name": "console_context.py",
@@ -4431,8 +4431,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 18558,
-      "sha256": "de8958115c16e1a65bf035e3de6b67b184a3fc2b803e07901a9ff17fe4f03b80"
+      "size_bytes": 18954,
+      "sha256": "c7a9a6823ea2a220a6444727ab76039ea3b99c4b31437c1d004d86f7277faf2e"
     }
   ]
 }

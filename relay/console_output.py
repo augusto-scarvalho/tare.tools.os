@@ -8,7 +8,7 @@ from rich.text import Text
 from rich.cells import cell_len
 from rich.markdown import Markdown
 from rich.style import Style
-from rich.syntax import SyntaxTheme
+from rich.syntax import Syntax, SyntaxTheme
 from rich.theme import Theme as RichTheme
 from pygments.token import Token
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -98,6 +98,9 @@ class ConsoleSyntaxTheme(SyntaxTheme):
             Token.Literal.Number: Style(color=theme.foreground if contrast else number),
             Token.Comment: Style(color=theme.foreground if contrast else comment, italic=True),
             Token.Generic.Error: Style(color=theme.error, underline=True),
+            Token.Generic.Deleted: Style(color=theme.error or 'red'),
+            Token.Generic.Inserted: Style(color=theme.success or 'green'),
+            Token.Generic.Subheading: Style(color=theme.accent or 'magenta', bold=True),  # a hunk header
         }
 
     def get_background_style(self):
@@ -109,6 +112,12 @@ class ConsoleSyntaxTheme(SyntaxTheme):
                 return self.background + self.styles[token_type]
             token_type = token_type.parent
         return self.background
+
+
+def diff_view(text, theme):
+    """A unified diff as a Rich renderable: removed lines red, added green, hunk headers bold. Syntax takes the text
+    as it is, so brackets such as `<permissions instructions>` or `[x]` are never read as markup."""
+    return Syntax(plain(text), 'diff', theme=ConsoleSyntaxTheme(theme), word_wrap=True, background_color='default')
 
 
 class AssistantMessage(SelectableMessage):
