@@ -47,16 +47,29 @@ def describe(item):
                          'the new default, or edit and Save. ')}
     # The CLI's long note comes last: this area shows a few lines, and what to do must not be the part cut off.
     note = ' ' + item['note'] if item['owner'] == 'vendor' and item.get('note') else ''
-    return f'{state.get(item["state"], "")}{origin} Sent as: {item["sent_as"]}. {how}{note}'
+    seen = ' ' + item['seen'] if item.get('seen') else ''
+    return f'{state.get(item["state"], "")}{origin}{seen} Sent as: {item["sent_as"]}. {how}{note}'
 
 
 def read_line():
-    from .guidance import readings
+    """Which CLI version each vendor text was read from, how and when, in plain words."""
+    from .guidance import readings, starting_point
     parts = []
-    for value in readings().values():
-        part = f'{value.get("cli")} {value.get("cli_version")} read {value.get("read_at")}'
+    for endpoint, value in readings().items():
+        real = value.get('real') or {}
+        if endpoint == 'cli://agy':
+            part = f'AGY {value.get("cli_version")}: '
+            start = starting_point()
+            part += (f'read in a real call {real["read_at"]} (AGY {real.get("cli_version")})' if real.get('read_at') else
+                     f'shown as AGY {start["cli_version"]} sent it on {start["read_at"]}, until tare reads yours')
+        else:
+            part = f'{value.get("cli")} {value.get("cli_version")}: read without tokens {value.get("read_at")}'
+            if real.get('read_at'):
+                part += f', in a real call {real["read_at"]} ({real.get("cli_version")})'
         if value.get('error'):
-            part += f'; could not read it again at {value.get("failed_at")}: {value["error"][:120]}'
+            part += f'; could not read it again at {value.get("failed_at")}: {value["error"][:100]}'
+        if real.get('error'):
+            part += f'; the real call could not be made at {real.get("failed_at")}: {real["error"][:100]}'
         parts.append(part)
     return 'Vendor texts: ' + ('; '.join(parts) if parts else 'not read yet (tare reads them when the TUI opens).')
 

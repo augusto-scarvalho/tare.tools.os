@@ -6,15 +6,21 @@ Choices live in <storage>/serve/guidance.json: {'schema', 'capsules': {capsule i
 the base is the default it was made against. When the default changes underneath (a tare update, a CLI update) the
 panel shows base -> new default and the owner decides; until then tare keeps sending the owner's version. What each
 CLI adds is read when the TUI opens and kept in <storage>/serve/vendor-guidance.json, with one previous text per
-item. Where nothing is saved, tare sends exactly what it sent before."""
+item: without tokens at each start, and with one small real call when a CLI version is new. Where nothing is saved,
+tare sends exactly what it sent before."""
 import hashlib
 import json
 import os
+import re
 import time
 
 SCHEMA = 'tare.tools/guidance/1'
 READING_SCHEMA = 'tare.tools/vendor-guidance-reading/1'
-READ_ENDPOINTS = ('cli://claude', 'cli://codex')  # AGY cannot be read
+READ_ENDPOINTS = ('cli://claude', 'cli://codex', 'cli://agy')  # AGY: only its version without tokens
+# The routes whose CLI makes the real reading, cheapest first (Codex needs none: its zero-token reading matched a
+# real call). The call runs at low effort and costs a few hundred tokens, once per CLI version.
+REAL_ROUTES = {'cli://claude': ('claude-haiku-5-5-cli', 'claude-sonnet-5-5-cli'),
+               'cli://agy': ('agy-cli', 'agy-gemini-4-argon-cli')}
 TEXT_FIELDS = {'system': ('role text', 'system text of each new session'),
                'system_append': ('added to the role text', 'end of the system text of each new session'),
                'instruction_append': ('added to the first message', 'end of the first message of each new session')}
@@ -67,14 +73,60 @@ def _save(value):
 
 def readings():
     """{endpoint: {'cli', 'cli_version', 'read_at', 'note', 'items': {id: {..., 'sha256', 'previous'?, 'new'?}},
-    'error'?}} as last read."""
+    'error'?, 'real'?: the same for the last real reading, with its 'usage'}} as last read."""
     return {k: v for k, v in _read(readings_path(), READING_SCHEMA).items() if k != 'schema'}
 
 
+def _failure(exc):
+    return {'error': f'{type(exc).__name__}: {exc}'[:300], 'failed_at': time.strftime('%Y-%m-%d %H:%M')}
+
+
+def _merge(last, value):
+    """A reading as stored: each item's sha256, its earlier text when it changed (one level, no archive) and `new`
+    when the last reading of the same kind lacked it."""
+    known, items = last.get('items'), {}
+    for item in value['items']:
+        old, sha = (known or {}).get(item['id']), digest(item['text'])
+        previous = ({'text': old['text'], 'sha256': old['sha256']} if old and old['sha256'] != sha
+                    else (old or {}).get('previous'))
+        items[item['id']] = {**item, 'controls': list(item['controls']), 'sha256': sha,
+                             **({'previous': previous} if previous else {}),
+                             **({'new': True} if known is not None and old is None else {})}
+    return {**{k: value[k] for k in ('cli', 'cli_version', 'note', 'usage') if k in value},
+            'read_at': time.strftime('%Y-%m-%d %H:%M'), 'items': items}
+
+
+def starting_point():
+    """What AGY sent in tare's first real reading of it, shown until a reading of the installed AGY exists."""
+    from compute_plane.vendor_guidance import AGY_STARTING_POINT as start
+    return {**start, 'starting_point': True, 'items': {
+        i['id']: {**i, 'controls': [], 'sha256': digest(i['text'])} for i in start['items']}}
+
+
+def _read_real(endpoint, last):
+    """One small real call on the cheapest ready route of this CLI (a few hundred tokens), or the last real reading
+    with why this one failed (a spent quota, no ready route)."""
+    from compute_plane.vendor_guidance import read_real
+    from .turn_engine import available
+    try:
+        deployment = next((d for d in (available(name, probe=False)[0] for name in REAL_ROUTES[endpoint]) if d), None)
+        if deployment is None:
+            raise ValueError('no ready route of this CLI')
+        model = deployment['native_profile']['model']
+        if endpoint == 'cli://agy':
+            model = re.sub(r'-(high|medium)$', '-low', model)  # the route's model at its low tier: low effort
+        value = read_real(endpoint, deployment['native_cli']['executable'], model=model)
+    except Exception as exc:  # the last real reading stays, with why this one failed
+        return {**(last or {}), **_failure(exc)}
+    # Compared with the last real reading; AGY's first one, with the starting point it replaces.
+    known = last if (last or {}).get('items') is not None else starting_point() if endpoint == 'cli://agy' else {}
+    return _merge(known, value)
+
+
 def refresh_readings(endpoints=READ_ENDPOINTS):
-    """Read what each installed CLI adds now (no tokens; the TUI does this once per start, in the background). An item
-    whose text changed keeps the old one as `previous`; one the last reading lacked is `new`. A CLI that cannot be
-    read keeps its last reading with the error."""
+    """Read what each installed CLI adds now, in the background when the TUI opens: without tokens each time, and with
+    one small real call when the CLI's version differs from that of its last real reading (Claude Code, AGY), never
+    more than once per CLI per start. A CLI that cannot be read keeps its last reading with the error."""
     from compute_plane.vendor_guidance import read
     from .cli_discovery import locate
     stored = readings()
@@ -86,22 +138,29 @@ def refresh_readings(endpoints=READ_ENDPOINTS):
         try:
             value = read(endpoint, executable)
         except Exception as exc:  # a reading is a convenience: the last one stays, with why this one failed
-            stored[endpoint] = {**last, 'error': f'{type(exc).__name__}: {exc}'[:300],
-                                'failed_at': time.strftime('%Y-%m-%d %H:%M')}
+            stored[endpoint] = {**last, **_failure(exc)}
             continue
-        items = {}
-        for item in value['items']:
-            old = (last.get('items') or {}).get(item['id'])
-            sha = digest(item['text'])
-            previous = ({'text': old['text'], 'sha256': old['sha256']} if old and old['sha256'] != sha
-                        else (old or {}).get('previous'))
-            items[item['id']] = {**item, 'controls': list(item['controls']), 'sha256': sha,
-                                 **({'previous': previous} if previous else {}),
-                                 **({'new': True} if last.get('items') is not None and old is None else {})}
-        stored[endpoint] = {'cli': value['cli'], 'cli_version': value['cli_version'], 'note': value['note'],
-                            'read_at': time.strftime('%Y-%m-%d %H:%M'), 'items': items}
+        stored[endpoint] = {**_merge(last, value), **({'real': last['real']} if 'real' in last else {})}
+        if endpoint in REAL_ROUTES and (last.get('real') or {}).get('cli_version') != value['cli_version']:
+            stored[endpoint]['real'] = _read_real(endpoint, last.get('real'))
     _write(readings_path(), {'schema': READING_SCHEMA, **stored})
     return stored
+
+
+def _blocks(reading):
+    """The blocks shown for one CLI: the zero-token reading's, then those only a real call showed; for AGY, which
+    has no zero-token reading, the real reading's or, until one exists, the starting point's. Each says its source."""
+    real = reading.get('real') or {}
+    if reading.get('cli') == 'AGY' and not real.get('items'):
+        real = starting_point()
+    seen = {False: 'Seen only in a real call: tare\'s reading without tokens does not show it.',
+            True: 'Read from AGY\'s own record of a real call.'}[reading.get('cli') == 'AGY']
+    if real.get('starting_point'):
+        seen = (f'From what AGY {real["cli_version"]} sent on {real["read_at"]}: tare has not read your AGY in a '
+                'real call yet.')
+    local = reading.get('items') or {}
+    return {**{k: {**v, 'seen': ''} for k, v in local.items()},
+            **{k: {**v, 'seen': seen} for k, v in (real.get('items') or {}).items() if k not in local}}
 
 
 def capsule_edits():
@@ -157,7 +216,7 @@ def items():
                                        f'{" (" + scope + ")" if scope else ""} · {label}'))
     for endpoint in dict.fromkeys([*read, *saved['vendor']]):
         reading, choices = read.get(endpoint) or {}, saved['vendor'].get(endpoint, {})
-        found = reading.get('items') or {}
+        found = _blocks(reading)
         for key in dict.fromkeys([*found, *choices]):
             item, choice = found.get(key), choices.get(key)
             # A block the last reading no longer has defaults to nothing; one never read, to what the owner approved.
@@ -167,7 +226,8 @@ def items():
                              title=f'{reading.get("cli", endpoint)} · {item["title"] if item else key}',
                              sent_as=item['sent_as'] if item else 'no longer sent by this CLI',
                              previous=(item.get('previous') or {}).get('text') if item else None,
-                             effect='the next turn', note=reading.get('note', '')))
+                             seen=item['seen'] if item else '', effect='the next turn',
+                             note=reading.get('note', '')))
     for text in transport_texts():
         rows.append(_row(f'transport#{text["id"]}', 'tare', None, text['text'], controls=(), title=text['title'],
                          sent_as=f'tare\'s protocol text for {text["endpoint"]}', effect=None))
@@ -189,7 +249,7 @@ def _default(item_id):
             raise ValueError('This role text cannot be edited.')
         return capsule[key]
     if layer == 'vendor':
-        item = ((readings().get(owner_key) or {}).get('items') or {}).get(key)
+        item = _blocks(readings().get(owner_key) or {}).get(key)
         if item is None:
             raise ValueError('tare has not read this block from its CLI; open the TUI again to read it.')
         return item['text']

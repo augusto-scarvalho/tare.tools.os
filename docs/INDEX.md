@@ -31,7 +31,7 @@ documents are the reference.
 - [Model and reasoning selection](guides/MODEL_PICKER.md): choosing the model and reasoning effort per
   conversation and role.
 - [Guidance sent to the models](guides/GUIDANCE.md): the `/guidance` panel; tare's role guidance (editable), the
-  blocks Claude Code and Codex add on their own (remove or replace where allowed) and tare's protocol texts.
+  blocks Claude Code, Codex and AGY add on their own (remove or replace where allowed) and tare's protocol texts.
 - [Ways of working](guides/WAYS_OF_WORKING.md): the four answer forms of a session (direct by default, three
   opt-in experiments).
 - [Delegated planning](guides/DELEGATED_PLANNING.md): the separate planner used for changes and its
