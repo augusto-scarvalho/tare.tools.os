@@ -494,6 +494,13 @@ class ConversationWorkbench:
             provider_quota.refresh()
         except Exception:  # optional: without a reading tare learns a spent plan from the failed call, as before
             pass
+        try:  # what each CLI adds on its own (/guidance): no tokens; Claude Code is pointed at a local recorder
+            from .guidance import news, refresh_readings
+            refresh_readings([r['endpoint'] for r in report if r.get('status') in {'ready', 'found'}])
+            if message := news():
+                self.call_from_thread(self.set_status, message)
+        except Exception:  # optional: /guidance keeps the last reading and says when it was taken
+            pass
 
     @work(thread=True, group='provider-quota')
     def read_provider_quota(self, state):
