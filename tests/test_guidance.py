@@ -239,3 +239,9 @@ def test_guidance_in_the_tui_shows_before_and_after_and_settles_each_change(tmp_
             await pilot.press('escape')
             assert app.screen is not panel
     asyncio.run(scenario())
+
+
+def test_the_before_and_after_view_keeps_each_line_apart():
+    from relay.console_guidance import compare
+    lines = compare("Today's date is <date>.", 'Today is a test day.', 'default', 'yours').splitlines()
+    assert lines[-2:] == ["-Today's date is <date>.", '+Today is a test day.']  # texts without a final newline

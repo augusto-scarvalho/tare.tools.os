@@ -13,7 +13,9 @@ STATES = {'default': '', 'yours': ' · yours', 'removed': ' · removed', 'change
 
 
 def compare(before, after, old, new):
-    return ''.join(difflib.unified_diff(before.splitlines(True), after.splitlines(True), old, new)) or 'No difference.'
+    # lineterm='': a text without a final newline would otherwise glue its last line to the next diff line
+    lines = difflib.unified_diff(before.splitlines(), after.splitlines(), old, new, lineterm='')
+    return '\n'.join(lines) or 'No difference.'
 
 
 def comparison(item):
@@ -29,7 +31,7 @@ def comparison(item):
 
 def describe(item):
     """Who wrote the text, where it goes, what can be done with it and when a change takes effect, in plain words."""
-    origin = 'Added by the CLI on its own. ' + item['note'] if item['owner'] == 'vendor' else 'Written by tare.'
+    origin = 'Added by the CLI on its own.' if item['owner'] == 'vendor' else 'Written by tare.'
     if not item['controls']:
         how = 'Read-only.' if item['owner'] == 'tare' else 'The CLI offers no way to change it.'
     elif item['owner'] == 'tare':
@@ -41,7 +43,9 @@ def describe(item):
              'new': 'New: the CLI started sending this; it goes out as the CLI writes it. ',
              'changed': ('The default changed since you chose. Your version is still the one sent. Keep yours, use '
                          'the new default, or edit and Save. ')}
-    return f'{state.get(item["state"], "")}{origin} Sent as: {item["sent_as"]}. {how}'
+    # The CLI's long note comes last: this area shows a few lines, and what to do must not be the part cut off.
+    note = ' ' + item['note'] if item['owner'] == 'vendor' and item.get('note') else ''
+    return f'{state.get(item["state"], "")}{origin} Sent as: {item["sent_as"]}. {how}{note}'
 
 
 def read_line():
@@ -61,6 +65,7 @@ class GuidancePanel(SupportPanel):
     GuidancePanel #guidance-text, GuidancePanel #guidance-diff { height: 1fr; }
     GuidancePanel #guidance-read, GuidancePanel #guidance-about, GuidancePanel #guidance-status { height: auto;
         max-height: 4; }
+    GuidancePanel #guidance-default { width: 24; }  /* fits "Use the new default": a changed label does not widen it */
     '''
 
     def compose(self):
