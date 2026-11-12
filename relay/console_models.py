@@ -355,9 +355,13 @@ class ConversationModels:
         name = (details.display_model or details.model) if details else 'Model'
         effort = details.reasoning if details else ''
         model = self.query_one('#choose-model', Button)
+        if name.startswith('Reading '):  # the header is still reading the saved model: the button keeps its name
+            name = str(model.label).removesuffix(' ▾')
         model.label = name+' ▾'
         model.tooltip = 'Choose a model or continue this task with another provider'
         reasoning = self.query_one('#choose-reasoning', Button)
         reasoning.label = ({'xhigh': 'Extra high'}.get(effort, effort.capitalize()) or 'Default')+' ▾'
         reasoning.tooltip = 'Choose reasoning for new conversations'
         model.disabled = reasoning.disabled = self.busy or self.sending_message
+        # Button.label repaints but does not re-measure; width: auto must follow the new label.
+        model.refresh(layout=True); reasoning.refresh(layout=True)
