@@ -157,12 +157,12 @@ class ConversationHeader:
         frame = SPINNER[self.presence_step % len(SPINNER)] if kind == 'working' else PRESENCE[kind]
         self.presence_step = (self.presence_step + 1) % len(SPINNER) if kind == 'working' else 0
         show(symbol, frame, layout=False)
-        # The same frame and model name as the controls row, where the owner's eyes are; a conversation's model is
-        # its coordinator. Nothing is shown while idle, so no stale model or role stays behind.
+        # The same frame and the same status text as the top row (role, model, state, time: set_status), above the
+        # input box where the owner looks. Nothing is shown while idle, so no stale model or role stays behind.
         near = self.query_one_optional('#activity-near-composer', Static)
         if near is not None:
-            show(near, Text(f'{frame} {getattr(self, "model_name", "Model")} · coordinator', no_wrap=True,
-                            overflow='ellipsis') if self.busy else '', layout=False)
+            show(near, Text(f'{frame} {getattr(self, "status_text", "")}', no_wrap=True, overflow='ellipsis')
+                 if self.busy else '', layout=False)
         if kind != self.presence_kind:
             self.presence_kind = kind
             symbol.tooltip = PRESENCE_LABELS[kind]
