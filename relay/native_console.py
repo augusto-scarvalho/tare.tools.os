@@ -1348,7 +1348,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             transcript.write(value)
 
     def set_status(self, value):
-        show(self.query_one('#status', Static), plain(value))
+        self.status_text = plain(value)
+        show(self.query_one('#status', Static), self.status_text)
         self.refresh_presence()
 
     def show_plan(self, result):
