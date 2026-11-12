@@ -55,6 +55,14 @@ def test_plan_preference_is_kept_when_another_frontend_changes_the_mode(tmp_path
     assert read_defaults(directory, project, control)[0]['show_plan'] is False
     with pytest.raises(ValueError, match='plan'):
         validate_defaults({'mode': 'read', 'write_paths': [], 'show_plan': 'no'})
+    from relay.project_permissions import default_path, save_show_plan_default, show_plan_default
+    assert show_plan_default(directory) is True  # My default, never chosen: show me the plan and ask
+    save_show_plan_default(directory, False)
+    assert show_plan_default(directory) is False
+    default_path(directory).write_text('{"schema": "other", "show_plan": true}')
+    with pytest.raises(ValueError, match='preserved'):
+        show_plan_default(directory)
+    assert 'other' in default_path(directory).read_text()
 
 
 @pytest.mark.parametrize('read_only', [False, True])

@@ -4,7 +4,7 @@ from dataclasses import replace
 from textual.widgets import Checkbox, Input, Select
 from . import relay_mesh
 from .native_installation import storage_root, workspace_storage
-from .project_permissions import read_defaults, profile_values, permissions_view, save_defaults
+from .project_permissions import read_defaults, profile_values, permissions_view, save_defaults, save_show_plan_default
 
 
 class ProjectPermissions:
@@ -178,4 +178,5 @@ class ProjectPermissions:
                 self.set_pending_permissions(result['defaults'], project)
                 self.update_mode()
             self.set_status('Project defaults saved. Existing conversations keep their original permissions.')
-        self.push_screen(PermissionsPanel(project, reader=reader, saver=saver), closed)
+        self.push_screen(PermissionsPanel(project, reader=reader, saver=saver,
+            default_saver=lambda show_plan: save_show_plan_default(directory, show_plan)), closed)

@@ -8,7 +8,7 @@ from textual.widgets import Select, TextArea
 from relay import native_agent, relay_mesh
 from relay.native_console import WorkConsole
 from relay.permissions_panel import PermissionsPanel
-from relay.project_permissions import preference_path, read_defaults, save_defaults
+from relay.project_permissions import preference_path, read_defaults, save_defaults, show_plan_default
 from test_native_console import FakeBackend
 from relay.console_backend import Selection, command
 
@@ -101,12 +101,21 @@ def test_project_defaults_panel_switch_draft_and_readonly_assistant(tmp_path, mo
             assert isinstance(panel, PermissionsPanel)
             panel.query_one('#permissions-mode', Select).value = 'edit'
             panel.query_one('#permissions-paths', TextArea).load_text('docs')
-            plan = panel.query_one('#permissions-plan', Select)
-            assert plan.value == 'ask' and not plan.disabled  # the default: show me the plan and ask
+            # Before implementing: this project's choice, and My default for every project.
+            plan, default = panel.query_one('#permissions-plan', Select), panel.query_one('#permissions-plan-default', Select)
+            assert plan.value == 'default' and default.value == 'ask' and not plan.disabled and not default.disabled
+            assert str(plan.query_one('#label').content) == 'Use my default (Show me the plan and ask)'
             plan.value = 'go'
             await pilot.pause()
             panel.action_save(); await panel.workers.wait_for_complete()
             assert read_defaults(state/'console', one, control)[0]['show_plan'] is False
+            assert not (state/'console'/'project-permissions'/'defaults.json').exists()  # My default unchanged
+            default.value = 'go'; plan.value = 'default'
+            await pilot.pause()
+            assert str(plan.query_one('#label').content) == 'Use my default (Go straight on)'
+            panel.action_save(); await panel.workers.wait_for_complete()
+            assert 'show_plan' not in read_defaults(state/'console', one, control)[0]
+            assert show_plan_default(state/'console') is False
             panel.action_close(); await pilot.pause()
             assert app.selection().role == 'implementer'
             assert app.selection().write_paths == ['docs'] and not backend.launches

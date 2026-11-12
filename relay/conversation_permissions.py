@@ -133,7 +133,7 @@ def authorize(root, state, task, effect_id, control, directory):
     """Return a transient worker config; the coordinator's config remains frozen."""
     from . import relay_mesh
     from .native_agent import read_json
-    from .project_permissions import read_defaults
+    from .project_permissions import read_defaults, shows_plan
     config = deepcopy(state['config'])
     unit = task['plan']['unit']
     repository, paths = unit['repository'], unit['target_paths']
@@ -148,7 +148,7 @@ def authorize(root, state, task, effect_id, control, directory):
     folder = regular(Path(root)/'execution-permission')
     # "Show me the plan and ask": the host, not the model, shows each new plan once, even when edits are allowed.
     approved, approval = regular(folder/'approved.json'), {'task': task['id'], 'plan': task['plan']['sha256']}
-    ask = defaults.get('show_plan', True) and not (approved.exists() and read_json(approved, 4096) == approval)
+    ask = shows_plan(directory, defaults) and not (approved.exists() and read_json(approved, 4096) == approval)
     if allowed and not ask:
         return config
     if not allowed and defaults['mode'] != 'read' and paths_allowed(paths, defaults['write_paths']):

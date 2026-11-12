@@ -143,7 +143,8 @@ allow edits here**. **Change the plan** implements nothing: type what should cha
 in the line above the buttons, and the revised plan is shown again before anything
 is implemented.
 
-With **Before implementing: Go straight on** in `/permissions`, tare does not show
+With **Go straight on** in `/permissions` (for one project under **Before implementing**,
+or for every project under **My default, every project**), tare does not show
 the plan. When the saved plan needs edit access, it offers **Allow for this task**,
 **Always allow in this project**, and **Deny**, showing the project, files and checks;
 remembered edit access, including an existing commands/yolo policy, needs no extra
@@ -156,7 +157,10 @@ Runs without the TUI (`tare serve`, headless runs) never show the plan.
 
 For advanced defaults, open `/permissions`:
 
-- **Before implementing** — **Show me the plan and ask** (default) or **Go straight on**.
+- **My default, every project** — **Show me the plan and ask** (until you choose) or **Go straight on**;
+  a new project follows it.
+- **Before implementing** — this project's choice: **Use my default** (until you choose), **Show me the plan
+  and ask** or **Go straight on**.
 - **Read only** — no file edits or terminal.
 - **Edit files** — write within the chosen scope; terminal disabled.
 - **Edit + system commands** — file edits plus terminal commands.

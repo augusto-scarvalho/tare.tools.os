@@ -12,12 +12,19 @@ revised plan is shown again before anything is implemented. An approval is remem
 plan: corrections of the same task under the same plan do not ask again, and a new plan asks again.
 
 **Before implementing** in `/permissions` chooses this. **Show me the plan and
-ask** (the default) shows every new plan, even in a project that already allows
+ask** shows every new plan, even in a project that already allows
 edits. **Go straight on** implements without showing the plan, as tare did
 before: if the plan needs edit access the project does not allow yet, an inline
 question offers **Allow for this task**, **Always allow in this project** or
-**Deny**, showing the affected files and checks. The choice applies at once,
-also to open conversations.
+**Deny**, showing the affected files and checks.
+
+The choice has two levels in the same panel. **My default, every project** is
+yours, set once for every project; until you set it, it is **Show me the plan and
+ask**. **Before implementing** is the selected project's: **Use my default** (it
+names what your default is now, and it is what a project shows until you choose
+for it), or one of the two choices above, which then holds for that project
+whatever your default says. A new project follows your default. Both apply at
+once, also to open conversations.
 
 Either way, approval continues the same plan and conversation and covers that
 task's corrections; a new plan or other files ask again. The worker waits without inference while you decide; a
@@ -45,8 +52,10 @@ the current conversation's actual permissions, and its recorded project instruct
 | Edit files | Reading plus edits within the selected paths |
 | Edit + system commands | Scoped file tools plus the terminal tools |
 
-**Before implementing** (above) is saved with these defaults but is read each
-time a plan is about to be implemented, so it also reaches open conversations.
+**Before implementing** and **My default, every project** (above) are saved with
+the same **Save** but are read each time a plan is about to be implemented, so
+they also reach open conversations. Your default is kept beside the project
+defaults, in `<storage>/console/project-permissions/defaults.json`.
 
 Enter one project-relative file or directory per line. Use `.` for the whole
 project; for example, `src` and `docs` permit edits inside those directories.

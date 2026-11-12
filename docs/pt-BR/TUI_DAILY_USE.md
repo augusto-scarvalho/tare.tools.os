@@ -145,7 +145,8 @@ planejador deixou incerto) com **Implement this plan**, **Change the plan** e
 o que deve mudar na linha acima dos botões, e o plano revisado é mostrado de novo antes
 de qualquer implementação.
 
-Com **Before implementing: Go straight on** em `/permissions`, o tare não mostra o
+Com **Go straight on** em `/permissions` (para um projeto, em **Before implementing**,
+ou para todos os projetos, em **My default, every project**), o tare não mostra o
 plano. Quando o plano salvo precisa de acesso de edição, ele oferece **Allow for this task**,
 **Always allow in this project** e **Deny**, mostrando o projeto, os arquivos e as
 verificações; um acesso de edição lembrado, inclusive uma política commands/yolo
@@ -159,7 +160,10 @@ headless) nunca mostram o plano.
 
 Para padrões avançados, abra `/permissions`:
 
-- **Before implementing** — **Show me the plan and ask** (padrão) ou **Go straight on**.
+- **My default, every project** — **Show me the plan and ask** (até você escolher) ou **Go straight on**;
+  um projeto novo segue essa escolha.
+- **Before implementing** — a escolha deste projeto: **Use my default** (até você escolher), **Show me the
+  plan and ask** ou **Go straight on**.
 - **Read only** — sem edição de arquivos nem terminal.
 - **Edit files** — grava dentro do escopo escolhido; terminal desativado.
 - **Edit + system commands** — edição de arquivos mais comandos de terminal.

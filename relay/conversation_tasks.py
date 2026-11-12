@@ -157,7 +157,8 @@ def product_help(state, topic):
             'coordinator': 'Reads facts and delegates; never edits or runs project commands directly.',
             'implementer': 'implement requests a scoped grant for the saved plan, inline: once, remember for the project, or deny.',
             'plan': 'In the TUI, /permissions > Before implementing: Show me the plan and ask (default) makes implement first '
-                'show the user the whole plan: Implement this plan, Change the plan or Deny. Go straight on skips it; '
+                'show the user the whole plan: Implement this plan, Change the plan or Deny. Go straight on skips it. '
+                'A project without its own choice uses My default, set once for every project; '
                 'runs without the TUI never show it.',
             'settings': '/permissions inspects project defaults. It is not a prerequisite for planning or delegation.',
             'writable': 'An empty coordinator write scope is expected; implementer grants do not add coordinator edit tools.'}

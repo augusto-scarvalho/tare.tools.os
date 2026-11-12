@@ -9,7 +9,7 @@ import time
 import pytest
 
 from relay import conversation_permissions as permissions, conversation_tasks as tasks, relay_mesh, work_units
-from relay.project_permissions import read_defaults, save_defaults
+from relay.project_permissions import read_defaults, save_defaults, save_show_plan_default
 from test_conversation_tasks import host, intake, planned, effect  # noqa: F401
 
 
@@ -245,6 +245,41 @@ def test_remembered_project_or_yolo_policy_needs_no_question_even_in_old_read_on
     worker=permissions.authorize(tools.root,tools.state,task,'effect',control,tmp_path/'prefs')
     assert worker['writable']=={'repo':['a.py']}
     assert tools.state['config']['writable']=={} and not permissions.pending(tools.root)
+
+
+@pytest.mark.parametrize('mine', [None, True, False])
+@pytest.mark.parametrize('project', [None, True, False])
+def test_before_implementing_is_the_projects_choice_then_my_default_then_show_and_ask(host, tmp_path, mine, project):
+    tools, control, root, _ = host
+    intake(host); task = planned(host)
+    tools.state.update(session_id='parent')
+    directory = tmp_path/'prefs'
+    if mine is not None:
+        save_show_plan_default(directory, mine)
+    if project is not None:
+        defaults, revision = read_defaults(directory, root, relay_mesh.RELAY_ROOT)
+        save_defaults(directory, root, relay_mesh.RELAY_ROOT, {**defaults, 'show_plan': project}, revision)
+    asks = project if project is not None else mine if mine is not None else True
+    with permission_worker(control) as pool:
+        running = pool.submit(permissions.authorize, tools.root, tools.state, task, 'effect', control, directory)
+        if asks:
+            assert 'artifact' in wait_request(tools.root) and not running.done()
+        else:
+            assert running.result(timeout=3) == tools.state['config'] and not permissions.pending(tools.root)
+
+
+def test_a_project_without_a_choice_follows_a_changed_default(host, tmp_path):
+    tools, control, _, _ = host
+    intake(host); task = planned(host)
+    tools.state.update(session_id='parent')
+    directory = tmp_path/'prefs'
+    save_show_plan_default(directory, False)
+    with permission_worker(control) as pool:
+        running = pool.submit(permissions.authorize, tools.root, tools.state, task, 'effect', control, directory)
+        assert running.result(timeout=3) == tools.state['config'] and not permissions.pending(tools.root)
+        save_show_plan_default(directory, True)  # read again when the next plan is about to be implemented
+        running = pool.submit(permissions.authorize, tools.root, tools.state, task, 'again', control, directory)
+        assert 'artifact' in wait_request(tools.root) and not running.done()
 
 
 def test_go_straight_on_keeps_todays_permission_question(host, tmp_path):

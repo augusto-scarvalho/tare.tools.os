@@ -27,9 +27,15 @@ PLAN_OPTIONS = [('Show me the plan and ask', 'ask'), ('Go straight on', 'go')]
 PLAN_HELP = (
     "Show me the plan and ask: before changing files, tare shows the whole plan and waits for Implement this "
     "plan, Change the plan or Deny, even where edits are already allowed. Go straight on: tare implements without "
-    "showing the plan and asks only for file access this project does not allow yet. Applies at once, also to "
+    "showing the plan and asks only for file access this project does not allow yet. Use my default: this project "
+    "follows My default, which applies to every project without a choice of its own. Both apply at once, also to "
     "open conversations."
 )
+
+
+def plan_options(default):
+    """This project's choices; the first names what My default currently is."""
+    return [('Use my default ('+PLAN_OPTIONS[0 if default else 1][0]+')', 'default'), *PLAN_OPTIONS]
 
 
 class PermissionsPanel(SupportPanel):
@@ -82,6 +88,7 @@ class PermissionsPanel(SupportPanel):
     .permissions-protection-row Static { width: 20; }
     .permissions-protection-row Select { width: 1fr; height: 1; }
     #permissions-review-limit { width: 1fr; height: 1; }
+    .permissions-plan-row Static { width: 27; }
     #permissions-plan-help {
         height: auto;
         color: $text-muted;
@@ -175,13 +182,16 @@ class PermissionsPanel(SupportPanel):
     }
     '''
 
-    def __init__(self, project, *, reader: Optional[Callable] = None, saver: Optional[Callable] = None):
+    def __init__(self, project, *, reader: Optional[Callable] = None, saver: Optional[Callable] = None,
+                 default_saver: Optional[Callable] = None):
         super().__init__()
         self.project_path = Path(project) if project is not None else Path.cwd()
         self.project_name = self.project_path.name or str(self.project_path)
         self.project_full_path = str(self.project_path.resolve() if self.project_path.exists() else self.project_path)
         self.reader = reader
         self.saver = saver
+        self.default_saver = default_saver  # My default for every project, saved with the same Save
+        self.show_plan_default = True
 
         self.revision: Optional[str] = None
         self.saved_view: Optional[dict] = None
@@ -200,9 +210,12 @@ class PermissionsPanel(SupportPanel):
                 with Horizontal(id='permissions-mode-row'):
                     yield Static('Defaults:', id='permissions-mode-label', markup=False)
                     yield Select(MODE_OPTIONS, value='read', allow_blank=False, id='permissions-mode')
-                with Horizontal(classes='permissions-protection-row'):
+                with Horizontal(classes='permissions-protection-row permissions-plan-row'):
                     yield Static('Before implementing:', markup=False)
-                    yield Select(PLAN_OPTIONS, value='ask', allow_blank=False, id='permissions-plan')
+                    yield Select(plan_options(True), value='default', allow_blank=False, id='permissions-plan')
+                with Horizontal(classes='permissions-protection-row permissions-plan-row'):
+                    yield Static('My default, every project:', markup=False)
+                    yield Select(PLAN_OPTIONS, value='ask', allow_blank=False, id='permissions-plan-default')
                 yield Static(PLAN_HELP, id='permissions-plan-help', markup=False)
                 with Horizontal(classes='permissions-protection-row'):
                     yield Static('Command pre-check:', markup=False)
@@ -279,8 +292,10 @@ class PermissionsPanel(SupportPanel):
         defaults = {
             'mode': mode,
             'write_paths': write_paths,
-            'show_plan': self.query_one('#permissions-plan', Select).value != 'go',
         }
+        plan = self.query_one('#permissions-plan', Select).value
+        if plan != 'default':  # Use my default: no choice of the project's own
+            defaults['show_plan'] = plan == 'ask'
         review = self.query_one('#permissions-review', Select).value
         if mode == 'commands' and review != 'off':
             try:
@@ -342,6 +357,17 @@ class PermissionsPanel(SupportPanel):
                 warning_widget.display = False
         if event.select.id in {'permissions-mode', 'permissions-review', 'permissions-isolation', 'permissions-classifier'}:
             self.protection_controls()
+        if event.select.id == 'permissions-plan-default':
+            self.relabel_plan_default()
+
+    def relabel_plan_default(self):
+        """Use my default names what My default is on screen, saved or not."""
+        plan = self.query_one('#permissions-plan', Select)
+        value = plan.value
+        with self.prevent(Select.Changed):
+            plan.set_options(plan_options(self.query_one('#permissions-plan-default', Select).value != 'go'))
+            plan.value = 'ask'  # set_options leaves the first option selected without redrawing its new label
+            plan.value = value
 
     def protection_controls(self):
         mode = self.query_one('#permissions-mode', Select).value
@@ -423,7 +449,11 @@ class PermissionsPanel(SupportPanel):
         try:
             if self.saver is None:
                 raise ValueError("No permissions saver configured")
+            default = self.query_one('#permissions-plan-default', Select).value != 'go'
             new_view = await asyncio.to_thread(self.saver, defaults, expected_rev)
+            if self.default_saver is not None and default != self.show_plan_default:
+                await asyncio.to_thread(self.default_saver, default)
+                new_view = {**new_view, 'show_plan_default': default}
             if not self._active or op_seq != self._op_seq:
                 return
             self.revision = str(new_view['revision'])
@@ -464,7 +494,11 @@ class PermissionsPanel(SupportPanel):
         protection = defaults.get('command_protection', {})
         with self.prevent(Select.Changed):
             mode_select.value = mode
-            self.query_one('#permissions-plan', Select).value = 'ask' if defaults.get('show_plan', True) else 'go'
+            self.show_plan_default = view.get('show_plan_default', True)
+            self.query_one('#permissions-plan-default', Select).value = 'ask' if self.show_plan_default else 'go'
+            self.relabel_plan_default()
+            self.query_one('#permissions-plan', Select).value = (
+                'default' if 'show_plan' not in defaults else 'ask' if defaults['show_plan'] else 'go')
             self.query_one('#permissions-review', Select).value = protection.get('review', 'off')
             self.query_one('#permissions-isolation', Select).value = protection.get('backend', 'mxc')
             preset=('jev_auto' if protection.get('classifier')=='jev' and protection.get('review_policy')=='on_demand'
@@ -500,6 +534,7 @@ class PermissionsPanel(SupportPanel):
         self.query_one('#permissions-nested', Checkbox).disabled = True
         self.query_one('#permissions-mode', Select).disabled = True
         self.query_one('#permissions-plan', Select).disabled = True
+        self.query_one('#permissions-plan-default', Select).disabled = True
         self.query_one('#permissions-paths', TextArea).disabled = True
         self.query_one('#permissions-review', Select).disabled = True
         self.query_one('#permissions-classifier', Select).disabled = True
@@ -532,6 +567,7 @@ class PermissionsPanel(SupportPanel):
         mode_select = self.query_one('#permissions-mode', Select)
         mode_select.disabled = (self.revision is None)
         self.query_one('#permissions-plan', Select).disabled = (self.revision is None)
+        self.query_one('#permissions-plan-default', Select).disabled = (self.revision is None)
         current_mode = str(mode_select.value) if mode_select.value != Select.BLANK else 'read'
 
         paths_area = self.query_one('#permissions-paths', TextArea)
