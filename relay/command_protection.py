@@ -512,6 +512,8 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
     from compute_plane.native_capabilities import NativeCapabilities
     from compute_plane.native_models import object_json
     from tare_tools_agent_runtime import EffectRequest, ToolCall
+    from .worker_wait import steady
+    control = steady(control)  # command reviews and the action gate read time.monotonic, not the turn's clock
     repository = unit.get('repository') or next(iter(config['repositories']))
     session_id = 'candidate-checks-'+uuid4().hex
     child = {'repositories': {repository: str(Path(tree).resolve())},

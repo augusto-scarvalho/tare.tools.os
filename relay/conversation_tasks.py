@@ -156,6 +156,10 @@ def product_help(state, topic):
         return {**common, 'source': 'relay/conversation_permissions.py',
             'coordinator': 'Reads facts and delegates; never edits or runs project commands directly.',
             'implementer': 'implement requests a scoped grant for the saved plan, inline: once, remember for the project, or deny.',
+            'plan': 'In the TUI, /permissions > Before implementing: Show me the plan and ask (default) makes implement first '
+                'show the user the whole plan: Implement this plan, Change the plan or Deny. Go straight on skips it. '
+                'A project without its own choice uses My default, set once for every project; '
+                'runs without the TUI never show it.',
             'settings': '/permissions inspects project defaults. It is not a prerequisite for planning or delegation.',
             'writable': 'An empty coordinator write scope is expected; implementer grants do not add coordinator edit tools.'}
     if topic == 'web':
@@ -1238,6 +1242,8 @@ class ConversationTools:
                     raise ValueError('A separate planner must produce an executable plan before implementation.')
                 if task.get('permission_denied_input') == self.input_id():
                     raise ValueError('The user did not authorize this execution. Do not repeat the request in this turn.')
+                if task.get('plan_change') == {'input': self.input_id(), 'plan': plan['sha256']}:
+                    raise ValueError('The user asked to change this plan. Ask the planner for a revised plan; do not implement this one.')
                 if (set(args)-{'note', 'route', 'effort', 'recheck_candidate'}
                         or type(args.get('recheck_candidate',False)) is not bool):
                     raise ValueError('Implement the saved plan; only note, route, effort and boolean recheck_candidate may be supplied.')
@@ -1321,7 +1327,7 @@ class ConversationTools:
                 from .work_units import run_unit, check_failures, child_limits, GuardRefusal
                 from .conversation_recheck import retry_decision
                 from .conversation_review import review
-                from .conversation_permissions import authorize
+                from .conversation_permissions import authorize, PlanChangeRequested
                 execution_unit = deepcopy(plan['unit'])
                 discovered = detected_checks(self.state['config'])
                 execution_unit['verifiers'] = list(dict.fromkeys([*discovered, *execution_unit['verifiers']]))
@@ -1360,6 +1366,13 @@ class ConversationTools:
                     'verifiers': {**self.state['config']['verifiers'], **discovered, **host_checks(self.state['config'], plan['unit'])}}}
                 try:
                     config = authorize(self.root, authorization_state, task, request.effect_id, control, self.permission_directory)
+                except PlanChangeRequested:
+                    # The planner gets the shown plan as advice, in a planning round of its own (a user decision).
+                    task['plan_change'] = {'input': self.input_id(), 'plan': plan['sha256']}
+                    task['replan_from'] = {k: plan[k] for k in ('artifact', 'sha256')}
+                    task['planning_revision'] = task.get('planning_revision', 0)+1
+                    save(self.root, value)
+                    raise
                 except PermissionError:
                     task['permission_denied_input'] = self.input_id()
                     save(self.root, value)
