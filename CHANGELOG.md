@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The model button above the input box keeps showing the model's name while a turn starts; it used to switch to "Reading saved model…" for a few seconds, which the wider button made visible.
 - The model button above the input box now shows the whole model name: it kept the width of its first label ("Model ▾") and cut the name of the model that loaded after it. It grows with the name, up to 65% of the row, and a name longer than that ends in "…" instead of being cut mid-word.
 - `/guidance` variables: a Work delivery whose inference profile names no model no longer fails while filling `<model id>`; the name is left as written, as for any value the call cannot know.
 - `/guidance`, Context: Claude Code's model block is no longer left out when Context is on, because it also gives the model's knowledge cutoff, which tare cannot fill; and Context's default text now carries, in tare's words, the caution about downloaded files that Claude Code's environment block gave.
