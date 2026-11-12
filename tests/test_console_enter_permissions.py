@@ -59,6 +59,53 @@ def test_explicit_newlines_stay_in_draft_and_modal_enter_does_not_send(tmp_path)
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize('files_allowed', [False, True])
+def test_plan_dialog_shows_the_whole_plan_and_sends_the_requested_changes(tmp_path, files_allowed):
+    import json
+    from types import SimpleNamespace
+    from textual.widgets import Button, Input, Static
+    from relay import conversation_permissions as permissions
+    project, session = tmp_path/'project', tmp_path/'session'
+    project.mkdir()
+    artifact = session/'planning'/'p'/'session'/'artifact.json'; artifact.parent.mkdir(parents=True)
+    steps = [f'Step number {n}.' for n in range(1, 41)]  # longer than the screen: it scrolls
+    permissions.save_json(artifact, {'payload': {'summary': 'Change a.py.', 'steps': steps, 'criteria': ['value is two'],
+        'sources': [], 'remaining': ['Whether callers rely on one.'], 'tasks': [{'title': 'Change value',
+        'summary': 'Set two.', 'target_paths': ['a.py'], 'criteria': ['value is two'], 'test_paths': ['tests/test_a.py']}]}})
+    import hashlib
+    request = {'schema': permissions.SCHEMA, 'session': 'parent', 'effect': 'e', 'task': 't',
+               'plan': hashlib.sha256(artifact.read_bytes()).hexdigest(), 'project': str(project.resolve()),
+               'paths': ['a.py'], 'checks': {}, 'tests': [], 'objective': 'Change value to two.', 'status': 'WAITING',
+               'artifact': str(artifact), 'files_allowed': files_allowed}
+    request['id'] = permissions.identity(request)
+    (session/'execution-permission').mkdir()
+    permissions.save_json(session/'execution-permission'/'request.json', request)
+    async def scenario():
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(100, 30)) as pilot:
+            await app.workers.wait_for_complete(); await pilot.pause()
+            app.refresh_execution_permission(SimpleNamespace(session=str(session), root=str(project)))
+            await pilot.pause()
+            panel = app.screen
+            assert isinstance(panel, ExecutionPermissionPanel)
+            assert str(panel.query_one('.panel-title', Static).content) == 'Implement this plan?'
+            shown = '\n'.join(str(s.content) for s in panel.query(Static))
+            for part in ('40. Step number 40.', 'Files: a.py', 'Checks: tests/test_a.py', 'Left uncertain by the planner:',
+                         'Whether callers rely on one.'):
+                assert part in shown
+            buttons = [str(b.label) for b in panel.query(Button)]
+            assert buttons == ['Implement this plan', *([] if files_allowed else ['Implement, always allow edits here']),
+                               'Change the plan', 'Deny']
+            assert app.focused.id == 'permission-once' and panel.query_one('.permission-detail').max_scroll_y > 0
+            changes = panel.query_one('#permission-changes', Input)
+            changes.focus(); changes.value = 'Keep a.py short'
+            await pilot.press('enter'); await pilot.pause()
+            assert not isinstance(app.screen, ExecutionPermissionPanel)
+            assert json.loads((session/'execution-permission'/'answer.json').read_text(encoding='utf-8')) == {
+                'id': request['id'], 'choice': 'change', 'changes': 'Keep a.py short'}
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize('final',['Hello.','The final answer differs.'])
 def test_final_answer_replaces_only_its_identical_stream_preview(final):
     class Console(App):

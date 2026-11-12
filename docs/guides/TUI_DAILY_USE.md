@@ -135,15 +135,33 @@ saved conversations remain available for their own folder. You can also reload w
 
 ## 3. Execution permission
 
-Ask for the change in the conversation. When the saved plan needs edit access,
-tare offers **Allow for this task**, **Always allow in this project**, and **Deny**. It shows
-the project, files and checks. An approval continues that plan in the same chat and
-covers its corrections; a new plan or other files ask again. The coordinator stays read-only. Waiting for your decision makes no model calls.
-Remembered edit access, including an existing commands/yolo policy, needs no extra
-edit confirmation. Plan-only requests still do not execute.
+Ask for the change in the conversation. Before implementing, tare shows the whole
+plan in an **Implement this plan?** dialog (steps, files, checks and what the
+planner left uncertain) with **Implement this plan**, **Change the plan** and
+**Deny**; when the files still need edit access it also offers **Implement, always
+allow edits here**. **Change the plan** implements nothing: type what should change
+in the line above the buttons, and the revised plan is shown again before anything
+is implemented.
+
+With **Go straight on** in `/permissions` (for one project under **Before implementing**,
+or for every project under **My default, every project**), tare does not show
+the plan. When the saved plan needs edit access, it offers **Allow for this task**,
+**Always allow in this project**, and **Deny**, showing the project, files and checks;
+remembered edit access, including an existing commands/yolo policy, needs no extra
+edit confirmation.
+
+Either way, an approval continues that plan in the same chat and covers its
+corrections; a new plan or other files ask again. The coordinator stays read-only.
+Waiting for your decision makes no model calls and does not spend the turn's time: its time limit stops
+until you answer. Plan-only requests still do not execute.
+Runs without the TUI (`tare serve`, headless runs) never show the plan.
 
 For advanced defaults, open `/permissions`:
 
+- **My default, every project** — **Show me the plan and ask** (until you choose) or **Go straight on**;
+  a new project follows it.
+- **Before implementing** — this project's choice: **Use my default** (until you choose), **Show me the plan
+  and ask** or **Go straight on**.
 - **Read only** — no file edits or terminal.
 - **Edit files** — write within the chosen scope; terminal disabled.
 - **Edit + system commands** — file edits plus terminal commands.

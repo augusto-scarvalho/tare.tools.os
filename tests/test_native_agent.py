@@ -1199,9 +1199,9 @@ def test_haiku_explorer_evidence_guidance_is_sent_and_frozen_across_follow_up(se
     assert native_agent.prompt_capsule(haiku, 'explorer')['id'] == 'role/explorer'
 
 
-def test_coordinator_v15_preserves_boundaries_and_direct_conversation_policy():
+def test_coordinator_v16_preserves_boundaries_and_direct_conversation_policy():
     capsule = native_agent.prompt_capsule(deployment(), 'coordinator', 'conversation')
-    assert capsule['version'] == '15'
+    assert capsule['version'] == '16'
     # The model reads its instructions every turn: no host/worker mechanics outside the jargon ban itself.
     assert 'The host' not in capsule['system'] and 'worker permissions' not in capsule['system']
     assert 'name your tools' in capsule['system']
@@ -1212,6 +1212,8 @@ def test_coordinator_v15_preserves_boundaries_and_direct_conversation_policy():
         'only for a requested change or an explicit formal plan',
         'Summarize a returned plan in a few lines and ask at most two decision questions',
         'without another confirmation request in chat',
+        # The plan dialog is the approval; the coordinator never reports one it did not see.
+        "tare's dialog is the approval", 'Never say a plan was approved',
         'never use internal jargon in operator-facing replies',
         'On failure cite the recorded reason and the next step, never invent a cause',
         # A Portuguese request got an English summary right after English tool results.

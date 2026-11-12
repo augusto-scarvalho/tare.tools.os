@@ -27,7 +27,7 @@ documents are the reference.
 - [Tare setup](guides/SETUP.md): the `/setup` screen; one connection (a CLI subscription login or an API key)
   is enough to start.
 - [Project permissions in the TUI](guides/TUI_PROJECT_PERMISSIONS.md): read, edit and system-command
-  permissions for a project.
+  permissions for a project, and the **Implement this plan?** dialog that shows a plan before it is implemented.
 - [Model and reasoning selection](guides/MODEL_PICKER.md): choosing the model and reasoning effort per
   conversation and role.
 - [Guidance sent to the models](guides/GUIDANCE.md): the `/guidance` panel; tare's role guidance (editable), the

@@ -11,11 +11,14 @@ from .native_agent import read_json, project_instructions
 from . import project_admission
 
 DEFAULTS = {'mode': 'read', 'write_paths': [], 'project_admission': dict(project_admission.QUARANTINE)}
+DEFAULT_SCHEMA = 'tare.tools/permission-defaults/1'
 
 
 def validate_defaults(value):
-    if not isinstance(value, dict) or set(value) - {'mode', 'write_paths', 'command_protection', 'project_admission'} or not {'mode', 'write_paths'} <= set(value) or not isinstance(value['mode'], str) or value['mode'] not in {'read', 'edit', 'commands'}:
+    if not isinstance(value, dict) or set(value) - {'mode', 'write_paths', 'command_protection', 'project_admission', 'show_plan'} or not {'mode', 'write_paths'} <= set(value) or not isinstance(value['mode'], str) or value['mode'] not in {'read', 'edit', 'commands'}:
         raise ValueError('Choose read only, edit files, or edit with system commands.')
+    if type(value.get('show_plan', True)) is not bool:
+        raise ValueError('Choose whether to see the plan before implementing.')
     paths = value['write_paths']
     if not isinstance(paths, list) or len(paths) > 32 or not paths and value['mode'] != 'read':
         raise ValueError('Enter 1–32 project-relative edit paths, or . for the whole project.')
@@ -33,6 +36,8 @@ def validate_defaults(value):
         if name not in cleaned:
             cleaned.append(name)
     result = {'mode': value['mode'], 'write_paths': cleaned}
+    if 'show_plan' in value:  # absent: the owner's default for every project (shows_plan)
+        result['show_plan'] = value['show_plan']
     if 'project_admission' in value:
         result['project_admission'] = project_admission.validate(value['project_admission'])
     if value.get('command_protection') is not None:
@@ -54,6 +59,38 @@ def preference_path(directory, project, control_root):
     return regular(directory/'project-permissions'/key/'preferences.json'), project, control
 
 
+def default_path(directory):
+    """The owner's choices for every project, beside each project's own preferences."""
+    return regular(Path(directory)/'project-permissions'/'defaults.json')
+
+
+def show_plan_default(directory):
+    """The owner's "Before implementing" for projects without a choice of their own; never chosen: show and ask."""
+    path = default_path(directory)
+    if not path.exists():
+        return True
+    try:
+        value = read_json(path, 4096)
+    except ConversationRejected as exc:
+        raise ValueError('Saved defaults for every project contain invalid JSON; the file was preserved.') from exc
+    if set(value) != {'schema', 'show_plan'} or value['schema'] != DEFAULT_SCHEMA or type(value['show_plan']) is not bool:
+        raise ValueError('Saved defaults for every project have another format; the file was preserved.')
+    return value['show_plan']
+
+
+def save_show_plan_default(directory, show_plan):
+    if type(show_plan) is not bool:
+        raise ValueError('Choose whether to see the plan before implementing.')
+    path = default_path(directory)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    save_json(path, {'schema': DEFAULT_SCHEMA, 'show_plan': show_plan})
+
+
+def shows_plan(directory, defaults):
+    """Before implementing: the project's own choice, else the owner's default, else show me the plan and ask."""
+    return defaults['show_plan'] if 'show_plan' in defaults else show_plan_default(directory)
+
+
 def read_defaults(directory, project, control_root):
     """The TUI's defaults for a project; the permission mode itself is the one every frontend shares
     (turn_engine.project_permission_mode), while the edit paths stay in this scope's file."""
@@ -62,10 +99,8 @@ def read_defaults(directory, project, control_root):
     from .turn_engine import project_permission_mode
     mode = project_permission_mode(preference_path(directory, project, control_root)[1])
     if mode and mode != defaults['mode']:
-        defaults = validate_defaults({'mode': mode, 'write_paths': defaults['write_paths'] or ['.'],
-            **({'project_admission': defaults['project_admission']} if 'project_admission' in defaults else {}),
-            **({'command_protection': defaults['command_protection']}
-               if mode == 'commands' and 'command_protection' in defaults else {})})
+        defaults = validate_defaults({**{k: v for k, v in defaults.items() if k != 'command_protection' or mode == 'commands'},
+                                      'mode': mode, 'write_paths': defaults['write_paths'] or ['.']})
     policy = defaults.get('project_admission') or {}
     repo = project_admission.repository(project) if policy.get('mode') in ('quarantine', 'trusted') else None
     if repo is not None:  # in Git the repository's record decides, for every worktree of it
@@ -317,5 +352,5 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
                         '\nSHA-256: '+(current_preview['root_sha256'] or 'absent')
                         if current_preview is not None else 'Root preview unavailable; ignoring instructions is still allowed.')
     return {'project': project, 'revision': revision, 'defaults': defaults,
-            'admission_preview': current_preview,
+            'show_plan_default': show_plan_default(directory), 'admission_preview': current_preview,
             'effective_text': '\n'.join(effective), 'instructions_text': '\n\n'.join(instructions)}

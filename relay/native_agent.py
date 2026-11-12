@@ -691,8 +691,11 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             session_id = state['session_id']
             binding = BindingRef('session:'+session_id, session_id, 'operator', 1, session_id)
             cancel = cancellation or CancellationToken()
+            from .worker_wait import TurnClock
+            clock = TurnClock(state)  # stops while the host waits for the user's answer (conversation_permissions)
             control = ExecutionControl(binding, cancel,
-                math.inf if invocation_deadline is None else time.monotonic()+max(0, invocation_deadline-time.time()))
+                math.inf if invocation_deadline is None else clock()+max(0, invocation_deadline-time.time()),
+                monotonic=clock)
             scratch = regular(root / 'scratch'); scratch.mkdir(exist_ok=True)
             from .native_activity import ActivityJournal
             from .flow_activity import observer

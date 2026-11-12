@@ -10,8 +10,8 @@ def test_review_policy_is_carried_even_when_file_scope_was_already_granted(host,
     before=deepcopy(tools.state)
     directory=tmp_path/'preferences'
     defaults,revision=project_permissions.read_defaults(directory,project,relay_mesh.RELAY_ROOT)
-    project_permissions.save_defaults(directory,project,relay_mesh.RELAY_ROOT,
-        {**defaults,'mode':'commands','write_paths':['.'],'command_protection':{'review':'auto'}},revision)
+    project_permissions.save_defaults(directory,project,relay_mesh.RELAY_ROOT,  # go straight on: no plan dialog
+        {**defaults,'mode':'commands','write_paths':['.'],'command_protection':{'review':'auto'},'show_plan':False},revision)
     worker=permissions.authorize(tools.root,tools.state,task,'effect',control,directory)
     assert worker['command_protection']['review']=='auto'
     assert worker['writable']==before['config']['writable']

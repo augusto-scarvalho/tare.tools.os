@@ -137,15 +137,34 @@ as conversas salvas continuam disponíveis para a pasta delas. Você também pod
 
 ## 3. Permissão de execução
 
-Peça a mudança na conversa. Quando o plano salvo precisa de acesso de edição,
-o tare oferece **Allow for this task**, **Always allow in this project** e **Deny**. Ele mostra
-o projeto, os arquivos e as verificações. Uma aprovação continua esse plano na mesma conversa e
-cobre as correções dele; um plano novo ou outros arquivos perguntam de novo. O coordenador continua somente leitura. Esperar pela sua decisão não faz chamadas de modelo.
-Um acesso de edição lembrado, inclusive uma política commands/yolo existente, não precisa de
-confirmação extra de edição. Pedidos só de plano continuam sem executar.
+Peça a mudança na conversa. Antes de implementar, o tare mostra o plano inteiro
+num diálogo **Implement this plan?** (passos, arquivos, verificações e o que o
+planejador deixou incerto) com **Implement this plan**, **Change the plan** e
+**Deny**; quando os arquivos ainda precisam de acesso de edição, ele também oferece
+**Implement, always allow edits here**. **Change the plan** não implementa nada: escreva
+o que deve mudar na linha acima dos botões, e o plano revisado é mostrado de novo antes
+de qualquer implementação.
+
+Com **Go straight on** em `/permissions` (para um projeto, em **Before implementing**,
+ou para todos os projetos, em **My default, every project**), o tare não mostra o
+plano. Quando o plano salvo precisa de acesso de edição, ele oferece **Allow for this task**,
+**Always allow in this project** e **Deny**, mostrando o projeto, os arquivos e as
+verificações; um acesso de edição lembrado, inclusive uma política commands/yolo
+existente, não precisa de confirmação extra de edição.
+
+Nos dois casos, uma aprovação continua esse plano na mesma conversa e cobre as
+correções dele; um plano novo ou outros arquivos perguntam de novo. O coordenador
+continua somente leitura. Esperar pela sua decisão não faz chamadas de modelo nem gasta o
+tempo do turno: o limite de tempo para até você responder. Pedidos
+só de plano continuam sem executar. Execuções sem o TUI (`tare serve`, execuções
+headless) nunca mostram o plano.
 
 Para padrões avançados, abra `/permissions`:
 
+- **My default, every project** — **Show me the plan and ask** (até você escolher) ou **Go straight on**;
+  um projeto novo segue essa escolha.
+- **Before implementing** — a escolha deste projeto: **Use my default** (até você escolher), **Show me the
+  plan and ask** ou **Go straight on**.
 - **Read only** — sem edição de arquivos nem terminal.
 - **Edit files** — grava dentro do escopo escolhido; terminal desativado.
 - **Edit + system commands** — edição de arquivos mais comandos de terminal.
