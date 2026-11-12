@@ -9,6 +9,20 @@ from relay.native_console import WorkConsole
 from test_native_console import FakeBackend
 
 
+def line_color(widget, needle):
+    """The foreground (as hex) of the rendered line of `widget` that holds `needle`."""
+    for y in range(widget.size.height):
+        strip = widget.render_line(y)
+        if needle in strip.text:
+            return next(s.style.color.get_truecolor().hex for s in strip if needle in s.text and s.style.color)
+    raise AssertionError(needle+' is not shown')
+
+
+def theme_hex(app, name):
+    from rich.color import Color
+    return Color.parse(getattr(app.current_theme, name)).get_truecolor().hex
+
+
 def row(operation, target, state='succeeded', identity=None, detail='', **extra):
     return dict(kind='tool-activity', id=identity or f's/effect/{operation}/{target}/{state}', operation=operation,
                 target=target, state=state, detail=detail, receipt='1 · '+'a'*64, duration_ms=None, **extra)
@@ -283,6 +297,11 @@ def test_open_diff_mention_and_copy_send_nothing_to_a_model(repo, tmp_path, monk
             assert '+b = 2' in app.screen.content and 'What changed' in app.screen.notice
             await until(pilot, lambda: app.screen.query('#file-viewer-heading'))
             assert str(app.screen.query_one('#file-viewer-heading').content) == 'Diff · b.py'
+            shown = app.screen.query_one('#file-viewer-content')
+            await until(pilot, lambda: shown.size.height)  # laid out before its lines are read
+            assert line_color(shown, '+b = 2') == theme_hex(app, 'success')  # added lines are green
+            assert line_color(shown, '-b = 1') == theme_hex(app, 'error')  # removed lines are red
+            assert line_color(shown, '@@') == theme_hex(app, 'accent')  # a hunk header has its own colour
             await pilot.press('escape'); await pilot.pause()
             await pilot.press('a'); await pilot.pause()
             assert app.context_paths == ['b.py'] and app.context_root == str(repo)

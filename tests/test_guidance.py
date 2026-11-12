@@ -10,6 +10,7 @@ from relay import guidance, native_agent
 from relay.console_guidance import GuidancePanel
 from relay.native_console import WorkConsole
 from test_native_agent import Client, deployment, setup, steps  # noqa: F401  (setup is a fixture)
+from test_files_pane import line_color, theme_hex
 from test_native_console import FakeBackend
 
 IMPLEMENTER = 'role#role/implementer#system'
@@ -233,7 +234,7 @@ def test_guidance_in_the_tui_shows_before_and_after_and_settles_each_change(tmp_
             async def pick(key):
                 choice.highlighted = choice.get_option_index(key)
                 await pilot.pause()
-            diff = panel.query_one('#guidance-diff', TextArea)
+            diff = panel.query_one('#guidance-diff')
             buttons = {b.id: b for b in panel.query(Button)}
             assert panel.region.contains_region(buttons['guidance-save'].region)
 
@@ -242,11 +243,15 @@ def test_guidance_in_the_tui_shows_before_and_after_and_settles_each_change(tmp_
 
             await pick(DATE)  # changed underneath: base -> new default, and the three ways out
             assert text.text == 'My date.' and not buttons['guidance-keep'].disabled
-            assert "-Today's date is <date>." in diff.text and '+Today is <date> (new wording).' in diff.text
+            code = diff.query_one(Static).content.code
+            assert "-Today's date is <date>." in code and '+Today is <date> (new wording).' in code
+            assert line_color(diff.query_one(Static), "-Today's date is <date>.") == theme_hex(app, 'error')  # <date> is no markup
+            assert line_color(diff.query_one(Static), '+Today is <date>') == theme_hex(app, 'success')
+            assert not diff.query('TextArea')  # read-only: nothing here can be edited
             assert str(buttons['guidance-default'].label) == 'Use the new default'
             await pilot.click('#guidance-keep')
             await pilot.pause()
-            assert buttons['guidance-keep'].disabled and '+My date.' in diff.text  # now: default × yours
+            assert buttons['guidance-keep'].disabled and '+My date.' in diff.query_one(Static).content.code  # now: default × yours
 
             await pick(EMAIL)
             assert text.read_only and not buttons['guidance-remove'].disabled
@@ -254,7 +259,7 @@ def test_guidance_in_the_tui_shows_before_and_after_and_settles_each_change(tmp_
             await pilot.click('#guidance-remove')
             await pilot.pause()
             assert guidance.vendor_choices('cli://claude')['context:userEmail'] is None
-            assert "-The user's email address is <account email>." in diff.text
+            assert "-The user's email address is <account email>." in diff.query_one(Static).content.code
             await pilot.click('#guidance-default')
             await pilot.pause()
             assert 'context:userEmail' not in guidance.vendor_choices('cli://claude')
@@ -450,13 +455,13 @@ def test_the_panel_shows_what_tare_leaves_out_and_brings_it_back(tmp_path, monke
             assert app.dispatch_conversation_command('/guidance', '')
             await pilot.pause()
             panel = app.screen
-            options, diff = panel.query_one('#guidance-item', OptionList), panel.query_one('#guidance-diff', TextArea)
+            options, diff = panel.query_one('#guidance-item', OptionList), panel.query_one('#guidance-diff')
             default = panel.query_one('#guidance-default', Button)
             assert str(options.get_option(SKILLS).prompt).endswith('  T')
             options.highlighted = options.get_option_index(SKILLS)
             await pilot.pause()
             assert "Left out by tare's default" in str(panel.query_one('#guidance-about', Static).render())
-            assert '-- imagegen: Generate images.' in diff.text  # what is left out
+            assert '-- imagegen: Generate images.' in diff.query_one(Static).content.code  # what is left out
             assert str(default.label) == "Vendor's default" and not default.disabled
             await pilot.click('#guidance-default')
             await pilot.pause()

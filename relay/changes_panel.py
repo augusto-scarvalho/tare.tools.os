@@ -10,7 +10,7 @@ from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Select, Static
 
-from .console_output import plain
+from .console_output import diff_view, plain
 from .console_panels import SupportPanel
 from .native_review import review
 
@@ -43,7 +43,9 @@ class FileViewer(SupportPanel):
                 yield Button('Back · Esc', id='file-viewer-close')
             yield Static(self.notice+'\n'+plain(self.file_path), id='file-viewer-notice', markup=False)
             with VerticalScroll(id='file-viewer-scroll'):
-                yield Static(plain(self.content), id='file-viewer-content', markup=False)
+                # The Files pane's diff (F8) and a commit's; a file stays plain text.
+                yield Static(plain(self.content) if self.kind == 'File' else diff_view(self.content, self.app.current_theme),
+                             id='file-viewer-content', markup=False)
             with Horizontal(id='file-viewer-actions', classes='panel-actions'):
                 yield Button('Back', id='file-viewer-back')
                 yield Button('Copy content', id='file-viewer-copy', classes='panel-primary')
