@@ -29,8 +29,16 @@ def capsule_edits():
 
 
 def vendor_choices(endpoint):
-    """The owner's choices for one vendor CLI, for VendorCliClient(vendor_guidance=...); {} when none."""
-    return load()['vendor'].get(endpoint, {})
+    """The owner's choices for one vendor CLI, for VendorCliClient(vendor_guidance=...); {} when none. A choice the
+    Kernel no longer lists (an older file, another tare version) stops the call with the fix first: the session
+    shows it as its blocked reason, which keeps 256 characters and some views cut much shorter."""
+    from compute_plane.vendor_guidance import validate
+    choices = load()['vendor'].get(endpoint, {})
+    try:
+        return validate(endpoint, choices)
+    except ValueError as exc:
+        raise ValueError(f'Open /guidance and choose "Reset everything": the saved guidance for {endpoint} does not '
+                         f'fit this tare ({exc}).') from None
 
 
 def _write(value):

@@ -23,9 +23,11 @@ default. **Reset everything** deletes the file.
 
 - **Claude Code.** The account email block can be removed. The environment, model and date blocks can be removed or
   replaced. The identity line ("You are a Claude agent..."), the billing header and the tool descriptions can only
-  be read. A choice applies to Claude's decisions. Claude summaries run with Claude Code's hooks turned off, and
-  there the choice could not be applied, so **while any Claude choice is saved, a Claude summary call is refused**.
-  The same refusal happens on a Claude Code older than 2.1.322.
+  be read. tare applies a Claude choice through a small add-on that only works while Claude Code's hooks are on.
+  For some calls tare normally keeps them off: summaries, and calls that offer the model no tools, such as the
+  heads-up notes. **While a Claude choice is saved, tare turns the hooks on for those calls too.** That also runs
+  the hooks of the plugins built into Claude Code (on 2.1.322: agents-md, telemetry, privacy, plugin-authoring),
+  which already run on every Claude call that offers tools. A Claude Code older than 2.1.322 refuses the choice.
 - **Codex.** The skills list, the sandbox and escalation rules, the collaboration mode and the environment block can
   be removed. None can be replaced. Before the first call with a removal on a new Codex version, tare checks with
   Codex's own `debug prompt-input` (which sends nothing) that the block really goes away; if it does not, the call
@@ -40,6 +42,9 @@ silently ignored. How the Kernel applies each control, and how to re-measure aft
 
 - Claude Code applies a choice through a small mod. If the mod fails, Claude Code sends its own text anyway, so a
   removal on Claude is not proved for each request.
+- While a Claude choice is saved, Claude Code's built-in plugins run their hooks on every Claude call (see above).
+- If `guidance.json` holds a choice this version of tare no longer lists, calls to that CLI stop with "Open
+  /guidance and choose "Reset everything"". That button deletes the file.
 - The vendor texts are shown as measured on one machine, with placeholders such as `<account email>` and
   `<working directory>` for that machine's values. A newer CLI version may add other blocks.
 - Whatever a provider adds on its own servers cannot be seen.

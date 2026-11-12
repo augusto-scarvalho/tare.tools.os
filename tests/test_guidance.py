@@ -86,6 +86,22 @@ def test_the_vendor_choices_reach_the_cli_client(tmp_path):
     assert codex.vendor_guidance == {}  # no choice: exactly what tare sent before
 
 
+def test_a_saved_choice_this_tare_no_longer_lists_says_where_to_fix_it(tmp_path):
+    from relay.native_generation import inference_client
+    guidance.path().parent.mkdir(parents=True, exist_ok=True)
+    guidance.path().write_text(json.dumps({'schema': guidance.SCHEMA, 'capsules': {},
+                                           'vendor': {'cli://claude': {'retired_block': None}}}), encoding='utf-8')
+    with pytest.raises(ValueError) as caught:
+        inference_client({'native_cli': {'executable': str(tmp_path/'claude.exe'), 'version': '2.1.322'}},
+                         SimpleNamespace(protocol='vendor-cli', endpoint='cli://claude'), credential=None,
+                         metadata_only=True)
+    # The session reports it as its blocked reason, 'ValueError:' plus 256 characters; some rows show far fewer.
+    assert str(caught.value).startswith('Open /guidance and choose "Reset everything"')
+    assert 'retired_block' in str(caught.value) and len(str(caught.value)) <= 256
+    guidance.reset()  # what that button does
+    assert guidance.vendor_choices('cli://claude') == {}
+
+
 @pytest.mark.parametrize('size', [(80, 24), (130, 44)])
 def test_guidance_in_the_tui_edits_removes_and_goes_back_to_each_default_without_a_model_call(tmp_path, size):
     async def scenario():
