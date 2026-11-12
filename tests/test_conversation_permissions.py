@@ -331,6 +331,78 @@ def test_plan_is_shown_even_where_edits_are_allowed_and_asked_once_per_plan(host
     assert not (tools.root/'execution-permission'/'granted.json').exists()
 
 
+def turn_control(state, seconds):
+    """The session's control as native_agent builds it: on a TurnClock that moves the saved deadline too."""
+    from tare_tools_agent_runtime import BindingRef, CancellationToken, ExecutionControl
+    from relay.worker_wait import TurnClock
+    clock = TurnClock(state)
+    return ExecutionControl(BindingRef('parent', 'binding', 'owner', 1, 'opaque'), CancellationToken(),
+                            clock()+seconds, monotonic=clock)
+
+
+def test_waiting_for_the_answer_spends_none_of_the_turns_time(host, tmp_path):
+    from relay.worker_wait import steady
+    tools, _, root, _ = host
+    intake(host); task = planned(host)
+    tools.state.update(session_id='parent', deadline_utc=time.time()+.5)
+    control = turn_control(tools.state, .5)  # the turn's limit is shorter than the user's reading
+    directory = tmp_path/'prefs'
+    # Without a frontend nothing waits and no clock moves, as before.
+    saved = tools.state['deadline_utc']
+    assert permissions.authorize(tools.root, tools.state, task, 'headless', control, None) == tools.state['config']
+    assert tools.state['deadline_utc'] == saved and 'answer_wait_seconds' not in tools.state
+    with permission_worker(control) as pool:
+        running = pool.submit(permissions.authorize, tools.root, tools.state, task, 'effect', control, directory)
+        request = wait_request(tools.root)
+        left, left_utc = control.remaining_seconds(), tools.state['deadline_utc']-time.time()
+        time.sleep(1)
+        assert not running.done() and not control.should_stop()
+        permissions.answer(tools.root, request['id'], 'once', project=root, directory=directory,
+                           control_root=relay_mesh.RELAY_ROOT)
+        assert running.result(timeout=3) == tools.state['config']  # the late answer is honoured
+        assert abs(control.remaining_seconds()-left) < .2
+        assert abs(tools.state['deadline_utc']-time.time()-left_utc) < .3 and tools.state['answer_wait_seconds'] >= 1
+        # Code that reads time.monotonic() gets the same time left.
+        real = steady(control)
+        assert abs(real.deadline_monotonic-time.monotonic()-control.remaining_seconds()) < .1
+
+
+def test_cancellation_still_ends_the_paused_wait(host, tmp_path):
+    tools, _, _, _ = host
+    intake(host); task = planned(host)
+    tools.state.update(session_id='parent')
+    control = turn_control(tools.state, .3)
+    with permission_worker(control) as pool:
+        running = pool.submit(permissions.authorize, tools.root, tools.state, task, 'effect', control, tmp_path/'prefs')
+        wait_request(tools.root)
+        time.sleep(.6)  # past the turn's limit: still waiting, because its time is not running
+        assert not running.done()
+        control.cancellation.cancel()
+        with pytest.raises(PermissionError, match='cancellation'):
+            running.result(timeout=3)
+    assert not permissions.pending(tools.root)
+
+
+def test_the_implementer_is_funded_from_the_time_left_before_the_question(host, tmp_path, monkeypatch):
+    tools, _, root, _ = host
+    intake(host); task = planned(host)
+    tools.state.update(session_id='parent', deadline_utc=time.time()+300)
+    tools.permission_directory = tmp_path/'prefs'
+    control = turn_control(tools.state, 300)
+    funded = []
+    monkeypatch.setattr(work_units, 'run_unit', lambda custody, state, *a, **kw: funded.append(
+        state['deadline_utc']-time.time()) or {'verdict': 'VERIFIED', 'applied': True, 'files': ['a.py']})
+    with permission_worker(control) as pool:
+        running = pool.submit(tools.execute, effect('implement', {}, 'execution-1'), control)
+        request = wait_request(tools.root)
+        left = tools.state['deadline_utc']-time.time()
+        time.sleep(1)
+        permissions.answer(tools.root, request['id'], 'once', project=root, directory=tools.permission_directory,
+                           control_root=relay_mesh.RELAY_ROOT)
+        assert running.result(timeout=3).status == 'succeeded'
+    assert len(funded) == 1 and abs(funded[0]-left) < .5
+
+
 def test_change_the_plan_starts_nothing_tells_the_coordinator_and_asks_about_the_next_plan(host, tmp_path, monkeypatch):
     tools, control, root, _ = host
     intake(host); task = planned(host)

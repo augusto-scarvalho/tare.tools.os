@@ -152,7 +152,8 @@ edit confirmation.
 
 Either way, an approval continues that plan in the same chat and covers its
 corrections; a new plan or other files ask again. The coordinator stays read-only.
-Waiting for your decision makes no model calls. Plan-only requests still do not execute.
+Waiting for your decision makes no model calls and does not spend the turn's time: its time limit stops
+until you answer. Plan-only requests still do not execute.
 Runs without the TUI (`tare serve`, headless runs) never show the plan.
 
 For advanced defaults, open `/permissions`:

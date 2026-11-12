@@ -2161,7 +2161,9 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
 
     @work(group='execution')
     async def run_command(self, args, selection):
-        started = time.monotonic()
+        from .worker_wait import TurnClock
+        clock = TurnClock()  # the elapsed time shown stops, like the turn's, while the plan dialog waits
+        started = clock()
         succeeded = False
         completion = None
         start_tree = None
@@ -2195,6 +2197,10 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 self.refresh_command_permission()
                 if selection.mode == 'session' and self.selection().mode == 'assistant':
                     self.refresh_execution_permission(selection)
+                if getattr(self, '_execution_permission_panel', None) is not None:
+                    clock.pause()
+                else:
+                    clock.resume()
                 if not completion.done():
                     try:
                         if selection.mode == 'session':
@@ -2204,12 +2210,14 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                         else:
                             progress = await asyncio.to_thread(self.backend.progress, selection)
                         prefix = 'Cancellation requested · ' if self.cancel_requested else ''
-                        self.set_status(prefix+f'{time.monotonic()-started:.0f}s · '+progress)
+                        self.set_status(prefix+(f'{clock()-started:.0f}s · '+progress if clock.since is None else
+                                                'Waiting for your answer · the turn\'s time is paused'))
                         # Stage summaries stay in the status line; child tool rows
                         # carry recorded operations without repeated progress cards.
                     except (OSError, ValueError, KeyError):
                         self.set_status('Running; progress observation unavailable.')
             stdout, stderr = await completion
+            clock.resume()
             output.finish_stream()
             if stderr:
                 self.say(stderr.decode('utf-8', errors='replace'))
@@ -2281,9 +2289,9 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                                 or result.get('capability_observations', {}).get('effects')) else '')
             if self.selection().mode == 'assistant' and selection.mode == 'session':
                 from .native_display import conversation_status
-                self.set_status(f'{conversation_status(result, exit_code=self.process.returncode)} · {time.monotonic()-started:.1f}s'+review_hint)
+                self.set_status(f'{conversation_status(result, exit_code=self.process.returncode)} · {clock()-started:.1f}s'+review_hint)
             else:
-                self.set_status(f"{result.get('status', 'UNAVAILABLE')} · {time.monotonic()-started:.1f}s · exit {self.process.returncode}"+review_hint)
+                self.set_status(f"{result.get('status', 'UNAVAILABLE')} · {clock()-started:.1f}s · exit {self.process.returncode}"+review_hint)
             if result.get('status') == 'PROPOSED' and selection.mode != 'session':
                 self.query_one('#prompt', TextArea).clear()
         except Exception as exc:

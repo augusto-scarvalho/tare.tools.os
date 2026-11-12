@@ -1,4 +1,6 @@
 """Keep one private worker while its requested folder awaits the operator's consent."""
+from contextlib import contextmanager, nullcontext
+from dataclasses import replace
 import hashlib
 import json
 import math
@@ -6,8 +8,64 @@ import os
 from pathlib import Path
 import re
 import shutil
+import time
 
 from compute_plane.native_journal import regular, read_json
+
+
+class TurnClock:
+    """A turn's monotonic clock that stops while the host waits for the user's answer. The session's
+    ExecutionControl reads it (monotonic=), so a wait spends none of the turn's time; resuming also moves the
+    saved deadline_utc (the conversation's time budget, its accounting and child funding) by the same wait."""
+
+    def __init__(self, state=None):
+        # (paused since, seconds waited so far), replaced as one value: other threads read the clock.
+        self.state, self.mark = state, (None, 0.0)
+
+    @property
+    def since(self):
+        return self.mark[0]
+
+    def __call__(self):
+        since, waited = self.mark
+        return (time.monotonic() if since is None else since) - waited
+
+    def pause(self):
+        since, waited = self.mark
+        if since is None:
+            self.mark = (time.monotonic(), waited)
+
+    def resume(self):
+        since, total = self.mark
+        if since is None:
+            return
+        waited = time.monotonic()-since
+        self.mark = (None, total+waited)
+        if self.state is not None:
+            if self.state.get('deadline_utc') is not None:
+                self.state['deadline_utc'] += waited
+            self.state['answer_wait_seconds'] = self.state.get('answer_wait_seconds', 0)+waited
+
+    @contextmanager
+    def waiting_for_user(self):
+        self.pause()
+        try:
+            yield
+        finally:
+            self.resume()
+
+
+def waiting_for_user(control):
+    """Stop the turn's clocks while the user decides; a control without a TurnClock keeps counting."""
+    return getattr(control.monotonic, 'waiting_for_user', nullcontext)()
+
+
+def steady(control):
+    """The same control on time.monotonic, for code that compares its deadline with time.monotonic() readings
+    (command reviews and the Kernel's action gate). Its deadline is fixed now: build it after any wait."""
+    if control.monotonic is time.monotonic:
+        return control
+    return replace(control, deadline_monotonic=time.monotonic()+control.remaining_seconds(), monotonic=time.monotonic)
 
 
 def digest(value):

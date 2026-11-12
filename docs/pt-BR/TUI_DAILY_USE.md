@@ -154,7 +154,8 @@ existente, não precisa de confirmação extra de edição.
 
 Nos dois casos, uma aprovação continua esse plano na mesma conversa e cobre as
 correções dele; um plano novo ou outros arquivos perguntam de novo. O coordenador
-continua somente leitura. Esperar pela sua decisão não faz chamadas de modelo. Pedidos
+continua somente leitura. Esperar pela sua decisão não faz chamadas de modelo nem gasta o
+tempo do turno: o limite de tempo para até você responder. Pedidos
 só de plano continuam sem executar. Execuções sem o TUI (`tare serve`, execuções
 headless) nunca mostram o plano.
 

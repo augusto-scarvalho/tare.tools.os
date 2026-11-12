@@ -14,6 +14,8 @@ import time
 from compute_plane.native_journal import custody_lock, regular, save_json
 from compute_plane.native_models import encode
 
+from .worker_wait import waiting_for_user
+
 SCHEMA = 'tare.tools/execution-permission/1'
 GRANT = ('session', 'task', 'plan', 'project', 'paths', 'checks', 'tests')
 CHOICES = {'once', 'project', 'deny', 'change'}
@@ -177,30 +179,31 @@ def authorize(root, state, task, effect_id, control, directory):
         regular(folder/'answer.json').unlink(missing_ok=True)
         save_json(regular(folder/'request.json'), request)
     try:
-        while not control.should_stop():
-            response = regular(folder/'answer.json')
-            if response.exists():
-                value = read_json(response, 4096)
-                if value.get('id') == request['id'] and value.get('choice') in CHOICES:
-                    if value['choice'] == 'deny':
-                        raise PermissionError('The user denied this execution. No implementer started. Do not ask again in this turn.')
-                    if value['choice'] == 'change':
-                        raise PlanChangeRequested(
-                            'The user asked to change the plan; no implementer started. '+
-                            ('Ask the planner for a revised plan with delegate_plan, passing their words; the user '
-                             'sees the new plan before implementation. The user wrote: '+value['changes']
-                             if value.get('changes') else
-                             'Ask the user what to change; do not plan or implement again before they answer.'))
-                    if ask:
-                        save_json(approved, approval)
-                    if allowed:
+        with waiting_for_user(control):  # the turn's time stops while the user reads and decides
+            while not control.should_stop():
+                response = regular(folder/'answer.json')
+                if response.exists():
+                    value = read_json(response, 4096)
+                    if value.get('id') == request['id'] and value.get('choice') in CHOICES:
+                        if value['choice'] == 'deny':
+                            raise PermissionError('The user denied this execution. No implementer started. Do not ask again in this turn.')
+                        if value['choice'] == 'change':
+                            raise PlanChangeRequested(
+                                'The user asked to change the plan; no implementer started. '+
+                                ('Ask the planner for a revised plan with delegate_plan, passing their words; the user '
+                                 'sees the new plan before implementation. The user wrote: '+value['changes']
+                                 if value.get('changes') else
+                                 'Ask the user what to change; do not plan or implement again before they answer.'))
+                        if ask:
+                            save_json(approved, approval)
+                        if allowed:
+                            return config
+                        if value['choice'] == 'once':
+                            save_json(granted, grant)
+                        config.setdefault('writable', {})[repository] = list(paths)
                         return config
-                    if value['choice'] == 'once':
-                        save_json(granted, grant)
-                    config.setdefault('writable', {})[repository] = list(paths)
-                    return config
-            time.sleep(.1)  # no inference while the operator decides; cancellation/deadline still apply
-        raise PermissionError('Execution permission was not granted before cancellation or the time limit. No implementer started.')
+                time.sleep(.1)  # no inference while the operator decides; with a TurnClock only cancellation or a stale binding ends it
+            raise PermissionError('Execution permission was not granted before cancellation or the time limit. No implementer started.')
     finally:
         with decision_lock(folder):
             request['status'] = 'CLOSED'

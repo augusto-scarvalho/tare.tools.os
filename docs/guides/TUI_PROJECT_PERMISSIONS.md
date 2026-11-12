@@ -28,7 +28,8 @@ once, also to open conversations.
 
 Either way, approval continues the same plan and conversation and covers that
 task's corrections; a new plan or other files ask again. The worker waits without inference while you decide; a
-denial starts no implementer and is not requested again in that user turn.
+denial starts no implementer and is not requested again in that user turn. The wait does not spend the turn's
+time: its time limit stops while the dialog is open and resumes, with the same time left, when you answer.
 
 Without an interactive frontend (`tare serve`, headless and scripted runs)
 nobody can be shown the plan, so nothing changes there: a plan whose files are
