@@ -3267,8 +3267,8 @@
     {
       "name": "console_permissions.py",
       "path": "tare.tools.os/relay/console_permissions.py",
-      "size_bytes": 9302,
-      "sha256": "54330b79ee857d20c8444badf1c7d74a4d4dbd1a28d119056c7a92ccac8bbb6c",
+      "size_bytes": 9809,
+      "sha256": "8f3050deb9de3a35431a7143d7ebaea25e3e16189fdfe52169388786dbdf0b87",
       "summary": "Compose project permission defaults with new-session controls.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
@@ -3277,8 +3277,8 @@
     {
       "name": "permissions_panel.py",
       "path": "tare.tools.os/relay/permissions_panel.py",
-      "size_bytes": 23943,
-      "sha256": "1a52ceb2240153c724e95e0817b5de53381d90d512865fba644a5bf260eb75fc",
+      "size_bytes": 25194,
+      "sha256": "f1e853e74403b8a6bcf853ba5e5dad22cb2d34daafb96cb7031ea20be61ae889",
       "summary": "View saved permissions and explicitly save defaults for new conversations.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
@@ -3287,8 +3287,8 @@
     {
       "name": "project_permissions.py",
       "path": "tare.tools.os/relay/project_permissions.py",
-      "size_bytes": 20643,
-      "sha256": "d74af06b5b48e14ba984b844ea364f0cd14401a5350b3403be4f1ee8ce8f29a0",
+      "size_bytes": 20766,
+      "sha256": "ee08e1d40211b0829f7f1982b151c1ba0f1794d491b1bb6645eb3845e5e6117a",
       "summary": "Validate scoped project defaults and observe saved session permissions.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
@@ -4101,8 +4101,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 108631,
-      "sha256": "2d041ba284bdde1c5ee71e144de8e9729440b109f959ce0dd6c96f8aa52cac6c"
+      "size_bytes": 109683,
+      "sha256": "caf9f4a85f3aa66cf595e64bfda0724a45fd1de2954cac167f86c129b6d548ae"
     },
     {
       "name": "conversation_review.py",
@@ -4131,8 +4131,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 7622,
-      "sha256": "9213c9d8e8868d392427276ca8377da23b410c624ae30e8f1b13c78cc53abf5d"
+      "size_bytes": 10833,
+      "sha256": "d4e88b82eb43662653bcaa5b0bbbfba2a8c90693ef11e7f00619cb5c7d69d510"
     },
     {
       "name": "execution_permission_panel.py",
@@ -4141,8 +4141,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 2892,
-      "sha256": "72e21aad0e7c7a872f426fb3be02c9efa24127c6584a22995a98bf6d4415eced"
+      "size_bytes": 4477,
+      "sha256": "d90930b8482228323bb410f4f3cf3e2a65bad392124fd70c2fd0038a9f9f19d0"
     },
     {
       "name": "web_research.py",

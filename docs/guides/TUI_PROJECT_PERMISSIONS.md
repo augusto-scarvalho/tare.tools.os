@@ -1,10 +1,31 @@
 # Project permissions in the TUI
 
-For normal coding requests, ask in the conversation. If the plan needs edit
-access, an inline question offers **Allow for this task**, **Always allow in this project**
-or **Deny**, showing the affected files and checks. Approval continues the same
-plan and conversation and covers that task's corrections; a new plan or other files ask again. The worker waits without inference while you decide; a
+For normal coding requests, ask in the conversation. Before anything is
+implemented, tare shows the planner's whole plan in an **Implement this plan?**
+dialog: its summary, steps, files, checks, what it must achieve and what the
+planner left uncertain, scrollable. It offers **Implement this plan**, **Change the plan** and
+**Deny**; when the plan's files still need edit access, it also offers
+**Implement, always allow edits here**, so one dialog covers both questions. **Change the plan**
+implements nothing: the coordinator is told you want changes, with what you
+typed in the line above the buttons (or it asks you what to change), and the
+revised plan is shown again before anything is implemented. An approval is remembered for that
+plan: corrections of the same task under the same plan do not ask again, and a new plan asks again.
+
+**Before implementing** in `/permissions` chooses this. **Show me the plan and
+ask** (the default) shows every new plan, even in a project that already allows
+edits. **Go straight on** implements without showing the plan, as tare did
+before: if the plan needs edit access the project does not allow yet, an inline
+question offers **Allow for this task**, **Always allow in this project** or
+**Deny**, showing the affected files and checks. The choice applies at once,
+also to open conversations.
+
+Either way, approval continues the same plan and conversation and covers that
+task's corrections; a new plan or other files ask again. The worker waits without inference while you decide; a
 denial starts no implementer and is not requested again in that user turn.
+
+Without an interactive frontend (`tare serve`, headless and scripted runs)
+nobody can be shown the plan, so nothing changes there: a plan whose files are
+already allowed is implemented, and one that needs edit access is refused.
 
 Remembering grants project file changes and checks; it does not enable arbitrary
 commands, disable sandbox policy or adopt project instructions. Existing edit or
@@ -23,6 +44,9 @@ the current conversation's actual permissions, and its recorded project instruct
 | Read only | Read files, list folders and search project text |
 | Edit files | Reading plus edits within the selected paths |
 | Edit + system commands | Scoped file tools plus the terminal tools |
+
+**Before implementing** (above) is saved with these defaults but is read each
+time a plan is about to be implemented, so it also reaches open conversations.
 
 Enter one project-relative file or directory per line. Use `.` for the whole
 project; for example, `src` and `docs` permit edits inside those directories.

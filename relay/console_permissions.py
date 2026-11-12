@@ -31,7 +31,7 @@ class ProjectPermissions:
 
     def refresh_execution_permission(self, selected):
         """Observe one host request while its tool waits; the model never answers it."""
-        from .conversation_permissions import pending, answer
+        from .conversation_permissions import pending, answer, plan_text
         from .execution_permission_panel import ExecutionPermissionPanel
         try:
             request = pending(selected.session)
@@ -45,14 +45,22 @@ class ProjectPermissions:
         if request['id'] == getattr(self, '_execution_permission_seen', None):
             return
         self._execution_permission_seen = request['id']
+        if 'artifact' in request:
+            try:
+                request = {**request, 'plan_text': plan_text(selected.session, request)}
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                request = {**request, 'plan_text': 'The saved plan cannot be shown: '+str(exc)}
         panel = self._execution_permission_panel = ExecutionPermissionPanel(request)
         self.set_status('Waiting for your permission · no model calls while you decide')
         def decided(choice):
             self._execution_permission_panel = None
             try:
                 answer(selected.session, request['id'], choice or 'deny', project=selected.root,
-                    directory=self.permissions_directory(selected.root), control_root=relay_mesh.RELAY_ROOT)
-                self.set_status('Permission denied.' if choice == 'deny' else 'Permission granted · continuing the saved plan')
+                    directory=self.permissions_directory(selected.root), control_root=relay_mesh.RELAY_ROOT,
+                    changes=panel.changes)
+                self.set_status('Permission denied.' if choice == 'deny' else
+                                'Plan sent back for changes · nothing was implemented' if choice == 'change' else
+                                'Permission granted · continuing the saved plan')
             except (OSError, ValueError) as exc:
                 self.notify(str(exc), severity='error')
                 self._execution_permission_seen = None

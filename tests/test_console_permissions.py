@@ -101,8 +101,12 @@ def test_project_defaults_panel_switch_draft_and_readonly_assistant(tmp_path, mo
             assert isinstance(panel, PermissionsPanel)
             panel.query_one('#permissions-mode', Select).value = 'edit'
             panel.query_one('#permissions-paths', TextArea).load_text('docs')
+            plan = panel.query_one('#permissions-plan', Select)
+            assert plan.value == 'ask' and not plan.disabled  # the default: show me the plan and ask
+            plan.value = 'go'
             await pilot.pause()
             panel.action_save(); await panel.workers.wait_for_complete()
+            assert read_defaults(state/'console', one, control)[0]['show_plan'] is False
             panel.action_close(); await pilot.pause()
             assert app.selection().role == 'implementer'
             assert app.selection().write_paths == ['docs'] and not backend.launches

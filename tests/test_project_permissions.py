@@ -44,6 +44,19 @@ def test_preferences_scope_revision_and_corruption(tmp_path):
     assert path.read_text() == '{broken'
 
 
+def test_plan_preference_is_kept_when_another_frontend_changes_the_mode(tmp_path):
+    from relay.turn_engine import set_project_permission_mode
+    project = tmp_path/'project'; project.mkdir()
+    directory, control = tmp_path/'preferences', tmp_path/'control'
+    defaults, revision = read_defaults(directory, project, control)
+    assert 'show_plan' not in defaults  # absent: show me the plan and ask
+    save_defaults(directory, project, control, {**defaults, 'show_plan': False}, revision)
+    set_project_permission_mode(project, 'edit')
+    assert read_defaults(directory, project, control)[0]['show_plan'] is False
+    with pytest.raises(ValueError, match='plan'):
+        validate_defaults({'mode': 'read', 'write_paths': [], 'show_plan': 'no'})
+
+
 @pytest.mark.parametrize('read_only', [False, True])
 def test_cli_scopes_are_enforced_by_real_tools_and_resume_keeps_them(setup, monkeypatch, read_only):
     _, custody, root = setup

@@ -23,6 +23,14 @@ MODE_OPTIONS = [
     ('Edit + system commands', 'commands'),
 ]
 
+PLAN_OPTIONS = [('Show me the plan and ask', 'ask'), ('Go straight on', 'go')]
+PLAN_HELP = (
+    "Show me the plan and ask: before changing files, tare shows the whole plan and waits for Implement this "
+    "plan, Change the plan or Deny, even where edits are already allowed. Go straight on: tare implements without "
+    "showing the plan and asks only for file access this project does not allow yet. Applies at once, also to "
+    "open conversations."
+)
+
 
 class PermissionsPanel(SupportPanel):
     """Modal support panel for viewing and configuring project defaults."""
@@ -74,6 +82,11 @@ class PermissionsPanel(SupportPanel):
     .permissions-protection-row Static { width: 20; }
     .permissions-protection-row Select { width: 1fr; height: 1; }
     #permissions-review-limit { width: 1fr; height: 1; }
+    #permissions-plan-help {
+        height: auto;
+        color: $text-muted;
+        margin: 0 0 1 0;
+    }
     #permissions-command-warning {
         color: $warning;
         height: auto;
@@ -188,6 +201,10 @@ class PermissionsPanel(SupportPanel):
                     yield Static('Defaults:', id='permissions-mode-label', markup=False)
                     yield Select(MODE_OPTIONS, value='read', allow_blank=False, id='permissions-mode')
                 with Horizontal(classes='permissions-protection-row'):
+                    yield Static('Before implementing:', markup=False)
+                    yield Select(PLAN_OPTIONS, value='ask', allow_blank=False, id='permissions-plan')
+                yield Static(PLAN_HELP, id='permissions-plan-help', markup=False)
+                with Horizontal(classes='permissions-protection-row'):
                     yield Static('Command pre-check:', markup=False)
                     yield Select([('Jev online · review uncertain commands','jev_auto'), ('Jev online · also review every command','jev_always'),
                                   ('Selected model · check every command','model')], value='jev_auto',
@@ -262,6 +279,7 @@ class PermissionsPanel(SupportPanel):
         defaults = {
             'mode': mode,
             'write_paths': write_paths,
+            'show_plan': self.query_one('#permissions-plan', Select).value != 'go',
         }
         review = self.query_one('#permissions-review', Select).value
         if mode == 'commands' and review != 'off':
@@ -446,6 +464,7 @@ class PermissionsPanel(SupportPanel):
         protection = defaults.get('command_protection', {})
         with self.prevent(Select.Changed):
             mode_select.value = mode
+            self.query_one('#permissions-plan', Select).value = 'ask' if defaults.get('show_plan', True) else 'go'
             self.query_one('#permissions-review', Select).value = protection.get('review', 'off')
             self.query_one('#permissions-isolation', Select).value = protection.get('backend', 'mxc')
             preset=('jev_auto' if protection.get('classifier')=='jev' and protection.get('review_policy')=='on_demand'
@@ -480,6 +499,7 @@ class PermissionsPanel(SupportPanel):
         self.query_one('#permissions-root', Checkbox).disabled = True
         self.query_one('#permissions-nested', Checkbox).disabled = True
         self.query_one('#permissions-mode', Select).disabled = True
+        self.query_one('#permissions-plan', Select).disabled = True
         self.query_one('#permissions-paths', TextArea).disabled = True
         self.query_one('#permissions-review', Select).disabled = True
         self.query_one('#permissions-classifier', Select).disabled = True
@@ -511,6 +531,7 @@ class PermissionsPanel(SupportPanel):
 
         mode_select = self.query_one('#permissions-mode', Select)
         mode_select.disabled = (self.revision is None)
+        self.query_one('#permissions-plan', Select).disabled = (self.revision is None)
         current_mode = str(mode_select.value) if mode_select.value != Select.BLANK else 'read'
 
         paths_area = self.query_one('#permissions-paths', TextArea)

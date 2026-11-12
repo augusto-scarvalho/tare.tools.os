@@ -14,8 +14,10 @@ DEFAULTS = {'mode': 'read', 'write_paths': [], 'project_admission': dict(project
 
 
 def validate_defaults(value):
-    if not isinstance(value, dict) or set(value) - {'mode', 'write_paths', 'command_protection', 'project_admission'} or not {'mode', 'write_paths'} <= set(value) or not isinstance(value['mode'], str) or value['mode'] not in {'read', 'edit', 'commands'}:
+    if not isinstance(value, dict) or set(value) - {'mode', 'write_paths', 'command_protection', 'project_admission', 'show_plan'} or not {'mode', 'write_paths'} <= set(value) or not isinstance(value['mode'], str) or value['mode'] not in {'read', 'edit', 'commands'}:
         raise ValueError('Choose read only, edit files, or edit with system commands.')
+    if type(value.get('show_plan', True)) is not bool:
+        raise ValueError('Choose whether to see the plan before implementing.')
     paths = value['write_paths']
     if not isinstance(paths, list) or len(paths) > 32 or not paths and value['mode'] != 'read':
         raise ValueError('Enter 1–32 project-relative edit paths, or . for the whole project.')
@@ -33,6 +35,8 @@ def validate_defaults(value):
         if name not in cleaned:
             cleaned.append(name)
     result = {'mode': value['mode'], 'write_paths': cleaned}
+    if 'show_plan' in value:  # absent: show me the plan and ask
+        result['show_plan'] = value['show_plan']
     if 'project_admission' in value:
         result['project_admission'] = project_admission.validate(value['project_admission'])
     if value.get('command_protection') is not None:
@@ -62,10 +66,8 @@ def read_defaults(directory, project, control_root):
     from .turn_engine import project_permission_mode
     mode = project_permission_mode(preference_path(directory, project, control_root)[1])
     if mode and mode != defaults['mode']:
-        defaults = validate_defaults({'mode': mode, 'write_paths': defaults['write_paths'] or ['.'],
-            **({'project_admission': defaults['project_admission']} if 'project_admission' in defaults else {}),
-            **({'command_protection': defaults['command_protection']}
-               if mode == 'commands' and 'command_protection' in defaults else {})})
+        defaults = validate_defaults({**{k: v for k, v in defaults.items() if k != 'command_protection' or mode == 'commands'},
+                                      'mode': mode, 'write_paths': defaults['write_paths'] or ['.']})
     policy = defaults.get('project_admission') or {}
     repo = project_admission.repository(project) if policy.get('mode') in ('quarantine', 'trusted') else None
     if repo is not None:  # in Git the repository's record decides, for every worktree of it

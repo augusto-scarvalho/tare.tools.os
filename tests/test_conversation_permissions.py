@@ -9,7 +9,7 @@ import time
 import pytest
 
 from relay import conversation_permissions as permissions, conversation_tasks as tasks, relay_mesh, work_units
-from relay.project_permissions import read_defaults
+from relay.project_permissions import read_defaults, save_defaults
 from test_conversation_tasks import host, intake, planned, effect  # noqa: F401
 
 
@@ -72,6 +72,7 @@ def test_operator_decision_resumes_the_same_plan_without_changing_coordinator_sc
         request = wait_request(tools.root)
         assert not running.done() and not seen and (root/'a.py').read_text() == 'value = 1\n'
         assert request['paths'] == ['a.py'] and request['plan'] == task['plan']['sha256']
+        assert request['files_allowed'] is False and 'artifact' in request  # one dialog: the plan and its files
         permissions.answer(tools.root, request['id'], choice, project=root, directory=directory,
                            control_root=relay_mesh.RELAY_ROOT)
         if choice == 'deny':
@@ -228,16 +229,108 @@ def test_decision_effect_failure_is_never_replayed(tmp_path, monkeypatch):
     assert calls == [tmp_path]
 
 
+def go_straight_on(directory, project):
+    defaults, revision = read_defaults(directory, project, relay_mesh.RELAY_ROOT)
+    save_defaults(directory, project, relay_mesh.RELAY_ROOT, {**defaults, 'show_plan': False}, revision)
+
+
 @pytest.mark.parametrize('mode',['edit','commands'])
 def test_remembered_project_or_yolo_policy_needs_no_question_even_in_old_read_only_chat(host,tmp_path,mode):
     from relay.turn_engine import set_project_permission_mode
     tools,control,root,_=host
     intake(host); task=planned(host)
     tools.state['config']['writable']={}
+    go_straight_on(tmp_path/'prefs', root)
     set_project_permission_mode(root,mode)
     worker=permissions.authorize(tools.root,tools.state,task,'effect',control,tmp_path/'prefs')
     assert worker['writable']=={'repo':['a.py']}
     assert tools.state['config']['writable']=={} and not permissions.pending(tools.root)
+
+
+def test_go_straight_on_keeps_todays_permission_question(host, tmp_path):
+    tools, control, root, _ = host
+    intake(host); task = planned(host)
+    tools.state.update(session_id='parent')
+    directory = tmp_path/'prefs'
+    go_straight_on(directory, root)
+    # Session edit scope already allows the plan's files: no question, no folder, the session's scope unchanged.
+    assert permissions.authorize(tools.root, tools.state, task, 'effect', control, directory) == tools.state['config']
+    assert not (tools.root/'execution-permission').exists()
+    tools.state['config']['writable'] = {}
+    with permission_worker(control) as pool:
+        running = pool.submit(permissions.authorize, tools.root, tools.state, task, 'effect', control, directory)
+        request = wait_request(tools.root)
+        assert set(request) == {'schema', 'session', 'effect', 'task', 'plan', 'project', 'paths', 'checks',
+                                'tests', 'objective', 'status', 'id'}  # exactly today's request
+        with pytest.raises(ValueError, match='no plan'):
+            permissions.answer(tools.root, request['id'], 'change', project=root, directory=directory,
+                               control_root=relay_mesh.RELAY_ROOT)
+        permissions.answer(tools.root, request['id'], 'once', project=root, directory=directory,
+                           control_root=relay_mesh.RELAY_ROOT)
+        assert running.result(timeout=3) == {**tools.state['config'], 'writable': {'repo': ['a.py']}}
+    folder = tools.root/'execution-permission'
+    assert (folder/'granted.json').exists() and not (folder/'approved.json').exists()
+
+
+def test_plan_is_shown_even_where_edits_are_allowed_and_asked_once_per_plan(host, tmp_path):
+    tools, control, root, _ = host
+    intake(host); task = planned(host)
+    tools.state.update(session_id='parent')
+    directory = tmp_path/'prefs'
+    # Nobody to ask without a frontend: today's behaviour.
+    assert permissions.authorize(tools.root, tools.state, task, 'effect', control, None) == tools.state['config']
+    with permission_worker(control) as pool:
+        running = pool.submit(permissions.authorize, tools.root, tools.state, task, 'effect', control, directory)
+        request = wait_request(tools.root)
+        assert request['files_allowed'] is True and request['artifact'] == task['plan']['artifact']
+        text = permissions.plan_text(tools.root, request)
+        assert 'Change a.py.' in text and '1. Edit a.py.' in text and 'Files: a.py' in text
+        permissions.answer(tools.root, request['id'], 'once', project=root, directory=directory,
+                           control_root=relay_mesh.RELAY_ROOT)
+        assert running.result(timeout=3) == tools.state['config']  # the session's own scope, not narrowed
+        # A correction under the same plan does not ask again; a different plan does.
+        assert permissions.authorize(tools.root, tools.state, task, 'again', control, directory) == tools.state['config']
+        replanned = deepcopy(task); replanned['plan']['sha256'] = 'f'*64
+        asking = pool.submit(permissions.authorize, tools.root, tools.state, replanned, 'replanned', control, directory)
+        assert wait_request(tools.root)['plan'] == 'f'*64 and not asking.done()
+    assert not (tools.root/'execution-permission'/'granted.json').exists()
+
+
+def test_change_the_plan_starts_nothing_tells_the_coordinator_and_asks_about_the_next_plan(host, tmp_path, monkeypatch):
+    tools, control, root, _ = host
+    intake(host); task = planned(host)
+    tools.state.update(session_id='parent')
+    tools.permission_directory = tmp_path/'prefs'
+    workers = []
+    monkeypatch.setattr(work_units, 'run_unit', lambda custody, state, *a, **kw: workers.append(state) or
+                        {'verdict': 'VERIFIED', 'applied': True, 'files': ['a.py']})
+    with permission_worker(control) as pool:
+        running = pool.submit(tools.execute, effect('implement', {}, 'execution-1'), control)
+        request = wait_request(tools.root)
+        permissions.answer(tools.root, request['id'], 'change', project=root, directory=tools.permission_directory,
+                           control_root=relay_mesh.RELAY_ROOT, changes='  Keep the old value as a comment. ')
+        result = running.result(timeout=3)
+        reason = json.loads(result.output_json)['reason']
+        assert result.status == 'refused' and workers == []
+        assert 'delegate_plan' in reason and reason.endswith('The user wrote: Keep the old value as a comment.')
+        saved = tasks.current(tasks.load(tools.root))
+        assert saved['replan_from'] == {'artifact': task['plan']['artifact'], 'sha256': task['plan']['sha256']}
+        assert saved['planning_revision'] == task.get('planning_revision', 0)+1
+        # The same plan is not offered again in this turn.
+        again = tools.execute(effect('implement', {}, 'execution-2'), control)
+        assert again.status == 'refused' and 'change this plan' in again.output_json and not permissions.pending(tools.root)
+        # The revised plan is asked about again, then implemented.
+        artifact = tools.root/'planning'/'revised'/'session'/'artifact.json'; artifact.parent.mkdir(parents=True)
+        payload = json.loads(open(task['plan']['artifact'], encoding='utf-8').read())['payload']
+        permissions.save_json(artifact, {'payload': {**payload, 'steps': ['Edit a.py; keep the old value as a comment.']}})
+        value = tasks.load(tools.root); tasks.task_plan(tools.root, tools.state['config'], tasks.current(value),
+                                                       {'artifact': str(artifact)}); tasks.save(tools.root, value)
+        running = pool.submit(tools.execute, effect('implement', {}, 'execution-3'), control)
+        request = wait_request(tools.root)
+        assert 'keep the old value as a comment' in permissions.plan_text(tools.root, request)
+        permissions.answer(tools.root, request['id'], 'once', project=root, directory=tools.permission_directory,
+                           control_root=relay_mesh.RELAY_ROOT)
+        assert running.result(timeout=3).status == 'succeeded' and len(workers) == 1
 
 
 def test_missing_plan_reports_failed_planning_instead_of_claiming_preserved_plan(host):
