@@ -33,6 +33,7 @@ class GuidancePanel(SupportPanel):
     DEFAULT_CSS = '''
     GuidancePanel #guidance-text { height: 1fr; }
     GuidancePanel #guidance-about, GuidancePanel #guidance-status { height: auto; max-height: 5; }
+    GuidancePanel #guidance-default { width: 20; }  /* fits "Vendor's default": a changed label does not widen it */
     '''
 
     def compose(self):
