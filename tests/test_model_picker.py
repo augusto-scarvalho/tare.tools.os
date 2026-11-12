@@ -168,6 +168,9 @@ def test_model_button_grows_with_its_label_and_ellipsizes_only_when_the_row_is_f
             app.render_model_controls(HeaderDetails('main', 'x', 'Saved model', display_model='Claude Sonnet 5.5 Extended'))
             await pilot.pause()
             assert shown_label() == 'Claude Sonnet 5.5 Extended \u25be'  # was cut at the width of the first label
+            app.render_model_controls(HeaderDetails('main', 'Reading saved model\u2026', 'Saved model'))
+            await pilot.pause()
+            assert shown_label() == 'Claude Sonnet 5.5 Extended \u25be'  # the name stays while the header reads the model
             app.render_model_controls(HeaderDetails('main', 'x', 'Saved model', display_model='very-long-model-name-' * 5))
             await pilot.pause()
             assert row.region.contains_region(button.region)
