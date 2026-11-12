@@ -241,7 +241,9 @@ def research(deployment, question, *, root, control, max_calls, refresh=False, o
     physical = None
     try:
         capsule = prompt_capsule(deployment, 'researcher', 'leaf')
-        system = capsule['system']
+        from .guidance import fill, values
+        system = fill(capsule['system'], values(model_id=(deployment.get('native_profile') or {}).get('model'),
+                                                model_name=deployment.get('model')))  # variables (/guidance)
         argv, saved, actual_model = command(deployment, directory, system, control, max_calls)
         prompt = ('Research this question using web tools. Return the specified JSON report. '
                   'For each finding, copy only a short literal source locator into anchor; '

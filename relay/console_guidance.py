@@ -5,20 +5,23 @@ import difflib
 from rich.text import Text
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Button, OptionList, Static, TextArea
+from textual.widgets import Button, Input, OptionList, Static, TextArea
 from textual.widgets.option_list import Option
 
 from .console_panels import SupportPanel
 
 # The list's groups, in this order; a CLI heading carries the version its texts were read from.
-GROUPS = {'role': 'tare · role guidance', 'protocol': 'tare · protocol texts (read-only)',
+GROUPS = {'common': 'Common · sent to every CLI', 'variables': 'Variables',
+          'role': 'tare · role guidance', 'protocol': 'tare · protocol texts (read-only)',
           'cli://claude': 'Claude Code', 'cli://codex': 'Codex', 'cli://agy': 'AGY'}
 CLIS = ('cli://claude', 'cli://codex', 'cli://agy')
 # As the Files pane (F8) marks a changed file: the name in a theme colour, then one bold letter. M and D as git
 # says them for a file; C for a default that changed under the owner's choice; U, as untracked, for a block the
 # owner has not seen yet; T for a block tare leaves out by default. M also marks a block the owner sends again over
-# tare's default: either way the text sent is the owner's choice. (theme variable, fallback colour)
-MARKS = {'yours': ('M', 'warning', 'yellow'), 'kept': ('M', 'warning', 'yellow'), 'removed': ('D', 'error', 'red'),
+# tare's default, and the owner's own variables and common texts: either way the text is the owner's choice.
+# (theme variable, fallback colour)
+MARKS = {'yours': ('M', 'warning', 'yellow'), 'kept': ('M', 'warning', 'yellow'), 'own': ('M', 'warning', 'yellow'),
+         'removed': ('D', 'error', 'red'),
          'tare-default': ('T', 'primary', 'blue'), 'changed': ('C', 'accent', 'magenta'),
          'new': ('U', 'success', 'green')}
 LEGEND = ('M your choice · D removed · T left out by tare · C default changed under your edit · U new · '
@@ -46,7 +49,11 @@ def comparison(item):
 
 def describe(item):
     """Who wrote the text, where it goes, what can be done with it and when a change takes effect, in plain words."""
+    if item['group'] in {'common', 'variables'}:
+        return describe_own(item)
     origin = 'Added by the CLI on its own.' if item['owner'] == 'vendor' else 'Written by tare.'
+    if item.get('overlap'):
+        origin += " The common text \"Context\" gives the same facts, but AGY cannot leave this block out."
     if not item['controls']:
         how = 'Read-only.' if item['owner'] == 'tare' else 'The CLI offers no way to change it.'
     elif item['owner'] == 'tare':
@@ -72,6 +79,26 @@ def describe(item):
     note = ' ' + item['note'] if item['owner'] == 'vendor' and item.get('note') else ''
     seen = ' ' + item['seen'] if item.get('seen') else ''
     return f'{state.get(item["state"], "")}{origin}{seen} Sent as: {item["sent_as"]}. {how}{note}'
+
+
+def describe_own(item):
+    """A common text or a variable, in plain words."""
+    if item['group'] == 'variables':
+        if not item['controls']:
+            return (f'Filled by tare: {item["sent_as"]}. Use it as {item["title"].split(" · ")[0]} in your common texts, '
+                    'role texts and Claude Code block replacements.')
+        return (f'Your variable. Its text goes {item["sent_as"]}; new sessions use a change. Write a name below and '
+                'Add to make another; Delete removes this one.')
+    switch = 'On: it is added' if item['on'] else 'Off. When on, it is added'
+    text = (f'{switch} to the end of the system text of each new session, for every CLI and API route. Use variables '
+            'such as <date> or <model name>; tare fills them on each turn.')
+    if item['id'] == 'common#context':
+        return (text + ' Sessions started while it is on (conversations and the work they delegate) get it, and '
+                'their calls leave out the blocks that say the same: Claude Code\'s environment, model and date, and '
+                'Codex\'s environment where tare checked that Codex leaves it out. AGY\'s stay: AGY cannot leave them '
+                'out. Calls outside a session (heads-up notes, image descriptions, research) do not get Context and '
+                'keep the CLI\'s own blocks. ' + ('Your text is in use. ' if item['state'] == 'yours' else ''))
+    return text + ' Your own text: Delete removes it.'
 
 
 def group_lines(endpoint, value, reading):
@@ -101,7 +128,10 @@ class GuidancePanel(SupportPanel):
     BINDINGS = [Binding('escape', 'close', 'Back', priority=True)]
     DEFAULT_CSS = '''
     GuidancePanel #guidance-body { height: 1fr; }
-    GuidancePanel #guidance-item { width: 2fr; height: 1fr; }
+    GuidancePanel #guidance-left { width: 2fr; height: 1fr; }
+    GuidancePanel #guidance-item { height: 1fr; }
+    GuidancePanel #guidance-new { height: 1; }
+    GuidancePanel #guidance-name { width: 1fr; }
     GuidancePanel #guidance-detail { width: 3fr; height: 1fr; }
     GuidancePanel #guidance-text, GuidancePanel #guidance-diff { height: 1fr; }
     GuidancePanel #guidance-read, GuidancePanel #guidance-about, GuidancePanel #guidance-status { height: auto;
@@ -117,7 +147,11 @@ class GuidancePanel(SupportPanel):
                 yield Button('Back · Esc', id='guidance-close')
             yield Static('', id='guidance-read', markup=False)
             with Horizontal(id='guidance-body'):
-                yield OptionList(id='guidance-item')
+                with Vertical(id='guidance-left'):
+                    yield OptionList(id='guidance-item')
+                    with Horizontal(id='guidance-new'):  # a new variable or common text, in the selected group
+                        yield Input(placeholder='name of a new one', id='guidance-name')
+                        yield Button('Add', id='guidance-add')
                 with Vertical(id='guidance-detail'):
                     yield Static('', id='guidance-about', markup=False)
                     yield TextArea('', soft_wrap=True, id='guidance-text')
@@ -155,7 +189,8 @@ class GuidancePanel(SupportPanel):
 
     def options(self, read, reading):
         """Each group's heading (not selectable), then its texts; a CLI's texts only once its reading is done."""
-        groups = {'role', 'protocol', *(CLIS if reading else ()), *(row['group'] for row in self.items.values())}
+        groups = {'common', 'variables', 'role', 'protocol', *(CLIS if reading else ()),
+                  *(row['group'] for row in self.items.values())}
         entries = []
         for group in sorted(groups, key=lambda g: list(GROUPS).index(g) if g in GROUPS else len(GROUPS)):
             value = read.get(group) or {}
@@ -203,28 +238,46 @@ class GuidancePanel(SupportPanel):
         diff.load_text(comparison(item))
         diff.display = bool(diff.text)
         self.query_one('#guidance-save', Button).disabled = text.read_only
-        self.query_one('#guidance-remove', Button).disabled = ('remove' not in item['controls']
-                                                               or item['state'] in {'removed', 'tare-default'})
-        self.query_one('#guidance-keep', Button).disabled = item['state'] != 'changed'
+        # Remove deletes the owner's own variable or common text; Keep mine turns a common text on or off.
+        remove, keep = self.query_one('#guidance-remove', Button), self.query_one('#guidance-keep', Button)
+        remove.label = 'Delete' if item['state'] == 'own' else 'Remove'
+        remove.disabled = item['state'] != 'own' and ('remove' not in item['controls']
+                                                      or item['state'] in {'removed', 'tare-default'})
+        keep.label = ('Turn off' if item.get('on') else 'Turn on') if item['group'] == 'common' else 'Keep mine'
+        keep.disabled = item['group'] != 'common' and item['state'] != 'changed'
         default = self.query_one('#guidance-default', Button)
         # Back to the default: tare's own, also for a block tare leaves out; from there, the CLI's text again.
         default.label = ('Use the new default' if item['state'] == 'changed' else
                          "Vendor's default" if item['state'] == 'tare-default' else
                          "tare's default" if item['owner'] == 'tare' or item.get('tare_default')
                          and item.get('tare_proved') else "Vendor's default")
-        default.disabled = item['state'] in {'default', 'new'}
+        default.disabled = item['state'] in {'default', 'new', 'own'}
 
     async def on_button_pressed(self, event):
         event.stop()
-        from .guidance import keep, reset, save, send_again
+        from .guidance import create, delete, keep, reset, save, send_again, toggle
         if event.button.id == 'guidance-close':
             self.action_close()
             return
         key = self.current
         item = self.items[key]
-        later = 'New sessions use it.' if item['owner'] == 'tare' else 'It applies from the next turn.'
+        later = 'It applies from the next turn.' if item['owner'] == 'vendor' else 'New sessions use it.'
         try:
-            if event.button.id == 'guidance-save':
+            if event.button.id == 'guidance-add':
+                kind = {'variables': 'variable', 'common': 'common'}.get(item['group'])
+                if kind is None:
+                    raise ValueError('Select something under Common or Variables, write a name, then Add.')
+                name = self.query_one('#guidance-name', Input)
+                self.current = await asyncio.to_thread(create, kind, name.value)
+                name.value = ''
+                message = 'Added. Write its text and Save.'
+            elif event.button.id == 'guidance-remove' and item['state'] == 'own':
+                await asyncio.to_thread(delete, key)
+                message = 'Deleted.'
+            elif event.button.id == 'guidance-keep' and item['group'] == 'common':
+                await asyncio.to_thread(toggle, key)
+                message = ('Turned off. ' if item.get('on') else 'Turned on. ') + later
+            elif event.button.id == 'guidance-save':
                 await asyncio.to_thread(save, key, self.query_one('#guidance-text', TextArea).text)
                 message = 'Saved. ' + later
             elif event.button.id == 'guidance-remove':
@@ -242,8 +295,9 @@ class GuidancePanel(SupportPanel):
                            "Back to the vendor's default. ") + later
             else:
                 await asyncio.to_thread(reset)
-                message = ("Every text is back to its default: tare's for role guidance and the blocks tare leaves "
-                           "out, the vendor's for the other vendor blocks.")
+                message = ("Every text is back to its default: tare's for role guidance, Context and the blocks tare "
+                           "leaves out, the vendor's for the other vendor blocks. Your own variables and common texts "
+                           "stay.")
             self.reload(keep_text=False)
         except (ValueError, OSError) as exc:
             message = str(exc)

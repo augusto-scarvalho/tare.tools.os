@@ -163,8 +163,10 @@ def resolve(models, name):
 
 def guidance(deployment):
     """tare's working rules for a client's conversation: the serve capsule (relay/prompt_capsules.json)."""
+    from .guidance import fill, values
     from .native_agent import prompt_capsule
-    return prompt_capsule(deployment, '*', 'serve').get('system', '')
+    return fill(prompt_capsule(deployment, '*', 'serve').get('system', ''),  # variables (/guidance)
+                values(model_id=(deployment.get('native_profile') or {}).get('model'), model_name=deployment.get('model')))
 
 
 def with_guidance(messages, text):
