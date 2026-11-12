@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from tare_tools_agent_runtime import CancellationToken
-from relay import native_agent, research_flow as flow
+from relay import native_agent, native_limits, research_flow as flow
 from relay.console_backend import Backend, Selection, command
 from test_native_agent import setup, Client, deployment
 from test_research import fetch
@@ -48,7 +48,8 @@ def test_collected_sources_real_native_delivery_and_idempotent_resume(study):
     assert len(calls) == 1 and len(fetched) == 1
     assert (directory/'analyst'/'artifact.json').read_bytes() == artifact
     state = native_agent.read_json(directory/'analyst'/'native-agent.json')
-    assert all(v is None for k,v in state['limits'].items() if k != 'max_model_retries')
+    assert state['limits']['max_stagnant_turns'] == native_limits.UNLIMITED_STAGNANT_TURNS
+    assert all(v is None for k,v in state['limits'].items() if k not in ('max_model_retries', 'max_stagnant_turns'))
     assert state['config']['capabilities'] == ['read','list','search']
     assert state['config']['writable'] == {}
     assert (root/'a.py').read_bytes() == b'value = 1\n'

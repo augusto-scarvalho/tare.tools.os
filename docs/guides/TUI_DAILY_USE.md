@@ -229,6 +229,12 @@ reply, even while a turn is running, and sends nothing to the agent. The record 
 this machine (the log holds no text) and is used with the note labels to tune when and
 what notes are written.
 
+### Limits and the no-progress pause
+
+New conversations start with **Unlimited calls and time**. They still pause after 6 replies in a
+row in which the model got nothing new from its tools. The status reads "Paused: no progress",
+nothing is lost, and sending any message continues the conversation with a new count.
+
 ### Inspect usage, tasks, tools and project skills
 
 - `/usage` opens on its first row, **Provider quota and credit**: what each

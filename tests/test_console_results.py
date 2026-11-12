@@ -45,6 +45,20 @@ def test_result_summary_cannot_promote_model_claims_or_stale_checks():
     assert 'error' in conversation_status(result, exit_code=2)
 
 
+def test_a_no_progress_stop_reads_as_a_pause_and_other_blocks_do_not_change():
+    paused = {'status': 'BLOCKED', 'reason': 'NO_PROGRESS'}
+    assert conversation_status(paused) == 'Paused: no progress'
+    view = conversation_result(paused)
+    assert 'several times in a row' in view['notice'] and 'send any message to continue' in view['notice']
+    assert 'Unable to continue' not in view['notice'] and 'send any message to continue' in view['details']
+    counted = conversation_result({**paused, 'effective_limits': {'max_stagnant_turns': 6}})
+    assert 'replied 6 times in a row' in counted['notice']
+    other = {'status': 'BLOCKED', 'reason': 'MODEL_CALL_BUDGET'}
+    assert conversation_status(other) == 'Unable to continue'
+    assert conversation_result(other)['notice'] == (
+        'Unable to continue: (MODEL_CALL_BUDGET); open Execution details before continuing.')
+
+
 def test_reply_is_visible_before_deferred_layout_notifications(tmp_path, monkeypatch):
     from textual import events
     monkeypatch.setattr(relay_mesh, 'RELAY_ROOT', tmp_path/'control')

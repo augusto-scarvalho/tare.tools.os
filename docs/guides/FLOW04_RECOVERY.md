@@ -122,9 +122,14 @@ child (and a grandchild in a nested Job) exits, and that the same owner without 
 An abrupt end still leaves the session as it was; it is picked up by the existing recovery (reopen the conversation;
 `console_recovery`).
 
+Also holding: Unlimited (the default of new conversations) lifts calls and time, not the no-progress stop. An
+unlimited conversation, and each stage of an unlimited Work run, stops after 6 model replies in a row that got nothing
+new from their tools (`UNLIMITED_STAGNANT_TURNS`, a looser limit than the default 3). In a conversation the TUI shows
+this as "Paused: no progress", not as a failure: nothing is lost, and sending any message continues it and starts a
+new count. `--max-stagnant-turns unlimited` still removes the stop.
+
 Known limits, not covered:
 
-- New conversations default to Unlimited calls and time, and delegated children inherit it.
 - There is no ceiling above one session (per day or per machine) in calls or dollars.
 - `tare serve` turns cannot be cancelled and their per-message limits renew.
 - On Linux and WSL, children and provider process groups outlive a killed owner.

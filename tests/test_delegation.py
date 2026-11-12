@@ -365,6 +365,21 @@ def test_tool_schemas_stay_within_local_grammar_limits(tmp_path):
     assert all(v <= 2000 for v in limits(json.loads(tools.tool_specs_json)))
 
 
+def test_only_a_new_completed_report_counts_as_progress(tmp_path):
+    # The runtime's no-progress stop reads EffectResult.progressed; asking a cached question again must not reset it.
+    from types import SimpleNamespace
+    from compute_plane.native_models import encode
+    base = SimpleNamespace(names=('read',), tool_specs_json=encode({'read': {'description': 'r', 'parameters': {}}}))
+    tools = ExplorationTools(base, tmp_path, {'delegation': {'settings': {}}, 'limits': {'max_model_calls': None},
+                                              'config': {'role': 'implementer', 'repositories': {'repo': str(tmp_path)}}})
+    request = SimpleNamespace(effect_id='effect-1')
+    assert tools.result(request, [{'status': 'COMPLETED'}]).progressed is True
+    assert tools.result(request, [{'status': 'COMPLETED', 'reused': 'earlier'}]).progressed is False
+    assert tools.result(request, [{'status': 'FAILED'}]).progressed is False
+    mixed = tools.result(request, [{'status': 'COMPLETED', 'reused': 'earlier'}, {'status': 'COMPLETED'}])
+    assert mixed.progressed is True
+
+
 def test_the_explorer_is_always_the_configured_one_never_the_session_model(enabled):
     local = deployment(endpoint='http://100.64.0.10:8080/v1')
     local['id'] = 'fleet-swift27b'
