@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- Backlog: FLOW-04 (basic stop, budget and recovery) is done. Its 36 recovery cells passed on Windows and Linux in a whole-suite run of `main`, and `docs/guides/FLOW04_RECOVERY.md` lists what stays outside it as known limits.
 - Unlimited conversations no longer run forever when the model repeats itself: calls and time stay unlimited, but after 6 replies in a row that got nothing new from their tools (a looser limit than the default 3, picked from 372 saved sessions) the conversation pauses. The TUI says "Paused: no progress" instead of "Unable to continue", nothing is lost, and sending any message continues with a new count; `--max-stagnant-turns unlimited` still removes the stop. A new `explore` report now counts as progress, a repeated question answered from the saved report does not.
 - Heads-up notes now show what they cost: `/usage` has a Heads-up row with the calls, tokens, time and known cost of the writer, a paid API call is counted against the balance you declared, and quitting the console stops a writer call in flight instead of waiting for it.
 - Closing or killing the console no longer leaves its agent running on Windows: each turn and Work run now ends together with the console, and so do the model processes it started.
