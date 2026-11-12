@@ -1,5 +1,7 @@
 import hashlib
 import json
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -639,3 +641,114 @@ def test_the_default_writer_is_a_mid_to_high_model_at_high_effort_and_no_small_m
     assert default['heads_up'] == ['claude-sonnet-5-5-cli', 'codex-cli-gpt-6-1-sol']
     assert default['heads_up_effort'] == 'high'
     assert not any('haiku' in name or 'luna' in name or 'local' in name for name in default['heads_up'])
+
+
+CONTRACT = {'layout': 'chat-inclusive', 'source': 'test'}
+RECEIPT = {'attempt_id': 'a1', 'usage': {'prompt_tokens': 1200, 'completion_tokens': 80},
+           'cost': {'currency': 'USD', 'known_amount': '0.0123', 'complete': True}}
+
+
+@pytest.fixture
+def writer(monkeypatch, tmp_path):
+    """One writer route; the process-wide stop and the machine storage belong to this test alone."""
+    monkeypatch.setattr(heads_up, '_token', None)
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
+    monkeypatch.setattr(turn_engine, 'policy', lambda: {'heads_up': ['w']})
+
+    def route(**deployment):
+        monkeypatch.setattr(turn_engine, 'available', lambda name: (
+            {'id': 'w', 'native_profile': {'model': 'm'}, 'native_usage_contract': CONTRACT, **deployment}, None))
+    route()
+    route.ledger = tmp_path/'storage'/'serve'/'provider-spend.jsonl'
+    return route
+
+
+def answers(monkeypatch, receipt, ok=True):
+    monkeypatch.setattr('relay.native_generation.generate_text',
+                        lambda *a, **kw: (ok, '- The verifier failed.' if ok else '', receipt))
+
+
+def test_the_writer_keeps_tokens_and_dollars_and_no_text(monkeypatch, writer):
+    answers(monkeypatch, RECEIPT)
+    notes, [attempt] = heads_up.write('{}', [])
+    assert notes == ['The verifier failed.']
+    assert attempt['tokens']['input_tokens'] == 1200 and attempt['tokens']['output_tokens'] == 80
+    assert attempt['usd'] == 0.0123 and 'verifier' not in json.dumps(attempt)
+    # Missing usage is unknown, not zero: the keys stay out.
+    answers(monkeypatch, {'usage': None, 'cost': {'currency': 'USD', 'known_amount': None}})
+    [attempt] = heads_up.write('{}', [])[1]
+    assert 'tokens' not in attempt and 'usd' not in attempt
+    answers(monkeypatch, {})
+    assert heads_up.write('{}', [])[1][0].keys() == {'route', 'ok', 'ms'}
+    # A failed call may carry its usage too.
+    answers(monkeypatch, {**RECEIPT, 'failure_class': 'RESPONSE_INCOMPLETE'}, ok=False)
+    [attempt] = heads_up.write('{}', [])[1]
+    assert attempt['failure'] == 'RESPONSE_INCOMPLETE' and attempt['tokens']['input_tokens'] == 1200
+
+
+def test_a_paid_route_posts_to_the_ledger_and_a_subscription_posts_nothing(monkeypatch, writer):
+    answers(monkeypatch, RECEIPT)
+    writer(native_credential_env='OPENAI_API_KEY')
+    heads_up.write('{}', [])
+    [row] = [json.loads(line) for line in writer.ledger.read_text(encoding='utf-8').splitlines()]
+    assert (row['account'], row['usd'], row['call'], row['deployment']) == ('openai-api', 0.0123, 'a1', 'w')
+    writer.ledger.unlink()
+    writer()  # a subscription or local route: no API account
+    heads_up.write('{}', [])
+    assert not writer.ledger.exists()
+
+
+def test_a_ledger_failure_does_not_lose_the_note(monkeypatch, writer):
+    answers(monkeypatch, RECEIPT)
+
+    def refuse(*a, **kw):
+        raise OSError('disk full')
+    monkeypatch.setattr('relay.provider_spend.record', refuse)
+    notes, [attempt] = heads_up.write('{}', [])
+    assert notes == ['The verifier failed.'] and attempt['usd'] == 0.0123
+
+
+def test_provider_spend_record_posts_a_call_without_a_session_marker(tmp_path, monkeypatch):
+    from relay import provider_spend
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path))
+    deployment = {'id': 'w', 'native_credential_env': 'ANTHROPIC_API_KEY'}
+    call = {'call_id': 'c', 'cost': {'currency': 'USD', 'known_amount': '0.5'}}
+    assert provider_spend.record(deployment, [call, {'call_id': 'free', 'cost': None}], now=7) == 1
+    assert provider_spend.spent('anthropic-api', 0) == .5 and not list(tmp_path.glob('**/spend-posted.json'))
+
+
+def test_stop_cancels_a_call_in_flight_and_starts_no_new_one(monkeypatch, writer):
+    started, seen = threading.Event(), []
+
+    def generate_text(deployment, model, prompt, timeout, **kw):
+        seen.append(kw['control'])
+        started.set()
+        end = time.monotonic() + 5
+        while not kw['control'].cancellation.is_cancelled() and time.monotonic() < end:
+            time.sleep(.01)
+        return False, '', {'failure_class': 'CONTROL_STOPPED'}
+    monkeypatch.setattr('relay.native_generation.generate_text', generate_text)
+    result = []
+    worker = threading.Thread(target=lambda: result.append(heads_up.write('{}', [])))
+    worker.start()
+    assert started.wait(5)
+    heads_up.stop()
+    worker.join(5)
+    assert not worker.is_alive() and seen[0].cancellation.is_cancelled()
+    assert result[0][0] == [] and [a['failure'] for a in result[0][1]] == ['CONTROL_STOPPED']
+    assert heads_up.write('{}', []) == ([], []) and len(seen) == 1  # stopped for good: no second call
+
+
+def test_usage_totals_one_conversation_and_counts_older_rows_as_unknown(tmp_path, monkeypatch):
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path))
+    new = {'route': 'w', 'ok': True, 'ms': 2000, 'tokens': {'input_tokens': 1200, 'output_tokens': 80}, 'usd': 0.0123}
+    old = {'route': 'w', 'ok': False, 'ms': 500, 'failure': 'CLI_USAGE_LIMIT'}
+    rows = [{'session': 's1', 'writers': [old, new]}, {'session': 's1', 'writers': [new]},
+            {'session': 's1', 'writers': []}, {'session': 's1'}, {'session': 's2', 'writers': [new]}]
+    log = tmp_path/'serve'/'heads-up.jsonl'
+    log.parent.mkdir(parents=True)
+    log.write_text(''.join(json.dumps(r) + chr(10) for r in rows) + '{torn' + chr(10), encoding='utf-8')
+    assert heads_up.usage(tmp_path/'s1') == {
+        'turns': 2, 'calls': 3, 'unknown': 1, 'input_tokens': 2400, 'output_tokens': 160, 'ms': 4500,
+        'usd': 0.0246, 'usd_unknown': 1}
+    assert heads_up.usage(tmp_path/'s3')['calls'] == 0

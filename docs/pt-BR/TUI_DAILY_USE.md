@@ -222,7 +222,9 @@ escolhido mostra um visto, e você pode mudar a escolha). Esses registros ficam 
 máquina, o log não guarda o texto do aviso, e eles servem para ajustar quando os avisos
 são escritos. Um aviso aparece só enquanto a conversa está aberta; `/heads-up` coloca
 os últimos avisos no compositor pelo teclado, e a caixa de seleção nas Configurações
-desliga os avisos para a máquina.
+desliga os avisos para a máquina. O `/usage` mostra o que o redator dos avisos usou na
+conversa (chamadas, tokens, tempo e custo conhecido), e sair do console interrompe uma
+chamada do redator que ainda esteja em andamento.
 
 Quando uma resposta precisava de um aviso e o tare não mostrou nenhum, digite `/missed`
 seguido do que ela deveria ter dito (as palavras são opcionais). Isso registra o fato

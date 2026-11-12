@@ -370,3 +370,36 @@ def test_interactive_usage_panel_reads_the_providers_again_when_it_opens(tmp_pat
             assert "OpenRouter" in panel.query_one("#workbench-preview", TextArea).text
             assert [r["id"] for r in panel.rows[1:]] and panel.rows[1]["id"] != "quota"
     asyncio.run(scenario())
+
+
+def test_usage_panel_shows_what_heads_up_used_only_when_it_called_a_writer(tmp_path, monkeypatch):
+    import json
+    monkeypatch.setenv("TARE_STORAGE_ROOT", str(tmp_path/"state"))
+    root = tmp_path/"project"; root.mkdir()
+    session = tmp_path/"session"; _saved_shell(session)
+    monkeypatch.setattr("relay.native_review.review", lambda *a, **k: {})
+    monkeypatch.setattr("relay.native_profiles.usage", lambda value: {"model_calls": 1})
+    log = tmp_path/"state"/"serve"/"heads-up.jsonl"
+    call = {"route": "w", "ok": True, "ms": 2500, "tokens": {"input_tokens": 1200, "output_tokens": 80}, "usd": 0.0123}
+    rows = [{"session": session.name, "writers": [call, {"route": "w", "ok": True, "ms": 500}]},
+            {"session": "another", "writers": [call]}]
+
+    async def scenario():
+        app = WorkConsole(root, backend=FakeBackend(), initial_mode="assistant")
+        async with app.run_test() as pilot:
+            await app.workers.wait_for_complete()
+            app.assistant_session = session
+            app.action_usage(); await pilot.pause()
+            assert "heads-up" not in [r["id"] for r in app.screen.rows]  # no writer ran in this conversation
+            await pilot.press("escape"); await pilot.pause()
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_text("".join(json.dumps(r) + chr(10) for r in rows), encoding="utf-8")
+            app.action_usage(); await pilot.pause(.3)
+            ids = [r["id"] for r in app.screen.rows]
+            assert ids.index("heads-up") == ids.index("usage") + 1
+            row = app.screen.rows[ids.index("heads-up")]
+            assert row["label"] == "Heads-up · 2 calls"
+            for text in ("writer calls: 2", "1200 in, 80 out; 1 call(s) without token counts", "Time: 3.0 s",
+                         "USD 0.0123; 1 call(s) without a known price"):
+                assert text in row["body"]
+    asyncio.run(scenario())

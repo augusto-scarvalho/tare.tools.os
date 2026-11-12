@@ -1305,6 +1305,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
 
     async def on_unmount(self):
         self.connection_closing = True
+        self.stop_heads_up()
         self.restore_terminal_title()
         self.cancel_connection_check()
         task = self.connection_task
@@ -1316,6 +1317,14 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         close = getattr(self.backend,'close',None)
         if close is not None:
             await asyncio.to_thread(close)
+
+    @staticmethod
+    def stop_heads_up():
+        try:  # a heads-up writer in flight would keep the process alive after Quit; it never blocks quitting
+            from . import heads_up
+            heads_up.stop()
+        except Exception:
+            pass
 
     def say(self, value, *, literal=False):
         value = plain(value)
@@ -2930,6 +2939,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         else:
             if (self.demand_id or self.has_draft()) and not self.save_demand():
                 return
+            self.stop_heads_up()
             self.exit()
 
     @staticmethod

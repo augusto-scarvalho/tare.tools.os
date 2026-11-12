@@ -37,6 +37,15 @@ def post(deployment, usage, session, now=None):
         done = int(json.loads(marker.read_text(encoding='utf-8'))['calls'])
     except (OSError, ValueError, KeyError, TypeError):
         done = 0
+    posted = record(deployment, calls[done:], now)
+    if len(calls) != done:
+        marker.write_text(json.dumps({'calls': len(calls)}), encoding='utf-8')
+    return posted
+
+
+def record(deployment, calls, now=None):
+    """Add to the ledger the dollars of these calls ({'call_id', 'cost'}), with no marker: the caller knows they are
+    new (a side call with no session of its own, like the heads-up writer's). The number of rows added."""
     from .opencode import subscription
     name, rows = account(deployment), []
     plan = 'opencode-sub' if subscription(deployment) else None
@@ -47,7 +56,7 @@ def post(deployment, usage, session, now=None):
             return max(0.0, float(value))
         except (TypeError, ValueError):
             return 0.0
-    for call in calls[done:] if name or plan else []:
+    for call in calls if name or plan else []:
         cost = call.get('cost') or {}
         row = {'at': now, 'deployment': deployment.get('id'), 'call': call.get('call_id')}
         usd = amount(cost.get('known_amount')) if cost.get('currency') == 'USD' else 0.0
@@ -61,8 +70,6 @@ def post(deployment, usage, session, now=None):
         folder().mkdir(parents=True, exist_ok=True)
         with open(folder()/'provider-spend.jsonl', 'a', encoding='utf-8') as ledger:
             ledger.write('\n'.join(rows) + '\n')
-    if len(calls) != done:
-        marker.write_text(json.dumps({'calls': len(calls)}), encoding='utf-8')
     return len(rows)
 
 

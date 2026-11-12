@@ -2681,8 +2681,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 180278,
-      "sha256": "5399026209e40fb751f54a7529cdecd75e04f8ab10cf6f08b118613d3bbc7c0c"
+      "size_bytes": 180600,
+      "sha256": "2f0582ddc22ebfe960136afa2bf555b4528ddc034b7090ecc3eb78b41b861385"
     },
     {
       "name": "native_display.py",
@@ -3421,8 +3421,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator views and draft composition; Runtime retains execution authority.",
-      "size_bytes": 37166,
-      "sha256": "28ffbd4a7ef56d8bde8be690e86b634f370a8d73f72b211338ca487eda356e06"
+      "size_bytes": 38527,
+      "sha256": "79ce7fd1d764208994e7bb1b12b4e7df0e8284a331c90663565e3ddf723e6842"
     },
     {
       "name": "adaptive_routes.py",
@@ -4351,8 +4351,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 43161,
-      "sha256": "6eb13d6a45aa9c5c38c11820b4c81c780e816b3981e8466ac0e8340c1eb135a4"
+      "size_bytes": 47815,
+      "sha256": "de4d26dfea2f2c968529a672e3ca3eaa63c196fa4a98c7c3ab98e01ac44aea75"
     },
     {
       "name": "cli_qualification.py",
@@ -4401,8 +4401,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 5286,
-      "sha256": "06c6de8ab61cd209169a5b3a660235c2a909b2729aaf89d5f97ebfccea72eb51"
+      "size_bytes": 5615,
+      "sha256": "94d74f9b3d94fa3ec6c8cc1dbeae888aea97f7d83445eb2ccd1842fb0f471272"
     },
     {
       "name": "push_preflight.py",
