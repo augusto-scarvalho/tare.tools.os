@@ -152,3 +152,24 @@ def test_reasoning_command_completion_cancel_and_modal_blocks_global_send(tmp_pa
             assert not isinstance(app.screen, ModelPicker)
             assert not app.query_one('#profile', Input).value
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('size', [(150, 40), (80, 24)])
+def test_model_button_grows_with_its_label_and_ellipsizes_only_when_the_row_is_full(tmp_path, size):
+    from relay.console_header import HeaderDetails
+    async def scenario():
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=size) as pilot:
+            await app.workers.wait_for_complete()
+            button = app.query_one('#choose-model', Button)
+            row = app.query_one('#model-controls')
+            def shown_label():
+                return ''.join(s.text for s in button.render_line(0)).strip()
+            app.render_model_controls(HeaderDetails('main', 'x', 'Saved model', display_model='Claude Sonnet 5.5 Extended'))
+            await pilot.pause()
+            assert shown_label() == 'Claude Sonnet 5.5 Extended \u25be'  # was cut at the width of the first label
+            app.render_model_controls(HeaderDetails('main', 'x', 'Saved model', display_model='very-long-model-name-' * 5))
+            await pilot.pause()
+            assert row.region.contains_region(button.region)
+            assert shown_label().endswith('\u2026')  # an ellipsis, not a cut mid-word
+    asyncio.run(scenario())

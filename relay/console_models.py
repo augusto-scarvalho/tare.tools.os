@@ -361,3 +361,5 @@ class ConversationModels:
         reasoning.label = ({'xhigh': 'Extra high'}.get(effort, effort.capitalize()) or 'Default')+' ▾'
         reasoning.tooltip = 'Choose reasoning for new conversations'
         model.disabled = reasoning.disabled = self.busy or self.sending_message
+        # Button.label repaints but does not re-measure; width: auto must follow the new label.
+        model.refresh(layout=True); reasoning.refresh(layout=True)

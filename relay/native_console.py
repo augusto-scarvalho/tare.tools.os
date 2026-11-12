@@ -282,7 +282,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
     #model-controls { height: 1; margin-bottom: 1; display: none; }
     Screen.assistant #model-controls { display: block; }
     #model-controls Button { height: 1; min-height: 1; width: auto; max-width: 65%; min-width: 0;
-        border: none; padding: 0 1 0 0; margin-right: 2; background: transparent; color: $text-muted; }
+        border: none; padding: 0 1 0 0; margin-right: 2; background: transparent; color: $text-muted;
+        text-wrap: nowrap; text-overflow: ellipsis; }
     #model-controls Button:hover, #model-controls Button:focus { color: $primary; }
     '''
 
