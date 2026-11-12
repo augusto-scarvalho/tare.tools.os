@@ -118,7 +118,7 @@ HELP = ('Conversation sends ordinary messages directly to the assistant, with wo
         '/delegation configures read-only planning and exploration with separate models inside new native sessions. '
         '/routes chooses the routes per role and the order tare falls back through when one is unavailable. '
         '/guidance shows the guidance that reaches the models: tare\'s role texts, which you can edit, the blocks '
-        'Claude Code and Codex add on their own, which you can remove or replace where the CLI allows, and tare\'s '
+        'Claude Code, Codex and AGY add on their own, which you can remove or replace where the CLI allows, and tare\'s '
         'protocol texts; each change goes back to its default with one button. '
         '/fleet chooses the local models the GPU node serves (those tare.tools qualified first, your own too) and '
         'the default tare auto runs. '

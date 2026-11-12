@@ -29,19 +29,51 @@ def reading(date="Today's date is <date>.", extra=()):
          'controls': ('remove', 'replace'), 'text': date}, *extra]},
             'cli://codex': {'cli': 'Codex', 'cli_version': '0.166.0', 'note': 'Read with prompt-input.', 'items': [
         {'id': 'environment_context', 'title': 'Block <environment_context>', 'sent_as': 'user message',
-         'controls': ('remove',), 'text': '<environment_context>\n  <cwd><working directory></cwd>'}]}}
+         'controls': ('remove',), 'text': '<environment_context>\n  <cwd><working directory></cwd>'}]},
+            'cli://agy': {'cli': 'AGY', 'cli_version': '1.5.7', 'note': 'Read from its record.', 'items': []}}
 
 
-def read_as(monkeypatch, value):
+def real_reading(claude_version='2.1.322', agy_tool='Manage background tasks.'):
+    """What compute_plane.vendor_guidance.read_real returns: one small real call each."""
+    return {'cli://claude': {'cli': 'Claude Code', 'cli_version': claude_version, 'note': 'Read on this machine.',
+                             'usage': {'output_tokens': 4}, 'items': [
+        {'id': 'context:userEmail', 'title': 'Context block "userEmail"', 'sent_as': "user message before tare's records",
+         'controls': ('remove',), 'text': "The user's email address is <account email>.", 'local': 'same'},
+        {'id': 'attachment:total_tokens_reminder', 'title': 'Attachment "total_tokens_reminder"',
+         'sent_as': 'sent with the request; seen only in a real call', 'controls': ('remove', 'replace'),
+         'text': '<total_tokens><tokens> tokens left</total_tokens>', 'local': 'absent'}]},
+            'cli://agy': {'cli': 'AGY', 'cli_version': '1.5.7', 'note': 'Read from its record.',
+                          'usage': {'total_tokens': 758}, 'items': [
+        {'id': 'request:ADDITIONAL_METADATA', 'title': 'Block <ADDITIONAL_METADATA>', 'sent_as': 'user message',
+         'controls': (), 'text': 'The current local time is: <local time>.'},
+        {'id': 'tool:manage_task', 'title': 'Tool "manage_task"', 'sent_as': 'tool definition', 'controls': (),
+         'text': agy_tool}]}}
+
+
+def read_as(monkeypatch, value, real=None, calls=None):
+    """One TUI start's readings, from fixtures: never a CLI, never a real call. `real` is what a real reading
+    returns per CLI (missing: it fails, as a spent quota does); `calls` collects the real readings made."""
     from compute_plane import vendor_guidance
-    from relay import cli_discovery
+    from relay import cli_discovery, turn_engine
     monkeypatch.setattr(cli_discovery, 'locate', lambda endpoint: f'C:/fixture/{endpoint[6:]}.exe')
+    routes = {'claude-haiku-5-5-cli': 'claude-haiku-5-5', 'agy-cli': 'gemini-3.8-flash-high'}
+    monkeypatch.setattr(turn_engine, 'available', lambda name, probe=True: (
+        {'native_profile': {'model': routes[name]}, 'native_cli': {'executable': f'C:/fixture/{name}.exe'}}
+        if name in routes else None, 'not installed'))
 
     def read(endpoint, executable):
         if isinstance(value.get(endpoint), Exception):
             raise value[endpoint]
         return json.loads(json.dumps(value[endpoint]))
+
+    def read_real(endpoint, executable, *, model):
+        if calls is not None:
+            calls.append((endpoint, model))
+        if endpoint not in (real or {}):
+            raise ValueError('You have hit your usage limit.')
+        return json.loads(json.dumps(real[endpoint]))
     monkeypatch.setattr(vendor_guidance, 'read', read)
+    monkeypatch.setattr(vendor_guidance, 'read_real', read_real)
     return guidance.refresh_readings()
 
 
@@ -192,7 +224,7 @@ def test_guidance_in_the_tui_shows_before_and_after_and_settles_each_change(tmp_
             await pilot.pause()
             panel = app.screen
             assert isinstance(panel, GuidancePanel)
-            assert 'Claude Code 2.1.322 read' in str(panel.query_one('#guidance-read', Static).render())
+            assert 'Claude Code 2.1.322: read without tokens' in str(panel.query_one('#guidance-read', Static).render())
             choice, text = panel.query_one('#guidance-item', Select), panel.query_one('#guidance-text', TextArea)
             diff = panel.query_one('#guidance-diff', TextArea)
             buttons = {b.id: b for b in panel.query(Button)}
@@ -245,3 +277,42 @@ def test_the_before_and_after_view_keeps_each_line_apart():
     from relay.console_guidance import compare
     lines = compare("Today's date is <date>.", 'Today is a test day.', 'default', 'yours').splitlines()
     assert lines[-2:] == ["-Today's date is <date>.", '+Today is a test day.']  # texts without a final newline
+
+
+def test_a_real_reading_runs_once_per_cli_version_on_the_cheapest_ready_route(monkeypatch):
+    calls = []
+    stored = read_as(monkeypatch, reading(), real_reading(), calls)
+    # Haiku is Claude's cheapest ready route; AGY's route model is read at its low tier. Codex needs no real reading.
+    assert calls == [('cli://claude', 'claude-haiku-5-5'), ('cli://agy', 'gemini-3.8-flash-low')]
+    assert stored['cli://claude']['real']['usage'] == {'output_tokens': 4}
+    rows = {r['id']: r for r in guidance.items()}
+    reminder = rows['vendor#cli://claude#attachment:total_tokens_reminder']
+    assert reminder['seen'].startswith('Seen only in a real call') and reminder['controls'] == ('remove', 'replace')
+    assert rows[EMAIL]['seen'] == ''  # the zero-token reading has it
+    guidance.save(reminder['id'], None)  # a block seen only in a real call can be left out like any other
+    assert guidance.vendor_choices('cli://claude') == {'attachment:total_tokens_reminder': None}
+    agy = rows['vendor#cli://agy#tool:manage_task']
+    assert agy['controls'] == () and agy['seen'] == "Read from AGY's own record of a real call."
+    read_as(monkeypatch, reading(), real_reading(), calls)
+    assert len(calls) == 2  # the same versions: no second real call
+    newer = reading()
+    newer['cli://claude']['cli_version'] = '2.1.323'
+    read_as(monkeypatch, newer, real_reading('2.1.323'), calls)
+    assert calls[2:] == [('cli://claude', 'claude-haiku-5-5')]  # only the CLI whose version changed
+
+
+def test_agy_shows_its_starting_point_until_a_real_reading_and_says_when_one_fails(monkeypatch):
+    from compute_plane.vendor_guidance import AGY_STARTING_POINT
+    from relay.console_guidance import read_line
+    stored = read_as(monkeypatch, reading())  # every real call fails, as with a spent quota
+    assert 'usage limit' in stored['cli://agy']['real']['error'] and 'items' not in stored['cli://agy']['real']
+    rows = {r['id']: r for r in guidance.items() if r['id'].startswith('vendor#cli://agy#')}
+    assert [r.split('#')[2] for r in rows] == [i['id'] for i in AGY_STARTING_POINT['items']]
+    assert all(r['seen'].startswith('From what AGY 1.5.7 sent on 2026-11-12') for r in rows.values())
+    line = read_line()
+    assert 'AGY 1.5.7: shown as AGY 1.5.7 sent it on 2026-11-12, until tare reads yours' in line
+    assert 'the real call could not be made' in line
+    read_as(monkeypatch, reading(), real_reading(agy_tool='A new description.'))
+    rows = {r['id']: r for r in guidance.items() if r['id'].startswith('vendor#cli://agy#')}
+    assert rows['vendor#cli://agy#tool:manage_task']['previous']  # changed since the starting point
+    assert 'AGY 1.5.7: read in a real call' in read_line()

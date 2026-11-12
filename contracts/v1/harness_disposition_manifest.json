@@ -2861,8 +2861,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns experience and flow selection; native text inference and execution owners are reused.",
-      "size_bytes": 18874,
-      "sha256": "396f54821cd2e5ab7b8496a5b816233eccc62a41bcd89e365e6c9c99b4c571ba"
+      "size_bytes": 18879,
+      "sha256": "dc55250ada9293651ee6740ced448b386f96c0c2ed16c7f59fc2e3989ecbd209"
     },
     {
       "name": "work_intake.py",
@@ -4421,8 +4421,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 11607,
-      "sha256": "722e503217c30fa302b38475e673d03c235e00b4846a4476bc2c949342fd9ae8"
+      "size_bytes": 15211,
+      "sha256": "d2c8d243e4035f8d53ef5f57d80122ba495800b6a39f3363f1fe0547236dee83"
     },
     {
       "name": "console_guidance.py",
@@ -4431,8 +4431,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 8497,
-      "sha256": "b879a552ca149d2ef332231bfb740d49f9f7d1512ff43ace0e9346aa488ed3e3"
+      "size_bytes": 9377,
+      "sha256": "b94deee0fdb258e500d97f8a83f4f2271e43795782c02c729f235cc093764006"
     }
   ]
 }

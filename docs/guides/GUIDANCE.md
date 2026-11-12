@@ -21,20 +21,49 @@ default. **Reset everything** deletes the file.
 
 ## Reading what each CLI adds
 
-Each time the TUI opens, tare reads in the background what Claude Code and Codex add on their own right now. It
-uses no tokens and never holds up the TUI. The result is kept in `<storage>/serve/vendor-guidance.json`, and the
-panel's first line says which CLI version each text was read from and when.
+Each time the TUI opens, tare reads in the background what each CLI adds on its own right now. The reading never
+holds up the TUI. The result is kept in `<storage>/serve/vendor-guidance.json`. The panel's first line says which
+CLI version each text was read from, how, and when.
 
-- **Claude Code.** tare starts the CLI with its usual settings, but points it at a recorder on this machine
-  instead of Anthropic's servers. The CLI's login token goes only to that recorder, so it never leaves the
-  computer, and nothing reaches the provider. The recorder keeps the request's body, not its headers, and refuses
-  the request, so the CLI stops at once. It takes about two seconds.
-- **Codex.** tare asks Codex to show what it would send (`codex debug prompt-input`); nothing is sent. It takes
-  under a second.
-- **AGY.** tare cannot see what AGY adds, so it lists nothing and changes nothing.
+There are two kinds of reading:
 
-Values that belong to your machine or to the day, such as your email, folders, dates and model names, are shown as
-placeholders like `<account email>`. That way two readings of the same CLI version match.
+- **Without tokens, at every start.** For Claude Code and Codex.
+- **With one small real call, once per CLI version.** For Claude Code and AGY, when the installed version differs
+  from that of the last real reading. The call goes to the CLI's cheapest ready route (Claude Haiku; for AGY, the
+  low tier of its Gemini Flash route) at low effort, and costs a few hundred tokens. If it fails, for example
+  because a quota is spent, the panel keeps the last reading and says the real call could not be made. tare tries
+  again at the next start, never more than once per start.
+
+What each reading does for each CLI:
+
+- **Claude Code, without tokens.** tare starts the CLI with its usual settings, but points it at a recorder on
+  this machine instead of Anthropic's servers.
+  - The CLI's login token goes only to that recorder, so it never leaves the computer, and nothing reaches the
+    provider.
+  - The recorder keeps the request's body, not its headers, and refuses the request, so the CLI stops at once. It
+    takes about two seconds.
+- **Claude Code, real call.** The real call makes one small request, and tare's add-on records every block as it
+  is sent.
+  - Some blocks Claude Code adds only to a real call. On 2.1.322 that was the reminder of how many tokens are
+    left.
+  - The panel marks those blocks "Seen only in a real call". Like other blocks of their kind, they can be removed
+    or replaced.
+- **Codex, without tokens.** tare asks Codex to show what it would send (`codex debug prompt-input`); nothing is
+  sent.
+  - It does this as tare's real call would: with the skills installed on this machine, but without your login or
+    your Codex settings file.
+  - On Codex 0.166.0 every block matched what a real call sent. It takes about a second.
+- **AGY, real call.** AGY offers no way to see what it adds without a call. tare makes one small real call and
+  reads only the record AGY keeps of that call.
+  - It finds the frames around tare's text, a block with your local time, a block about the model selection, and
+    the tools AGY adds.
+  - None of them can be changed.
+  - The same record holds your saved AGY permission rules. Nothing shows whether they reach the model, so tare
+    does not list them.
+- **AGY, until the first real call works.** The panel shows what AGY 1.5.7 sent on 2026-11-12, marked as such.
+
+Values that belong to your machine or to the day, such as your email, folders, dates, times, token counts and model
+names, are shown as placeholders like `<account email>`. That way two readings of the same CLI version match.
 
 When you edit a Claude Code block, keep the placeholders where you want the real values: your text is sent
 with the values Claude Code wrote in that same block, so "Today is `<date>`." reaches the model with the real
@@ -59,6 +88,7 @@ and says so.
 - **Codex.** The skills list, the sandbox and escalation rules, the collaboration mode and the environment block
   can be removed. None can be replaced. Before the first call with a removal on a new Codex version, tare checks
   with Codex's own `debug prompt-input` that the block really goes away. If it does not, the call is refused.
+- **AGY.** Its blocks can only be read.
 
 A choice that a CLI cannot honour is refused before anything is sent (`CLI_GUIDANCE_UNSUPPORTED`). It is never
 silently ignored. How the Kernel reads each CLI and applies each control is in the Kernel's
@@ -86,8 +116,13 @@ to `/guidance`.
 - Claude Code applies a choice through a small mod. If the mod fails, Claude Code sends its own text anyway, so a
   removal on Claude is not proved for each request.
 - While a Claude choice is saved, Claude Code's built-in plugins run their hooks on every Claude call (see above).
-- The Claude reading points the CLI at a local address; whether a CLI behaves differently for that address than
-  for Anthropic's cannot be seen without a real call.
+- The Claude reading without tokens misses blocks that only a real call carries; the real call, once per version,
+  finds them. Neither shows the system lines Claude Code puts before tare's text to the add-on, so those come from
+  the reading without tokens.
+- AGY is read from its own record of a real call, by the tags in its text. An AGY version that changes those tags
+  cannot be read until tare learns them; what AGY sends but does not keep in that record cannot be seen.
+- A real reading is made on a subscription route; it is not added to the spend ledger, which counts paid API keys.
+  The tokens it used are kept with the reading.
 - If `guidance.json` holds a choice this version of tare cannot apply, calls to that CLI stop with "Open
   /guidance and choose "Reset everything"". That button deletes the file.
 - Whatever a provider adds on its own servers cannot be seen.
@@ -99,7 +134,8 @@ None of these are built:
 - a check before dispatch that inspects Claude's final request;
 - an archive of every old vendor text;
 - a "read again" button (a reading happens when the TUI opens);
-- reading AGY;
+- a real reading more often than once per CLI version, or for Codex (its reading without tokens matched a real
+  call);
 - blocking a new block by default;
 - editing tare's transport protocol texts, or the fixed sentences `run_session` adds around the role guidance;
 - other prompts in tare: the heads-up writer, vision, research, flow selection;
