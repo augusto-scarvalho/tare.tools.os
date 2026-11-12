@@ -123,7 +123,7 @@ def implement_native(*, worktree, descriptor, node, session_id, control, journal
         # Variables (/guidance) in the capsule: the owner's and the built-in ones this call knows.
         system=fill(((prompt_capsule or {}).get('system', '') + ' ' if (prompt_capsule or {}).get('system') else '') +
                'Implement the bounded Work using the admitted tools. A delivery is a proposal for independent verification.' +
-               (prompt_capsule or {}).get('system_append', ''), guidance_values(model_id=profile.model)),
+               (prompt_capsule or {}).get('system_append', ''), guidance_values(model_id=getattr(profile, 'model', None))),  # a profile without a model leaves <model id> as written
         tool_specs_json=tools.tool_specs_json)
     from .native_spend import compose, settings
     from compute_plane.native_journal import NativeJournal
