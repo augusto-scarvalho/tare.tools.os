@@ -4,7 +4,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
-from textual.widgets import Button, Select, Static, TextArea
+from textual.widgets import Button, OptionList, Static, TextArea
 
 from relay import guidance, native_agent
 from relay.console_guidance import GuidancePanel
@@ -224,18 +224,21 @@ def test_guidance_in_the_tui_shows_before_and_after_and_settles_each_change(tmp_
             await pilot.pause()
             panel = app.screen
             assert isinstance(panel, GuidancePanel)
-            assert 'Claude Code 2.1.322: read without tokens' in str(panel.query_one('#guidance-read', Static).render())
-            choice, text = panel.query_one('#guidance-item', Select), panel.query_one('#guidance-text', TextArea)
+            choice, text = panel.query_one('#guidance-item', OptionList), panel.query_one('#guidance-text', TextArea)
+            assert str(choice.get_option('group#cli://claude').prompt) == 'Claude Code 2.1.322'
+            assert str(choice.get_option('note#cli://claude#0').prompt).strip().startswith('Read without tokens')
+
+            async def pick(key):
+                choice.highlighted = choice.get_option_index(key)
+                await pilot.pause()
             diff = panel.query_one('#guidance-diff', TextArea)
             buttons = {b.id: b for b in panel.query(Button)}
             assert panel.region.contains_region(buttons['guidance-save'].region)
 
-            choice.value = 'transport#claude-native'
-            await pilot.pause()
+            await pick('transport#claude-native')
             assert text.read_only and buttons['guidance-save'].disabled and not diff.display
 
-            choice.value = DATE  # changed underneath: base -> new default, and the three ways out
-            await pilot.pause()
+            await pick(DATE)  # changed underneath: base -> new default, and the three ways out
             assert text.text == 'My date.' and not buttons['guidance-keep'].disabled
             assert "-Today's date is <date>." in diff.text and '+Today is <date> (new wording).' in diff.text
             assert str(buttons['guidance-default'].label) == 'Use the new default'
@@ -243,8 +246,7 @@ def test_guidance_in_the_tui_shows_before_and_after_and_settles_each_change(tmp_
             await pilot.pause()
             assert buttons['guidance-keep'].disabled and '+My date.' in diff.text  # now: default × yours
 
-            choice.value = EMAIL
-            await pilot.pause()
+            await pick(EMAIL)
             assert text.read_only and not buttons['guidance-remove'].disabled
             assert str(buttons['guidance-default'].label) == "Vendor's default" and buttons['guidance-default'].disabled
             await pilot.click('#guidance-remove')
@@ -255,8 +257,7 @@ def test_guidance_in_the_tui_shows_before_and_after_and_settles_each_change(tmp_
             await pilot.pause()
             assert 'context:userEmail' not in guidance.vendor_choices('cli://claude')
 
-            choice.value = IMPLEMENTER
-            await pilot.pause()
+            await pick(IMPLEMENTER)
             assert not text.read_only and str(buttons['guidance-default'].label) == "tare's default"
             text.load_text('Implement carefully.')
             await pilot.click('#guidance-save')
@@ -303,16 +304,89 @@ def test_a_real_reading_runs_once_per_cli_version_on_the_cheapest_ready_route(mo
 
 def test_agy_shows_its_starting_point_until_a_real_reading_and_says_when_one_fails(monkeypatch):
     from compute_plane.vendor_guidance import AGY_STARTING_POINT
-    from relay.console_guidance import read_line
+    from relay.console_guidance import group_lines
     stored = read_as(monkeypatch, reading())  # every real call fails, as with a spent quota
     assert 'usage limit' in stored['cli://agy']['real']['error'] and 'items' not in stored['cli://agy']['real']
     rows = {r['id']: r for r in guidance.items() if r['id'].startswith('vendor#cli://agy#')}
     assert [r.split('#')[2] for r in rows] == [i['id'] for i in AGY_STARTING_POINT['items']]
     assert all(r['seen'].startswith('From what AGY 1.5.7 sent on 2026-11-12') for r in rows.values())
-    line = read_line()
-    assert 'AGY 1.5.7: shown as AGY 1.5.7 sent it on 2026-11-12, until tare reads yours' in line
-    assert 'the real call could not be made' in line
+    line = ' '.join(group_lines('cli://agy', guidance.readings()['cli://agy'], False))
+    assert 'Shown as AGY 1.5.7 sent it on 2026-11-12, until tare reads yours.' in line
+    assert 'The real call could not be made' in line
     read_as(monkeypatch, reading(), real_reading(agy_tool='A new description.'))
     rows = {r['id']: r for r in guidance.items() if r['id'].startswith('vendor#cli://agy#')}
     assert rows['vendor#cli://agy#tool:manage_task']['previous']  # changed since the starting point
-    assert 'AGY 1.5.7: read in a real call' in read_line()
+    assert 'Read in a real call' in group_lines('cli://agy', guidance.readings()['cli://agy'], False)[0]
+
+
+@pytest.mark.parametrize('size', [(80, 24), (130, 44)])
+def test_guidance_waits_for_the_startup_reading_then_groups_and_marks_every_text(tmp_path, monkeypatch, size):
+    async def scenario():
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=size) as pilot:
+            await app.workers.wait_for_complete()
+            app.guidance_reading = True  # a start whose reading has not landed, and no reading stored yet
+            assert app.dispatch_conversation_command('/guidance', '')
+            await pilot.pause()
+            panel = app.screen
+            options, text = panel.query_one('#guidance-item', OptionList), panel.query_one('#guidance-text', TextArea)
+            buttons = {b.id: b for b in panel.query(Button)}
+            assert panel.region.contains_region(buttons['guidance-save'].region)
+
+            def listed():
+                return [options.get_option_at_index(i).id for i in range(options.option_count)]
+            headings = [key for key in listed() if key.startswith('group#')]
+            assert headings == ['group#role', 'group#protocol', 'group#cli://claude', 'group#cli://codex',
+                                'group#cli://agy']  # tare's texts first, then each CLI's
+            assert all(options.get_option(key).disabled for key in headings)
+            for cli in ('claude', 'codex', 'agy'):
+                assert str(options.get_option(f'note#cli://{cli}#0').prompt).strip().startswith('Being read now')
+            assert not any(key.startswith('vendor#') for key in listed())  # tare's own groups are usable at once
+            assert 'M edited' in str(panel.query_one('#guidance-read', Static).render())
+            options.highlighted = options.get_option_index(IMPLEMENTER)
+            await pilot.pause()
+            text.load_text('Typed, not saved yet.')
+
+            read_as(monkeypatch, reading())  # the reading lands while the panel is open
+            guidance.save(EMAIL, None)
+            guidance.save(DATE, 'My date.')
+            app.guidance_landed()
+            await pilot.pause()
+            claude = [key.split('#')[2] for key in listed() if key.startswith('vendor#cli://claude#')]
+            assert claude == ['system:2', 'context:userEmail', 'attachment:date']  # in the order they are sent
+            assert str(options.get_option('group#cli://claude').prompt) == 'Claude Code 2.1.322'
+            assert panel.current == IMPLEMENTER and text.text == 'Typed, not saved yet.'  # nothing lost
+            assert str(options.get_option(DATE).prompt).endswith('  M')
+            assert str(options.get_option(EMAIL).prompt).endswith('  D')
+            colour = app.theme_variables.get('warning') or 'yellow'
+            letter = options.get_option(DATE).prompt.spans[-1]
+            assert 'bold' in str(letter.style) and colour in str(letter.style)
+            for state, letter in (('yours', 'M'), ('removed', 'D'), ('changed', 'C'), ('new', 'U'), ('default', '')):
+                assert panel.label({'title': 'Block <permissions instructions>', 'state': state}).plain == (
+                    '  Block <permissions instructions>' + ('  ' + letter if letter else ''))
+            await pilot.press('escape')
+    asyncio.run(scenario())
+
+
+def test_a_block_missing_from_the_newest_reading_stays_listed_with_when_it_was_last_seen(monkeypatch):
+    added = {'id': 'attachment:skills', 'title': 'Attachment "skills"', 'sent_as': 'system message',
+             'controls': ('remove', 'replace'), 'text': 'Skills you may use.'}
+    read_as(monkeypatch, reading(extra=[added]), real_reading())
+    read_as(monkeypatch, reading())  # the zero-token reading no longer sees it
+    rows = {r['id']: r for r in guidance.items()}
+    skills = rows['vendor#cli://claude#attachment:skills']
+    assert skills['absent'] and skills['controls'] == ('remove', 'replace')
+    assert skills['seen'].startswith('Not in the latest reading: last seen ') and 'on Claude Code 2.1.322' in skills['seen']
+    guidance.save(skills['id'], None)  # one that comes and goes can still be left out
+    assert guidance.vendor_choices('cli://claude') == {'attachment:skills': None}
+    newer, real = reading(), real_reading('2.1.323')
+    newer['cli://claude']['cli_version'] = '2.1.323'
+    real['cli://claude']['items'] = [i for i in real['cli://claude']['items']
+                                     if i['id'] != 'attachment:total_tokens_reminder']
+    read_as(monkeypatch, newer, real)  # a real reading of a new version without the tokens-left reminder
+    rows = {r['id']: r for r in guidance.items()}
+    reminder = rows['vendor#cli://claude#attachment:total_tokens_reminder']
+    assert reminder['absent'] and 'on Claude Code 2.1.322' in reminder['seen'] and reminder['controls']
+    assert list(rows).index(reminder['id']) > list(rows).index(EMAIL)  # after the blocks sent now
+    read_as(monkeypatch, reading(extra=[added]), real)  # seen again: listed as present
+    assert not {r['id']: r for r in guidance.items()}['vendor#cli://claude#attachment:skills']['absent']

@@ -7,6 +7,36 @@ before × after, and one button takes it back to its default.
 Your choices are kept in `<storage>/serve/guidance.json`, written by `relay/guidance.py`. If you have saved nothing,
 there is no file, and tare sends exactly what it sent before this panel existed.
 
+## The panel
+
+The list on the left is in groups, in this order:
+
+1. tare · role guidance
+2. tare · protocol texts (read-only)
+3. Claude Code
+4. Codex
+5. AGY
+
+A heading cannot be selected. Under each CLI's heading are the version its texts were read from, how and when they
+were read, and its blocks in the order the CLI sends them.
+
+A text you changed is marked as the Files pane (F8) marks a changed file: its name in colour and one bold letter
+after it.
+
+| Mark | Meaning |
+| --- | --- |
+| `M` | your text is sent instead of the default |
+| `D` | removed |
+| `C` | the default changed under your edit |
+| `U` | a block the CLI started sending that you have not reviewed |
+| grey | not in the latest reading |
+
+The panel's first line repeats this key.
+
+When you open the panel right after starting the TUI, tare may still be reading the CLIs. Each CLI's group then
+shows its heading and the line "Being read now", and fills in by itself when the reading is done. tare's own
+groups can be used at once, and nothing you have typed or selected is lost when the list fills in.
+
 ## The three layers
 
 | Layer | Written by | In the panel | Default | When a change applies |
@@ -72,6 +102,11 @@ date. A placeholder whose value is not in that block is sent as written.
 When a block's text changes between readings, the panel keeps the earlier text and shows the difference. Only the
 previous text is kept; there is no archive of older ones. If a CLI cannot be read, the panel keeps the last reading
 and says so.
+
+Some blocks come and go between calls. Claude Code's reminder of the tokens left, for example, was in five real
+readings and missing from a sixth. So a block missing from the newest reading stays in the list, in grey, with when
+and on which CLI version it was last seen. You can still remove or replace it as before. Only one entry per
+distinct block is kept, so the list stays short.
 
 ## What each CLI allows
 

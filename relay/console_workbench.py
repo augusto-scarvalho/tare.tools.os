@@ -458,6 +458,14 @@ class ConversationWorkbench:
         from .console_guidance import GuidancePanel
         self.push_screen(GuidancePanel())
 
+    def guidance_landed(self):
+        """The startup reading of what each CLI adds is done, or could not run: an open /guidance lists it now."""
+        from .console_guidance import GuidancePanel
+        self.guidance_reading = False
+        for screen in self.screen_stack:
+            if isinstance(screen, GuidancePanel):
+                screen.reload()
+
     def action_fleet(self):
         from .console_fleet import FleetPanel
         self.push_screen(FleetPanel())
@@ -483,6 +491,7 @@ class ConversationWorkbench:
         except Exception as exc:  # Optional convenience: report it and keep the console usable.
             self.call_from_thread(self.notify, 'CLI discovery failed: '+type(exc).__name__+': '+str(exc)[:200],
                                   severity='warning', timeout=12)
+            self.call_from_thread(self.guidance_landed)  # nothing will be read: /guidance shows the last reading
             return
         # News goes to the status line; only a CLI that is installed but not answering interrupts.
         if message := summary(r for r in report if r['added']):
@@ -501,6 +510,7 @@ class ConversationWorkbench:
                 self.call_from_thread(self.set_status, message)
         except Exception:  # optional: /guidance keeps the last reading and says when it was taken
             pass
+        self.call_from_thread(self.guidance_landed)
 
     @work(thread=True, group='provider-quota')
     def read_provider_quota(self, state):
