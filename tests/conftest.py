@@ -1,6 +1,7 @@
 """Local installations must not turn fixture tests into live model calls."""
 import os
 from pathlib import Path
+import sys
 import tempfile
 
 import pytest
@@ -36,6 +37,9 @@ def disable_installed_flow_assessor(monkeypatch, tmp_path_factory):
     # Heads-up notes would add a judge and a writer call to every fixture turn; tests of them turn them on.
     monkeypatch.setenv('TARE_HEADS_UP', 'off')
     monkeypatch.setenv('TARE_HEADS_UP_STORE', str(state_dir('heads-up')/'heads-up.json'))
+    # A TUI that quits stops the heads-up writer for the rest of its process (heads_up.stop); a test's process goes on.
+    if 'relay.heads_up' in sys.modules:
+        monkeypatch.setattr(sys.modules['relay.heads_up'], '_token', None)
     monkeypatch.delenv('TARE_AVOID_LOCAL_GPU', raising=False)
     # Launch flags constrain real workers, not the fixture's authored route policy.
     monkeypatch.delenv('TARE_SESSION_SCOPE', raising=False)

@@ -96,3 +96,26 @@ def test_missed_records_the_last_reply_without_sending_anything(tmp_path, monkey
             app.busy = False
             heads_up.set_enabled(True)
     asyncio.run(scenario())
+
+
+def test_quitting_stops_the_heads_up_writer_even_when_it_fails(tmp_path, monkeypatch):
+    stopped = []
+    monkeypatch.setattr(heads_up, 'stop', lambda: stopped.append(1))
+    root = tmp_path/'project'; root.mkdir()
+
+    async def scenario():
+        app = WorkConsole(root, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(80, 24)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.pause(.3)
+            app.action_quit()
+            await pilot.pause()
+        assert stopped  # action_quit and on_unmount both reach it
+        monkeypatch.setattr(heads_up, 'stop', lambda: 1 / 0)  # a failing stop never blocks quitting
+        app = WorkConsole(root, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(80, 24)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.pause(.3)
+            app.action_quit()
+            await pilot.pause()
+    asyncio.run(scenario())

@@ -38,7 +38,9 @@ import math
 import os
 from pathlib import Path
 import re
+import threading
 import time
+import uuid
 
 # The filter: a logistic score over what code counts in a turn (counts()), {count: (mean, spread, weight)}. Fitted
 # 2026-11-05 on 249 Claude Code turns, labeled by whether the user accepted a side-agent note after them. On all
@@ -439,6 +441,96 @@ def parse(answer, seen):
     return [n for n in dict.fromkeys(notes) if n and n.casefold() not in known][:MAX_NOTES]
 
 
+_token, _lock = None, threading.Lock()
+TOKENS = ('input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens')  # normalize_usage's names
+
+
+def _cancellation():
+    global _token
+    with _lock:
+        if _token is None:
+            from tare_tools_agent_runtime import CancellationToken
+            _token = CancellationToken()
+        return _token
+
+
+def stop():
+    """Cancel the writer call in flight and let no new one start, for the rest of this process. The TUI calls it when
+    it quits (a thread worker keeps the process alive until the call returns); `tare serve` never does."""
+    _cancellation().cancel()
+
+
+def _control(token):
+    """generate_text's own default control, with this token (generate_text narrows the deadline to its timeout)."""
+    from tare_tools_agent_runtime import BindingRef, ExecutionControl
+    attempt = uuid.uuid4().hex
+    return ExecutionControl(BindingRef(attempt, attempt, 'heads-up', 1, attempt), token, math.inf)
+
+
+def _spent(deployment, receipt):
+    """What a writer call used, for its log row (never any text): {'tokens': {...}, 'usd': dollars}. What the receipt
+    does not say is left out (unknown, not zero). A paid API route's dollars also reach the machine's ledger, which
+    the quota display subtracts from the declared balance."""
+    found = {}
+    try:
+        from compute_plane.native_usage import UsageContract, deployment_contract, normalize_usage
+        contract = deployment_contract(deployment)
+        values = normalize_usage(receipt.get('usage'), UsageContract(**contract) if contract else None)['tokens']
+        tokens = {k: values[k] for k in TOKENS if values.get(k) is not None}
+        if tokens:
+            found['tokens'] = tokens
+        cost = receipt.get('cost') or {}
+        if cost.get('currency') == 'USD' and cost.get('known_amount') is not None:
+            found['usd'] = float(cost['known_amount'])
+    except Exception:  # ponytail: a heads-up never fails the turn it reports on; a call without a record is unknown
+        return found
+    try:
+        from .provider_spend import record
+        record(deployment, [{'call_id': receipt.get('attempt_id'), 'cost': receipt.get('cost')}])
+    except Exception:  # ponytail: the ledger missing a call never loses the note; the log row still has the dollars
+        pass
+    return found
+
+
+def usage(session):
+    """What this conversation's heads-up writers used, from the machine log (<storage>/serve/heads-up.jsonl, rows of
+    notes() carry the conversation folder's name as 'session' and every call in 'writers'): {'turns': turns where a
+    writer ran, 'calls', 'unknown': calls whose tokens the row does not say (older rows), 'input_tokens',
+    'output_tokens', 'ms', 'usd': dollars of the calls that say them, 'usd_unknown': calls that do not}."""
+    from .native_installation import storage_root
+    total = {'turns': 0, 'calls': 0, 'unknown': 0, 'input_tokens': 0, 'output_tokens': 0, 'ms': 0, 'usd': 0.0,
+             'usd_unknown': 0}
+    name = Path(session).name
+    try:
+        with open(storage_root()/'serve'/'heads-up.jsonl', encoding='utf-8', errors='replace') as log:
+            for line in log:  # ponytail: the whole log is read per /usage; index by session if it grows large
+                try:
+                    row = json.loads(line)
+                    writers = row['writers'] if row.get('session') == name else None
+                except (ValueError, KeyError, TypeError, AttributeError):
+                    continue  # a torn line is not a call
+                if not writers or not isinstance(writers, list):
+                    continue
+                total['turns'] += 1
+                for call in writers:
+                    total['calls'] += 1
+                    total['ms'] += call.get('ms') or 0
+                    tokens = call.get('tokens')
+                    if isinstance(tokens, dict):
+                        total['input_tokens'] += tokens.get('input_tokens') or 0
+                        total['output_tokens'] += tokens.get('output_tokens') or 0
+                    else:
+                        total['unknown'] += 1
+                    if isinstance(call.get('usd'), (int, float)):
+                        total['usd'] += call['usd']
+                    else:
+                        total['usd_unknown'] += 1
+    except OSError:
+        pass
+    total['usd'] = round(total['usd'], 6)
+    return total
+
+
 def write(text, seen, known=()):
     """(notes, attempts): the first available `heads_up` route that answers writes them; one handover on failure.
     `known`: sentences the host is certain of (certain()), which the note must not contradict."""
@@ -449,7 +541,10 @@ def write(text, seen, known=()):
                  if known else '')
               + '\n\nTurn record (JSON):\n' + text)
     attempts, effort = [], policy().get('heads_up_effort')  # high unless the owner chose another level
+    token = _cancellation()
     for name in policy().get('heads_up') or DEFAULT_POLICY['heads_up']:
+        if token.is_cancelled():
+            break
         deployment, _ = available(name)
         if deployment is None:
             continue
@@ -458,11 +553,13 @@ def write(text, seen, known=()):
         started = time.monotonic()
         try:
             ok, answer, receipt = generate_text(deployment, deployment['native_profile']['model'], prompt,
-                                                WRITER_SECONDS, system=SYSTEM, credential_resolver=vault_secret)
+                                                WRITER_SECONDS, system=SYSTEM, credential_resolver=vault_secret,
+                                                control=_control(token))
         except Exception as exc:  # ponytail: a writer never fails the turn; the next route answers once
             ok, answer, receipt = False, '', {'failure_class': type(exc).__name__}
         attempts.append({'route': name, 'ok': ok, 'ms': round((time.monotonic() - started) * 1000),
-                         **({} if ok else {'failure': str(receipt.get('failure_class'))[:80]})})
+                         **({} if ok else {'failure': str(receipt.get('failure_class'))[:80]}),
+                         **_spent(deployment, receipt)})
         if ok:
             return parse(answer or '', seen), attempts
         if len(attempts) == 2:

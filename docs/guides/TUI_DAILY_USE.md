@@ -219,7 +219,9 @@ useful** record whether the note helped (the chosen button shows a check, and yo
 change it). These records stay on this machine, the log holds no note text, and they
 are used to tune when notes are written. A note shows only while its conversation is
 open; `/heads-up` puts the last notes in the composer from the keyboard, and the
-Settings checkbox turns notes off for the machine.
+Settings checkbox turns notes off for the machine. `/usage` shows what the heads-up
+writer used in the conversation (calls, tokens, time and known cost), and quitting the
+console stops a writer call still in flight.
 
 When a reply needed a warning and tare showed none, type `/missed` followed by what it
 should have told you (the words are optional). It records that for the last finished

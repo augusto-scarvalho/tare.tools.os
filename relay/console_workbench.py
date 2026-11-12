@@ -39,6 +39,24 @@ def correction_draft(draft, row, excerpt, comment):
     return result
 
 
+def heads_up_rows(session):
+    """One row for what the heads-up side agent used in this conversation; none when no writer call is logged."""
+    from . import heads_up
+    u = heads_up.usage(session)
+    if not u['calls']:
+        return []
+    known = u['calls'] - u['unknown']
+    tokens = (f"{u['input_tokens']} in, {u['output_tokens']} out"
+              + (f"; {u['unknown']} call(s) without token counts" if u['unknown'] else '') if known else 'Unknown')
+    dollars = (f"USD {u['usd']}" if u['usd_unknown'] < u['calls'] else 'Unknown')
+    if u['usd_unknown'] and u['usd_unknown'] < u['calls']:
+        dollars += f"; {u['usd_unknown']} call(s) without a known price"
+    body = (f"Side agent notes after finished turns, separate from the session totals above.\n"
+            f"Turns with a writer: {u['turns']}; writer calls: {u['calls']}\nTokens: {tokens}\n"
+            f"Time: {u['ms'] / 1000:.1f} s\nKnown cost: {dollars}")
+    return [{'id': 'heads-up', 'label': f"Heads-up · {u['calls']} call{'s' if u['calls'] != 1 else ''}", 'body': body}]
+
+
 def usage_rows(report):
     """Render only recorded usage; absent measurements remain explicitly unknown."""
     if report is None:
@@ -572,7 +590,13 @@ class ConversationWorkbench:
                 except (OSError, ValueError, KeyError, TypeError) as exc:
                     self.notify('Flow usage unavailable: '+str(exc), severity='error')
                     return False
-                rows = (rows if self.assistant_session else []) + flow_rows or rows
+                own = list(rows) if self.assistant_session else []
+                if self.assistant_session:
+                    try:
+                        own += heads_up_rows(self.assistant_session)
+                    except Exception:
+                        pass  # The side agent's row failing must not hide ANY other Usage row.
+                rows = own + flow_rows or rows
                 baseline = None
                 try:
                     from .behavioral_profiles import selected_baseline
