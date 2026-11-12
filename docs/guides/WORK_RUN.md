@@ -63,8 +63,9 @@ live session.
 
 `SETTLED`, `DRY_RUN`, `PLAN_REJECTED`, `IMPLEMENTATION_<status>`,
 `ADMISSION_<verdict>`, `LANDING_REFUSED`, `FAILED` with a named `error`.
-A failure before the workspace does not create a worktree; an existing train is not resumed
-in this version (`TRAIN_EXISTS_RESUME_NOT_SUPPORTED`); resumption is FLOW-04.
+A failure before the workspace does not create a worktree; a second `run` of a Work whose train
+exists is refused (`TRAIN_EXISTS_USE_RESUME`) and `--resume` continues it
+([FLOW04_RECOVERY](FLOW04_RECOVERY.md), [FLOW03_SETTLEMENT](FLOW03_SETTLEMENT.md)).
 
 ## What it does not do
 
@@ -73,8 +74,9 @@ in this version (`TRAIN_EXISTS_RESUME_NOT_SUPPORTED`); resumption is FLOW-04.
   from the landing policy; `required` requires turning on the `tare-ops audit` track (G3
   of the reconciliation map).
 - It does not call a vendor CLI; the roles come from `relay/role_deployments.json`.
-- It does not reconcile a crash between landing and graph beyond the existing
-  `ALREADY_LANDED` reentry (FLOW-03). After landing, it refreshes in the live checkout only the
+- It does not treat Git and the graph as one transaction: a crash between the landing and the
+  graph write is completed by `--resume`, which reconciles and never implements again
+  ([FLOW03_SETTLEMENT](FLOW03_SETTLEMENT.md), C4). After landing, it refreshes in the live checkout only the
   `tracked_paths` without local edits (`landing.checkout.refreshed`); a locally
   edited path stays as it is and appears in `landing.checkout.stale`.
   Refresh threat model: `actor` the local operator; `window` the duration of the

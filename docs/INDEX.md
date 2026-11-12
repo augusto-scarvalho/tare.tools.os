@@ -111,6 +111,8 @@ documents are the reference.
 - [Work pause and human reconsideration](guides/WORK_PAUSE.md): **Pause Work** during execution (FLOW-17).
 - [FLOW-04: cancellation, limits and recovery](guides/FLOW04_RECOVERY.md): how the native Work path stops,
   enforces limits and recovers.
+- [FLOW-03: settlement, landing and backlog reconciliation](guides/FLOW03_SETTLEMENT.md): which guard and which
+  test hold each settlement claim, and what stays uncovered.
 - [Review a bounded planning horizon](guides/HORIZON_REVIEW.md): explicit scheduling review or bounded PLAN
   proposal, validated by the Backlog owner.
 - [Graph audit: reconciliation, trace and complete differences](guides/GRAPH_SHADOW_RECONCILIATION.md):

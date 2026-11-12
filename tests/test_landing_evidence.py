@@ -71,9 +71,11 @@ def _install_graph_fakes(monkeypatch):
     monkeypatch.setitem(sys.modules, "tare_tools_agent_runtime", runtime)
 
 
-def _materialize(tmp_path: Path, monkeypatch, content: str):
+def _materialize(tmp_path: Path, monkeypatch, content: str, target_moved: bool = False):
     _install_graph_fakes(monkeypatch)
     repo, base, candidate = _repository(tmp_path, content)
+    if target_moved:
+        _git(repo, "update-ref", "refs/heads/main", candidate)
     train = tmp_path / "train"
     train.mkdir()
     descriptor = SimpleNamespace(
@@ -134,3 +136,9 @@ def test_reobservation_reuses_identical_evidence_and_refuses_changed_work(tmp_pa
     with pytest.raises(ValueError, match='LANDING_EVIDENCE_CHANGED:LANDING_EVIDENCE.json'):
         original(**captured)
     assert (tmp_path/'train/LANDING_EVIDENCE.json').read_bytes() == first.canonical_bytes
+
+
+def test_materializer_marks_cas_not_ready_when_the_target_moved_since_the_base(tmp_path, monkeypatch):
+    evidence = _materialize(tmp_path, monkeypatch, "changed\n", target_moved=True)
+
+    assert evidence.payload["checks"]["cas_ready"] is False

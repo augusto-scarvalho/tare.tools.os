@@ -13,6 +13,7 @@ pytest.importorskip(
     reason="pinned private Kernel package is unavailable on this runner",
 )
 
+from compute_plane.candidate_git import CandidateGitRejected
 from compute_plane.workspace import cleanup_linked_worktree, provision_linked_worktree
 from relay.candidate_change import (
     CANDIDATE_FILE,
@@ -160,3 +161,66 @@ def test_failed_verifier_never_emits_receipt(tmp_path: Path):
     with pytest.raises(CandidateChangeRejected, match="VERIFICATION_FAILED"):
         materialize_verify_and_record_candidate(train, descriptor, lease)
     assert not (train / CANDIDATE_FILE).exists()
+
+
+def _recorded(tmp_path: Path):
+    repository, descriptor, lease = _subject(tmp_path)
+    train = tmp_path / "train"
+    train.mkdir()
+    _write_ready(train, descriptor, lease)
+    (lease.root / "src" / "value.txt").write_text("changed\n", encoding="utf-8")
+    return repository, descriptor, materialize_verify_and_record_candidate(train, descriptor, lease)
+
+
+@pytest.mark.parametrize("divergence", [
+    "base_commit", "descriptor_sha256", "work_id", "candidate_tree", "diff_sha256",
+    "changed_paths", "changed_entries", "other_commit", "other_descriptor", "moved_base",
+])
+def test_divergent_receipt_is_refused_by_verify_and_landing(tmp_path: Path, divergence: str):
+    repository, descriptor, receipt = _recorded(tmp_path)
+    payload = dict(receipt.payload)
+    checked = descriptor
+    if divergence in {"candidate_tree", "diff_sha256", "descriptor_sha256", "base_commit", "work_id"}:
+        payload[divergence] = "f" * 40
+    elif divergence == "changed_paths":
+        payload[divergence] = ["src", "extra"]
+    elif divergence == "changed_entries":
+        payload[divergence] = payload[divergence] + [
+            {"path": "src/extra", "old_mode": "000000", "new_mode": "100644", "status": "A"}]
+    elif divergence == "other_commit":
+        _git("switch", "-q", "-c", "other", cwd=repository)
+        (repository / "src" / "value.txt").write_text("other\n", encoding="utf-8")
+        _git("commit", "-qam", "other", cwd=repository)
+        payload["candidate_commit"] = _git("rev-parse", "HEAD", cwd=repository)
+        _git("switch", "-q", "main", cwd=repository)
+    else:
+        # The receipt is intact; the Work's descriptor (criteria or base) is what changed.
+        raw = json.loads(descriptor.canonical_bytes)
+        if divergence == "other_descriptor":
+            raw["verification_checks"][0]["criterion"] = "another-criterion"
+        else:
+            (repository / "next.txt").write_text("next\n", encoding="utf-8")
+            _git("add", ".", cwd=repository)
+            _git("commit", "-qm", "target moved", cwd=repository)
+            raw["base_commit"] = _git("rev-parse", "HEAD", cwd=repository)
+        checked = parse_execution_descriptor(canonical_json_bytes(raw))
+    divergent = replace(receipt, payload=payload)
+    target = _git("rev-parse", "refs/heads/main", cwd=repository)
+    with pytest.raises(CandidateChangeRejected, match="CANDIDATE_(DESCRIPTOR|IDENTITY)_MISMATCH"):
+        verify_candidate_receipt(divergent, checked, repository_root=repository)
+    with pytest.raises(CandidateChangeRejected, match="CANDIDATE_(DESCRIPTOR|IDENTITY)_MISMATCH"):
+        land_recorded_candidate(divergent, checked, repository_root=repository)
+    assert _git("rev-parse", "refs/heads/main", cwd=repository) == target
+
+
+def test_landing_refuses_a_target_that_moved_after_the_candidate_and_changes_nothing(tmp_path: Path):
+    repository, descriptor, receipt = _recorded(tmp_path)
+    (repository / "next.txt").write_text("next\n", encoding="utf-8")
+    _git("add", ".", cwd=repository)
+    _git("commit", "-qm", "target moved", cwd=repository)
+    moved = _git("rev-parse", "refs/heads/main", cwd=repository)
+    verify_candidate_receipt(receipt, descriptor, repository_root=repository)  # the candidate itself is still exact
+    with pytest.raises(CandidateGitRejected, match="BASE_REF_DIVERGED"):
+        land_recorded_candidate(receipt, descriptor, repository_root=repository)
+    assert _git("rev-parse", "refs/heads/main", cwd=repository) == moved  # no rebase, merge or rewind
+    assert _git("rev-list", "--count", "refs/heads/main", cwd=repository) == "2"

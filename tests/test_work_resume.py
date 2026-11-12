@@ -111,6 +111,8 @@ def test_public_resume_recovers_same_candidate_without_model_or_verifier_reexecu
     monkeypatch.setattr(NativeWorkRunner, 'run', forbidden)
     if cut in {'git_landed', 'graph_written'}:
         assert _git('rev-parse', 'HEAD', cwd=repo) == candidate
+        # Git has the candidate; the Backlog does not say so yet (git_landed) or says so only once saved.
+        assert (json.loads(graph_before)['nodes'][0]['work_status'] == 'done') == (cut == 'graph_written')
         assert json.loads((train/'STATE.json').read_bytes())['status'] == 'READY_FOR_LANDING'
         monkeypatch.setattr(relay_mesh, 'materialize_admission_evidence', forbidden)
         monkeypatch.setattr(relay_mesh, 'prepare_admission_verdict', forbidden)
@@ -137,12 +139,15 @@ def test_public_resume_recovers_same_candidate_without_model_or_verifier_reexecu
             assert current_graph == graph_settled
         graph_settled = current_graph
     assert len(client.generations) == 5 and len(plans) == 1
+    node = json.loads(relay_mesh.WORK_GRAPH_FILE.read_bytes())['nodes'][0]
+    assert node['work_status'] == 'done' and node['completion']['status'] == 'DONE'
+    assert len([n for n in node['notes'] if n.startswith('[RELAY_LANDED]')]) == 1  # completed once, never twice
     assert (repo/'src/value.txt').read_text() == 'strict\n'
     assert before == {n: (custody/n).read_bytes() for n in before}
     assert (work_run.train_dir_for('work-one')/'NATIVE_VERIFIER_PROCESS.json').read_bytes() == verifier
 
 
-@pytest.mark.parametrize('fault', ['candidate', 'journal', 'identity', 'target', 'lease', 'criteria'])
+@pytest.mark.parametrize('fault', ['candidate', 'journal', 'identity', 'target', 'lease', 'criteria', 'origin', 'descriptor_graph'])
 def test_public_resume_refuses_changed_evidence_without_landing(host, monkeypatch, capsys, fault):
     import tare_ops
     from relay.runtime_authority import CoordinatorAuthorityGate
@@ -174,10 +179,22 @@ def test_public_resume_refuses_changed_evidence_without_landing(host, monkeypatc
         graph = json.loads(relay_mesh.WORK_GRAPH_FILE.read_bytes())
         graph['nodes'][0]['exit_criteria'] = ['new requirement']
         relay_mesh.WORK_GRAPH_FILE.write_text(json.dumps(graph))
+    elif fault == 'origin':  # the Work binding saved at the start no longer names this descriptor
+        path = train/'WORK_RUN.json'
+        value = json.loads(path.read_bytes()); value['descriptor_sha256'] = 'f'*64
+        path.write_text(json.dumps(value))
+    elif fault == 'descriptor_graph':
+        from relay.train_execution import canonical_json_bytes
+        path = train/'EXECUTION_DESCRIPTOR.json'
+        value = json.loads(path.read_bytes()); value['work_graph'] = 'other-graph.json'
+        path.write_bytes(canonical_json_bytes(value))
     expected = _git('rev-parse', 'HEAD', cwd=host[1])
     assert tare_ops.main(['run', 'work-one', '--resume']) == 1
     result = json.loads(capsys.readouterr().out)
     assert result['status'] == 'FAILED' and result['error']
+    named = {'origin': 'WORK_RESUME_IDENTITY_CHANGED', 'descriptor_graph': 'WORK_RESUME_GRAPH_CHANGED',
+             'lease': 'WORK_RESUME_LEASE_CHANGED'}
+    assert named.get(fault, '') in result['error']
     assert expected == _git('rev-parse', 'HEAD', cwd=host[1])
     assert len(host[3].generations) == 5
 
@@ -427,3 +444,52 @@ def test_explicit_ended_plan_review_keeps_old_custody(tmp_path, monkeypatch, sta
         assert origin == original_origin
         assert (tmp_path/'WORK_RUN.json').read_bytes() == original_work
     assert before == {p.name: p.read_bytes() for p in previous.iterdir()}
+
+
+def test_run_refuses_a_candidate_receipt_changed_after_native_acceptance(host, monkeypatch, capsys):
+    from relay.native_settlement import NativeWorkRunner
+    from relay.train_execution import canonical_json_bytes
+    original = NativeWorkRunner.run
+    def run_then_change_receipt(self, **kw):
+        outcome = original(self, **kw)
+        path = kw['train_dir']/'CANDIDATE_CHANGE.json'
+        value = json.loads(path.read_bytes())
+        value['worktree_id'] = 'another-worktree'  # still verifies against Git, but is no longer the accepted bytes
+        path.write_bytes(canonical_json_bytes(value))
+        return outcome
+    monkeypatch.setattr(NativeWorkRunner, 'run', run_then_change_receipt)
+    base = _git('rev-parse', 'HEAD', cwd=host[1])
+    assert run(host) == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result['status'] == 'FAILED' and 'NATIVE_SETTLEMENT_CANDIDATE_CHANGED' in result['error']
+    assert result['candidate_commit'] is None and _git('rev-parse', 'HEAD', cwd=host[1]) == base
+
+
+def test_resume_refuses_another_repository_than_the_original(host, monkeypatch, capsys, tmp_path):
+    import tare_ops
+    with monkeypatch.context() as cut:
+        def stop(*a): raise SystemExit('interrupt')
+        cut.setattr(relay_mesh, 'materialize_admission_evidence', stop)
+        with pytest.raises(SystemExit): run(host)
+    capsys.readouterr()
+    before = _git('rev-parse', 'HEAD', cwd=host[1])
+    assert tare_ops.main(['run', 'work-one', '--resume', '--repo-root', str(tmp_path/'elsewhere')]) == 1
+    assert 'WORK_RESUME_REPOSITORY_CHANGED' in json.loads(capsys.readouterr().out)['error']
+    assert _git('rev-parse', 'HEAD', cwd=host[1]) == before and len(host[3].generations) == 5
+
+
+def test_resume_stops_before_landing_when_admission_is_refused(host, monkeypatch, capsys):
+    import tare_ops
+    with monkeypatch.context() as cut:
+        def stop(*a): raise SystemExit('interrupt')
+        cut.setattr(relay_mesh, 'materialize_admission_evidence', stop)
+        with pytest.raises(SystemExit): run(host)
+    capsys.readouterr()
+    base = _git('rev-parse', 'HEAD', cwd=host[1])
+    monkeypatch.setattr(relay_mesh, 'materialize_admission_evidence', lambda tid: evidence(tid, ('cas_ready',)))
+    assert tare_ops.main(['run', 'work-one', '--resume']) == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result['status'] == 'ADMISSION_REFUSED' and 'CHECK_FAILED:cas_ready' in result['admission']['reason_codes']
+    assert not result['landing'] and _git('rev-parse', 'HEAD', cwd=host[1]) == base
+    assert json.loads((work_run.train_dir_for('work-one')/'STATE.json').read_bytes())['status'] == 'AUDIT_PENDING'
+    assert len(host[3].generations) == 5
