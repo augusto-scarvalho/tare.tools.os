@@ -579,10 +579,29 @@ class Backend:
         entry = 'flow_activity' if args and args[0] in MODES else 'native_installation'
         # -P: the project directory (cwd) must not shadow tare's own packages; a project with its own relay/ (a
         # tare.tools.os checkout, or any repository) would otherwise run its code as the agent.
-        return await asyncio.create_subprocess_exec(sys.executable, '-P', '-u', '-c',
+        process = await asyncio.create_subprocess_exec(sys.executable, '-P', '-u', '-c',
             f'from relay.{entry} import main; raise SystemExit(main())', *args,
             cwd=root, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, **options)
+        self.contain(process)
+        return process
+
+    def contain(self, process):
+        """Tie a launched child to this TUI process: one kill-on-close Job, closed by Windows when the TUI ends."""
+        # ponytail: POSIX children are not tied to the TUI yet; it needs PR_SET_PDEATHSIG or a supervising pipe.
+        if os.name != 'nt':
+            return
+        try:
+            from compute_plane.managed_process import WindowsJob
+            job = getattr(self, '_job', None)
+            if job is None:
+                job = self._job = WindowsJob()  # never closed: the handle dies with this process
+            popen = process._transport.get_extra_info('subprocess')
+            if not job.k.AssignProcessToJobObject(job.handle, int(popen._handle)):
+                raise job.c.WinError(job.c.get_last_error())
+            self.containment = 'job'
+        except Exception as exc:  # a turn must still run without containment
+            self.containment = f'unavailable: {exc}'
 
     def close(self):
         if getattr(self,'_terminals',None) is not None:

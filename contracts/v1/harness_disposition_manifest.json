@@ -2661,8 +2661,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 41901,
-      "sha256": "b457cb9637ce4a932d5c6f1c67fae3a48bacd424a59333131e67a54eb2643cde"
+      "size_bytes": 42896,
+      "sha256": "1a214e8b23a7823a9815db100babfe874dad8f04c8472b65e9684d0729126ce2"
     },
     {
       "name": "human_wait.py",
