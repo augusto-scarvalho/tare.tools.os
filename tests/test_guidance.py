@@ -1,0 +1,247 @@
+"""/guidance: the owner's edits of tare's role guidance and choices about what each vendor CLI adds on its own."""
+import asyncio
+import json
+from types import SimpleNamespace
+
+import pytest
+from textual.widgets import Button, Select, Static, TextArea
+
+from relay import guidance, native_agent
+from relay.console_guidance import GuidancePanel
+from relay.native_console import WorkConsole
+from test_native_agent import Client, deployment, setup, steps  # noqa: F401  (setup is a fixture)
+from test_native_console import FakeBackend
+
+IMPLEMENTER = 'role#role/implementer#system'
+EMAIL = 'vendor#cli://claude#context:userEmail'
+DATE = 'vendor#cli://claude#attachment:date'
+
+
+def reading(date="Today's date is <date>.", extra=()):
+    """What compute_plane.vendor_guidance.read returns, for two CLIs (texts already with placeholders)."""
+    return {'cli://claude': {'cli': 'Claude Code', 'cli_version': '2.1.322', 'note': 'Read on this machine.',
+                             'items': [
+        {'id': 'system:2', 'title': 'System text: You are a Claude agent.', 'sent_as': 'system block 2',
+         'controls': (), 'text': 'You are a Claude agent.'},
+        {'id': 'context:userEmail', 'title': 'Context block "userEmail"', 'sent_as': "user message before tare's records",
+         'controls': ('remove',), 'text': "The user's email address is <account email>."},
+        {'id': 'attachment:date', 'title': 'Attachment "date"', 'sent_as': "system message after tare's records",
+         'controls': ('remove', 'replace'), 'text': date}, *extra]},
+            'cli://codex': {'cli': 'Codex', 'cli_version': '0.166.0', 'note': 'Read with prompt-input.', 'items': [
+        {'id': 'environment_context', 'title': 'Block <environment_context>', 'sent_as': 'user message',
+         'controls': ('remove',), 'text': '<environment_context>\n  <cwd><working directory></cwd>'}]}}
+
+
+def read_as(monkeypatch, value):
+    from compute_plane import vendor_guidance
+    from relay import cli_discovery
+    monkeypatch.setattr(cli_discovery, 'locate', lambda endpoint: f'C:/fixture/{endpoint[6:]}.exe')
+
+    def read(endpoint, executable):
+        if isinstance(value.get(endpoint), Exception):
+            raise value[endpoint]
+        return json.loads(json.dumps(value[endpoint]))
+    monkeypatch.setattr(vendor_guidance, 'read', read)
+    return guidance.refresh_readings()
+
+
+def states():
+    return {item['id']: item['state'] for item in guidance.items()}
+
+
+def test_choices_round_trip_with_the_default_they_were_made_against(monkeypatch):
+    read_as(monkeypatch, reading())
+    assert not guidance.path().exists() and guidance.vendor_choices('cli://claude') == {}
+    implementer = native_agent.prompt_capsule(deployment(), 'implementer')['system']
+    guidance.save(IMPLEMENTER, 'Implement carefully.')
+    guidance.save(EMAIL, None)
+    guidance.save(DATE, 'Today is a working day.')
+    base = lambda text: {'sha256': guidance.digest(text), 'text': text}  # noqa: E731
+    saved = json.loads(guidance.path().read_text(encoding='utf-8'))
+    assert saved == {'schema': guidance.SCHEMA,
+                     'capsules': {'role/implementer': {'system': {'value': 'Implement carefully.',
+                                                                  'base': base(implementer)}}},
+                     'vendor': {'cli://claude': {
+                         'context:userEmail': {'value': None, 'base': base("The user's email address is <account email>.")},
+                         'attachment:date': {'value': 'Today is a working day.', 'base': base("Today's date is <date>.")}}}}
+    assert (states()[IMPLEMENTER], states()[EMAIL], states()[DATE]) == ('yours', 'removed', 'yours')
+    assert guidance.vendor_choices('cli://claude') == {'context:userEmail': None,
+                                                       'attachment:date': 'Today is a working day.'}
+    for refused in [(EMAIL, 'another text'),  # Claude Code can only drop a context block
+                    ('vendor#cli://codex#environment_context', 'another text'),  # Codex never rewrites
+                    ('vendor#cli://claude#system:2', None),  # read-only
+                    ('transport#claude-native', 'another text'), ('vendor#cli://agy#anything', None)]:
+        with pytest.raises(ValueError):
+            guidance.save(*refused)
+    assert json.loads(guidance.path().read_text(encoding='utf-8')) == saved  # a refused save changes nothing
+    guidance.reset(DATE)
+    guidance.save(IMPLEMENTER, '  ')  # an empty edit is tare's default
+    assert guidance.capsule_edits() == {} and guidance.vendor_choices('cli://claude') == {'context:userEmail': None}
+    guidance.reset()
+    assert not guidance.path().exists() and set(states().values()) == {'default'}
+
+
+def test_each_reading_keeps_one_earlier_text_flags_new_blocks_and_survives_a_failure(monkeypatch):
+    read_as(monkeypatch, reading())
+    assert guidance.news() == ''  # a first reading has nothing to compare with
+    added = {'id': 'attachment:skills', 'title': 'Attachment "skills"', 'sent_as': 'system message',
+             'controls': ('remove', 'replace'), 'text': 'Skills you may use.'}
+    stored = read_as(monkeypatch, reading("Today is <date>.", [added]))
+    date = stored['cli://claude']['items']['attachment:date']
+    assert date['previous'] == {'text': "Today's date is <date>.", 'sha256': guidance.digest("Today's date is <date>.")}
+    assert stored['cli://claude']['items']['attachment:skills']['new'] is True
+    assert states()['vendor#cli://claude#attachment:skills'] == 'new' and '/guidance' in guidance.news()
+    failed = read_as(monkeypatch, {**reading("Today is <date>.", [added]), 'cli://codex': OSError('gone')})
+    assert failed['cli://codex']['items'] and 'gone' in failed['cli://codex']['error']  # the last reading stays
+    assert 'new' not in failed['cli://claude']['items']['attachment:skills']  # new only for the reading that found it
+    assert failed['cli://claude']['items']['attachment:date']['previous']['text'] == "Today's date is <date>."
+
+
+def test_a_default_that_changed_under_a_choice_waits_for_the_owner(monkeypatch, tmp_path):
+    read_as(monkeypatch, reading())
+    guidance.save(DATE, 'My date.')
+    read_as(monkeypatch, reading("Today is <date> (new wording)."))  # a CLI update
+    assert states()[DATE] == 'changed'
+    assert guidance.vendor_choices('cli://claude') == {'attachment:date': 'My date.'}  # nothing unapproved goes out
+    row = next(r for r in guidance.items() if r['id'] == DATE)
+    assert (row['base'], row['default']) == ("Today's date is <date>.", "Today is <date> (new wording).")
+    guidance.keep(DATE)  # keep mine: approved against the new default
+    assert states()[DATE] == 'yours' and guidance.load()['vendor']['cli://claude']['attachment:date'] == {
+        'value': 'My date.', 'base': {'sha256': guidance.digest(row['default']), 'text': row['default']}}
+    read_as(monkeypatch, reading("A third wording."))
+    guidance.save(DATE, 'My new date.')  # edit and Save: also made against the newest default
+    assert guidance.load()['vendor']['cli://claude']['attachment:date']['base']['text'] == 'A third wording.'
+    read_as(monkeypatch, reading("A fourth wording."))
+    guidance.reset(DATE)  # use the new default
+    assert states()[DATE] == 'default' and guidance.vendor_choices('cli://claude') == {}
+    # tare's own default can change under an edit too: the same states, no other path
+    guidance.save(IMPLEMENTER, 'Implement carefully.')
+    registry = json.loads(native_agent.PROMPT_CAPSULES.read_text(encoding='utf-8'))
+    next(c for c in registry['capsules'] if c['id'] == 'role/implementer')['system'] += ' A tare update.'
+    (tmp_path/'capsules.json').write_text(json.dumps(registry), encoding='utf-8')
+    monkeypatch.setattr(native_agent, 'PROMPT_CAPSULES', tmp_path/'capsules.json')
+    assert states()[IMPLEMENTER] == 'changed'
+    assert native_agent.prompt_capsule(deployment(), 'implementer')['system'] == 'Implement carefully.'
+    guidance.keep(IMPLEMENTER)
+    assert states()[IMPLEMENTER] == 'yours'
+
+
+def test_a_role_edit_reaches_new_sessions_and_reset_restores_tares_exact_capsule(setup):  # noqa: F811
+    config, custody, root = setup
+    before = native_agent.prompt_capsule(deployment(), 'implementer')
+    guidance.save(IMPLEMENTER, 'Implement only what the user asked; say what you did not check.')
+    edited = native_agent.prompt_capsule(deployment(), 'implementer')
+    assert edited['system'] == 'Implement only what the user asked; say what you did not check.'
+    assert edited['version'] == before['version'] + '-edited' and edited['sha256'] != before['sha256']
+    client = Client(steps=steps())
+    native_agent.run_session(config, deployment(), custody, 'Change the value to 2.', client=client,
+                             local_counter=client)
+    first = next(body for path, body in client.calls if path == '/chat/completions')
+    assert 'Implement only what the user asked; say what you did not check.' in first['messages'][0]['content']
+    assert before['system'] not in first['messages'][0]['content']
+    frozen = json.loads((custody/'native-agent.json').read_bytes())['prompt_capsule']
+    assert frozen['sha256'] == edited['sha256']
+    guidance.reset(IMPLEMENTER)
+    assert native_agent.prompt_capsule(deployment(), 'implementer') == before
+
+
+def test_the_vendor_choices_reach_the_cli_client(tmp_path, monkeypatch):
+    from relay.native_generation import inference_client
+    read_as(monkeypatch, reading())
+    guidance.save(EMAIL, None)
+    executable = str(tmp_path/'claude.exe')
+    client = inference_client({'native_cli': {'executable': executable, 'version': '2.1.322'}},
+                              SimpleNamespace(protocol='vendor-cli', endpoint='cli://claude'),
+                              credential=None, metadata_only=True)
+    assert client.vendor_guidance == {'context:userEmail': None}
+    codex = inference_client({'native_cli': {'executable': executable, 'version': '0.166.0',
+                                             'model_catalog': {'slug': 'fixture'}}},
+                             SimpleNamespace(protocol='vendor-cli', endpoint='cli://codex'),
+                             credential=None, metadata_only=True)
+    assert codex.vendor_guidance == {}  # no choice: exactly what tare sent before
+
+
+def test_a_saved_choice_this_tare_cannot_apply_says_where_to_fix_it(tmp_path):
+    from relay.native_generation import inference_client
+    guidance.path().parent.mkdir(parents=True, exist_ok=True)
+    stale = {'value': None, 'base': {'sha256': guidance.digest('old'), 'text': 'old'}}
+    guidance.path().write_text(json.dumps({'schema': guidance.SCHEMA, 'capsules': {},
+                                           'vendor': {'cli://claude': {'retired_block': stale}}}), encoding='utf-8')
+    with pytest.raises(ValueError) as caught:
+        inference_client({'native_cli': {'executable': str(tmp_path/'claude.exe'), 'version': '2.1.322'}},
+                         SimpleNamespace(protocol='vendor-cli', endpoint='cli://claude'), credential=None,
+                         metadata_only=True)
+    # The session reports it as its blocked reason, 'ValueError:' plus 256 characters; some rows show far fewer.
+    assert str(caught.value).startswith('Open /guidance and choose "Reset everything"')
+    assert 'retired_block' in str(caught.value) and len(str(caught.value)) <= 256
+    guidance.reset()  # what that button does
+    assert guidance.vendor_choices('cli://claude') == {}
+
+
+@pytest.mark.parametrize('size', [(80, 24), (130, 44)])
+def test_guidance_in_the_tui_shows_before_and_after_and_settles_each_change(tmp_path, monkeypatch, size):
+    read_as(monkeypatch, reading())
+    guidance.save(DATE, 'My date.')
+    read_as(monkeypatch, reading("Today is <date> (new wording)."))
+
+    async def scenario():
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=size) as pilot:
+            await app.workers.wait_for_complete()
+            assert app.dispatch_conversation_command('/guidance', '')
+            await pilot.pause()
+            panel = app.screen
+            assert isinstance(panel, GuidancePanel)
+            assert 'Claude Code 2.1.322 read' in str(panel.query_one('#guidance-read', Static).render())
+            choice, text = panel.query_one('#guidance-item', Select), panel.query_one('#guidance-text', TextArea)
+            diff = panel.query_one('#guidance-diff', TextArea)
+            buttons = {b.id: b for b in panel.query(Button)}
+            assert panel.region.contains_region(buttons['guidance-save'].region)
+
+            choice.value = 'transport#claude-native'
+            await pilot.pause()
+            assert text.read_only and buttons['guidance-save'].disabled and not diff.display
+
+            choice.value = DATE  # changed underneath: base -> new default, and the three ways out
+            await pilot.pause()
+            assert text.text == 'My date.' and not buttons['guidance-keep'].disabled
+            assert "-Today's date is <date>." in diff.text and '+Today is <date> (new wording).' in diff.text
+            assert str(buttons['guidance-default'].label) == 'Use the new default'
+            await pilot.click('#guidance-keep')
+            await pilot.pause()
+            assert buttons['guidance-keep'].disabled and '+My date.' in diff.text  # now: default × yours
+
+            choice.value = EMAIL
+            await pilot.pause()
+            assert text.read_only and not buttons['guidance-remove'].disabled
+            assert str(buttons['guidance-default'].label) == "Vendor's default" and buttons['guidance-default'].disabled
+            await pilot.click('#guidance-remove')
+            await pilot.pause()
+            assert guidance.vendor_choices('cli://claude')['context:userEmail'] is None
+            assert "-The user's email address is <account email>." in diff.text
+            await pilot.click('#guidance-default')
+            await pilot.pause()
+            assert 'context:userEmail' not in guidance.vendor_choices('cli://claude')
+
+            choice.value = IMPLEMENTER
+            await pilot.pause()
+            assert not text.read_only and str(buttons['guidance-default'].label) == "tare's default"
+            text.load_text('Implement carefully.')
+            await pilot.click('#guidance-save')
+            await pilot.pause()
+            assert guidance.capsule_edits() == {'role/implementer': {'system': 'Implement carefully.'}}
+            assert 'New sessions' in str(panel.query_one('#guidance-status').render())
+            await pilot.click('#guidance-reset-all')
+            await pilot.pause()
+            assert not guidance.path().exists() and text.text == native_agent.prompt_capsule(
+                deployment(), 'implementer')['system']
+            assert not app.backend.launches
+            await pilot.press('escape')
+            assert app.screen is not panel
+    asyncio.run(scenario())
+
+
+def test_the_before_and_after_view_keeps_each_line_apart():
+    from relay.console_guidance import compare
+    lines = compare("Today's date is <date>.", 'Today is a test day.', 'default', 'yours').splitlines()
+    assert lines[-2:] == ["-Today's date is <date>.", '+Today is a test day.']  # texts without a final newline
