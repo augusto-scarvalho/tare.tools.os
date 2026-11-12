@@ -50,7 +50,7 @@ def real_reading(claude_version='2.1.322', agy_tool='Manage background tasks.'):
          'text': agy_tool}]}}
 
 
-def read_as(monkeypatch, value, real=None, calls=None):
+def read_as(monkeypatch, value, real=None, calls=None, honours=True):
     """One TUI start's readings, from fixtures: never a CLI, never a real call. `real` is what a real reading
     returns per CLI (missing: it fails, as a spent quota does); `calls` collects the real readings made."""
     from compute_plane import vendor_guidance
@@ -61,10 +61,12 @@ def read_as(monkeypatch, value, real=None, calls=None):
         {'native_profile': {'model': routes[name]}, 'native_cli': {'executable': f'C:/fixture/{name}.exe'}}
         if name in routes else None, 'not installed'))
 
-    def read(endpoint, executable):
+    def read(endpoint, executable, choices=None):  # with choices: the CLI leaves them out, unless it ignores them
         if isinstance(value.get(endpoint), Exception):
             raise value[endpoint]
-        return json.loads(json.dumps(value[endpoint]))
+        found = json.loads(json.dumps(value[endpoint]))
+        found['items'] = [i for i in found['items'] if not (honours and i['id'] in (choices or {}))]
+        return found
 
     def read_real(endpoint, executable, *, model):
         if calls is not None:
@@ -342,7 +344,7 @@ def test_guidance_waits_for_the_startup_reading_then_groups_and_marks_every_text
             for cli in ('claude', 'codex', 'agy'):
                 assert str(options.get_option(f'note#cli://{cli}#0').prompt).strip().startswith('Being read now')
             assert not any(key.startswith('vendor#') for key in listed())  # tare's own groups are usable at once
-            assert 'M edited' in str(panel.query_one('#guidance-read', Static).render())
+            assert 'M your choice' in str(panel.query_one('#guidance-read', Static).render())
             options.highlighted = options.get_option_index(IMPLEMENTER)
             await pilot.pause()
             text.load_text('Typed, not saved yet.')
@@ -390,3 +392,79 @@ def test_a_block_missing_from_the_newest_reading_stays_listed_with_when_it_was_l
     assert list(rows).index(reminder['id']) > list(rows).index(EMAIL)  # after the blocks sent now
     read_as(monkeypatch, reading(extra=[added]), real)  # seen again: listed as present
     assert not {r['id']: r for r in guidance.items()}['vendor#cli://claude#attachment:skills']['absent']
+
+
+SKILLS = 'vendor#cli://codex#skills_instructions'
+
+
+def with_skills(version='0.166.0'):
+    value = reading()
+    value['cli://codex']['cli_version'] = version
+    value['cli://codex']['items'].insert(0, {
+        'id': 'skills_instructions', 'title': 'Block <skills_instructions>', 'sent_as': 'developer message',
+        'controls': ('remove',), 'text': '<skills_instructions>\n- imagegen: Generate images.\n</skills_instructions>'})
+    return value
+
+
+def test_tare_leaves_the_codex_skills_list_out_only_where_a_reading_proved_it(monkeypatch):
+    assert guidance.vendor_choices('cli://codex') == {}  # before any reading, nothing is added
+    read_as(monkeypatch, with_skills(), honours=False)  # an installed Codex that ignores the switch
+    assert guidance.vendor_choices('cli://codex') == {}
+    row = {r['id']: r for r in guidance.items()}[SKILLS]
+    assert row['state'] == 'default' and not row['tare_proved'] and row['tare_default']
+    read_as(monkeypatch, with_skills())  # this Codex leaves it out when asked: proved for 0.166.0
+    assert guidance.readings()['cli://codex']['defaults'] == {'cli_version': '0.166.0',
+                                                              'proved': ['skills_instructions']}
+    assert guidance.vendor_choices('cli://codex') == {'skills_instructions': None}
+    row = {r['id']: r for r in guidance.items()}[SKILLS]
+    assert row['state'] == 'tare-default' and row['text'].startswith('<skills_instructions>')
+    stored = guidance.readings()
+    stored['cli://codex']['cli_version'] = '0.167.0'  # a reading of another version, its proof not made yet
+    guidance._write(guidance.readings_path(), {'schema': guidance.READING_SCHEMA, **stored})
+    assert guidance.vendor_choices('cli://codex') == {}
+
+
+def test_the_owner_can_send_it_again_and_their_own_choice_wins(monkeypatch):
+    read_as(monkeypatch, with_skills())
+    guidance.send_again(SKILLS)  # a keep: the CLI's text, never passed to the Kernel as a choice
+    assert guidance.vendor_choices('cli://codex') == {}
+    assert {r['id']: r for r in guidance.items()}[SKILLS]['state'] == 'kept'
+    guidance.reset(SKILLS)  # tare's default again
+    assert guidance.vendor_choices('cli://codex') == {'skills_instructions': None}
+    guidance.save('vendor#cli://codex#environment_context', None)  # the owner's own choices stand beside it
+    assert guidance.vendor_choices('cli://codex') == {'environment_context': None, 'skills_instructions': None}
+    guidance.save(SKILLS, None)  # the owner's own removal wins over tare's, and is shown as theirs
+    assert {r['id']: r for r in guidance.items()}[SKILLS]['state'] == 'removed'
+    guidance.send_again(SKILLS)
+    guidance.reset()  # everything: back to tare's defaults
+    assert guidance.vendor_choices('cli://codex') == {'skills_instructions': None} and not guidance.path().exists()
+
+
+def test_the_panel_shows_what_tare_leaves_out_and_brings_it_back(tmp_path, monkeypatch):
+    read_as(monkeypatch, with_skills())
+
+    async def scenario():
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(80, 24)) as pilot:
+            await app.workers.wait_for_complete()
+            assert app.dispatch_conversation_command('/guidance', '')
+            await pilot.pause()
+            panel = app.screen
+            options, diff = panel.query_one('#guidance-item', OptionList), panel.query_one('#guidance-diff', TextArea)
+            default = panel.query_one('#guidance-default', Button)
+            assert str(options.get_option(SKILLS).prompt).endswith('  T')
+            options.highlighted = options.get_option_index(SKILLS)
+            await pilot.pause()
+            assert "Left out by tare's default" in str(panel.query_one('#guidance-about', Static).render())
+            assert '-- imagegen: Generate images.' in diff.text  # what is left out
+            assert str(default.label) == "Vendor's default" and not default.disabled
+            await pilot.click('#guidance-default')
+            await pilot.pause()
+            assert guidance.vendor_choices('cli://codex') == {}
+            assert str(options.get_option(SKILLS).prompt).endswith('  M') and str(default.label) == "tare's default"
+            await pilot.pause(0.3)  # a button ignores a second press while it still shows the first one
+            await pilot.click('#guidance-default')
+            await pilot.pause()
+            assert guidance.vendor_choices('cli://codex') == {'skills_instructions': None}
+            await pilot.press('escape')
+    asyncio.run(scenario())

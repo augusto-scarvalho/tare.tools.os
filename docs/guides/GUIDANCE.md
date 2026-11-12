@@ -5,7 +5,22 @@ where each one goes and who wrote it, and lets you change the ones that can be c
 before × after, and one button takes it back to its default.
 
 Your choices are kept in `<storage>/serve/guidance.json`, written by `relay/guidance.py`. If you have saved nothing,
-there is no file, and tare sends exactly what it sent before this panel existed.
+there is no file, and tare sends what the CLIs write, except the blocks tare leaves out by default (below).
+
+## What tare leaves out by default
+
+| CLI | Block | Why |
+| --- | --- | --- |
+| Codex | `skills_instructions`, the skills list | It lists every skill installed on the machine, about 16,000 characters on the owner's. tare turns Codex's tools off, so the model cannot open those skills. tare will have its own skills and its own way of calling them (decided 2026-11-12). |
+
+tare leaves a block out only on a CLI version where it has checked that the CLI really does. The check happens when
+the TUI opens: one more reading without tokens, with the block asked out. An installed copy of tare that updates by
+itself may meet a Codex that ignores the request. There the block is still sent, and the panel says so; leaving it
+out unchecked would make every Codex call fail. Before the first reading, nothing is left out.
+
+In the panel the block is marked `T`. The view below it shows what is left out, and **Vendor's default** sends it
+again as the CLI writes it. Then it is marked `M`, and **tare's default** leaves it out again. **Reset everything**
+also goes back to tare's defaults. A choice of your own for that block always wins over tare's.
 
 ## The panel
 
@@ -25,7 +40,8 @@ after it.
 
 | Mark | Meaning |
 | --- | --- |
-| `M` | your text is sent instead of the default |
+| `M` | your choice: your text, or a block tare leaves out that you send again |
+| `T` | left out by tare's default |
 | `D` | removed |
 | `C` | the default changed under your edit |
 | `U` | a block the CLI started sending that you have not reviewed |
@@ -121,7 +137,7 @@ distinct block is kept, so the list stays short.
   plugin-authoring), which already run on every Claude call that offers tools.
 - **Claude Code versions.** A Claude Code older than 2.1.322 refuses a choice.
 - **Codex.** The skills list, the sandbox and escalation rules, the collaboration mode and the environment block
-  can be removed. None can be replaced. Before the first call with a removal on a new Codex version, tare checks
+  can be removed. None can be replaced. tare leaves the skills list out by default (above). Before the first call with a removal on a new Codex version, tare checks
   with Codex's own `debug prompt-input` that the block really goes away. If it does not, the call is refused.
 - **AGY.** Its blocks can only be read.
 
