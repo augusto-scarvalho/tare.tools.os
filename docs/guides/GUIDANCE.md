@@ -67,9 +67,13 @@ While Context is on, the calls of a session that carries it leave out the vendor
 
 | CLI | Left out | Condition |
 | --- | --- | --- |
-| Claude Code | `attachment:environment`, `attachment:model`, `attachment:date` | when its latest reading has the block |
+| Claude Code | `attachment:environment`, `attachment:date` | when its latest reading has the block |
 | Codex | `environment_context` | where the startup reading checked that this Codex version leaves it out |
 | AGY | nothing | `request:ADDITIONAL_METADATA` and `request:USER_SETTINGS_CHANGE` cannot be left out; the panel says so |
+
+Claude Code's model block stays: it also gives the model's knowledge cutoff, which tare has no value for. Its
+environment block carries a caution about downloaded files; Context's default text says the same in tare's words,
+so that caution is not lost and reaches every CLI. If you rewrite Context, keep or drop that sentence knowingly.
 
 Such a block is marked `T` in the panel, with the common text that stands for it. **Vendor's default** sends it
 again. A choice of your own for the block wins.
