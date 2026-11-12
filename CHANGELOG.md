@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- `/guidance` keeps the text you had selected when the startup reading lands. Refilling the list highlighted its first text a moment later, which could move the selection to the top; a CI run caught it.
 - Diffs now have colours: in the Files pane (F8, `d` on a file, and a commit from `h`) and in the `/guidance` before and after view, removed lines are red, added lines green and hunk headers bold, in the colours of the theme you use. Text such as `<permissions instructions>` or `[x]` is shown as written. The `/guidance` before and after view can still only be read, not edited.
 - The working line above the input box now repeats the top status line exactly (elapsed time, who is working, its model, reasoning and the state of the call), so it names the planner, implementer or auditor when one of them is the one working, and the model that is really running instead of the model button's label. It is still empty when nothing is running.
 - While a conversation is running, the row just above the input box now shows the working spinner with the model in use and its role ("⠋ Claude Sonnet 5.5 · coordinator"), where your eyes are; before, the spinner was only in the status line at the top. The row is empty when nothing is running, and the top line keeps its spinner and status text.

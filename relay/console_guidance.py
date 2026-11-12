@@ -182,10 +182,12 @@ class GuidancePanel(SupportPanel):
         self.query_one('#guidance-read', Static).update(
             LEGEND + ('. Reading what each CLI adds now; it fills in by itself.' if reading else '.'))
         options = self.query_one('#guidance-item', OptionList)
-        options.clear_options()
-        options.add_options(self.options(readings(), reading))
         listed = [k for k, row in self.items.items() if not (reading and row['group'] in CLIS)]
-        self.select(self.current if self.current in listed else listed[0])
+        # Refilling the list highlights its first text; that late message would take the selection away.
+        with options.prevent(OptionList.OptionHighlighted):
+            options.clear_options()
+            options.add_options(self.options(readings(), reading))
+            self.select(self.current if self.current in listed else listed[0])
         if typed is not None:
             editor.load_text(typed)
 
