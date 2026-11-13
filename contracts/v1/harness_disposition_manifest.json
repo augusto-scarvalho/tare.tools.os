@@ -3361,8 +3361,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator model selection; Runtime retains session execution.",
-      "size_bytes": 30520,
-      "sha256": "56f788fb63267b64988e8a26e3d5a00caeddaa97ac7a00b124b003f47387d2d5"
+      "size_bytes": 31371,
+      "sha256": "94bb2b035e01acb928d40af2642975e1a2b0b32fb29370eb2e1c88a659add425"
     },
     {
       "name": "model_picker.py",
