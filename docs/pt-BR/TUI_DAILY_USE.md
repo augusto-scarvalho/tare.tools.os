@@ -201,13 +201,16 @@ Para padrões avançados, abra `/permissions`:
   plan and ask** ou **Go straight on**.
 - **Read only** — sem edição de arquivos nem terminal.
 - **Edit files** — grava dentro do escopo escolhido; terminal desativado.
-- **Edit + system commands** — edição de arquivos mais comandos de terminal.
+- **Edit + system commands** — edição de arquivos mais comandos. Com uma **Action review** eles rodam no
+  sandbox; sem ela (**None: terminal on this machine, no sandbox**) rodam num terminal direto nesta
+  máquina, como você, com acesso à rede e aos seus arquivos e credenciais, sem sandbox e sem revisão. Um
+  modelo local nunca recebe esse terminal.
 
 Os padrões são salvos separadamente para cada projeto. As ferramentas, o modelo,
 as instruções e o histórico do próprio coordenador continuam fixos; a autorização dos workers é verificada à parte
 ao executar um plano. Conversas explícitas de `/session` mantêm as capacidades
-originais. Comandos podem acessar o host e a rede: o escopo de edição de arquivos sozinho
-não é um sandbox do sistema.
+originais. As verificações configuradas também rodam nesta máquina, a menos que se escolha uma Action review:
+o escopo de edição de arquivos sozinho não é um sandbox do sistema.
 
 ## 4. Enviar um pedido normal de código
 

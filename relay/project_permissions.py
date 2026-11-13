@@ -200,7 +200,8 @@ def profile_values(defaults):
 
 
 def permissions_view(directory, project, control_root, *, session=None, pending=None, judges_off=False,
-                     local_only=False):
+                     local_only=False, local_model=False):
+    """local_model: the selected model of the next session is local (a saved session's own model decides there)."""
     project = str(Path(project).resolve())
     defaults, revision = read_defaults(directory, project, control_root)
     nested, nested_enabled, nested_error = {}, defaults.get('project_admission', {}).get('nested', True), None
@@ -214,6 +215,8 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
             original = records[0].event().get('capabilities', [])
             tools = sorted(set(original) & set(config.get('capabilities', original)))
             role, terminal = config['role'], bool(config.get('terminal'))
+            from .challenger import local  # the saved model decides, as in native_agent.run_session
+            local_model = terminal and not state.get('conversation_flow') and local(state['deployment'])
             protection = config.get('command_protection', {})
             paths = config['writable'].get(name, []) if 'edit' in tools else []
             checks = [key for key, row in config['verifiers'].items() if row['repository'] == name and 'verify' in tools]
@@ -254,7 +257,8 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
             protection = getattr(pending, 'command_protection', {})
         paths = paths if role == 'implementer' else []
         tools = ['read', 'list', 'search'] + (['edit'] if role == 'implementer' else [])
-        if terminal and role == 'implementer':
+        local_model = local_model or local_only
+        if terminal and role == 'implementer' and not local_model:
             from compute_plane.native_terminal import TERMINAL_SPECS
             tools += list(TERMINAL_SPECS)
         if protection:
@@ -295,7 +299,10 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
     effective = [title, 'Project: '+project, 'Role: '+role, 'Tools: '+(', '.join(tools) or 'None'),
                  'Editable paths: '+(', '.join(paths) or 'None'),
                  'System commands: '+(unreviewed or 'Protected noninteractive commands' if protection else
-                     'Enabled' if terminal and any(t.startswith('terminal_') for t in tools) else 'Disabled'),
+                     'None for a local model: tare never gives a local model the unsandboxed terminal. Choose an '
+                     'Action review for sandboxed commands' if terminal and role == 'implementer' and local_model else
+                     'Terminal on this machine, not sandboxed, not reviewed'
+                     if terminal and any(t.startswith('terminal_') for t in tools) else 'Disabled'),
                  'Configured checks: '+(', '.join(checks) or 'None in this scope')]
     if protection:
         effective += local
@@ -306,6 +313,9 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
             effective += ['Review calls: up to '+str(protection['max_reviews'])+' per request; native usage may be unknown.']
         effective += ['Protected commands use the declared Windows profile. Interactive terminal is unavailable in this mode.']
     else:
+        if any(t.startswith('terminal_') for t in tools):
+            effective.append('The terminal runs commands as you, with network access and your files and credentials '
+                             'in reach. A local model never gets it. An Action review runs commands in the sandbox.')
         effective.append('Configured checks run programs. Edit paths do not restrict command filesystem or network access.')
     if not session:
         effective.append('The new-session verifier field is separate; saved conversations keep their original checks.')

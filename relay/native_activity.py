@@ -12,7 +12,7 @@ OPERATIONS = {'read': 'Read', 'list': 'List', 'search': 'Search', 'context': 'Fi
               'conversation_history': 'Read previous conversation',
               'request_folder_access': 'Ask to read a folder', 'folder_list': 'List granted folder',
               'folder_read': 'Read granted folder', 'folder_search': 'Search granted folder',
-              'edit': 'Edit', 'verify': 'Check', 'command': 'Protected command', 'terminal_start': 'Start command',
+              'edit': 'Edit', 'verify': 'Check', 'command': 'Protected command', 'terminal_start': 'Unsandboxed command',
               'terminal_read': 'Read process output', 'terminal_input': 'Send process input',
               'terminal_stop': 'Stop process', 'terminal_list': 'List processes',
               'terminal_resize': 'Resize terminal', 'terminal_eof': 'Close process input'}
