@@ -481,7 +481,7 @@ def test_a_local_implementer_is_refused_where_no_sandbox_isolates_its_checks(tmp
         with pytest.raises(ValueError, match='does not run a local model as implementer on this system') as error:
             session({'role': role}, deployment, tmp_path)
         assert 'hosted implementer' in str(error.value) and 'Windows 11' in str(error.value) and calls == []
-        assert ('bubblewrap' in str(error.value)) is (sys.platform == 'linux')  # what Linux needs, said there only
+        assert 'bubblewrap' not in str(error.value)  # what Linux needs is said once Linux has a sandbox
     else:
         assert session({'role': role}, deployment, tmp_path) == 'ran'
 
