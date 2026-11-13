@@ -36,6 +36,7 @@ SANDBOX_PYTHON = Path(__file__).resolve().parent/'sandbox-python'
 # A project without command protection: its checks run in the same sandbox, with no model review (owner, 2026-11-13).
 CHECKS_ONLY = {**DEFAULTS, 'review': 'none', 'backend': 'mxc'}
 SANDBOXED_CHECK = 'Host-registered check, run in the sandbox by default; no model review.'
+BLOCKED_DURING = 'ISOLATION_BLOCKED_DURING'  # a red check during which the sandbox blocked something (asks; stays red)
 
 
 def probe_sandbox():
@@ -572,6 +573,7 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         mediator=CommandActionMediator(Broker(),snapshot,lambda a,c:context,authorize,guard,
             lambda:steady(control),result_handler=result,reviewed_execution=gate)
         mediator.close=weakref.finalize(mediator,lambda:(held.close(),test_directory.cleanup()))
+        mediator.policy=policy  # what its commands may read: a denial outside it is the sandbox's (sandbox_blocked)
         cli_options=({'codex_executable':pinned_cli['executable'],'codex_sha256':options['codex_sha256']}
                      if options['backend']=='codex' else {})
         from .work_units import VERIFY_SECONDS
@@ -712,8 +714,10 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
         if not refused:
             done = sandboxed(name, argv, kwargs)
             limitation = done.execution_limitation or ''
-            if protected or not limitation.startswith(SANDBOX_LIMITS):
+            if protected:
                 return done
+            if not limitation.startswith(SANDBOX_LIMITS):
+                return blocked_during(name, argv, kwargs, done) if done.sandbox_blocked else done
         allowed, why = outside(name, argv, limitation) if outside else (False, 'no one could be asked')
         if not allowed:
             if done is None:
@@ -722,6 +726,19 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
             return done  # its sandboxed output stays in the receipt
         return unsandboxed(name, argv, kwargs, 'run outside the sandbox by the user\'s decision ('+why+'), because '
                            'the sandbox blocked it: '+limitation.split(':', 1)[0])
+
+    def blocked_during(name, argv, kwargs, done):
+        """A red check whose output shows the sandbox blocked something: still red, and the user is asked. A yes
+        reruns it outside the sandbox, and that run decides; a no keeps it red with a hint for the model."""
+        what, line = done.sandbox_blocked
+        allowed, why = (outside(name, argv, f'{BLOCKED_DURING}: {what}. Output: {line}') if outside
+                        else (False, 'no one could be asked'))
+        if not allowed:
+            done.isolation = (f'the sandbox blocked {what} during this check ("{line}"), so its failure may come '
+                              f'from the sandbox, not from the code; it was not run outside the sandbox: {why}')
+            return done
+        return unsandboxed(name, argv, kwargs, f'run outside the sandbox by the user\'s decision ({why}), because the '
+                           f'sandbox blocked {what} during it; this run\'s result decides')
 
     def sandboxed(name, argv, kwargs):
         result = caps.execute(EffectRequest(session_id, 'verify-'+uuid4().hex,
@@ -737,6 +754,9 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
         completed = subprocess.CompletedProcess(argv, value.get('returncode', 1),
                                                 value.get('output', ''), '')
         completed.execution_limitation = verification_limitation(value)
+        policy = getattr(port, 'policy', None)
+        completed.sandbox_blocked = None if completed.execution_limitation else sandbox_blocked(value,
+            (*policy.read_only, *policy.read_write) if policy is not None else ())
         return completed
     if not refused and callable(getattr(port,'close',None)):run.close=port.close
     return run
@@ -795,6 +815,48 @@ def verification_limitation(value):
         'test assertions. Do not copy secrets into other files, rename them or change tests to hide this'
         + (', or silently enable host networking' if both else '') + '; the user decides whether such a check may '
         'run outside the sandbox.')
+
+
+# What the sandbox blocked, by the line a test runner printed (measured in the real sandbox, 2026-11-13: pytest,
+# unittest, node --test, cargo test). Broad on purpose: it only asks the user (it never makes a red check
+# inconclusive), and a yes reruns the check outside the sandbox, whose own result decides.
+BLOCKED_LINES = (
+    # Python, Node, .NET: a connect the sandbox refused (WSAEACCES); Python's asyncio reports ERROR_ACCESS_DENIED.
+    (re.compile(r'\[WinError 10013\]|\bWSAEACCES\b|\bconnect EACCES\b|\[WinError 5\].*finish_connect'),
+     'a network connection'),
+    (re.compile(r'getaddrinfo failed|\[Errno 1100[12]\]|\bgetaddrinfo (?:ENOTFOUND|EAI_AGAIN)\b'),
+     'a network name lookup'),
+    # Node resolves every script's real path, which reads the drive's root folder: the sandbox denies it.
+    (re.compile(r'''\b(?:EPERM|EACCES)\b.*\b(?:lstat|stat|realpath)\b '[A-Za-z]:\\{1,2}'$'''),
+     "the drive's root folder, which Node reads to load any script"),
+    (re.compile(r'rustup could not choose a version'), 'the Rust toolchain in your user profile'),
+)
+DENIED_PATH = re.compile(r'''(?:Permission denied|Access is denied|\bEACCES\b|\bEPERM\b)[^'"]*(['"])(.+?)\1''')
+
+
+def sandbox_blocked(value, readable=()):
+    """(what, line) when a check that failed in the sandbox printed a line saying the sandbox blocked something,
+    else None. Not a verdict: the check stays red; it lets tare ask whether to rerun it outside the sandbox.
+    `readable`: the sandbox's read and write scopes; a denied absolute path outside all of them is the sandbox's."""
+    output = str(value.get('output') or '')
+    if not value.get('returncode') or (value.get('process') or {}).get('confinement', {}).get('backend') != 'windows-mxc':
+        return None
+    scopes = [ntpath.normcase(str(p)).rstrip('\\') for p in readable]
+    for line in output.splitlines()[-2000:]:
+        line = line.strip()[:400]
+        for pattern, what in BLOCKED_LINES:
+            if pattern.search(line):
+                return what, line[:200]
+        found = DENIED_PATH.search(line)
+        if found:
+            path = found[2].replace('\\\\', '\\')
+            if sandbox_secrets.secret(ntpath.basename(path), ntpath.basename(ntpath.dirname(path))):
+                return 'a secret file ('+ntpath.basename(path)+')', line[:200]
+            folded = ntpath.normcase(path)
+            if (scopes and re.match(r'[a-z]:\\', folded)
+                    and not any(folded == s or folded.startswith(s+'\\') for s in scopes)):
+                return 'a file outside the folders checks may read ('+path[:120]+')', line[:200]
+    return None
 
 
 def pytest_failures(output):
@@ -944,12 +1006,21 @@ def protected_work_verifier(control, train_dir, *, descriptor, settings, outside
             err = (Path(dest) / 'stderr.txt').read_bytes()
             if len(out) + len(err) > 1024*1024:
                 raise ValueError('NATIVE_CANDIDATE_VERIFIER_OUTPUT_LIMIT')
-            limitation = checks_only and verification_limitation({'returncode': process['exit_code'],
-                'output': (out+err).decode('utf-8', 'replace'), 'process': process})
+            observed = {'returncode': process['exit_code'], 'output': (out+err).decode('utf-8', 'replace'),
+                        'process': process}
+            limitation = checks_only and verification_limitation(observed)
             if limitation:
                 if always:
                     return outside(declared, cwd=cwd, timeout=timeout, env=env)
                 raise ValueError('NATIVE_CANDIDATE_VERIFIER_SANDBOX_BLOCKED: no one can be asked in a Work run, so '
                                  'this check was not run outside the sandbox: '+limitation[:400])
+            scopes = getattr(mediator, 'policy', None)
+            blocked = checks_only and sandbox_blocked(observed,
+                (*scopes.read_only, *scopes.read_write) if scopes is not None else ())
+            if blocked and always:
+                return outside(declared, cwd=cwd, timeout=timeout, env=env)  # that run decides
+            if blocked:  # still red; the hint keeps the failure from being read as the code's alone
+                err += (f'\n[tare] The sandbox blocked {blocked[0]} during this check ("{blocked[1]}"), so its failure '
+                        'may come from the sandbox, not from the code. Nobody can be asked in a Work run.\n').encode()
             return subprocess.CompletedProcess(declared, process['exit_code'], out, err)
     return run

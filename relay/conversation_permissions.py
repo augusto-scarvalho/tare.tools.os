@@ -289,10 +289,15 @@ BLOCKED = {  # what the sandbox stopped, in plain words, by limitation code
 
 
 def sandbox_question(limitation):
+    """(the question's text, the output line that shows the block or '')."""
     code, _, detail = limitation.partition(': ')
     if code in BLOCKED:
-        return 'The sandbox blocked ' + BLOCKED[code] + ', so tare cannot judge this check inside it.'
-    return detail.split('. Not run')[0] if code == 'ISOLATION_UNAVAILABLE' else limitation
+        return 'The sandbox blocked ' + BLOCKED[code] + ', so tare cannot judge this check inside it.', ''
+    if code == 'ISOLATION_BLOCKED_DURING':  # a red check: the rerun outside would decide it
+        what, _, line = detail.partition('. Output: ')
+        return ('This check failed, and the sandbox blocked ' + what + ' during it, so the failure may come from the '
+                'sandbox rather than from the code. Run outside, its result decides.'), line[:200]
+    return (detail.split('. Not run')[0] if code == 'ISOLATION_UNAVAILABLE' else limitation), ''
 
 
 def outside_sandbox(root, state, task, effect_id, project, control, directory, invocation_id):
@@ -312,11 +317,12 @@ def outside_sandbox(root, state, task, effect_id, project, control, directory, i
         if directory is None:
             return False, 'no one could be asked: no TUI is connected'
         folder.mkdir(exist_ok=True)
+        question, line = sandbox_question(limitation)
         request = {'schema': SCHEMA, 'kind': 'sandbox', 'session': state['session_id'], 'effect': effect_id,
             'task': (task or {}).get('id', ''), 'plan': ((task or {}).get('plan') or {}).get('sha256', ''),
             'project': str(Path(project).resolve()), 'paths': [], 'checks': {name: list(argv)}, 'tests': [],
-            'objective': sandbox_question(limitation)[:2000], 'status': 'WAITING',
-            'sandbox': {'code': limitation.partition(':')[0], 'check': name}}
+            'objective': question[:2000], 'status': 'WAITING',
+            'sandbox': {'code': limitation.partition(':')[0], 'check': name, **({'line': line} if line else {})}}
         value = wait_for_answer(folder, request, control)
         if not value or value['choice'] == 'deny':
             return False, 'the user chose not to run it outside the sandbox'

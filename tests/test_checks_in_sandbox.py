@@ -1,5 +1,6 @@
 """Checks run in the Windows sandbox by default, whatever the project's mode (owner, 2026-11-13). The launcher is
 replaced as in test_command_protection; the real sandbox is proven by the probe harness, not here."""
+import asyncio  # noqa: F401  Winsock starts here, before the host fixture points SystemRoot at a stand-in runtime
 import json
 import subprocess
 import sys
@@ -180,6 +181,110 @@ def test_without_a_sandbox_hosted_checks_run_as_today_and_say_they_are_not_isola
     assert asked[0].startswith('ISOLATION_UNAVAILABLE: this system has no sandbox and this project is read only')
     assert first[0] == 'inconclusive' and 'verified' not in first[1] and work_units.blocked_by_sandbox(first[1])
     assert second[0] == 'green' and "run by the user's decision (for this turn, as the user chose)" in second[1]
+
+
+# Lines the real sandbox produced (2026-11-13, tools_probe.py): unittest, node --test, cargo test.
+UNITTEST_NETWORK = '''test_echo_server (test_server.T.test_echo_server) ... ERROR
+
+======================================================================
+ERROR: test_echo_server (test_server.T.test_echo_server)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\\tare-tp\\wt\\0123abcd\\ut_loopback\\test_server.py", line 7, in test_echo_server
+    socket.create_connection(("127.0.0.1", server.getsockname()[1]), timeout=5).close()
+PermissionError: [WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions
+
+----------------------------------------------------------------------
+Ran 1 test in 0.004s
+
+FAILED (errors=1)
+'''
+UNITTEST_SECRET = "    return io.open(self, mode, buffering, encoding, errors, newline)\n" \
+                  "PermissionError: [Errno 13] Permission denied: '.env'\n\nFAILED (errors=1)\n"
+UNITTEST_DNS = 'socket.gaierror: [Errno 11001] getaddrinfo failed\n\nFAILED (errors=1)\n'
+UNITTEST_FAIL = "    self.assertEqual(1 + 1, 3)\nAssertionError: 2 != 3\n\nFAILED (failures=1)\n"
+NODE_ROOT = ("node:internal/modules/run_main:107\nError: EPERM: operation not permitted, lstat 'C:\\'\n"
+             "    at Object.realpathSync (node:fs:2777:25) {\n  errno: -4048,\n  code: 'EPERM',\n  syscall: 'lstat',\n"
+             "  path: 'C:\\\\'\n}\n\u2139 fail 1\n")
+NODE_SECRET = ("\u2716 failing tests:\nError: EPERM: operation not permitted, open "
+               "'C:\\Users\\augus\\AppData\\Local\\Temp\\tare-tp\\storage\\wt\\0123abcd\\.env'\n  code: 'EPERM',\n")
+NODE_CONNECT = 'connect error EACCES connect EACCES 127.0.0.1:57376\n'
+NODE_FAIL = ("\u2716 failing tests:\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n2 !== 3\n"
+             "  code: 'ERR_ASSERTION',\n")
+CARGO = ("error: rustup could not choose a version of cargo to run, because one wasn't specified explicitly, and no "
+         "default is configured.\n")
+
+
+def test_a_denied_file_outside_every_scope_is_the_sandboxs_and_one_inside_is_the_tests():
+    # default_probe.py's outside_config check: pytest's E line, with the repr's doubled backslashes.
+    line = ("E       PermissionError: [Errno 13] Permission denied: "
+            "'C:\\\\Users\\\\augus\\\\AppData\\\\Local\\\\Temp\\\\tare-dp\\\\outside\\\\config.ini'")
+    value = {'returncode': 1, 'output': 'FAILED\n'+line+'\n', 'process': {'confinement': {'backend': 'windows-mxc'}}}
+    scopes = ('C:\\Windows', 'C:\\Users\\augus\\AppData\\Local\\Temp\\tare-dp\\storage\\wt\\0123abcd')
+    what, shown = protection.sandbox_blocked(value, scopes)
+    assert what.startswith('a file outside the folders checks may read (C:\\Users\\augus') and shown == line
+    inside = line.replace('outside', 'storage\\\\wt\\\\0123abcd')
+    assert protection.sandbox_blocked({**value, 'output': inside}, scopes) is None  # the test's own file: its failure
+    assert protection.sandbox_blocked(value) is None  # no scopes known: no claim
+
+
+@pytest.mark.parametrize('output,what', [
+    (UNITTEST_NETWORK, 'a network connection'), (UNITTEST_SECRET, 'a secret file (.env)'),
+    (UNITTEST_DNS, 'a network name lookup'), (NODE_ROOT, "the drive's root folder, which Node reads to load any script"),
+    (NODE_SECRET, 'a secret file (.env)'), (NODE_CONNECT, 'a network connection'),
+    (CARGO, 'the Rust toolchain in your user profile'), (UNITTEST_FAIL, None), (NODE_FAIL, None)])
+def test_a_red_check_names_what_the_sandbox_blocked_during_it(output, what):
+    value = {'returncode': 1, 'output': output, 'process': {'confinement': {'backend': 'windows-mxc'}}}
+    found = protection.sandbox_blocked(value)
+    assert (found and found[0]) == what
+    if found:
+        assert len(found[1]) <= 200 and '\n' not in found[1]
+    assert protection.verification_limitation(value) is None  # the strict rule stays pytest-only
+    for other in ({'returncode': 0}, {'process': {'confinement': {'backend': 'codex'}}}):
+        assert protection.sandbox_blocked({**value, **other}) is None  # passing, or not this sandbox
+
+
+@pytest.mark.parametrize('answer,outside_exit,state', [
+    ('yes', 0, 'green'), ('yes', 1, 'red'), ('no', None, 'red'), ('headless', None, 'red')])
+def test_a_red_check_the_sandbox_blocked_asks_and_only_the_rerun_outside_decides(host, monkeypatch, answer,
+                                                                                outside_exit, state):
+    unprotected(host, monkeypatch)
+    monkeypatch.setattr(protection, 'sandbox_blocked', lambda value, readable=(): (
+        'a network connection', 'PermissionError: [WinError 10013] An attempt was made to access a socket'))
+    reruns, asked = [], []
+    monkeypatch.setattr(work_units, 'managed_check', lambda argv, **kw: reruns.append(argv) or
+                        subprocess.CompletedProcess(argv, outside_exit, 'rerun outside\n', ''))
+    def outside(name, argv, why):
+        asked.append(why)
+        return (True, 'for this turn, as the user chose') if answer == 'yes' else (False, 'the user chose not to '
+                                                                                         'run it outside the sandbox')
+    run = protection.conversation_verifier(host.control, host.custody, host.config, {}, host.root, UNIT,
+        {'tests': FAIL}, **({} if answer == 'headless' else {'outside': outside}))
+    token = work_units.CHECK_PORT.set(run)
+    try:
+        result, receipt = work_units.run_checks(host.root, {'tests': FAIL})
+    finally:
+        work_units.CHECK_PORT.reset(token)
+    assert result == state and not work_units.blocked_by_sandbox(receipt)  # red, never inconclusive
+    if answer != 'headless':
+        assert asked == ['ISOLATION_BLOCKED_DURING: a network connection. Output: PermissionError: [WinError 10013] '
+                         'An attempt was made to access a socket']
+    if answer == 'yes':
+        assert reruns == [FAIL] and "this run's result decides" in receipt and 'rerun outside' in receipt
+    else:
+        assert reruns == [] and 'assertion failed' in receipt  # the sandboxed run's own output
+        assert 'the sandbox blocked a network connection during this check' in receipt
+        assert 'may come from the sandbox, not from the code' in receipt
+        assert ('no one could be asked' if answer == 'headless' else 'the user chose not to') in receipt
+
+
+def test_the_question_for_a_red_check_shows_the_line_and_says_the_rerun_decides():
+    from relay import conversation_permissions as permissions
+    question, line = permissions.sandbox_question(
+        'ISOLATION_BLOCKED_DURING: a secret file (.env). Output: ' + "Error: EPERM: operation not permitted, open '"
+        + 'x'*300 + "'")
+    assert question.startswith('This check failed, and the sandbox blocked a secret file (.env) during it')
+    assert 'its result decides' in question and line.startswith('Error: EPERM') and len(line) == 200
 
 
 def test_the_session_suite_holds_a_change_whose_check_the_sandbox_blocked(tmp_path, monkeypatch):

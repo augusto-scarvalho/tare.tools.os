@@ -43,10 +43,13 @@ class ExecutionPermissionPanel(SupportPanel):
                     yield Static(plan+'\n', markup=False)
                 if sandbox:
                     name,argv=next(iter(value['checks'].items()))
+                    line=str((value.get('sandbox') or {}).get('line') or '')[:200]  # the check's own words: plain
                     yield Static('Project: '+value['project']+'\nCheck: '+name+'\n\nExact command:\n'+repr(argv)+
+                        ('\n\nThe line of its output that shows it:\n'+line if line else '')+
                         '\n\nOutside the sandbox this program runs as you: it can use the network and read your '
-                        'files, secret files included. Not running it leaves the check unjudged, and a change it '
-                        'checks is not applied on its strength.', markup=False)
+                        'files, secret files included. '+('Not running it leaves the check failed.' if line else
+                        'Not running it leaves the check unjudged, and a change it checks is not applied on its '
+                        'strength.'), markup=False)
                 elif audit:
                     review=value['audit']
                     items=review.get('open_items') or []

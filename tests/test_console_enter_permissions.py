@@ -201,7 +201,7 @@ def test_a_check_the_sandbox_blocked_asks_before_running_outside_it_and_starts_o
     limitation = 'ISOLATION_NETWORK_DENIED: every failing test of this check failed because the sandbox denied...'
     request = {'schema': permissions.SCHEMA, 'kind': 'sandbox', 'session': 'parent', 'effect': 'e', 'task': 't',
                'plan': 'a'*64, 'project': str(project.resolve()), 'paths': [], 'checks': {'tests': argv}, 'tests': [],
-               'objective': permissions.sandbox_question(limitation), 'status': 'WAITING',
+               'objective': permissions.sandbox_question(limitation)[0], 'status': 'WAITING',
                'sandbox': {'code': 'ISOLATION_NETWORK_DENIED', 'check': 'tests'}}
     request['id'] = permissions.identity(request)
     permissions.save_json(session/'execution-permission'/'request.json', request)
@@ -239,6 +239,34 @@ def test_a_check_the_sandbox_blocked_asks_before_running_outside_it_and_starts_o
         save_defaults(directory, project, relay_mesh.RELAY_ROOT, {**view['defaults'], 'checks_outside_sandbox': False},
                       view['revision'])
         assert not checks_outside_sandbox(project)
+
+
+def test_the_question_for_a_failed_check_shows_the_blocked_line_as_plain_text(tmp_path):
+    from types import SimpleNamespace
+    from textual.widgets import Static
+    from relay import conversation_permissions as permissions
+    project, session = tmp_path/'project', tmp_path/'session'
+    project.mkdir(); (session/'execution-permission').mkdir(parents=True)
+    question, line = permissions.sandbox_question('ISOLATION_BLOCKED_DURING: a network connection. Output: '
+                                                  'connect error EACCES connect EACCES 127.0.0.1:57376 [bold]x[/bold]')
+    request = {'schema': permissions.SCHEMA, 'kind': 'sandbox', 'session': 'parent', 'effect': 'e', 'task': 't',
+               'plan': 'a'*64, 'project': str(project.resolve()), 'paths': [], 'checks': {'tests': ['node', '--test']},
+               'tests': [], 'objective': question, 'status': 'WAITING',
+               'sandbox': {'code': 'ISOLATION_BLOCKED_DURING', 'check': 'tests', 'line': line}}
+    request['id'] = permissions.identity(request)
+    permissions.save_json(session/'execution-permission'/'request.json', request)
+    async def scenario():
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(110, 40)) as pilot:
+            await app.workers.wait_for_complete(); await pilot.pause()
+            app.refresh_execution_permission(SimpleNamespace(session=str(session), root=str(project)))
+            await pilot.pause()
+            shown = '\n'.join(str(s.content) for s in app.screen.query(Static))
+            assert 'This check failed, and the sandbox blocked a network connection during it' in shown
+            assert 'The line of its output that shows it:\nconnect error EACCES connect EACCES 127.0.0.1:57376 ' \
+                   '[bold]x[/bold]' in shown  # plain text, no markup
+            assert 'Not running it leaves the check failed.' in shown and app.focused.id == 'permission-deny'
+    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize('final',['Hello.','The final answer differs.'])
