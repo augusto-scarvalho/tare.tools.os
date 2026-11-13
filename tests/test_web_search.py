@@ -218,8 +218,8 @@ def test_real_supervised_workers_keep_unicode_under_a_non_utf8_host_locale(tmp_p
             hook = ('from types import SimpleNamespace; from relay.web_reader import WebReader; '
                     'WebReader.fetch_clean_markdown=lambda address: SimpleNamespace(markdown='+ascii(text)+
                     ',final_url=address,title='+ascii(text)+',status="OK",error=None,method="fixture"); '
-                    'from relay.web_research import read_worker; read_worker(sys.argv[1])')
-            argv[program] = argv[program].replace('from relay.web_research import read_worker; read_worker(sys.argv[1])', hook)
+                    'from relay.web_research import read_worker; read_worker(*sys.argv[1:])')
+            argv[program] = argv[program].replace('from relay.web_research import read_worker; read_worker(*sys.argv[1:])', hook)
         # Simulate non-UTF-8 startup even when the normal launch selects UTF-8.
         # The worker's wire encoding must be explicit, independent of TextIO.
         argv[1:1] = ['-X', 'utf8=0']

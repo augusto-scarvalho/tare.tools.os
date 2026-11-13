@@ -91,7 +91,9 @@ Give the assistant a URL in an ordinary conversation. The coordinator can use
 model or a delegated researcher. Returned text includes the source URL, title,
 content hash, fetch time and actual access errors. Long pages have line ranges.
 
-`read_url`, and the host's reading of the sources a researcher cites, reach only public web addresses.
+`read_url`, the host's reading of the sources a researcher cites, links in a `tare serve` or Copilot request,
+`/research` in `tare serve` (its links, the links on those pages and free-search results) and the sources of a
+research flow reach only public web addresses, even when you typed the URL yourself.
 `localhost`, private and link-local addresses (including `169.254.169.254`), `100.64.0.0/10` (Tailscale),
 unique-local IPv6, multicast and reserved ranges, and names ending in `.local`, `.internal`, `.localhost` or
 `.ts.net` are refused, in any notation. The reader checks every connection it opens, so a redirect or a name
