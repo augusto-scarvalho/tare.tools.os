@@ -2387,8 +2387,8 @@
     {
       "name": "research.py",
       "path": "tare.tools.os/relay/research.py",
-      "size_bytes": 19421,
-      "sha256": "d7ecf0a862b8e86834993ab89594b8e00aa0f39e5e028fcddb99f714c6b9b4a9",
+      "size_bytes": 19543,
+      "sha256": "c2716fcd876d5ffb40ca497fe9d8d5ab0488891302b0d3838b9dae4933a10ba1",
       "summary": "Mass web research: deterministic collection, local map/reduce, frontier receives one envelope.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -2481,8 +2481,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns the product turn coordination shared by its frontends; the agent loop stays in the runtime.",
-      "size_bytes": 94193,
-      "sha256": "2c3662aa1cf4605ed319a146e4243cb309673d4cee9bdbd470d0c1d642666fa2"
+      "size_bytes": 94264,
+      "sha256": "89a21f3def0e2af32a392c228306602802bf947167255bbeac37763ee2f06ada"
     },
     {
       "name": "audit_report.py",
@@ -3941,8 +3941,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 45081,
-      "sha256": "0a019d080cf52edac838ced020a5c52a6301d5e9686236db0d880bff9b179543"
+      "size_bytes": 48293,
+      "sha256": "90f08cfad5ff2e76d27f21a35b9241b255d637b91b38754f49c12e8d7e29dca7"
     },
     {
       "name": "test_selection_pilot.py",
@@ -4151,8 +4151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 14953,
-      "sha256": "cd132050ee856f63036a97626d5fd9d0969fc6dac80967704103f284ce7f2822"
+      "size_bytes": 16098,
+      "sha256": "e0ab802ca26e8eda0d39d9fb11b95544de334cc5d607b36e77f56e88753df9e9"
     },
     {
       "name": "research_tools.py",

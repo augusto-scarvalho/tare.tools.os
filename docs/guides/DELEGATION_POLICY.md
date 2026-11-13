@@ -118,7 +118,8 @@ Three layers, always in this order, with the whole collection before inference.
 
 **Collection, no model.** `relay/web_reader.py`, which already existed, fetches and
 extracts to markdown: Trafilatura first, Firecrawl only if `FIRECRAWL_API_KEY`
-is set, urllib plus Trafilatura as a last resort. Recursion is a
+is set, urllib plus Trafilatura as a last resort. Each page is read in its own worker process that reaches
+only public web addresses, checking every connection and redirect, and stops after 30 seconds. Recursion is a
 breadth-first search over the markdown links, restricted to the domain allowlist,
 with parallel fetch. Output: `corpus/<sha256 of the content>.md` and `manifest.jsonl`
 with URL, hash, depth, method, bytes and the citable `W-` ref.

@@ -301,10 +301,9 @@ def test_images_are_described_by_the_first_vision_cli_that_answers(runtime, monk
 
 
 def test_linked_pages_are_read_and_never_crowd_out_the_request(runtime, monkeypatch):
-    from relay.web_reader import WebReader
     project, state, _ = runtime
     page = type('Doc', (), {'status': 'OK', 'markdown': 'x' * 50000})
-    monkeypatch.setattr(WebReader, 'fetch_clean_markdown', classmethod(lambda cls, url: page))
+    monkeypatch.setattr('relay.web_research.document', lambda url: page)
     request = 'summarize https://example.com/guide. ' + 'y' * 9000
     serve_agent.run_turn(copilot(project, request), lambda text: None)
     instruction = state['calls'][0]['instruction']
@@ -331,11 +330,11 @@ def test_free_search_results_are_read_locally_and_cli_search_is_only_the_fallbac
 
 
 def test_search_snippets_lead_the_page_and_survive_a_failed_fetch(monkeypatch):
-    from relay.web_reader import WebDocument, WebReader
-    def fetch(cls, url):
+    from relay.web_reader import WebDocument
+    def fetch(url):
         ok = url.endswith('/ok')
         return WebDocument(url, 't', 'page text' if ok else '', 1, 1, 0.0, 'm', 'OK' if ok else 'FAILED')
-    monkeypatch.setattr(WebReader, 'fetch_clean_markdown', classmethod(fetch))
+    monkeypatch.setattr('relay.web_research.document', fetch)
     read = turn_engine.with_snippets([{'href': 'https://PyPI.org/ok', 'title': 'pkg 2.2.0', 'body': 'Released'},
                                       {'href': 'https://x.org/down', 'title': 'Down', 'body': 'only snippet'}])
     assert read('https://pypi.org/ok').markdown == 'Search result: pkg 2.2.0\nReleased\n\npage text'

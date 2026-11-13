@@ -28,6 +28,7 @@ DEFAULTS = {'review': 'codex', 'backend': 'mxc', 'max_reviews': 6, 'review_secon
 CLASSIFIERS = ('model', 'jev')
 REVIEW_POLICIES = ('always', 'on_demand')
 CONFIG_KEYS = set(DEFAULTS) | {'classifier', 'review_policy'}
+SANDBOX_PYTHON = Path(__file__).resolve().parent/'sandbox-python'
 
 
 def digest(value):
@@ -202,7 +203,12 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         environment['TMPDIR']=str(test_scratch)
         environment['PYTEST_ADDOPTS']=shlex.join(['-o','cache_dir='+str(test_scratch/'cache'),
                                                '--basetemp='+str(test_scratch/'tests')])
+        # Both Windows backends deny loopback, where socket.socketpair (and so asyncio) would wait forever; this
+        # sitecustomize gives Python an AF_UNIX pair instead. Codex's launcher passes the same environment on.
+        environment.update(PYTHONPATH=str(SANDBOX_PYTHON),TARE_SANDBOX_SOCKETPAIR='1')
         runtime_roots={str(Path(sys.base_prefix).resolve()),str(Path(sys.prefix).resolve())}
+        if not any(SANDBOX_PYTHON.is_relative_to(p) for p in runtime_roots):
+            runtime_roots.add(str(SANDBOX_PYTHON))  # a source checkout; a release has it inside its venv
         runtime_roots.update(str(verifier_runtime(row['argv'][0])) for row in config.get('verifiers',{}).values()
             if Path(row['argv'][0]).is_absolute())
         runtime_roots.update(str(verifier_runtime(p)) for p in config.get('command_runtimes', []))
@@ -579,17 +585,54 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
 
 
 def verification_limitation(value):
-    """A known MXC/Windows IPC stop is inconclusive, never a failing-code verdict."""
+    """A check the MXC sandbox stopped (the loopback socket pair hang, or pytest tests that each failed on a
+    connection the sandbox denied) is inconclusive, never a failing-code verdict."""
     output = str(value.get('output') or '')
     backend = (value.get('process') or {}).get('confinement', {}).get('backend')
     if (value.get('returncode') and backend == 'windows-mxc'
             and all(part in output for part in ('asyncio', 'socket.py',
                 'in _fallback_socketpair', 'in accept', 'Timeout'))):
-        return ('ISOLATION_INTERNAL_IPC_UNAVAILABLE: the MXC check stopped creating asyncio local sockets. '
+        return ('ISOLATION_INTERNAL_IPC_UNAVAILABLE: the MXC check waited forever for a loopback socket pair. '
+            'The sandbox denies loopback. tare gives Python an AF_UNIX socket.socketpair there, so asyncio runs, '
+            'but tests that open real TCP or UDP servers on 127.0.0.1, Python started with -I, -E or -S or with '
+            'a scrubbed environment or under a profile folder name too long for the socket path (its stderr says '
+            'so), and libraries that build their own loopback connections still fail. '
             'This does not establish failing test assertions. Inspect the required check scope or use a '
             'compatible execution policy; do not remove required checks, change tests to hide this limitation, '
             'or silently enable host networking.')
+    def denied(section):
+        # The failure raised (pytest's E lines, not captured output) is a connect the sandbox refused: WSAEACCES,
+        # a socket error only, or ERROR_ACCESS_DENIED completing asyncio's overlapped connect (windows_events.py,
+        # finish_connect). A bare "Access is denied" can be the test's own file error, so it never counts.
+        raised = '\n'.join(line for line in section.splitlines() if line.startswith('E '))
+        return '[WinError 10013]' in raised or ('[WinError 5]' in raised and 'windows_events.py' in section
+                                                and 'finish_connect' in section)
+    sections = [] if value.get('output_truncated') else pytest_failures(output)
+    if value.get('returncode') and backend == 'windows-mxc' and sections and all(map(denied, sections)):
+        return ('ISOLATION_NETWORK_DENIED: every failing test of this check failed because the sandbox denied a '
+            'network connection on this machine (loopback included), so these tests cannot be judged inside the '
+            'sandbox. This does not establish failing test assertions. Do not remove required checks, change '
+            'tests to hide this limitation, or silently enable host networking.')
     return None
+
+
+def pytest_failures(output):
+    """The text of each failure and error section of pytest's reports; [] when one cannot be delimited."""
+    sections, current = [], None
+    for line in output.splitlines():
+        text = line.strip()
+        if re.fullmatch(r'=+ (FAILURES|ERRORS) =+', text):
+            current = []  # inside a report, before its first section
+        elif re.fullmatch(r'=+ .+ =+', text):
+            current = None
+        elif re.fullmatch(r'_{3,} \S.* _{3,}', text):
+            if current is None:
+                return []  # a section outside FAILURES and ERRORS: unknown, so nothing is attributed
+            current = [line]
+            sections.append(current)
+        elif current is not None:
+            current.append(line)
+    return [] if current is not None else ['\n'.join(s) for s in sections]  # a report that never ended
 
 
 def encode_context(unit):
