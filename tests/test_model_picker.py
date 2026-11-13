@@ -161,6 +161,9 @@ def test_model_button_grows_with_its_label_and_ellipsizes_only_when_the_row_is_f
         app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
         async with app.run_test(size=size) as pilot:
             await app.workers.wait_for_complete()
+            # The app's own header relabels the button with this machine's model on every refresh; with it
+            # silenced, the labels below are only the ones this test sets, whatever a pause lets run.
+            app.render_header = lambda: None
             button = app.query_one('#choose-model', Button)
             row = app.query_one('#model-controls')
             def shown_label():
