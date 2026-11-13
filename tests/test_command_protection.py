@@ -184,6 +184,23 @@ def test_staged_recovery_is_only_enabled_for_the_hosts_private_candidate(host,mo
     assert 'GIT_WORK_TREE' not in captured[-1]['environment']
 
 
+@pytest.mark.parametrize('backend,installed',[('mxc',False),('codex',False),('mxc',True)])
+def test_both_windows_backends_give_python_the_sandbox_socketpair(host,monkeypatch,backend,installed):
+    captured=[];original=protection.windows_isolation_factory
+    def capture(**kwargs):
+        captured.append(kwargs);return original(**kwargs)
+    monkeypatch.setattr(protection,'windows_isolation_factory',capture)
+    shim=protection.SANDBOX_PYTHON
+    if installed:  # a release installs relay inside its venv, which is already a readable runtime root
+        monkeypatch.setattr(protection.sys,'prefix',str(shim.parents[1]))
+    host.config['command_protection']=protection.prepare({'review':'codex','backend':backend,'max_reviews':1},host.deployment)
+    host.build().close()
+    environment,policy=captured[-1]['environment'],captured[-1]['policy']
+    assert captured[-1]['backend']==backend and (shim/'sitecustomize.py').is_file()
+    assert (environment['PYTHONPATH'],environment['TARE_SANDBOX_SOCKETPAIR'])==(str(shim),'1')
+    assert (str(shim) in policy.read_only) is not installed and str(shim) not in policy.read_write
+
+
 @pytest.mark.parametrize('backend',['mxc','codex'])
 def test_automatic_codex_review_preserves_the_selected_sandbox(host,monkeypatch,backend):
     captured=[];original=protection.windows_isolation_factory

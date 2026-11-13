@@ -94,9 +94,13 @@ stale and stopped candidates stay pending. When command protection is selected,
 both child commands and host checks use it; refusal never enables a raw fallback.
 Without command protection, existing checks retain their ordinary execution
 permissions. A working directory is not a command sandbox.
-An observed MXC timeout creating Windows asyncio/socketpair IPC is reported as
-inconclusive execution compatibility. Inspect check scope or choose a compatible
-policy explicitly; this never enables host networking or waives required tests.
+The sandbox denies loopback networking. Python's `socket.socketpair`, and with
+it `asyncio`, still works there through an AF_UNIX pair tare provides; tests
+that open real TCP or UDP servers on 127.0.0.1 still fail. An observed MXC
+timeout creating a loopback socket pair (Python started with `-I`, `-E` or `-S`,
+or a library that builds its own) is reported as inconclusive execution
+compatibility. Inspect check scope or choose a compatible policy explicitly;
+this never enables host networking or waives required tests.
 
 F3 includes the host-applied files, recorded candidate checks and their observed
 freshness. Existing file/turn preview and explicit undo use the same hashed

@@ -83,7 +83,8 @@
         "relay/model_evidence.json",
         "relay/behavioral_evidence.json",
         "scripts/ops/pack_native_release.py",
-        "relay/prompt_capsules.json"
+        "relay/prompt_capsules.json",
+        "relay/sandbox-python/sitecustomize.py"
       ],
       "package": "tare-tools-os",
       "version": "0.1.63"

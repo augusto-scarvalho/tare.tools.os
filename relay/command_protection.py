@@ -28,6 +28,7 @@ DEFAULTS = {'review': 'codex', 'backend': 'mxc', 'max_reviews': 6, 'review_secon
 CLASSIFIERS = ('model', 'jev')
 REVIEW_POLICIES = ('always', 'on_demand')
 CONFIG_KEYS = set(DEFAULTS) | {'classifier', 'review_policy'}
+SANDBOX_PYTHON = Path(__file__).resolve().parent/'sandbox-python'
 
 
 def digest(value):
@@ -202,7 +203,12 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         environment['TMPDIR']=str(test_scratch)
         environment['PYTEST_ADDOPTS']=shlex.join(['-o','cache_dir='+str(test_scratch/'cache'),
                                                '--basetemp='+str(test_scratch/'tests')])
+        # Both Windows backends deny loopback, where socket.socketpair (and so asyncio) would wait forever; this
+        # sitecustomize gives Python an AF_UNIX pair instead. Codex's launcher passes the same environment on.
+        environment.update(PYTHONPATH=str(SANDBOX_PYTHON),TARE_SANDBOX_SOCKETPAIR='1')
         runtime_roots={str(Path(sys.base_prefix).resolve()),str(Path(sys.prefix).resolve())}
+        if not any(SANDBOX_PYTHON.is_relative_to(p) for p in runtime_roots):
+            runtime_roots.add(str(SANDBOX_PYTHON))  # a source checkout; a release has it inside its venv
         runtime_roots.update(str(verifier_runtime(row['argv'][0])) for row in config.get('verifiers',{}).values()
             if Path(row['argv'][0]).is_absolute())
         runtime_roots.update(str(verifier_runtime(p)) for p in config.get('command_runtimes', []))
@@ -585,7 +591,11 @@ def verification_limitation(value):
     if (value.get('returncode') and backend == 'windows-mxc'
             and all(part in output for part in ('asyncio', 'socket.py',
                 'in _fallback_socketpair', 'in accept', 'Timeout'))):
-        return ('ISOLATION_INTERNAL_IPC_UNAVAILABLE: the MXC check stopped creating asyncio local sockets. '
+        return ('ISOLATION_INTERNAL_IPC_UNAVAILABLE: the MXC check waited forever for a loopback socket pair. '
+            'The sandbox denies loopback. tare gives Python an AF_UNIX socket.socketpair there, so asyncio runs, '
+            'but tests that open real TCP or UDP servers on 127.0.0.1, Python started with -I, -E or -S or with '
+            'a scrubbed environment or under a profile folder name too long for the socket path (its stderr says '
+            'so), and libraries that build their own loopback connections still fail. '
             'This does not establish failing test assertions. Inspect the required check scope or use a '
             'compatible execution policy; do not remove required checks, change tests to hide this limitation, '
             'or silently enable host networking.')
