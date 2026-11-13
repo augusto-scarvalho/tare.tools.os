@@ -29,6 +29,10 @@ def host(tmp_path,monkeypatch):
     monkeypatch.setattr(protection,'MxcPolicy',lambda read,write,denied,registry_read,enumerate_only=():
                         SimpleNamespace(read_only=read,read_write=write,denied=denied,enumerate_only=enumerate_only))
     monkeypatch.setattr(protection,'policy_sha256',lambda policy:'e'*64)
+    # Linux's policy (bubblewrap) takes only POSIX paths, which this fixture's are not on Windows.
+    monkeypatch.setattr('compute_plane.linux_bwrap.BwrapPolicy',lambda read,write,denied:
+                        SimpleNamespace(read_only=read,read_write=write,denied=denied))
+    monkeypatch.setattr('compute_plane.linux_bwrap.policy_sha256',lambda policy:'f'*64)
     native=[];effects=[];claims=set();activities=[]
     class Gate:
         def __init__(self,*args,**kwargs):self.options=kwargs
@@ -118,6 +122,15 @@ def test_a_linked_program_keeps_its_path_on_posix_and_is_resolved_on_windows(tmp
         protection.prepared_checks({'check': [str(environment/'bin'/'missing')]})
 
 
+def test_a_posix_program_in_a_bin_folder_also_reads_its_installations_lib(tmp_path, monkeypatch):
+    # pyenv's or uv's Python (a virtual environment's base too) keeps its standard library in <prefix>/lib.
+    base = tmp_path.resolve()/'python-3.11'; (base/'bin').mkdir(parents=True); (base/'lib').mkdir()
+    python = base/'bin'/'python3.11'; python.write_bytes(b'fixture; not executed')
+    for platform, expected in (('linux', {base/'bin', base/'lib'}), ('win32', {base/'bin'})):
+        monkeypatch.setattr(protection, 'sys', SimpleNamespace(platform=platform))
+        assert protection.verifier_runtime(python) == expected
+
+
 @pytest.mark.parametrize('platform', ['win32', 'linux'])
 def test_a_linked_executable_is_a_command_input_only_on_posix(host, platform):
     link = host.runtime/'python3'
@@ -151,6 +164,44 @@ def test_a_binding_holds_secrets_open_on_windows_only(host, monkeypatch):
         bind(session_id='session', binding=host.binding, control=host.control, config=host.config,
              custody=host.custody, scratch=host.custody/'scratch', capabilities=host.capabilities).close()
     assert held == [[str(host.root.resolve()/'api'/'.env')], []]
+
+
+@pytest.mark.parametrize('platform', ['win32', 'linux'])
+def test_linux_binds_checks_in_bubblewrap_and_windows_binds_what_it_did(host, monkeypatch, tmp_path, platform):
+    # Dormant until probe_sandbox answers True on Linux; the policy and launcher are replaced (host fixture).
+    from compute_plane import linux_bwrap
+    (host.root/'.env').write_text('FAKE_SECRET_FIXTURE'); (host.root/'node_modules').mkdir()
+    rustup = tmp_path/'rustup'; rustup.mkdir(); monkeypatch.setenv('RUSTUP_HOME', str(rustup))
+    del host.config['command_protection']
+    host.config['writable'] = {'project': ['src']}
+    argv = [str(host.executable), '-m', 'pytest']
+    host.config['verifiers'] = {'tests': {'repository': 'project', 'argv': argv}}
+    bound, actions = [], []
+    monkeypatch.setattr(protection, 'windows_isolation_factory',
+                        lambda **kw: bound.append(kw) or (lambda **session: kw['mediation_factory'](**session)))
+    host.capabilities.claim_action = lambda action, authorization: actions.append(action) or True
+    protection.sys.platform = platform
+    mediator = protection.factory(host.config, {}, host.custody, 'Run the checks.', 'invocation', checks_only=True)(
+        session_id='session', binding=host.binding, control=host.control, config=host.config, custody=host.custody,
+        scratch=host.custody/'scratch', capabilities=host.capabilities)
+    result = mediator.execute(host.facts(args=argv), host.effect)
+    linux, policy, environment = platform == 'linux', bound[0]['policy'], bound[0]['environment']
+    assert bound[0]['backend'] == result['command_protection']['backend'] == ('bwrap' if linux else 'mxc')
+    assert actions[0].execution_profile == ('linux-bwrap/1:'+'f'*64 if linux else 'windows-mxc/1:'+'e'*64)
+    # The system folders, then the runtimes (no socketpair shim on Linux) and the project, read-only.
+    system = linux_bwrap.SYSTEM_ROOTS if linux else (str(host.runtime),)
+    runtimes = {str(host.runtime), str(rustup.resolve()), *(() if linux else (str(protection.SANDBOX_PYTHON),))}
+    assert policy.read_only == tuple(dict.fromkeys((*system, *sorted(runtimes), str(host.root))))
+    scratch = str(host.custody/'command-tmp')
+    assert policy.read_write == (str(host.root/'src'), scratch, environment['TMPDIR'])
+    assert policy.denied == (str(host.root/'.env'),)
+    # The check's environment: its home and temporary folders are the scratch it may write, never the user's.
+    assert environment['HOME'] == environment['TEMP'] == environment['TMP'] == scratch
+    assert environment['RUSTUP_HOME'] == str(rustup.resolve())
+    shim = {'PYTHONPATH': str(protection.SANDBOX_PYTHON), 'TARE_SANDBOX_SOCKETPAIR': '1',
+            'NODE_OPTIONS': '--preserve-symlinks --preserve-symlinks-main'}
+    assert {k: environment[k] for k in shim if k in environment} == ({} if linux else shim)
+    mediator.close()
 
 
 @pytest.mark.parametrize('private,always',[(True,False),(True,True),(False,False)])
@@ -594,8 +645,12 @@ def test_policy_refuses_pty_and_platform_without_fallback(host,monkeypatch):
     host.config['terminal']=True
     with pytest.raises(ValueError,match='interactive terminal'):host.build()
     host.config.pop('terminal')
-    monkeypatch.setattr(protection,'sys',SimpleNamespace(platform='linux'))
-    with pytest.raises(ValueError,match='require Windows'):host.build()
+    for platform in ('linux','darwin'):  # Linux sandboxes only the checks of a project without protection
+        monkeypatch.setattr(protection,'sys',SimpleNamespace(platform=platform))
+        with pytest.raises(ValueError,match='require Windows'):host.build()
+    del host.config['command_protection']
+    with pytest.raises(ValueError,match='require Windows'):
+        protection.factory(host.config,{},host.custody,'Run the checks.','invocation',checks_only=True)
 
 
 def test_own_reviews_keep_low_classifier_high_reviewer_and_require_both_approvals(host,monkeypatch):

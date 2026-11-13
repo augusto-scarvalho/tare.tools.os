@@ -9,7 +9,7 @@ description = "tare.tools native execution and Work composition"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
-    "tare-kernel[attachments]>=0.9.88,<0.10",
+    "tare-kernel[attachments]>=0.9.89,<0.10",
     "tare-tools-agent-runtime>=0.14.7,<0.15",
     "tare-tools-specgraph>=0.7.9,<0.8",
     "tare-tools-backlog-graph>=1.3.1,<2",

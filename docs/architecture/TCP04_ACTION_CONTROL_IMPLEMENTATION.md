@@ -58,6 +58,27 @@ sandbox, hosted checks run with `managed_check` and record `not isolated`, a
 read-only project's checks ask first, and `execution_scope.session_role` refuses a
 local implementer.
 
+On Linux the same checks are bound in the Kernel's bubblewrap profile
+(`compute_plane/linux_bwrap.py`, Kernel 0.9.89), and nowhere else yet:
+`sandbox_available()` still answers False on Linux, so Linux has no sandbox until
+the probe asks the Kernel's `require_support()`. `factory(..., checks_only=True)`
+admits Linux (protected commands stay Windows-only) and sets backend `bwrap`, which
+each receipt names. `bind` builds a `BwrapPolicy` whose read scopes start from the
+Kernel's `SYSTEM_ROOTS` instead of `SystemRoot`, followed by the same runtime,
+project, edit-path, scratch and deny lists (bubblewrap masks each secret; a rename
+carries the mask along, so nothing is held; `MAX_DENIED` stays 32 on both
+platforms). The snapshot's profile is `linux-bwrap/1:<policy digest>`. There is no
+socketpair shim and no `NODE_OPTIONS` (the sandbox has its own loopback and no drive
+root); `RUSTUP_HOME` stays. `HOME`, `TEMP`, `TMP` and `TMPDIR` are the check's scratch
+folders, bound read-write at their own paths over the sandbox's empty `/tmp`; `PATH`
+is the host's, whose folders outside the policy do not exist inside. On POSIX a
+program in `<prefix>/bin` also reads `<prefix>/lib`, where a Python (a virtual
+environment's base among them) keeps its standard library. A launch the profile
+refuses because a scope's real path or a denied path changed since binding
+(`bwrap_scope_changed`, `bwrap_denied_path_changed`) refuses the check with that
+code (`windows_isolation` keeps it on the mediator as `launch_refused`, since the
+Kernel records only the error's type once a check started); nothing runs outside.
+
 ## Jev classification and review escalation (0.1.66)
 
 In Settings (F2), Project permissions, enable protected commands and select a

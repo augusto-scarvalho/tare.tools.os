@@ -11,6 +11,7 @@ def fixture(tmp_path, monkeypatch):
         def __init__(self, *args, **kwargs): calls.append(('launcher', args, kwargs))
     monkeypatch.setattr(module, 'WindowsMxcProfile', Launcher)
     monkeypatch.setattr(module, 'CodexSandboxProfile', Launcher)
+    monkeypatch.setattr('compute_plane.linux_bwrap.LinuxBwrapProfile', Launcher)  # imported only for 'bwrap'
     mediator = SimpleNamespace(execute=lambda facts, effect: effect())
     def mediation(**session): calls.append(('mediate', session)); return mediator
     capabilities = SimpleNamespace(terminal=None,
@@ -22,7 +23,7 @@ def fixture(tmp_path, monkeypatch):
     return args, session, mediator, calls
 
 
-@pytest.mark.parametrize('backend', ['mxc', 'codex'])
+@pytest.mark.parametrize('backend', ['mxc', 'codex', 'bwrap'])
 def test_host_composes_one_launcher_and_existing_mediator(fixture, backend):
     args, session, mediator, calls = fixture
     args['backend'] = backend
@@ -52,6 +53,7 @@ def test_explicit_verification_scope_keeps_the_same_launcher_and_mediator(fixtur
 @pytest.mark.parametrize('change', [dict(backend='auto'), dict(seconds=0),
     dict(seconds=float('inf')), dict(environment={'TOKEN': 42}),
     dict(mediation_factory=None), dict(codex_executable='C:/other/codex.exe'),
+    dict(backend='bwrap', codex_executable='C:/other/codex.exe'),
     dict(backend='codex'), dict(unbounded_verification=1)])
 def test_invalid_host_configuration_refuses_without_binding(fixture, change):
     args, session, mediator, calls = fixture
