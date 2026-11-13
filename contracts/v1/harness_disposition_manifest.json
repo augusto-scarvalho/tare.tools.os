@@ -3771,8 +3771,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 59362,
-      "sha256": "e4b472a22146d2b75dc2122c813e8e04ba513ef7573af5e059e698cc2bfe57a2"
+      "size_bytes": 63310,
+      "sha256": "cd4e384310ad39ce84a4d95e002c8ea6bde2083d7123eb220f6396b826d3467a"
     },
     {
       "name": "folder_access.py",

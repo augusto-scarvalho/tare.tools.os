@@ -1,6 +1,8 @@
 """Red CI reaches the agents without anyone watching.
 
-`tare ci watch <repo-dir> <sha>`: started detached by the repositories' pre-push hook. It waits for the
+`tare ci watch <repo-dir> <sha>`: started detached by the repositories' pre-push hook. When the checkout's branch
+has an open pull request into main it first runs the sandbox probe, as `tare ci pr` does, and a failed probe turns
+that pull request's auto-merge off and opens an alert. It waits for the
 commit's GitHub workflow runs; a failed run becomes an open alert (failing jobs and error lines), shown as
 a Windows notification. A later green run of the same workflow and branch resolves it.
 `tare ci nightly [repo-dir...]`: the same for the latest scheduled (full-suite) runs of the given repositories,
@@ -417,12 +419,13 @@ def failed_runs(repo_dir, sha, repo):
     return [run for run in runs if run['status'] == 'completed' and run['conclusion'] in FAILED]
 
 
-def pr_alert(repo, number, view, what, errors, session):
+def pr_alert(repo, number, view, what, errors, session, kind='pull request'):
+    """`kind` names the alert's key: the shepherd clears the 'pull request' one when it ends."""
     alert = {'repo': repo, 'workflow': 'pull request', 'branch': view['headRefName'],
              'commit': f"#{number} {what}: {view['title']}", 'url': view['url'],
              'created_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'errors': errors[:20],
              'session': session}
-    update(lambda alerts: alerts.__setitem__(f"{repo}|pull request|{view['headRefName']}", alert))
+    update(lambda alerts: alerts.__setitem__(f"{repo}|{kind}|{view['headRefName']}", alert))
     notify(alert)
 
 
@@ -750,6 +753,56 @@ def sandbox_probe(repo_dir):
     return 'passed'
 
 
+def probe_pushed_pull_request(repo_dir, *, session=None, tries=3, every=30, sleep=time.sleep):
+    """Run the sandbox probe for a push to a branch whose pull request into main is open, as `tare ci pr` does before
+    it opens one: the post-commit hook pushes later commits there with auto-merge on, and CI cannot run the sandbox.
+    A probe that fails or does not finish turns auto-merge off and alerts under a key of its own, since the shepherd
+    clears its pull request's alert when auto-merge goes off; `tare ci pr` clears it once its probe passes. A gh that
+    cannot say whether the pull request exists is retried, then alerted. Returns the probe's answer, 'failed', or None
+    when there was nothing to probe."""
+    try:
+        branch = git_in(repo_dir, 'rev-parse', '--abbrev-ref', 'HEAD')  # the checkout as it is now, as the probe
+    except (OSError, subprocess.SubprocessError):
+        return None  # no checkout left to probe
+    if branch in ('HEAD', 'main', 'dev'):
+        return None
+    repo = str(repo_dir)
+    for left in reversed(range(tries)):
+        try:
+            repo = json.loads(gh(['repo', 'view', '--json', 'nameWithOwner'], repo_dir))['nameWithOwner']
+            found = json.loads(gh(['pr', 'list', '--head', branch, '--base', 'main', '--state', 'open', '--json',
+                                   'number,url,title,headRefName'], repo_dir) or '[]')
+            break
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError) as error:
+            if not left:
+                reason = f"{error} {getattr(error, 'stderr', None) or ''}".strip()[-500:]
+                pr_alert(repo, '?', {'headRefName': branch, 'title': branch, 'url': ''}, 'sandbox probe not run',
+                         [f'gh could not say whether this branch has an open pull request into main: {reason}',
+                          'If it has one and its commits touch the Windows sandbox, run `python scripts/ops/'
+                          'sandbox_probe.py`; if it fails, turn auto-merge off (`gh pr merge <number> --disable-auto`)'
+                          ', fix it and run `tare ci pr` again.'], session, 'sandbox probe')
+                return None
+            sleep(every)
+    if not found:
+        return None
+    pr = found[0]
+    try:
+        return sandbox_probe(repo_dir)
+    except (ValueError, OSError, subprocess.SubprocessError) as error:  # what makes `tare ci pr` refuse
+        failed = f"{error} {getattr(error, 'stderr', None) or ''}".strip().removeprefix('Preflight refused: ')
+    try:
+        gh(['pr', 'merge', str(pr['number']), '--disable-auto'], repo_dir)
+        what, off = 'sandbox probe failed, auto-merge turned off', 'so auto-merge was turned off'
+    except (OSError, subprocess.SubprocessError) as error:
+        what = 'sandbox probe failed, auto-merge still on'
+        off = (f"and turning auto-merge off failed ({error}), so it can still merge once CI is green: turn it off "
+               f"with `gh pr merge {pr['number']} --disable-auto`")
+    pr_alert(repo, pr['number'], pr, what, [failed, 'The Windows sandbox probe failed on this machine for a push to '
+             f'this open pull request (CI cannot run the sandbox), {off}. Fix it, then run `tare ci pr` again: it '
+             'runs the probe again and turns auto-merge back on.'], session, 'sandbox probe')
+    return 'failed'
+
+
 def pull_request(repo_dir, body=None):
     """main takes changes through pull requests that merge themselves once CI is green: refuse what the
     preflight refuses, push the current branch, open its pull request into main (or reuse the open one), turn on
@@ -817,6 +870,8 @@ def pull_request(repo_dir, body=None):
             raise
         return {'number': number, 'url': url, 'state': 'AUTO_MERGE_DISABLED_AWAITING_INTEGRATION', 'preflight': plan,
                 'sandbox_probe': probe}
+    # The probe passed and auto-merge is on again: the alert of an earlier push's failed probe is past.
+    update(lambda alerts: alerts.pop(f"{read['settings'].get('full_name')}|sandbox probe|{branch}", None))
     state = json.loads(gh(['pr', 'view', str(number), '--json', 'mergeStateStatus'], repo_dir))['mergeStateStatus']
     if state == 'BEHIND':  # main moved: GitHub merges main into the branch, and the local branch follows
         gh(['pr', 'update-branch', str(number)], repo_dir)
@@ -972,6 +1027,7 @@ def main(argv=None):
         repo_dir = args.repo_dir.resolve()
         session = os.environ.get('CLAUDE_CODE_SESSION_ID')  # inherited from the agent that pushed, if any
         update(lambda repos: repos.__setitem__(str(repo_dir), {'sha': args.sha, 'session': session}), 'repos.json')
+        probe_pushed_pull_request(repo_dir, session=session)
         opened = watch(repo_dir, args.sha, session=session)
         try:
             opened += nightly(repo_dir)
