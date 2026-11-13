@@ -2,7 +2,6 @@
 from dataclasses import replace
 import hashlib
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -253,17 +252,52 @@ def test_panel_says_when_the_local_judge_reviews_and_what_happens_when_it_cannot
     assert '(when the execution connection is not Codex)' in text('auto',local_only=True)
     assert 'local judge' not in text('codex',local_only=True)  # Codex reviews; no local judge
     implements=[line for line in text('tare',local_only=True,judges_off=True).splitlines() if line.startswith('Local-only mode:')]
-    assert implements==['Local-only mode: tare implements only with an Action review, which runs the checks in the sandbox; '+(
-        'this project has one' if os.name=='nt' else 'there is no sandbox on this system, so nothing is implemented')]
+    assert implements==['Local-only mode: the local model implements only where its checks run in the sandbox; '
+                        'there is no sandbox on this system, so nothing is implemented']  # the suite has none
     assert text('tare',local_only=True,judges_off=True).replace('\n'+implements[0],'')==text('tare',judges_off=True)  # judges off: #134's text
     bare=lambda **kw:permissions_view(tmp_path/'preferences',root,tmp_path/'control',
         pending=Selection(str(root),role='implementer',write_paths=['.']),**kw)['effective_text']
-    assert ('this project has none, so nothing is implemented until you choose one' if os.name=='nt' else
-            'there is no sandbox on this system') in bare(local_only=True)
+    from relay import command_protection
+    with pytest.MonkeyPatch.context() as patch:  # Windows 11 with the sandbox: no Action review needed
+        patch.setattr(command_protection,'sandbox_available',lambda:True)
+        assert 'Local-only mode: the local model implements only where its checks run in the sandbox; they do here, ' \
+               'in every mode' in bare(local_only=True)
     assert 'Local-only mode:' not in bare() and 'Local-only mode:' not in text('tare')
     assert text('tare')==text('tare',local_only=False)
     set_project_permission_mode(root,'edit')
     assert 'When it is not: tare asks you about each command' in text('tare',local_only=True)
+
+
+@pytest.mark.parametrize('available', [True, False])
+def test_the_panel_says_where_checks_run_whatever_the_system_commands_line(tmp_path, monkeypatch, available):
+    from relay import command_protection
+    from relay.turn_engine import set_checks_outside_sandbox, set_project_permission_mode
+    monkeypatch.setattr(command_protection, 'sandbox_available', lambda: available)
+    root=tmp_path/'project';root.mkdir()
+    def text(**kw):
+        return permissions_view(tmp_path/'preferences',root,tmp_path/'control',
+                                pending=Selection(str(root),role='implementer',write_paths=['.'],**kw))['effective_text']
+    plain=text()
+    assert 'Configured checks run programs' not in plain and 'System commands: Disabled' in plain
+    if available:
+        assert 'Checks: in the Windows sandbox, in every mode: no network' in plain
+        assert 'Checks the sandbox blocks: tare asks you before running one outside it' in plain
+        assert "does not apply to checks of a local model's work" not in plain
+        set_checks_outside_sandbox(root,True)
+        assert 'Checks the sandbox blocks: run outside it without asking (saved for this project' in text()
+        assert "This does not apply to checks of a local model's work" in text()  # beside the saved choice
+    else:
+        assert 'Checks: not isolated: no sandbox on this system' in plain and 'read-only' not in plain  # the draft edits
+        assert 'A local implementer is refused on this system' in plain
+        reader=lambda **kw:permissions_view(tmp_path/'preferences',root,tmp_path/'control',
+            pending=Selection(str(root),role='explorer'),**kw)['effective_text']
+        assert 'in this read-only project tare asks you first' in reader()  # a read-only draft
+        set_project_permission_mode(root,'edit')  # a save elsewhere does not change what this draft shows
+        assert 'in this read-only project tare asks you first' in reader()
+        stored=permissions_view(tmp_path/'preferences',root,tmp_path/'control')['effective_text']
+        assert 'read-only' not in stored  # the stored defaults' own view follows the saved mode
+    protected=text(command_protection={'review':'codex','backend':'mxc','max_reviews':2})
+    assert "Checks: in the Windows sandbox, under this project's command protection." in protected
 
 
 def test_jev_auto_preferences_are_independent_and_resume_does_not_override(tmp_path):

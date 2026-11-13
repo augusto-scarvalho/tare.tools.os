@@ -12,7 +12,16 @@ The policy and the reviewer identity are frozen before the plan audit
 and any human wait. Resumption uses these original values; it rejects
 overrides and changes to the pinned executable. Custom paths or prepared
 incorporation paths are refused when protection is selected.
-Without a selection, the old paths remain compatible.
+Without a selection, the old paths remain compatible, but the checks do not run
+as before: where Windows has the sandbox, the implementer's `verify` and the
+verification of the candidate run in it (no network, no secret files, no model
+review). Nobody can be asked during a Work run, so a check the sandbox blocks
+(`NATIVE_CANDIDATE_VERIFIER_SANDBOX_BLOCKED`) or cannot host
+(`NATIVE_CANDIDATE_VERIFIER_SANDBOX_UNAVAILABLE`) leaves the candidate
+unaccepted, unless the project's user chose **Always run this project's blocked
+checks outside it** (saved per machine, shown in `/permissions`): then that check
+reruns outside the sandbox. Where there is no sandbox, verification runs as before.
+Prepared candidates resumed by `work_resume` still verify without the sandbox.
 
 `--retry-plan` (New plan review on Work resume in the TUI) starts a separate
 review after the previous one ends or exhausts its limits. It preserves the history

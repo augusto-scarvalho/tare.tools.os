@@ -357,22 +357,26 @@ def normalize_arguments(values):
     return normalized
 
 
-LOCAL_ONLY_UNSANDBOXED=('Local-only mode implements only where this project\'s checks run in the sandbox; here they '
-    'would run directly on this machine. Choose an Action review in /permissions (Edit + system commands), then ask '
-    'again. No implementer started.')
-LOCAL_ONLY_NO_SANDBOX=('Local-only mode implements only where the project\'s checks run in the sandbox, and there is '
-    'no sandbox on this system (protected commands need Windows). No implementer started.')
+LOCAL_UNSANDBOXED=('tare does not run a local model as implementer on this system: a local model runs only where '
+    'the checks of its work are isolated, and this system has no sandbox for them (Windows 11 with its process '
+    'sandbox has one). Choose a hosted implementer (a cloud or CLI model), or use Windows 11 with the sandbox. '
+    'No model call was made.')
 
 
-def local_only_unsandboxed(config):
-    """Why an implementer may not start under --local_only, or None: the checks of a worker whose config carries no
-    command_protection (an Action review) run directly on this machine, and off Windows there is no sandbox at all.
-    ponytail: interim guard for "isolation first, local models after"; feat/checks-in-sandbox-by-default replaces it
-    with the general rule (a local implementer runs only where the sandbox is available). Delete it then, with its
-    callers: conversation_tasks implement and delegate_plan, session_role below, project_permissions' line."""
+def unsandboxed_local(deployment):
+    """A local implementer needs the sandbox its checks run in (owner, 2026-11-13); refused before any model call."""
+    from .challenger import local
+    if local(deployment):
+        from .command_protection import sandbox_available
+        if not sandbox_available():raise ValueError(LOCAL_UNSANDBOXED)
+
+
+def local_only_unsandboxed():
+    """Under --local_only the implementer is a local model: unsandboxed_local's refusal where no sandbox isolates its
+    checks, said before a delivery is planned or started rather than when its implementer starts; else None."""
     if current().only!='local':return None
-    if os.name!='nt':return LOCAL_ONLY_NO_SANDBOX
-    return None if (config or {}).get('command_protection') else LOCAL_ONLY_UNSANDBOXED
+    from .command_protection import sandbox_available
+    return None if sandbox_available() else LOCAL_UNSANDBOXED
 
 
 def session_role(function):
@@ -386,8 +390,6 @@ def session_role(function):
             if path.is_file():saved=read_json(path,1024*1024)
         selected=config or saved.get('config') or {}
         role='coordinator' if kwargs.get('conversation') or saved.get('conversation_flow') else selected.get('role','implementer')
-        if role=='implementer' and (refusal:=local_only_unsandboxed(selected)):
-            raise ValueError(refusal)  # every implementer session: conversation units, /session tasks, Work, resumes
         with for_role(role):
             candidate=deployment or saved.get('deployment')
             # Saved policy is evidence of an earlier invocation, not authorization
@@ -412,6 +414,7 @@ def session_role(function):
                             deployment=candidate=select(scope.coordinator)
                 if candidate and candidate.get('native_profile'):
                     require(candidate,role)
+                    if role=='implementer':unsandboxed_local(candidate)
                     if role=='coordinator' and candidate.get('native_coordinator_pin'):
                         from .coordinator_policy import eligible
                         eligible(candidate)

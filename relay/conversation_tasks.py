@@ -970,19 +970,6 @@ class ConversationTools:
             raise ValueError('The user asked only for investigation or planning. Implementation is not admitted.')
         return value, task
 
-    def unsandboxed(self, names):
-        """execution_scope.local_only_unsandboxed for these projects' worker settings (the session's, with the
-        project's /permissions Action review): its refusal when none would run its checks in the sandbox, else None.
-        ponytail: interim, removed with that guard."""
-        from .execution_scope import current, local_only_unsandboxed
-        if current().only != 'local':
-            return None  # other modes read nothing more
-        from . import relay_mesh
-        from .conversation_permissions import with_review_policy
-        refusals = [local_only_unsandboxed(with_review_policy(self.state['config'], self.permission_directory,
-                    self.state['config']['repositories'][name], relay_mesh.RELAY_ROOT)) for name in names]
-        return refusals[0] if refusals and all(refusals) else None
-
     def argument_feedback(self, name, result):
         """Append repair facts to a refusal; keep the frozen tool/cache prefix."""
         if name not in {'read', 'list', 'search'} or result.status != 'refused':
@@ -1195,13 +1182,24 @@ class ConversationTools:
                     if unit and unit['repository']==repository:
                         scoped=planned_checks({**config,'conversation_flow':True},unit,repository,tree)
                         commands.update({n:a for n,a in scoped.items() if n in names})
-                    if config.get('command_protection'):
-                        from .command_protection import conversation_verifier
-                        check_unit = {'repository': repository, 'target_paths': [],
-                            'title': task['objective'] if task else 'Verify configured project checks',
-                            'criteria': task['criteria'] if task else []}
-                        token = CHECK_PORT.set(conversation_verifier(control, self.root/'checks', config,
-                            self.state['deployment'], tree, check_unit, commands))
+                    # Protected: the project's command gate. Otherwise the sandbox, no model review; a check it blocks
+                    # (and, with no sandbox here, any check of a read-only project) runs outside only if the user says.
+                    from .command_protection import conversation_verifier
+                    from .conversation_permissions import outside_sandbox
+                    from .turn_engine import project_permission_mode
+                    check_unit = {'repository': repository, 'target_paths': [],
+                        'title': task['objective'] if task else 'Verify configured project checks',
+                        'criteria': task['criteria'] if task else []}
+                    from . import execution_scope
+                    project = config['repositories'][repository]
+                    # No implementer here: the project's files, which this conversation's implementers may have
+                    # changed. They are local in local-only mode (outside_sandbox) and with --prefer_local.
+                    token = CHECK_PORT.set(conversation_verifier(control, self.root/'checks', config,
+                        self.state['deployment'], tree, check_unit, commands, **({} if config.get('command_protection')
+                        else {'outside': outside_sandbox(self.root, self.state, task, request.effect_id, project,
+                                                         control, self.permission_directory, self.invocation_id,
+                                                         local_producer=execution_scope.current().prefer == 'local'),
+                              'read_only': (project_permission_mode(project) or 'read') == 'read'})))
                     status, details = run_checks(tree, commands)
                     output = {'status': status, 'checks': details, 'applied': False}
                     if BACKLOG_CHECK in names:
@@ -1227,7 +1225,8 @@ class ConversationTools:
                         'feedback, not permission to spend on planning again. Use demand relation=correct and '
                         'implement with the saved plan. A genuinely revised demand must be recorded first.')
                 # Said before planning, so nobody approves a plan that cannot be implemented; a plan-only demand plans.
-                if task['intent'] == 'deliver' and (refusal := self.unsandboxed(self.state['config']['repositories'])):
+                from .execution_scope import local_only_unsandboxed
+                if task['intent'] == 'deliver' and (refusal := local_only_unsandboxed()):
                     raise ValueError(refusal)
                 result = self.tools.execute(request, control)
                 if result.status != 'succeeded': return result
@@ -1288,7 +1287,8 @@ class ConversationTools:
                     return EffectResult(request.effect_id, 'succeeded', encode(delivery_view(
                         task['delivery'], config=self.state['config'], unit=plan['unit'])), True)
                 # Every implementer start below: a new attempt, recheck_candidate, /retry_delivery, a waiting worker.
-                if refusal := self.unsandboxed([plan['unit']['repository']]):
+                from .execution_scope import local_only_unsandboxed
+                if refusal := local_only_unsandboxed():
                     raise ValueError(refusal)
                 previous = task.get('delivery') or {}
                 preserved = retained_candidate(task)
@@ -1475,9 +1475,13 @@ class ConversationTools:
                 audit.packet_preflight = packet_preflight
                 audit.resume_tree = lambda: resume_tree(self, task)
                 try:
+                    from .conversation_permissions import outside_sandbox
                     output = run_unit(self.root, state, {'unit': task['id'], **args}, control.should_stop, review=audit,
                                       candidate=candidate, worker=(task.get('delivery') or {}).get('worker'),
-                                      control=control, spend_model=self.parent_model, review_effect=request.effect_id)
+                                      control=control, spend_model=self.parent_model, review_effect=request.effect_id,
+                                      outside=outside_sandbox(self.root, self.state, task, request.effect_id,
+                                          config['repositories'][plan['unit']['repository']], control,
+                                          self.permission_directory, self.invocation_id))
                 except (ValueError, OSError, KeyError, TypeError):
                     task['stage'] = 'PENDING'; save(self.root, value)
                     raise

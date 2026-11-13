@@ -33,6 +33,28 @@ check capability can read linked Git metadata for its exact registered checks;
 worker commands still cannot access `.git`. Registered executable paths are resolved
 before execution, and their installation runtime is admitted read-only.
 
+## Checks without command protection (2026-11-13)
+
+A project without command protection still runs every check in the same MXC
+policy: `factory(..., checks_only=True)` builds the same read, write, deny and
+environment scopes and the same socketpair shim, with no classifier, reviewer, Codex
+gate or review reservation. Its broker admits only host-registered argv (and the
+read-only `rg` search a session already has); anything else is refused. The
+conversation's host checks (`conversation_verifier`), a native session's `verify`
+(`checks_factory`, bound in `native_agent.run_session` and `native_work`) and Work
+verification (`protected_work_verifier` with no policy) use it where
+`sandbox_available()` (the Kernel's `MxcEnvironment` support query, deny support
+included, asked once per process) says the host has the sandbox. A result whose
+limitation is `ISOLATION_NETWORK_DENIED`, `ISOLATION_SECRET_DENIED`,
+`ISOLATION_INTERNAL_IPC_UNAVAILABLE`, or a binding refusal
+(`ISOLATION_UNAVAILABLE`), reaches `outside(name, argv, why)`: the project's saved
+"always", this turn's yes, or the user's answer in the conversation's
+execution-permission dialog (`kind: sandbox`). Only a yes reruns that check with
+`managed_check`; its receipt records the decision and the reason. Without a host
+sandbox, hosted checks run with `managed_check` and record `not isolated`, a
+read-only project's checks ask first, and `execution_scope.session_role` refuses a
+local implementer.
+
 ## Jev classification and review escalation (0.1.66)
 
 In Settings (F2), Project permissions, enable protected commands and select a

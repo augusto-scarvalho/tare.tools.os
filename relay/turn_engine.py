@@ -745,6 +745,36 @@ def set_project_permission_mode(root, mode):
     os.replace(temporary, path)
 
 
+def outside_store():
+    """The projects whose checks that the sandbox blocks run outside it without asking ("always" in that question):
+    once per machine, beside the modes, so tare serve and Work runs honour it too."""
+    return mode_store().with_name('project-checks-outside-sandbox.json')
+
+
+def checks_outside_sandbox(root):
+    try:
+        saved = json.loads(outside_store().read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return False
+    return isinstance(saved, list) and os.path.normcase(str(Path(root).resolve())) in saved
+
+
+def set_checks_outside_sandbox(root, on):
+    if type(on) is not bool:
+        raise ValueError('Choose whether checks the sandbox blocks run outside it.')
+    path, key = outside_store(), os.path.normcase(str(Path(root).resolve()))
+    try:
+        saved = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        saved = []
+    saved = sorted({*(p for p in saved if isinstance(p, str) and p != key), *([key] if on else [])}
+                   if isinstance(saved, list) else [key] if on else [])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + f'.{os.getpid()}.tmp')
+    temporary.write_text(json.dumps(saved, indent=1), encoding='utf-8')
+    os.replace(temporary, path)
+
+
 MAX_STAGNANT_ROUNDS = 3  # the runtime's NativeBudget.max_stagnant_turns
 
 

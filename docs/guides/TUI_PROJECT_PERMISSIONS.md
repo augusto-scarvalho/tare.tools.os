@@ -118,8 +118,7 @@ command shows as **Unsandboxed command** in the activity. The main conversation
 never gets this terminal: its coordinator and the workers it starts edit files and
 run the configured checks, and the panel says `System commands: Not in this chat`.
 Choose an Action review instead to run commands inside the sandbox. Configured
-checks also run programs on this machine, outside the mediated edit paths, unless
-an Action review is chosen.
+checks are different: they run in the sandbox in every mode ([below](#checks-run-in-the-sandbox)).
 
 A local model never gets this terminal, in local-only mode or when a session's
 model is local in any other mode. Such a session runs without the terminal tools
@@ -132,6 +131,70 @@ continue it on a cloud or CLI model.
 Configured checks remain a separate new-session field. Flows
 retain their own scopes and do not take permissions from these direct-conversation
 defaults.
+
+## Checks run in the sandbox
+
+Every check tare runs for a model's work runs in the Windows sandbox, in every mode
+(**Read only** and **Edit files** included), not only with an **Action review**: the
+coordinator's `check`, an implementer's or auditor's `verify`, the checks of a unit
+before and after its implementer, the session's own checks before a change is
+applied, and a Work run's verification. A check there has no network (loopback
+included), reads only the project, its runtimes and granted folders, writes only the
+plan's edit paths and its own scratch, and cannot read secret files. No model reviews
+these checks and none of your review budget is spent: tare registered them, no model
+typed them. A project with an **Action review** keeps its own policy for them.
+
+A check can need what the sandbox denies: a test that starts a server on
+`127.0.0.1`, or one that reads `.env`. When every failure of a check is such a
+denial, tare does not call it a failure; it asks **Run this check outside the
+sandbox?**, naming what was blocked, the check and its exact command, and that
+outside the sandbox the program can use the network and read your files. The
+dialog starts on **Do not run it**; the other answers are **Run it outside the
+sandbox this turn** (for every check the sandbox blocks until the turn ends) and
+**Always run this project's blocked checks outside it**. A yes reruns that check
+outside the sandbox and its receipt says so, and why. A no leaves it unjudged, and a
+change it checks is not applied on its strength. The turn's clock stops while you
+decide. An ordinary failing test asks nothing: it is a failure.
+
+Whatever runs the tests (`unittest`, `node --test`, jest, `cargo test`, not only
+pytest), a check that fails and prints a line showing that the sandbox blocked
+something during it asks the same question, but stays **failed**: a refused
+network connection (`[WinError 10013]`, `connect EACCES`), a failed name lookup
+(`getaddrinfo failed`, `ENOTFOUND`), a permission error on a secret file or on a
+file outside the folders checks may read, Node's `lstat 'C:\'`, or rustup's
+`could not choose a version`. The dialog says the check failed, what was blocked,
+and shows that line of its output. A yes reruns it outside the sandbox and that
+run decides, green or red; a no keeps it failed, and the model is told the
+failure may come from the sandbox rather than from its code. Measured on Windows
+11 (2026-11-13): **Node cannot load any script file inside the sandbox** (it
+reads the drive's root folder, which the sandbox denies), so every Node check
+(`npm test`, `node --test`, jest) asks; **`cargo test`** cannot find the Rust
+toolchain in your user profile there, so it asks too. For such projects choose
+**Always run this project's blocked checks outside it** if you trust their
+checks: they then run outside the sandbox, as before. A model could print such a
+line on purpose; it still only reaches the question, which starts on **Do not
+run it** and shows the exact command.
+
+**Always** is saved for the project on this machine (every frontend, `tare serve`
+and Work runs included) and shown in `/permissions` as **Run checks the sandbox
+blocks outside it, without asking**; clear the box and **Save** to be asked again.
+**Always** never applies to checks of a local model's work (local-only mode,
+`--prefer_local`, or a local implementer): those are asked about each turn, the
+dialog offers only **Run it outside the sandbox this turn** and **Do not run it**,
+and without the TUI they do not run outside.
+Without the TUI (`tare serve`, headless runs, Work runs) nobody can be asked: such a
+check stays unjudged unless the project has **Always**.
+
+A project whose checks cannot run in the sandbox at all (more than 32 secret files
+or nested repositories, folders more than 32 levels deep, a check program that is
+not found) gets the same question for each check, with that reason, rather than
+losing its checks or running them outside silently.
+
+Where the system has no sandbox (Linux, macOS, Windows without the process sandbox),
+checks of a hosted model run as before, as you, and each receipt says **not
+isolated: no sandbox on this system**; so does **Effective permissions**. In a
+**Read only** project tare asks before running a check there. A local model is not
+used as implementer on such a system: it runs only where its checks are isolated.
 
 ## Project instructions
 

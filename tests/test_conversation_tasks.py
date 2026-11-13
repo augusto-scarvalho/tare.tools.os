@@ -996,6 +996,87 @@ def test_real_candidate_is_verified_then_audited_before_application(tmp_path, mo
     if protected:assert config['verifiers']['conversation-diff']['argv'][0]=='git'
 
 
+@pytest.mark.parametrize('endpoint', ['http://fixture.test/v1', 'http://127.0.0.1:8080/v1'])
+def test_without_protection_a_units_checks_run_through_the_sandboxed_verifier(tmp_path, monkeypatch, endpoint):
+    from relay import command_protection
+    root = tmp_path/'project'; root.mkdir()
+    def git(*args):
+        return subprocess.run(['git', '-C', str(root), *args], check=True, capture_output=True)
+    git('init'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid')
+    (root/'a.py').write_text('value = 1\n'); git('add', 'a.py'); git('commit', '-m', 'fixture')
+    custody = tmp_path/'session'; custody.mkdir()
+    check = [sys.executable, '-c', "from pathlib import Path; assert Path('a.py').read_text() == 'value = 2\\n'"]
+    config = {'repositories': {'repo': str(root)}, 'writable': {'repo': ['a.py']}, 'conversation_flow': True,
+              'verifiers': {'value': {'repository': 'repo', 'argv': check}}}
+    state = {'config': config, 'deployment': deployment(), 'limits': {'max_model_calls': 30}, 'deadline_utc': None,
+             'conversation_flow': True}
+    ports, ran = [], []
+    def check_port(control, custody, config, deployment, tree, unit, commands, **kwargs):
+        ports.append((config, commands, kwargs))
+        def run(argv, **options):
+            ran.append(argv)
+            return subprocess.run(argv, **options)
+        return run
+    monkeypatch.setattr(command_protection, 'conversation_verifier', check_port)
+    from relay.work_forms import record_plan
+    record_plan(custody, config, {'units': [{'key': 'change', 'title': 'Change value', 'target_paths': ['a.py'],
+        'criteria': ['value equals two'], 'verifiers': ['value']}], 'criteria': ['value equals two']})
+    monkeypatch.setattr(work_units, 'routes', lambda *a, **kw: iter([('fixture', deployment(endpoint=endpoint))]))
+    def child(child_config, dep, session, instruction, **kwargs):
+        Path(child_config['repositories']['repo'], 'a.py').write_text('value = 2\n')
+        return {'status': 'PROPOSED', 'model_calls': 1}
+    monkeypatch.setattr(native_agent, 'run_session', child)
+    asked = []
+    def outside(name, argv, why, **producer):
+        asked.append(producer)
+        return False, 'fixture'
+    result = work_units.run_unit(custody, state, {'unit': 'change'}, lambda: False, control=control(), outside=outside)
+    assert result['applied'] and (root/'a.py').read_text() == 'value = 2\n'
+    (seen_config, commands, kwargs), = ports
+    assert 'command_protection' not in seen_config
+    assert commands['value'] == check and ran.count(check) >= 2  # before, after and the session suite: one port
+    kwargs['outside']('value', check, 'ISOLATION_NETWORK_DENIED: fixture')
+    # The implementer that wrote this candidate is local: the project's saved "always" never covers its checks.
+    assert asked == ([{'local_producer': True}] if '127.0.0.1' in endpoint else [{}])
+
+
+@pytest.mark.parametrize('mode', [None, 'read', 'edit'])
+def test_the_coordinators_check_runs_through_the_default_verifier_and_knows_a_read_only_project(host, monkeypatch, mode):
+    from relay import command_protection
+    from relay.turn_engine import set_project_permission_mode
+    tools, execution, project, _ = host
+    if mode:
+        set_project_permission_mode(project, mode)
+    intake(host); planned(host)
+    tools.state['config']['verifiers']['value'] = {'repository': 'repo', 'argv': [sys.executable, '-c', 'print(1)']}
+    ports = []
+    def check_port(control, custody, config, deployment, tree, unit, commands, **kwargs):
+        ports.append(kwargs)
+        return lambda argv, **options: subprocess.CompletedProcess(argv, 0, 'ok', '')
+    monkeypatch.setattr(command_protection, 'conversation_verifier', check_port)
+    result = tools.execute(effect('check', {'names': ['value']}), execution)
+    assert result.status == 'succeeded' and json.loads(result.output_json)['status'] == 'green'
+    assert ports[0]['read_only'] is (mode != 'edit') and callable(ports[0]['outside'])
+
+
+@pytest.mark.parametrize('scope_args', [{}, {'prefer': 'local'}, {'only': 'local'}])
+def test_the_coordinators_check_honours_the_saved_always_except_for_local_work(host, monkeypatch, scope_args):
+    """No implementer here: the project's files, which local implementers changed in local-only and prefer_local."""
+    from relay import command_protection, execution_scope as scope
+    from relay.turn_engine import set_checks_outside_sandbox, set_project_permission_mode
+    tools, execution, project, _ = host
+    set_project_permission_mode(project, 'edit'); set_checks_outside_sandbox(project, True)
+    tools.state['config']['verifiers']['value'] = {'repository': 'repo', 'argv': [sys.executable, '-c', 'print(1)']}
+    ports = []
+    monkeypatch.setattr(command_protection, 'conversation_verifier', lambda *a, **kw: ports.append(kw) or (
+        lambda argv, **options: subprocess.CompletedProcess(argv, 0, 'ok', '')))
+    with scope.activated(scope.Scope(**scope_args)):
+        assert tools.execute(effect('check', {'names': ['value']}), execution).status == 'succeeded'
+        decision = ports[0]['outside']('value', ['x'], 'ISOLATION_NETWORK_DENIED: fixture')
+    assert decision == ((True, 'always for this project, as the user chose') if not scope_args else
+                        (False, 'no one could be asked: no TUI is connected'))  # headless, and never "always"
+
+
 def test_failed_candidate_is_preserved_for_a_narrow_correction_and_audited_before_application(tmp_path, monkeypatch):
     from relay.work_forms import record_plan
     root=tmp_path/'project'; root.mkdir()
@@ -1301,9 +1382,16 @@ def test_revision_preserves_and_reuses_unapplied_candidate(host, monkeypatch, ex
     assert calls[0]['candidate'] == {**candidate, 'review_only': False}
 
 
+def edits_allowed(root):
+    """With no sandbox here (the suite's default), a read-only project's checks ask first: allow edits to run them."""
+    from relay.turn_engine import set_project_permission_mode
+    set_project_permission_mode(root, 'edit')
+
+
 def test_verification_only_uses_named_host_checks_and_leaves_source_untouched(host):
     intake(host, intent='investigate')
     tools, execution, root, _ = host
+    edits_allowed(root)
     tools.state['config']['verifiers'] = {'value': {'repository': 'repo', 'argv': [sys.executable, '-B', '-c',
         "from pathlib import Path; assert Path('a.py').read_text() == 'value = 1\\n'"]}}
     refused = tools.execute(effect('check', {'names': ['arbitrary command']}, 'bad-check'), execution)
@@ -1315,6 +1403,7 @@ def test_verification_only_uses_named_host_checks_and_leaves_source_untouched(ho
 
 def test_closed_check_needs_no_demand_and_does_not_admit_later_edits(host):
     tools, execution, root, _ = host
+    edits_allowed(root)
     tools.state['config']['verifiers'] = {'value': {'repository':'repo', 'argv':[sys.executable,'-I','-c','pass']}}
     result = tools.execute(effect('check', {'names':['value']}, 'standalone-check'), execution)
     assert result.status == 'succeeded' and json.loads(result.output_json)['status'] == 'green'
@@ -1328,6 +1417,7 @@ def test_closed_check_needs_no_demand_and_does_not_admit_later_edits(host):
 def test_check_reuses_saved_graph_validator_without_replanning_or_binding(host):
     from graph_backlog.adapters import MarkdownAdapter
     tools, execution, root, _ = host
+    edits_allowed(root)
     intake(host); planned(host)
     value = tasks.load(tools.root); task = tasks.current(value)
     task['plan']['unit'].update(target_paths=['work-graph.json'], verifiers=[tasks.BACKLOG_CHECK])

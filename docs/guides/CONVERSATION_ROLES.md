@@ -92,8 +92,14 @@ Only a passing, accepted candidate is applied; the source files and scoped
 evidence must still match. Rejected, interrupted,
 stale and stopped candidates stay pending. When command protection is selected,
 both child commands and host checks use it; refusal never enables a raw fallback.
-Without command protection, existing checks retain their ordinary execution
-permissions. A working directory is not a command sandbox.
+Without command protection, every check still runs in the same Windows sandbox,
+in every mode: the coordinator's `check`, the implementer's and auditor's
+`verify`, the unit's checks before and after, the session's checks before a
+change is applied, and Work verification. No model reviews them and no review
+budget is spent: they are host-registered programs, not commands a model typed.
+Where the system has no sandbox, a hosted model's checks run as before and say
+`not isolated: no sandbox on this system`; a read-only project's `check` asks
+first; a local implementer is refused.
 The sandbox denies loopback networking. Python's `socket.socketpair`, and with
 it `asyncio`, still works there through an AF_UNIX pair tare provides; tests
 that open real TCP or UDP servers on 127.0.0.1 still fail. An observed MXC
@@ -102,9 +108,18 @@ or a library that builds its own) is reported as inconclusive execution
 compatibility, and so is a pytest check whose every failure is a connection
 the sandbox denied (`ISOLATION_NETWORK_DENIED`); one other failure in it keeps
 the check red. Inspect check scope or choose a compatible policy explicitly;
-this never enables host networking or waives required tests. Like a timeout,
-an inconclusive session check settles nothing: a change whose own checks pass
-is then applied only when its unit's tests cover every changed file.
+this never enables host networking or waives required tests. Without command
+protection, tare then asks you whether that check may run outside the sandbox,
+for this turn or always for this project (never "always" for a local model's work:
+[Project permissions](TUI_PROJECT_PERMISSIONS.md#checks-run-in-the-sandbox));
+a yes reruns it outside and its receipt says so. Without a yes, a session check
+stopped by the sandbox holds the change, like any unverified change; only a
+timeout still settles nothing (a change whose own checks pass is then applied
+only when its unit's tests cover every changed file). A check of any other
+runner that fails while its output shows a block (a refused connection, a
+secret or outside file, Node's drive-root `lstat`, a missing Rust toolchain)
+stays red and asks the same question; only the rerun outside can turn it
+green, and without one the receipt says the failure may come from the sandbox.
 
 The sandbox also denies the project's secrets, at any depth and in folders granted
 to the project: `.env` and `.env.*` files (samples such as `.env.example` stay
@@ -120,13 +135,13 @@ is such a denied secret (or a denied connection, above) is reported as
 inconclusive, `ISOLATION_SECRET_DENIED`, not as failing code; one other failure
 in it keeps the check red. The model is told not to copy or rename the secret or
 change the test to hide this: give the test its own settings or a sample file, or
-decide yourself whether that check may run outside the sandbox. Like a timeout,
-an inconclusive session check settles nothing: a change whose own checks pass is
-then applied only when its unit's tests cover every changed file. A project
+decide yourself, when tare asks, whether that check may run outside the sandbox;
+without a yes the change it checks is held. A project
 with more than 32 such paths, or too large to search (100,000 files and folders,
 32 levels; dependencies, virtual environments and caches are skipped), refuses
 protected commands with a message that says so: move secrets out of the project
-or open a smaller folder. Their names stay visible in listings. Windows applies
+or open a smaller folder. Without command protection its checks are not lost:
+each asks the same question, with that reason. Their names stay visible in listings. Windows applies
 the rule to the path, so while a protected command or check runs, tare keeps each
 nested secret in an editable folder open: no folder above it can be renamed or
 moved to carry the secret out of the rule. You cannot rename, move or delete

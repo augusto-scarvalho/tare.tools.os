@@ -385,6 +385,11 @@ def test_native_session_automatically_runs_one_isolated_challenger(project, tmp_
             if row['status'] not in c.ACTIVE:
                 break
             time.sleep(.1)
+        from relay.command_protection import probe_sandbox
+        if not probe_sandbox():  # the worker process: no sandbox for a local challenger's checks, so it is refused
+            assert row['status'] != 'COMPLETED'
+            assert 'does not run a local model as implementer' in json.dumps(row)+(job/'worker.log').read_text()
+            return
         assert row['status'] == 'COMPLETED', (row, (job/'worker.log').read_text())
         assert row['checks_passed'] and row['challenger_verdict'] == 'unknown'
         assert row['committed_usd'] == '0'

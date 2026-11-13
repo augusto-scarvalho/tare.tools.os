@@ -565,7 +565,7 @@ def test_local_only_asks_before_applying_a_same_family_audit_and_a_no_keeps_the_
         return {'verdict': 'VERIFIED' if applied[-1] else 'NOT_REVIEWED', 'applied': applied[-1],
                 'audit': audit, 'files': ['a.py']}
     monkeypatch.setattr(work_units, 'run_unit', run_unit)
-    monkeypatch.setattr(tasks.ConversationTools, 'unsandboxed', lambda self, names: None)  # the sandbox guard: own tests
+    # the local-implementer rule has its own tests (conftest leaves it out unless a test is marked)
     with scope.activated(scope.Scope(only='local')), permission_worker(control) as pool:
         running = pool.submit(tools.execute, effect('implement', {}, 'execution-1'), control)
         request = wait_request(tools.root)
@@ -612,7 +612,7 @@ def test_local_only_lets_the_user_decide_on_a_same_family_audit_that_left_only_o
         applied = audit['verdict'] == 'ACCEPT' or audit.get('user_decision') == 'APPLY_WITHOUT_ACCEPTED_AUDIT'
         return {'verdict': 'VERIFIED' if applied else 'NOT_REVIEWED', 'applied': applied, 'audit': audit, 'files': ['a.py']}
     monkeypatch.setattr(work_units, 'run_unit', run_unit)
-    monkeypatch.setattr(tasks.ConversationTools, 'unsandboxed', lambda self, names: None)  # the sandbox guard: own tests
+    # the local-implementer rule has its own tests (conftest leaves it out unless a test is marked)
     with scope.activated(scope.Scope(only='local')), permission_worker(control) as pool:
         running = pool.submit(tools.execute, effect('implement', {}, 'execution-1'), control)
         if choice == 'findings':  # the ordinary correction path: nobody is asked to apply over findings
@@ -659,66 +659,104 @@ def test_without_a_tui_or_outside_local_only_a_same_family_audit_applies_nothing
     assert seen == [False, True, False]
 
 
-def windows(monkeypatch):
-    """The guard's platform, fixed so these tests mean the same on the Linux CI runners."""
-    import os
-    from types import SimpleNamespace
+@pytest.mark.parametrize('producer', ['hosted', 'local', 'local-only'])
+def test_the_saved_always_never_covers_a_local_models_work(host, tmp_path, producer):
+    import threading
+    import time
     from relay import execution_scope as scope
-    monkeypatch.setattr(scope, 'os', SimpleNamespace(name='nt', environ=os.environ))
-    return scope
+    from relay.turn_engine import set_checks_outside_sandbox
+    tools, control, root, _ = host
+    set_checks_outside_sandbox(root, True)  # the project's standing "always"
+    state, argv = {'session_id': 'parent'}, ['python', '-m', 'pytest']
+    blocked = 'ISOLATION_NETWORK_DENIED: every failing test of this check failed because the sandbox denied it.'
+    mode = scope.Scope(only='local') if producer == 'local-only' else scope.Scope()
+    local = producer == 'local'
+    def decide(directory, turn, answer=None):
+        requests = []
+        def user():
+            while permissions.pending(tools.root) is None:
+                time.sleep(.01)
+            request = permissions.pending(tools.root); requests.append(request)
+            if answer == 'project':  # the dialog has no such button; the frontend refuses it too
+                with pytest.raises(ValueError, match="local model's checks are asked about each turn"):
+                    permissions.answer(tools.root, request['id'], 'project', project=root, directory=directory,
+                                       control_root=relay_mesh.RELAY_ROOT)
+            permissions.answer(tools.root, request['id'], 'once' if answer == 'project' else answer, project=root,
+                               directory=directory, control_root=relay_mesh.RELAY_ROOT)
+        thread = threading.Thread(target=user, daemon=True)
+        if answer:
+            thread.start()
+        with scope.activated(mode):
+            outcome = permissions.outside_sandbox(tools.root, state, None, 'effect', root, control, directory, turn,
+                                                  local_producer=local)('tests', argv, blocked)
+        if answer:
+            thread.join(5)
+        return outcome, requests
+    if producer == 'hosted':  # as before: runs outside, unasked, also without a TUI
+        assert decide(None, 'turn-1') == ((True, 'always for this project, as the user chose'), [])
+        return
+    assert decide(None, 'turn-1') == ((False, 'no one could be asked: no TUI is connected'), [])  # headless: never
+    (allowed, why), requests = decide(tmp_path/'prefs', 'turn-1', 'project')
+    assert (allowed, why) == (True, 'for this turn, as the user chose') and requests[0]['sandbox']['always'] is False
+    assert decide(tmp_path/'prefs', 'turn-1')[0] == (True, 'for this turn, as the user chose')  # the turn's yes holds
+    assert decide(tmp_path/'prefs', 'turn-2', 'deny')[0][0] is False  # a new turn asks again
 
 
-def test_local_only_without_an_action_review_refuses_before_planning_or_implementing(host, tmp_path, monkeypatch):
-    scope = windows(monkeypatch)
-    tools, control, root, seen = host
-    tools.permission_directory = tmp_path/'prefs'  # a TUI; this project has no Action review in /permissions
+@pytest.mark.local_implementer_rule
+def test_local_only_where_no_sandbox_exists_refuses_before_planning_or_implementing(host, tmp_path, monkeypatch):
+    from relay import execution_scope as scope
+    tools, control, root, seen = host  # the suite has no sandbox (conftest): as on Linux or older Windows
+    tools.permission_directory = tmp_path/'prefs'
     monkeypatch.setattr(work_units, 'run_unit', lambda *a, **kw: pytest.fail('No implementer may start.'))
     intake(host)
     with scope.activated(scope.Scope(only='local')):
         # Before the planner, so nobody approves a plan that cannot be implemented here.
         planning = tools.execute(effect('delegate_plan', {'instruction': 'Plan it.'}, 'plan'), control)
-        assert planning.status == 'refused' and json.loads(planning.output_json)['reason'] == scope.LOCAL_ONLY_UNSANDBOXED
+        assert planning.status == 'refused' and json.loads(planning.output_json)['reason'] == scope.LOCAL_UNSANDBOXED
         assert seen == []
         planned(host); tools.state.update(session_id='parent')
         for key, args in (('implement', {}), ('recheck', {'recheck_candidate': True})):
             result = tools.execute(effect('implement', args, key), control)
-            assert result.status == 'refused' and json.loads(result.output_json)['reason'] == scope.LOCAL_ONLY_UNSANDBOXED
+            assert result.status == 'refused' and json.loads(result.output_json)['reason'] == scope.LOCAL_UNSANDBOXED
         assert not (tools.root/'execution-permission').exists() and not (tools.root/'units').exists()
-    assert 'No implementer started.' in scope.LOCAL_ONLY_UNSANDBOXED and '/permissions' in scope.LOCAL_ONLY_UNSANDBOXED
-    for mode in (scope.Scope(), scope.Scope(prefer='local'), scope.Scope(only='subscription')):  # other modes: unchanged
+    for mode in (scope.Scope(), scope.Scope(prefer='local'), scope.Scope(only='subscription')):  # the route decides
         with scope.activated(mode):
-            assert tools.unsandboxed(['repo']) is None
+            assert scope.local_only_unsandboxed() is None
     planning = tools.execute(effect('delegate_plan', {'instruction': 'Plan it.'}, 'plan-again'), control)
     assert planning.status == 'succeeded' and seen == ['delegate_plan']
 
 
-def test_local_only_still_plans_a_plan_only_demand_and_refuses_off_windows(host, monkeypatch):
-    scope = windows(monkeypatch)
+@pytest.mark.local_implementer_rule
+def test_local_only_still_plans_a_plan_only_demand_without_a_sandbox(host, monkeypatch):
+    from relay import execution_scope as scope
     tools, control, _, seen = host
     intake(host, intent='plan')
     with scope.activated(scope.Scope(only='local')):
         assert tools.execute(effect('delegate_plan', {'instruction': 'Plan it.'}), control).status == 'succeeded'
         assert seen == ['delegate_plan']  # planning is read-only
-        scope.os.name = 'posix'
-        assert scope.local_only_unsandboxed({'command_protection': {'review': 'tare'}}) == scope.LOCAL_ONLY_NO_SANDBOX
-        assert 'no sandbox on this system' in scope.LOCAL_ONLY_NO_SANDBOX
 
 
-def test_local_only_with_an_action_review_implements_as_before(host, tmp_path, monkeypatch):
-    scope = windows(monkeypatch)
+@pytest.mark.local_implementer_rule
+@pytest.mark.parametrize('review', [None, 'tare'])
+def test_local_only_implements_where_the_sandbox_exists_with_or_without_an_action_review(host, tmp_path, monkeypatch,
+                                                                                       review):
+    from relay import command_protection, execution_scope as scope
+    monkeypatch.setattr(command_protection, 'sandbox_available', lambda: True)  # Windows 11 with the sandbox
     tools, control, root, _ = host
     intake(host); planned(host)
     tools.state.update(session_id='parent')
     tools.permission_directory = tmp_path/'prefs'
     defaults, revision = read_defaults(tools.permission_directory, root, relay_mesh.RELAY_ROOT)
-    save_defaults(tools.permission_directory, root, relay_mesh.RELAY_ROOT, {**defaults, 'show_plan': False, 'write_paths': ['.'],
-        'mode': 'commands', 'command_protection': {'review': 'tare', 'backend': 'mxc'}}, revision)  # /permissions
+    save_defaults(tools.permission_directory, root, relay_mesh.RELAY_ROOT, {**defaults, 'show_plan': False,
+        'write_paths': ['.'], **({'mode': 'commands', 'command_protection': {'review': review, 'backend': 'mxc'}}
+                                 if review else {'mode': 'edit'})}, revision)  # /permissions
     workers = []
     monkeypatch.setattr(work_units, 'run_unit', lambda custody, state, *a, **kw: workers.append(
-        state['config']['command_protection']['backend']) or {'verdict': 'VERIFIED', 'applied': True, 'files': ['a.py']})
+        state['config'].get('command_protection')) or {'verdict': 'VERIFIED', 'applied': True, 'files': ['a.py']})
     with scope.activated(scope.Scope(only='local')):
         result = tools.execute(effect('implement', {}, 'execution-1'), control)
-    assert result.status == 'succeeded' and workers == ['mxc']  # its checks run in the sandbox
+    # No Action review: the checks run in the sandbox by default (command_protection.conversation_verifier).
+    assert result.status == 'succeeded' and len(workers) == 1 and bool(workers[0]) is bool(review)
 
 
 def test_one_approval_covers_the_tasks_corrections_but_not_a_new_plan(host, tmp_path):

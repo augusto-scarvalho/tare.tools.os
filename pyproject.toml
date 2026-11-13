@@ -51,4 +51,5 @@ norecursedirs = [
 python_files = ["test_*.py"]
 timeout = 30
 timeout_method = "thread"
-markers = ["live: the test reaches a real network host; the suite is offline otherwise"]
+markers = ["live: the test reaches a real network host; the suite is offline otherwise",
+           "local_implementer_rule: the test sees tare refuse a local implementer where no sandbox isolates its checks"]

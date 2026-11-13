@@ -1,5 +1,5 @@
-"""One question, in the conversation, before a worker needs edit access, a plan is implemented or (local-only
-mode) a change whose audit was not independent is applied."""
+"""One question, in the conversation, before a worker needs edit access, a plan is implemented, (local-only
+mode) a change whose audit was not independent is applied, or a check the sandbox blocked runs outside it."""
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Input, Static
@@ -28,18 +28,31 @@ class ExecutionPermissionPanel(SupportPanel):
         value = self.request
         command=value.get('kind')=='command'
         audit=value.get('kind')=='audit'  # local-only: apply a change whose audit was not independent?
+        sandbox=value.get('kind')=='sandbox'  # a check the sandbox blocked: run it outside?
         turn=command and value.get('scope')=='turn'  # a yes also covers the turn's later unreviewed commands
         plan = value.get('plan_text')
         with Vertical(classes='support-body'):
             yield Static('Run commands without review this turn?' if turn else
                          'Run this command?' if command else 'Apply this change?' if audit else
+                         'Run this check outside the sandbox?' if sandbox else
                          'Implement this plan?' if plan is not None else
                          'Allow this task to change project files?', classes='panel-title')
             yield Static(value['objective'], markup=False)
             with VerticalScroll(classes='permission-detail'):
                 if plan is not None:
                     yield Static(plan+'\n', markup=False)
-                if audit:
+                if sandbox:
+                    name,argv=next(iter(value['checks'].items()))
+                    line=str((value.get('sandbox') or {}).get('line') or '')[:200]  # the check's own words: plain
+                    yield Static('Project: '+value['project']+'\nCheck: '+name+'\n\nExact command:\n'+repr(argv)+
+                        ('\n\nThe line of its output that shows it:\n'+line if line else '')+
+                        '\n\nOutside the sandbox this program runs as you: it can use the network and read your '
+                        'files, secret files included. '+('Not running it leaves the check failed.' if line else
+                        'Not running it leaves the check unjudged, and a change it checks is not applied on its '
+                        'strength.')+('\n\nA local model wrote the code this check runs, so its checks are asked '
+                        'about each turn.' if (value.get('sandbox') or {}).get('always') is False else ''),
+                        markup=False)
+                elif audit:
                     review=value['audit']
                     items=review.get('open_items') or []
                     hidden=review.get('open_items_total',len(items))-len(items)
@@ -61,7 +74,7 @@ class ExecutionPermissionPanel(SupportPanel):
                 checks = '\n'.join('Validate Backlog Graph format' if n == BACKLOG_CHECK else n+': '+repr(argv)
                                    for n, argv in value.get('checks',{}).items())
                 from .execution_scope import current
-                if not command and not audit:yield Static('Checks: '+(checks or 'host diff check; any tests named in the plan')+
+                if not command and not audit and not sandbox:yield Static('Checks: '+(checks or 'host diff check; any tests named in the plan')+
                     ('\nTest targets: '+', '.join(value['tests']) if value.get('tests') else '')+
                     ('\nThe candidate is checked and audited before applying; an audit by the same model family is '
                      'not independent, so tare asks you before applying it.' if current().only == 'local' else
@@ -70,6 +83,12 @@ class ExecutionPermissionPanel(SupportPanel):
                 yield Input(placeholder='What should change? (optional, sent with Change the plan)',
                             max_length=480, id='permission-changes')
             with Horizontal(classes='permission-buttons'):
+                if sandbox:
+                    yield Button('Run it outside the sandbox this turn', id='permission-once')
+                    if (value.get('sandbox') or {}).get('always') is not False:  # never for a local model's work
+                        yield Button("Always run this project's blocked checks outside it", id='permission-project')
+                    yield Button('Do not run it', id='permission-deny')
+                    return
                 if audit:
                     accepted=value['audit']['verdict']=='ACCEPT'  # no audit accepted it: nothing invites the yes
                     yield Button('Apply the change' if accepted else 'Apply anyway', id='permission-once',
@@ -86,9 +105,10 @@ class ExecutionPermissionPanel(SupportPanel):
                 yield Button('Do not apply' if audit else 'Deny', id='permission-deny')
 
     def on_mount(self):
-        # A change no audit accepted starts on the safe answer.
+        # A change no audit accepted, and a check the sandbox blocked, start on the safe answer.
         unaccepted=self.request.get('kind')=='audit' and self.request['audit']['verdict']!='ACCEPT'
-        self.query_one('#permission-deny' if unaccepted else '#permission-once', Button).focus()
+        safe=unaccepted or self.request.get('kind')=='sandbox'
+        self.query_one('#permission-deny' if safe else '#permission-once', Button).focus()
 
     def on_input_submitted(self, event):
         event.stop()

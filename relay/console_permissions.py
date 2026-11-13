@@ -80,7 +80,11 @@ class ProjectPermissions:
                 answer(selected.session, request['id'], choice or 'deny', project=selected.root,
                     directory=self.permissions_directory(selected.root), control_root=relay_mesh.RELAY_ROOT,
                     changes=panel.changes)
-                if request.get('kind') == 'audit':
+                if request.get('kind') == 'sandbox':
+                    self.set_status('Not run outside the sandbox · the check stays unjudged' if choice in (None, 'deny')
+                                    else 'Running the check outside the sandbox'+(' · saved for this project'
+                                    if choice == 'project' else ' · for this turn'))
+                elif request.get('kind') == 'audit':
                     self.set_status('Not applied · the candidate is kept' if choice == 'deny' else
                                     'Applying the change you confirmed' if request['audit']['verdict'] == 'ACCEPT' else
                                     'Applying the change by your decision · no audit accepted it')

@@ -63,13 +63,16 @@ def recover_accepted_candidate(train_dir, descriptor, repository_root, custody, 
 
 
 class NativeWorkRunner:
-    def __init__(self, *, authority_gate, identity, settings, verification_timeout=60.0):
+    def __init__(self, *, authority_gate, identity, settings, verification_timeout=60.0, local_producer=None):
         profile = settings['profile']
         if (identity.payload['role'] != 'implementer' or identity.payload['runtime_key'] != 'native'
                 or identity.payload['runtime_model'] != profile.model):
             raise ValueError('NATIVE_IMPLEMENTER_IDENTITY_MISMATCH')
         self.authority_gate, self.identity, self.settings = authority_gate, identity, dict(settings)
         self.verification_timeout = verification_timeout
+        # challenger.local of the implementer's deployment; unknown (None) counts as local: the project's saved
+        # "always" then never runs its blocked checks outside the sandbox.
+        self.local_producer = local_producer
 
     def run(self, *, train_dir, descriptor, lease, node, resume=False, rebind=False):
         from . import challenger
@@ -129,7 +132,8 @@ class NativeWorkRunner:
             check_control=lambda: self.check_control(control),
             verification_timeout=self.verification_timeout,
             verification_runner=self.verification_runner(control, root, descriptor=descriptor,
-                settings=self.settings | {'node': node}))
+                settings=self.settings | {'node': node, 'repository_root': lease.repository_root,
+                                          'local_producer': self.local_producer}))
         claim = claim_for(candidate)
         save_json(regular(root / 'NATIVE_CLAIM.json'), json.loads(claim.output))
         self.check_control(control)
@@ -155,9 +159,14 @@ class NativeWorkRunner:
 
     @staticmethod
     def verification_runner(control, train_dir, *, descriptor=None, settings=None):
-        if settings is not None and settings.get('command_protection') is not None:
-            from .command_protection import protected_work_verifier
-            return protected_work_verifier(control, train_dir, descriptor=descriptor, settings=settings)
+        """The project's command gate when it has command protection; otherwise the sandbox where this host has it
+        (no model review); otherwise, or for a sandbox-blocked check of a project whose user chose so, a process
+        as the user."""
+        if settings is not None and descriptor is not None:
+            from .command_protection import protected_work_verifier, sandbox_available
+            if settings.get('command_protection') is not None or sandbox_available():
+                return protected_work_verifier(control, train_dir, descriptor=descriptor, settings=settings,
+                    outside=NativeWorkRunner.verification_runner(control, train_dir))
         def run(argv, *, cwd, timeout, env, **ignored):
             from compute_plane.managed_process import run_pipe_process
             from compute_plane.native_journal import regular, save_json

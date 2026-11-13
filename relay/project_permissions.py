@@ -15,10 +15,12 @@ DEFAULT_SCHEMA = 'tare.tools/permission-defaults/1'
 
 
 def validate_defaults(value):
-    if not isinstance(value, dict) or set(value) - {'mode', 'write_paths', 'command_protection', 'project_admission', 'show_plan'} or not {'mode', 'write_paths'} <= set(value) or not isinstance(value['mode'], str) or value['mode'] not in {'read', 'edit', 'commands'}:
+    if not isinstance(value, dict) or set(value) - {'mode', 'write_paths', 'command_protection', 'project_admission', 'show_plan', 'checks_outside_sandbox'} or not {'mode', 'write_paths'} <= set(value) or not isinstance(value['mode'], str) or value['mode'] not in {'read', 'edit', 'commands'}:
         raise ValueError('Choose read only, edit files, or edit with system commands.')
     if type(value.get('show_plan', True)) is not bool:
         raise ValueError('Choose whether to see the plan before implementing.')
+    if type(value.get('checks_outside_sandbox', False)) is not bool:
+        raise ValueError('Choose whether checks the sandbox blocks run outside it.')
     paths = value['write_paths']
     if not isinstance(paths, list) or len(paths) > 32 or not paths and value['mode'] != 'read':
         raise ValueError('Enter 1–32 project-relative edit paths, or . for the whole project.')
@@ -38,6 +40,8 @@ def validate_defaults(value):
     result = {'mode': value['mode'], 'write_paths': cleaned}
     if 'show_plan' in value:  # absent: the owner's default for every project (shows_plan)
         result['show_plan'] = value['show_plan']
+    if 'checks_outside_sandbox' in value:  # kept per machine (turn_engine), never in this file
+        result['checks_outside_sandbox'] = value['checks_outside_sandbox']
     if 'project_admission' in value:
         result['project_admission'] = project_admission.validate(value['project_admission'])
     if value.get('command_protection') is not None:
@@ -110,6 +114,9 @@ def read_defaults(directory, project, control_root):
         elif trust is not None and policy['mode'] == 'quarantine':  # no second review of the same history
             defaults = {**defaults, 'project_admission': {'mode': 'trusted', 'root_sha256': None,
                                                           'nested': trust['nested']}}
+    from .turn_engine import checks_outside_sandbox
+    if checks_outside_sandbox(project):  # the sandbox question's "always", shared like the mode
+        defaults = {**defaults, 'checks_outside_sandbox': True}
     return defaults, revision
 
 
@@ -148,6 +155,7 @@ def stored_defaults(directory, project, control_root):
 
 def save_defaults(directory, project, control_root, defaults, expected_revision):
     defaults = validate_defaults(defaults)
+    outside = defaults.pop('checks_outside_sandbox', None)  # absent: unchanged
     path, project, control = preference_path(directory, project, control_root)
     if not Path(project).is_dir():
         raise ValueError('Project directory is unavailable.')
@@ -170,8 +178,10 @@ def save_defaults(directory, project, control_root, defaults, expected_revision)
                                   'nested': admission['nested']})
             elif admission['mode'] == 'quarantine' and trust.exists():
                 trust.unlink()
-        from .turn_engine import set_project_permission_mode
+        from .turn_engine import set_checks_outside_sandbox, set_project_permission_mode
         set_project_permission_mode(project, defaults['mode'])  # tare serve's /mode reads the same choice
+        if outside is not None:
+            set_checks_outside_sandbox(project, outside)
         return read_defaults(directory, project, control)
 
 
@@ -197,6 +207,37 @@ def profile_values(defaults):
     defaults = validate_defaults(defaults)
     return ('explorer' if defaults['mode'] == 'read' else 'implementer',
             defaults['mode'] == 'commands' and 'command_protection' not in defaults, list(defaults['write_paths']))
+
+
+def check_isolation(defaults, protection, saved=False, read_only=None):
+    """Where the checks tare runs for a model's work run, whatever the System commands line says. `saved`: a saved
+    conversation's view, which the project's later mode does not change (its checks read the mode when they run).
+    `read_only`: the viewed draft's own role when there is one, so a concurrent save does not change what it shows."""
+    if protection:
+        return ['Checks: in the Windows sandbox, under this project\'s command protection.']
+    from .command_protection import sandbox_available
+    if not sandbox_available():
+        read_only = defaults['mode'] == 'read' if read_only is None else read_only
+        return ['Checks: not isolated: no sandbox on this system. They run as you, with network access and your '
+                'files in reach' + ('; in a read-only project tare asks you first.' if saved else
+                '.' if not read_only else '; in this read-only project they run '
+                'without asking, as you chose (clear "Run checks the sandbox blocks outside it" above to be asked).'
+                if defaults.get('checks_outside_sandbox') else '; in this read-only project tare asks you first.'),
+                'A local implementer is refused on this system: a local model runs only where its checks are isolated.',
+                *([LOCAL_WORK_ASKED] if defaults.get('checks_outside_sandbox') else [])]
+    return ['Checks: in the Windows sandbox, in every mode: no network, the project and its runtimes read only, '
+            'writes only to the edit paths and scratch, secret files denied. No model reviews them: tare registered '
+            'them, no model typed them.',
+            'Checks the sandbox blocks: ' + ('run outside it without asking (saved for this project; clear "Run '
+            'checks the sandbox blocks outside it" above to be asked again).' if defaults.get('checks_outside_sandbox')
+            else 'tare asks you before running one outside it (it would then reach the network and your files); '
+            'without the TUI it stays unjudged and its change is not applied.'),
+            *([LOCAL_WORK_ASKED] if defaults.get('checks_outside_sandbox') else [])]
+
+
+# Beside the project's saved "always" (conversation_permissions.local_work).
+LOCAL_WORK_ASKED = ("This does not apply to checks of a local model's work (local-only mode, --prefer_local, a local "
+                    'implementer): those are asked about each turn, and never run outside without the TUI.')
 
 
 def permissions_view(directory, project, control_root, *, session=None, pending=None, judges_off=False,
@@ -313,11 +354,11 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
                      'local models do not get it') if terminal and any(t.startswith('terminal_') for t in tools)
                      else 'Disabled'),
                  'Configured checks: '+(', '.join(checks) or 'None in this scope')]
-    if local_only:  # ponytail: interim, goes with execution_scope.local_only_unsandboxed
-        effective.append('Local-only mode: tare implements only with an Action review, which runs the checks in the '
-                         'sandbox; '+('there is no sandbox on this system, so nothing is implemented' if os.name != 'nt'
-                                      else 'this project has one' if protection else
-                                      'this project has none, so nothing is implemented until you choose one'))
+    if local_only:  # execution_scope.local_only_unsandboxed: a local implementer only where its checks are isolated
+        from .command_protection import sandbox_available
+        effective.append('Local-only mode: the local model implements only where its checks run in the sandbox; '+(
+            'they do here, in every mode' if sandbox_available() else
+            'there is no sandbox on this system, so nothing is implemented'))
     if protection:
         effective += local
         if protection.get('classifier')=='jev' and not judges_off and not local:
@@ -326,11 +367,11 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
         if not unreviewed:
             effective += ['Review calls: up to '+str(protection['max_reviews'])+' per request; native usage may be unknown.']
         effective += ['Protected commands use the declared Windows profile. Interactive terminal is unavailable in this mode.']
-    else:
-        if any(t.startswith('terminal_') for t in tools):
-            effective.append('The terminal runs commands as you, with network access and your files and credentials '
-                             'in reach. A local model never gets it. An Action review runs commands in the sandbox.')
-        effective.append('Configured checks run programs. Edit paths do not restrict command filesystem or network access.')
+    elif any(t.startswith('terminal_') for t in tools):
+        effective.append('The terminal runs commands as you, with network access and your files and credentials '
+                         'in reach. A local model never gets it. An Action review runs commands in the sandbox.')
+    effective += check_isolation(defaults, protection, saved=bool(session),
+                                 read_only=role != 'implementer' if pending is not None and not session else None)
     if not session:
         effective.append('The new-session verifier field is separate; saved conversations keep their original checks.')
     instruction_policy = (config.get('project_admission') if session else

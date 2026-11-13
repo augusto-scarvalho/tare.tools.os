@@ -91,9 +91,9 @@ conexão permitida; o histórico original e o prefixo de cache dela ficam intact
 
 Com `--local_only` uma conversa pode planejar, implementar, verificar e auditar uma mudança só com o
 modelo local (`tare models --role planner --local_only` lista os planejadores locais). Ele só implementa
-onde as verificações do projeto rodam no sandbox, isto é, com uma revisão de ações (Action review)
-escolhida em `/permissions` (Edit + system commands, no Windows); sem ela, o tare avisa antes de planejar
-uma entrega e não inicia nenhum implementador. O planejador
+onde as verificações do projeto rodam no sandbox: no Windows com o sandbox de processos elas rodam nele
+em qualquer modo, com ou sem uma revisão de ações (Action review); num sistema sem ele, o tare avisa antes
+de planejar uma entrega e não inicia nenhum implementador. O planejador
 roda em `xhigh`, o menor nível do modelo local igual ou acima de alto. O auditor local (Qwen3.8) e o
 implementador local são da mesma família de modelos, então a auditoria não é independente: a
 auditoria, o recibo dela e o resultado da entrega levam o rótulo **same-family audit, not
@@ -213,8 +213,13 @@ Para padrões avançados, abra `/permissions`:
 Os padrões são salvos separadamente para cada projeto. As ferramentas, o modelo,
 as instruções e o histórico do próprio coordenador continuam fixos; a autorização dos workers é verificada à parte
 ao executar um plano. Conversas explícitas de `/session` mantêm as capacidades
-originais. As verificações configuradas também rodam nesta máquina, a menos que se escolha uma Action review:
-o escopo de edição de arquivos sozinho não é um sandbox do sistema.
+originais. O escopo de edição de arquivos sozinho não é um sandbox do sistema. As verificações são
+diferentes: em qualquer modo elas rodam no sandbox do Windows (sem rede, sem arquivos secretos, gravando
+só nos caminhos de edição). Quando o sandbox bloqueia uma verificação, o tare pergunta **Run this check
+outside the sandbox?** (neste turno, sempre neste projeto ou não rodar; o padrão é não rodar). O "sempre"
+não vale para verificações do trabalho de um modelo local: sobre elas o tare pergunta a cada turno. Num sistema
+sem sandbox, o `/permissions` diz que as verificações não estão isoladas, e um modelo local não é usado
+como implementador ali.
 
 ## 4. Enviar um pedido normal de código
 

@@ -89,9 +89,9 @@ allowed connection; its original history and cache prefix stay intact.
 
 With `--local_only` a conversation can plan, implement, check and audit a change on
 the local model alone (`tare models --role planner --local_only` lists the local
-planners). It implements only where the project's checks run in the sandbox, that is
-with an Action review chosen in `/permissions` (Edit + system commands, on Windows);
-without one, tare says so before planning a delivery and starts no implementer.
+planners). It implements only where the project's checks run in the sandbox: on Windows
+with the process sandbox they do in every mode, with or without an Action review; on a
+system without it, tare says so before planning a delivery and starts no implementer.
 The planner runs at `xhigh`, the local model's lowest level at or above
 high. The local auditor (Qwen3.8) and the local implementer are the same model
 family, so the audit is not independent: the audit, its receipt and the delivery result carry the label
@@ -212,8 +212,12 @@ For advanced defaults, open `/permissions`:
 Defaults are saved separately for each project. A coordinator's own tools, model,
 instructions and history remain fixed; worker authorization is checked separately
 when executing a plan. Explicit `/session` conversations retain their original
-capabilities. Configured checks also run on this machine unless an Action review is chosen: file edit
-scope alone is not a system sandbox.
+capabilities. File edit scope alone is not a system sandbox. Checks are different: in every mode
+they run in the Windows sandbox (no network, no secret files, writes only to the edit paths). When the
+sandbox blocks a check, tare asks **Run this check outside the sandbox?** (this turn, always for this
+project, or not at all; it starts on not running it). "Always" does not apply to checks of a local
+model's work: those are asked about each turn. On a system with no sandbox, `/permissions` says
+checks are not isolated, and a local model is not used as implementer there.
 
 ## 4. Send a normal coding request
 
