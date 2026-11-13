@@ -202,9 +202,10 @@ Para padrões avançados, abra `/permissions`:
 - **Read only** — sem edição de arquivos nem terminal.
 - **Edit files** — grava dentro do escopo escolhido; terminal desativado.
 - **Edit + system commands** — edição de arquivos mais comandos. Com uma **Action review** eles rodam no
-  sandbox; sem ela (**None: terminal on this machine, no sandbox**) rodam num terminal direto nesta
-  máquina, como você, com acesso à rede e aos seus arquivos e credenciais, sem sandbox e sem revisão. Um
-  modelo local nunca recebe esse terminal.
+  sandbox; sem ela (**None: terminal on this machine, no sandbox**) as tarefas de `/session` e o
+  `tare agent --terminal` os rodam num terminal direto nesta máquina, como você, com acesso à rede e aos
+  seus arquivos e credenciais, sem sandbox e sem revisão. O coordenador da conversa principal e os workers
+  dele nunca recebem esse terminal, nem um modelo local.
 
 Os padrões são salvos separadamente para cada projeto. As ferramentas, o modelo,
 as instruções e o histórico do próprio coordenador continuam fixos; a autorização dos workers é verificada à parte

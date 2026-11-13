@@ -2461,8 +2461,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator-facing entry points and route policy; Runtime retains session execution.",
-      "size_bytes": 35043,
-      "sha256": "373e9dc15cf4a4d7f277bccc7bb4d1248d18052117fbb53c5c797aec938d199e"
+      "size_bytes": 35606,
+      "sha256": "6d425a606bdc316aeace8bdc483ad3eced3a68d9d0e382b450c7c699d1f19af6"
     },
     {
       "name": "turn_capabilities.py",
@@ -3287,8 +3287,8 @@
     {
       "name": "project_permissions.py",
       "path": "tare.tools.os/relay/project_permissions.py",
-      "size_bytes": 25648,
-      "sha256": "b4a10940381340d95daf16a1d6334020829b6adc2bad53ce9a6dfa45ec40d28c",
+      "size_bytes": 26521,
+      "sha256": "b34b81eacb738cc1f1a236b992e3fd77273ea88db83e1888f21f52fd6587a306",
       "summary": "Validate scoped project defaults and observe saved session permissions.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",

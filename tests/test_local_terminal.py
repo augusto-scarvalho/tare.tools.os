@@ -41,3 +41,18 @@ def test_terminal_tools_go_to_a_hosted_model_only(setup, tmp_path, monkeypatch, 
             native_agent.run_session(None, None, custody, resume=True, follow_up='Type into it.',
                                      message_id='m2', client=later)
         assert later.generations == 0
+
+
+def test_a_main_chat_never_holds_the_terminal_so_serve_yolo_promises_none(setup, tmp_path):
+    from relay import serve_agent, turn_engine
+    _, custody, root = setup
+    config = turn_engine.config_for(root, 'yolo')  # what tare serve starts every /yolo chat with
+    assert config['terminal'] and 'terminal_start' in config['capabilities']
+    client = Client(steps=[('tare_deliver', {'summary': 'Hi.'})])
+    native_agent.run_session(config, deployment(), custody, 'Hi', conversation=True, client=client,
+                             local_counter=client)
+    body = [body for path, body in client.calls if path == '/chat/completions'][-1]
+    assert not [tool for tool in body['tools'] if tool['function']['name'].startswith('terminal_')]
+    assert 'no model gets a terminal' in serve_agent.MODES['yolo']
+    effective = permissions_view(tmp_path/'preferences', root, tmp_path/'control', session=custody)['effective_text']
+    assert 'System commands: Not in this chat' in effective and 'terminal_start' not in effective

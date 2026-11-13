@@ -147,8 +147,9 @@ and governance remain with their existing owners.
 
 Interactive host commands remain available through the operator's explicit
 `/session` flow, which is a direct native session. Choosing that flow does not
-give the assistant coordinator terminal or file-editing tools. That terminal is
-not sandboxed or reviewed: its commands run directly on this machine as the user,
+give the assistant coordinator terminal or file-editing tools, and the workers it
+starts never get the terminal either; only `/session` tasks and
+`tare agent --terminal` do. That terminal is not sandboxed or reviewed: its commands run directly on this machine as the user,
 with network access and the user's files and credentials in reach. An Action
 review in `/permissions` runs commands in the sandbox instead. A local model never
 gets the terminal; its session runs without it and says so.

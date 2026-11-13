@@ -51,7 +51,7 @@ the current conversation's actual permissions, and its recorded project instruct
 | --- | --- |
 | Read only | Read files, list folders and search project text |
 | Edit files | Reading plus edits within the selected paths |
-| Edit + system commands | Scoped file tools plus commands: in the sandbox with an **Action review**, otherwise the terminal tools (below) |
+| Edit + system commands | Scoped file tools plus commands: in the sandbox with an **Action review**, otherwise the terminal tools for `/session` tasks (below) |
 
 **Before implementing** and **My default, every project** (above) are saved with
 the same **Save** but are read each time a plan is about to be implemented, so
@@ -96,14 +96,18 @@ tools, history and edit scope stay unchanged. Direct saved agent sessions and
 explicit Work runs retain their own policy. Automatic routing currently requires
 Windows; a missing service or sandbox refuses the action.
 
-With **Action review** set to **None: terminal on this machine, no sandbox**, the
-terminal tools run commands directly on this machine as you: with network access,
-your files and credentials in reach, no sandbox and no review. It is the mode for
-when you are present and trust the model; **Effective permissions** says
+With **Action review** set to **None: terminal on this machine, no sandbox**,
+`/session` tasks (and `tare agent --terminal`) get the terminal tools, which run
+commands directly on this machine as you: with network access, your files and
+credentials in reach, no sandbox and no review. It is the mode for when you are
+present and trust the model; for a `/session` task **Effective permissions** says
 `System commands: Terminal on this machine, not sandboxed, not reviewed`, and each
-command shows as **Unsandboxed command** in the activity. Choose an Action review
-instead to run commands inside the sandbox. Configured checks also run programs on
-this machine, outside the mediated edit paths, unless an Action review is chosen.
+command shows as **Unsandboxed command** in the activity. The main conversation
+never gets this terminal: its coordinator and the workers it starts edit files and
+run the configured checks, and the panel says `System commands: Not in this chat`.
+Choose an Action review instead to run commands inside the sandbox. Configured
+checks also run programs on this machine, outside the mediated edit paths, unless
+an Action review is chosen.
 
 A local model never gets this terminal, in local-only mode or when a session's
 model is local in any other mode. Such a session runs without the terminal tools

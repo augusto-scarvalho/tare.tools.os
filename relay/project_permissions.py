@@ -215,8 +215,10 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
             original = records[0].event().get('capabilities', [])
             tools = sorted(set(original) & set(config.get('capabilities', original)))
             role, terminal = config['role'], bool(config.get('terminal'))
+            # A main chat (coordinator) never runs the terminal, nor do its workers (work_units builds them without it).
+            chat, known = bool(state.get('conversation_flow')), True
             from .challenger import local  # the saved model decides, as in native_agent.run_session
-            local_model = terminal and not state.get('conversation_flow') and local(state['deployment'])
+            local_model = terminal and not chat and local(state['deployment'])
             protection = config.get('command_protection', {})
             paths = config['writable'].get(name, []) if 'edit' in tools else []
             checks = [key for key, row in config['verifiers'].items() if row['repository'] == name and 'verify' in tools]
@@ -258,7 +260,9 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
         paths = paths if role == 'implementer' else []
         tools = ['read', 'list', 'search'] + (['edit'] if role == 'implementer' else [])
         local_model = local_model or local_only
-        if terminal and role == 'implementer' and not local_model:
+        # The TUI's selection: 'assistant' is the main chat, 'session' a /session task; otherwise it cannot tell.
+        chat, known = getattr(pending, 'mode', None) == 'assistant', getattr(pending, 'mode', None) in ('assistant', 'session')
+        if terminal and role == 'implementer' and not local_model and not chat:
             from compute_plane.native_terminal import TERMINAL_SPECS
             tools += list(TERMINAL_SPECS)
         if protection:
@@ -299,10 +303,15 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
     effective = [title, 'Project: '+project, 'Role: '+role, 'Tools: '+(', '.join(tools) or 'None'),
                  'Editable paths: '+(', '.join(paths) or 'None'),
                  'System commands: '+(unreviewed or 'Protected noninteractive commands' if protection else
+                     'Not in this chat: its coordinator and workers do not get the terminal. /session tasks do: a '
+                     'terminal on this machine, not sandboxed, not reviewed, never given to a local model'
+                     if terminal and chat else
                      'None for a local model: tare never gives a local model the unsandboxed terminal. Choose an '
                      'Action review for sandboxed commands' if terminal and role == 'implementer' and local_model else
-                     'Terminal on this machine, not sandboxed, not reviewed'
-                     if terminal and any(t.startswith('terminal_') for t in tools) else 'Disabled'),
+                     'Terminal on this machine, not sandboxed, not reviewed'+('' if known else
+                     ', for /session tasks and tare agent --terminal only: a chat\'s coordinator and workers and '
+                     'local models do not get it') if terminal and any(t.startswith('terminal_') for t in tools)
+                     else 'Disabled'),
                  'Configured checks: '+(', '.join(checks) or 'None in this scope')]
     if protection:
         effective += local
