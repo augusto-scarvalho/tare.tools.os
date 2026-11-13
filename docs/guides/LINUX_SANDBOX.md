@@ -36,8 +36,8 @@ When the sandbox blocks a check, tare asks before running it outside, as on Wind
 - Linux on x86_64 or aarch64.
 - bubblewrap 0.8 or newer: the package `bubblewrap`. tare uses the first `bwrap` on `PATH`.
 - `prlimit`: the package `util-linux`.
-- Unprivileged user namespaces allowed for bubblewrap. Stock Ubuntu 23.10 and later (24.04 included) refuse them
-  through AppArmor; so do some containers. WSL2's Ubuntu has AppArmor off and needs nothing more.
+- Unprivileged user namespaces allowed for bubblewrap. Stock Ubuntu 24.04 refuses them through AppArmor
+  (measured on GitHub's runner); so do some containers. WSL2's Ubuntu has AppArmor off and needs nothing more.
 
 tare checks all of this by starting one sandbox. Where that fails, `/permissions` says **Checks: not isolated: no
 sandbox on this system**, followed by **Why there is no sandbox:** and the reason, and a local implementer is
@@ -67,8 +67,10 @@ EOF
 sudo apparmor_parser -r /etc/apparmor.d/bwrap
 ```
 
-It lets bubblewrap alone create user namespaces. Every other program stays restricted, and
-`kernel.apparmor_restrict_unprivileged_userns` stays 1. AppArmor loads it again at every boot. CI proves the
+It lets bubblewrap alone use user namespaces. Every other program stays restricted, and
+`kernel.apparmor_restrict_unprivileged_userns` stays 1 (both measured). Any program on the machine can still start
+bubblewrap, so this is narrower than lifting the restriction, not a grant to tare alone. AppArmor loads it again at
+every boot. CI proves the
 sandbox on GitHub's Ubuntu 24.04 runner with this same profile (`Linux sandbox probe` in `.github/workflows/ci.yml`).
 
 ### The broader alternative, not recommended
