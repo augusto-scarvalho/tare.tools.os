@@ -154,7 +154,8 @@ def test_protected_pytest_temp_is_explicitly_inside_writable_scratch(host, monke
     assert not test_root.is_relative_to(host.custody)
     assert str(test_root) in captured[0]['policy'].read_write
     assert str(host.custody/'command-tmp') in captured[0]['policy'].read_write
-    assert str(host.root.anchor) in captured[0]['policy'].enumerate_only or host.config['command_protection']['backend']=='codex'
+    # PSEC enumeration covers a whole subtree; any entry (the volume root above all) lists folders outside the scopes.
+    assert captured[0]['policy'].enumerate_only==()
     mediator.close()
     assert not test_root.exists()
 
@@ -278,8 +279,7 @@ def test_conversation_host_verifier_uses_the_real_mediation_gate(host,monkeypatc
                        for name, argv in contexts[0]['verification']['commands'].items()}
     assert actual_commands == expected_commands
     assert 'no project application or network' in contexts[0]['verification']['scope']
-    assert str(host.root) not in policies[0].enumerate_only
-    assert str(host.root.anchor) in policies[0].enumerate_only
+    assert policies[0].enumerate_only==()
     result = run(command)
     assert result.returncode == 0 and 'verified' in result.stdout
     assert len(host.native) == 1

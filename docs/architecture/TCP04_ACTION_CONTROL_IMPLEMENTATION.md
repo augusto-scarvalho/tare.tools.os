@@ -98,6 +98,10 @@ write paths, separate command temporary directory and denied network are applied
 project .git/.codex/.aws paths are denied to this initial command profile. Other
 runtime/profile needs are admitted separately; no generic third-party guarantee
 or hard disk quota is claimed. Protected checks use their frozen executable path.
+No enumerate-only scope is granted: PSEC's `fs_enumerate` admits listing of a folder's whole subtree, so the
+volume root's would list the entire drive. A command lists only admitted folders (and system folders whose
+Windows ACL admits every app container, such as Program Files); it can still stat each ancestor of an
+admitted path, except the volume root itself.
 
 Review reservations are recorded before dispatch and bounded per invocation.
 The exact latest admitted user context and referenced executable/file identity are
