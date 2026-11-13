@@ -970,6 +970,19 @@ class ConversationTools:
             raise ValueError('The user asked only for investigation or planning. Implementation is not admitted.')
         return value, task
 
+    def unsandboxed(self, names):
+        """execution_scope.local_only_unsandboxed for these projects' worker settings (the session's, with the
+        project's /permissions Action review): its refusal when none would run its checks in the sandbox, else None.
+        ponytail: interim, removed with that guard."""
+        from .execution_scope import current, local_only_unsandboxed
+        if current().only != 'local':
+            return None  # other modes read nothing more
+        from . import relay_mesh
+        from .conversation_permissions import with_review_policy
+        refusals = [local_only_unsandboxed(with_review_policy(self.state['config'], self.permission_directory,
+                    self.state['config']['repositories'][name], relay_mesh.RELAY_ROOT)) for name in names]
+        return refusals[0] if refusals and all(refusals) else None
+
     def argument_feedback(self, name, result):
         """Append repair facts to a refusal; keep the frozen tool/cache prefix."""
         if name not in {'read', 'list', 'search'} or result.status != 'refused':
@@ -1213,6 +1226,9 @@ class ConversationTools:
                     raise ValueError('The current goal already has a saved plan. Failed checks are correction '
                         'feedback, not permission to spend on planning again. Use demand relation=correct and '
                         'implement with the saved plan. A genuinely revised demand must be recorded first.')
+                # Said before planning, so nobody approves a plan that cannot be implemented; a plan-only demand plans.
+                if task['intent'] == 'deliver' and (refusal := self.unsandboxed(self.state['config']['repositories'])):
+                    raise ValueError(refusal)
                 result = self.tools.execute(request, control)
                 if result.status != 'succeeded': return result
                 output = object_json(result.output_json)
@@ -1271,6 +1287,9 @@ class ConversationTools:
                         raise ValueError('Files changed since review. Inspect the change and continue with relation=correct or revise.')
                     return EffectResult(request.effect_id, 'succeeded', encode(delivery_view(
                         task['delivery'], config=self.state['config'], unit=plan['unit'])), True)
+                # Every implementer start below: a new attempt, recheck_candidate, /retry_delivery, a waiting worker.
+                if refusal := self.unsandboxed([plan['unit']['repository']]):
+                    raise ValueError(refusal)
                 previous = task.get('delivery') or {}
                 preserved = retained_candidate(task)
                 if preserved:

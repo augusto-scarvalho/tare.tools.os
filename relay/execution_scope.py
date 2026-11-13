@@ -357,6 +357,24 @@ def normalize_arguments(values):
     return normalized
 
 
+LOCAL_ONLY_UNSANDBOXED=('Local-only mode implements only where this project\'s checks run in the sandbox; here they '
+    'would run directly on this machine. Choose an Action review in /permissions (Edit + system commands), then ask '
+    'again. No implementer started.')
+LOCAL_ONLY_NO_SANDBOX=('Local-only mode implements only where the project\'s checks run in the sandbox, and there is '
+    'no sandbox on this system (protected commands need Windows). No implementer started.')
+
+
+def local_only_unsandboxed(config):
+    """Why an implementer may not start under --local_only, or None: the checks of a worker whose config carries no
+    command_protection (an Action review) run directly on this machine, and off Windows there is no sandbox at all.
+    ponytail: interim guard for "isolation first, local models after"; feat/checks-in-sandbox-by-default replaces it
+    with the general rule (a local implementer runs only where the sandbox is available). Delete it then, with its
+    callers: conversation_tasks implement and delegate_plan, session_role below, project_permissions' line."""
+    if current().only!='local':return None
+    if os.name!='nt':return LOCAL_ONLY_NO_SANDBOX
+    return None if (config or {}).get('command_protection') else LOCAL_ONLY_UNSANDBOXED
+
+
 def session_role(function):
     @wraps(function)
     def run(config,deployment,custody,*args,**kwargs):
@@ -368,6 +386,8 @@ def session_role(function):
             if path.is_file():saved=read_json(path,1024*1024)
         selected=config or saved.get('config') or {}
         role='coordinator' if kwargs.get('conversation') or saved.get('conversation_flow') else selected.get('role','implementer')
+        if role=='implementer' and (refusal:=local_only_unsandboxed(selected)):
+            raise ValueError(refusal)  # every implementer session: conversation units, /session tasks, Work, resumes
         with for_role(role):
             candidate=deployment or saved.get('deployment')
             # Saved policy is evidence of an earlier invocation, not authorization

@@ -393,6 +393,20 @@ def resolve(choices, chosen):
     return item, route
 
 
+def declared_effort(value, effort):
+    """A policy's level (auditor_effort, the action reviewer's high), not a user's choice, for this deployment: a local
+    profile declares its own levels (low, medium, xhigh) and refuses others, so it takes its lowest declared level at
+    or above this one; every other deployment keeps the level as it is."""
+    levels = value.get('native_reasoning_levels') or []
+    if not (local(value) and levels and effort in EFFORTS and effort not in levels):
+        return effort
+    above = [level for level in EFFORTS[EFFORTS.index(effort):] if level in levels]
+    if not above:
+        raise ValueError(f'This local model declares no reasoning level at or above {effort} '
+                         f'(it declares {", ".join(levels)}); no model call was made.')
+    return above[0]
+
+
 def reasoning_parameters(value, effort):
     """Apply a level using this connection's wire format, preserving cache and other settings."""
     profile = value['native_profile']

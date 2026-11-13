@@ -2,6 +2,7 @@
 from dataclasses import replace
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -251,7 +252,15 @@ def test_panel_says_when_the_local_judge_reviews_and_what_happens_when_it_cannot
     assert 'When it is not: tare asks once' in text('both',local_only=True)
     assert '(when the execution connection is not Codex)' in text('auto',local_only=True)
     assert 'local judge' not in text('codex',local_only=True)  # Codex reviews; no local judge
-    assert text('tare',local_only=True,judges_off=True)==text('tare',judges_off=True)  # judges off: #134's text
+    implements=[line for line in text('tare',local_only=True,judges_off=True).splitlines() if line.startswith('Local-only mode:')]
+    assert implements==['Local-only mode: tare implements only with an Action review, which runs the checks in the sandbox; '+(
+        'this project has one' if os.name=='nt' else 'there is no sandbox on this system, so nothing is implemented')]
+    assert text('tare',local_only=True,judges_off=True).replace('\n'+implements[0],'')==text('tare',judges_off=True)  # judges off: #134's text
+    bare=lambda **kw:permissions_view(tmp_path/'preferences',root,tmp_path/'control',
+        pending=Selection(str(root),role='implementer',write_paths=['.']),**kw)['effective_text']
+    assert ('this project has none, so nothing is implemented until you choose one' if os.name=='nt' else
+            'there is no sandbox on this system') in bare(local_only=True)
+    assert 'Local-only mode:' not in bare() and 'Local-only mode:' not in text('tare')
     assert text('tare')==text('tare',local_only=False)
     set_project_permission_mode(root,'edit')
     assert 'When it is not: tare asks you about each command' in text('tare',local_only=True)
