@@ -156,6 +156,25 @@ outside the sandbox and its receipt says so, and why. A no leaves it unjudged, a
 change it checks is not applied on its strength. The turn's clock stops while you
 decide. An ordinary failing test asks nothing: it is a failure.
 
+Whatever runs the tests (`unittest`, `node --test`, jest, `cargo test`, not only
+pytest), a check that fails and prints a line showing that the sandbox blocked
+something during it asks the same question, but stays **failed**: a refused
+network connection (`[WinError 10013]`, `connect EACCES`), a failed name lookup
+(`getaddrinfo failed`, `ENOTFOUND`), a permission error on a secret file or on a
+file outside the folders checks may read, Node's `lstat 'C:\'`, or rustup's
+`could not choose a version`. The dialog says the check failed, what was blocked,
+and shows that line of its output. A yes reruns it outside the sandbox and that
+run decides, green or red; a no keeps it failed, and the model is told the
+failure may come from the sandbox rather than from its code. Measured on Windows
+11 (2026-11-13): **Node cannot load any script file inside the sandbox** (it
+reads the drive's root folder, which the sandbox denies), so every Node check
+(`npm test`, `node --test`, jest) asks; **`cargo test`** cannot find the Rust
+toolchain in your user profile there, so it asks too. For such projects choose
+**Always run this project's blocked checks outside it** if you trust their
+checks: they then run outside the sandbox, as before. A model could print such a
+line on purpose; it still only reaches the question, which starts on **Do not
+run it** and shows the exact command.
+
 **Always** is saved for the project on this machine (every frontend, `tare serve`
 and Work runs included) and shown in `/permissions` as **Run checks the sandbox
 blocks outside it, without asking**; clear the box and **Save** to be asked again.

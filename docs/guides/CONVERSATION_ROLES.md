@@ -114,7 +114,11 @@ for this turn or always for this project ([Project permissions](TUI_PROJECT_PERM
 a yes reruns it outside and its receipt says so. Without a yes, a session check
 stopped by the sandbox holds the change, like any unverified change; only a
 timeout still settles nothing (a change whose own checks pass is then applied
-only when its unit's tests cover every changed file).
+only when its unit's tests cover every changed file). A check of any other
+runner that fails while its output shows a block (a refused connection, a
+secret or outside file, Node's drive-root `lstat`, a missing Rust toolchain)
+stays red and asks the same question; only the rerun outside can turn it
+green, and without one the receipt says the failure may come from the sandbox.
 
 The sandbox also denies the project's secrets, at any depth and in folders granted
 to the project: `.env` and `.env.*` files (samples such as `.env.example` stay
