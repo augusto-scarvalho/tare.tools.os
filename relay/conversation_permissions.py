@@ -300,7 +300,7 @@ def sandbox_question(limitation):
         what, _, line = detail.partition('. Output: ')
         return ('This check failed, and the sandbox blocked ' + what + ' during it, so the failure may come from the '
                 'sandbox rather than from the code. Run outside, its result decides.'), line[:200]
-    return (detail.split('. Not run')[0] if code == 'ISOLATION_UNAVAILABLE' else limitation), ''
+    return (detail.split('. Not run')[0] if code in ('ISOLATION_UNAVAILABLE', 'ISOLATION_TIMEOUT') else limitation), ''
 
 
 def local_work(local_producer):
