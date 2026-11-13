@@ -18,6 +18,7 @@ from compute_plane.workspace import isolated_child_environment
 from .action_control import ActionDecision, ActionPolicy, ActionReviewBroker
 from .action_mediation import CommandActionMediator
 from .action_model_assessment import TareActionClassifier, TareActionReviewer, TareJevActionClassifier, JEV_MODEL
+from .command_permission import UNREVIEWED, unreviewed as allowed_this_turn, yolo
 from .windows_isolation import windows_isolation_factory
 from .worker_wait import steady
 
@@ -400,15 +401,23 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
                     from .turn_engine import local_judge
                     local_endpoint['url']=local_judge()
                     manual=not local_endpoint['url']
+                turn_question=manual and local_classification and yolo()  # YOLO; the local judge is on but not available
                 needed=(int(options['review'] in ('codex','both')) if manual else
                         1 if jev else {'codex':1,'tare':2,'both':3}[options['review']])
                 if reserved_count()+needed>options['max_reviews']:
                     return ActionDecision(False,'Command review budget exhausted; no request sent.')
                 announce(action,'Classifying command with local judge.' if local_classification and not manual else
+                         'Local judge not available; no model can review this command.' if turn_question else
                          'Waiting for operator command approval.' if manual else 'Classifying command with Jev.' if jev else
                          'Reviewing command with '+options['review']+'.')
-                if manual:
-                    from .command_permission import yolo
+                if turn_question:
+                    # Ask once per turn before running commands nobody reviews (owner, 2026-11-12).
+                    allowed=allowed_this_turn(action,public,control)
+                    deadline_cache.pop(action.effect_id,None)  # as in ask(): a wait forgets the review window
+                    if allowed:
+                        announce(action,'Not reviewed: local judge not available; you allowed commands without review this turn.')
+                    decision=ActionDecision(allowed,UNREVIEWED if allowed else 'Human denied running this command without review.')
+                elif manual:
                     unattended=yolo()
                     allowed=unattended or ask(action,public)
                     decision=ActionDecision(allowed,'Operator YOLO: deterministic gates and sandbox remain.' if unattended else
@@ -467,7 +476,8 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
             if disabled:report['classifier']='disabled'
             if disabled and options['review'] in ('tare','both') or local_classification and not decision.observations:
                 report.update(classifier='disabled' if disabled else 'local_unavailable',
-                    review_status='operator_yolo' if 'YOLO' in decision.reason else 'human_approved')
+                    review_status='not_reviewed_this_turn' if decision.reason==UNREVIEWED else
+                                  'operator_yolo' if 'YOLO' in decision.reason else 'human_approved')
             assessed={action.action_sha256,*(o.action_sha256 for o in decision.observations)}
             for record in journal.snapshot().records:
                 event=record.event()

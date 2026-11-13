@@ -338,6 +338,8 @@ class ActivityJournal:
                            +str(protection.get('reserved_calls', '?'))+'/'+str(protection.get('max_reviews', '?')))
                 if protection.get('classifier')=='jev':
                     summary = 'Classifier: Jev  '+str(protection.get('classification','unknown'))+'\n'+summary
+                elif protection.get('classifier')=='local_unavailable':
+                    summary = 'No model review: the local judge was not available\n'+summary
                 for stage, usage in protection.get('usage', {}).items():
                     summary += '\n'+stage+' usage: '+('not reported' if usage is None else json.dumps(usage, ensure_ascii=False))
                 detail = summary+('\n\n'+detail if detail else '')

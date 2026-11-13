@@ -89,10 +89,18 @@ conexão permitida estiver disponível, o tare informa o bloqueio em vez de inic
 de inferência. Uma conversa salva fixada numa conexão excluída precisa continuar numa
 conexão permitida; o histórico original e o prefixo de cache dela ficam intactos.
 
-O juiz local só é usado quando já está carregado e ocioso. Se a classificação de comandos
-precisar dele e ele não estiver disponível, o tare pede aprovação (ou respeita o YOLO); ele não
-carrega outro modelo por cima de um lease de GPU ativo. As otimizações em lote do Jev hospedado continuam desligadas
-no modo local-only; o fallback determinístico/explorador já existente cuida do trabalho.
+O juiz local só é usado quando já está carregado e ocioso; o tare nunca o carrega, não espera
+por ele e não carrega outro modelo por cima de um lease de GPU ativo. Quando um comando protegido
+precisa dele e ele não está disponível, nenhum modelo pode revisar esse comando, então o tare
+pergunta a você antes. Em **Edit + system commands** (YOLO) ele pergunta uma vez por turno:
+**Run commands without review this turn?** mostra o comando que a provocou, e **Run without
+review this turn** executa esse comando e os demais comandos do turno que o juiz não puder
+revisar, sem perguntar de novo. Cada um deles aparece como não revisado na sua linha de
+atividade, e o próximo turno pergunta de novo. **Deny** recusa só aquele comando; o
+próximo pergunta de novo. Nos outros modos o tare pergunta sobre cada comando. O `/permissions`
+mostra qual caso vale. O `--disable_judge` é diferente: nele o YOLO executa comandos protegidos
+sem perguntar, porque você desligou os juízes. As otimizações em lote do Jev hospedado continuam
+desligadas no modo local-only; o fallback determinístico/explorador já existente cuida do trabalho.
 
 **Run this command?** espera a sua resposta: a pergunta não expira e, enquanto ela está aberta, o tempo
 do turno para (o do implementador e o da conversa), assim como o tempo decorrido mostrado. Só a sua

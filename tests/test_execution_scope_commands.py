@@ -92,6 +92,30 @@ def test_unavailable_local_judge_asks_instead_of_loading_a_model_or_calling_host
     assert result['command_protection']['classifier']=='local_unavailable'
 
 
+def test_unavailable_local_judge_in_yolo_asks_once_per_turn_and_marks_each_unreviewed_command(jev_composition,tmp_path,monkeypatch):
+    h=jev_composition;asked=[];replies=[False,True]
+    monkeypatch.setattr(turn_engine,'local_judge',lambda:None)
+    monkeypatch.setenv('TARE_SESSION_OPERATOR_MODE','commands')
+    monkeypatch.setenv(command_permission.ROOT_ENV,str(tmp_path/'turn'))
+    monkeypatch.setattr(command_permission,'allowed_turn',None)
+    monkeypatch.setattr(command_permission,'approve',lambda action,public,control,*,turn=False:
+                        asked.append((action.effect_id,turn)) or replies.pop(0))
+    with scope.activated(scope.Scope(only='local')):
+        mediation=h.select('tare',maximum=1)
+        with pytest.raises(ActionRefused,match='without review'):mediation.execute(h.host.facts('1'),h.host.effect)
+        results=[mediation.execute(h.host.facts('2'),h.host.effect),mediation.execute(h.host.facts('3'),h.host.effect),
+                 h.host.build().execute(h.host.facts('4'),h.host.effect)]  # another mediator of the same turn (host checks)
+    assert asked==[('1',True),('2',True)] and not h.calls and h.host.effects==['effect']*3
+    assert all(r['command_protection']['review_status']=='not_reviewed_this_turn'
+               and r['command_protection']['classifier']=='local_unavailable' for r in results)
+    marked=[a['id'] for a in h.host.activities if a['detail'].startswith('Not reviewed: local judge not available')]
+    assert marked==['2','3','4']
+    from compute_plane.native_journal import NativeJournal
+    reasons=[r.event()['reason'] for r in NativeJournal(h.host.custody/'command-reviews.jsonl').snapshot().records
+             if r.event()['kind']=='command_review_decision']
+    assert reasons==['Human denied running this command without review.']+[command_permission.UNREVIEWED]*3
+
+
 def test_local_classifier_uses_the_pinned_local_model_without_reading_a_hosted_key(jev_host):
     h=jev_host;h.reply['model']=turn_engine.LOCAL_JUDGE
     def forbidden():pytest.fail('No hosted Jev key may be read.')

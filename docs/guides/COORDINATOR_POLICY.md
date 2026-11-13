@@ -38,7 +38,9 @@ role. `prefer_local` keeps execution local and planning/auditing external.
 Inherited restrictions are intersected; a fallback does not widen them. Pro stays
 opt-in and exclusive to the planner. JEV and search APIs keep their exceptions;
 model inference used in research remains subject to the work policy.
-`local_only` admits only the local judge; `disable_judge` asks you about each protected
+`local_only` admits only the local judge, which reviews a protected command only while it is
+already loaded and idle; otherwise tare asks you about each command, or once per turn in YOLO
+before running commands without review. `disable_judge` asks you about each protected
 command, unless the project is in YOLO (Edit + system commands), where no model reviews it
 and nothing asks; Codex review, when selected, still runs.
 

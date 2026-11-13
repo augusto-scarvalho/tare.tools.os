@@ -17,7 +17,7 @@ FLAGS=('subscription_only','local_only','api_only','pro_planner','prefer_api',
        'prefer_subscription','prefer_local','disable_judge')
 HELP={
     'subscription_only':'Use only subscriptions: Codex, Claude and AGY CLIs and the OpenCode subscription; keep the Jev helper.',
-    'local_only':'Use only local models and the local judge; keep search APIs.',
+    'local_only':'Use only local models and the local judge; keep search APIs. The local judge reviews a protected command only while it is already loaded and idle; otherwise tare asks you, once per turn in the "Edit + system commands" (YOLO) mode.',
     'api_only':'Use only inference APIs; keep search APIs and Jev.',
     'pro_planner':'Use OpenAI PRO via API for the separate planner only.',
     'prefer_api':'Prefer available inference APIs for planner and auditors.',
