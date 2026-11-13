@@ -6,6 +6,7 @@ import pytest
 
 from relay import execution_scope, turn_engine
 from relay.challenger import local
+from test_native_agent import Client, deployment, setup  # noqa: F401 (setup is a fixture)
 
 
 def dep(endpoint, **extra):
@@ -96,3 +97,28 @@ def test_leaving_the_gpu_to_others_skips_a_host_name_gateway(monkeypatch):
     monkeypatch.setattr(turn_engine, 'local_gpu_busy', lambda value: None)
     _, name, _, skipped = turn_engine.choose([['gpu'], ['cloud']])
     assert name == 'cloud' and skipped[0]['diagnostic']['code'] == 'LOCAL_GPU_DISABLED'
+
+
+def test_a_model_behind_a_gateway_named_by_host_gets_no_unsandboxed_terminal(setup, monkeypatch):
+    """The seam the rule protects, decided by the real local() and not a stand-in."""
+    from compute_plane.native_terminal import TERMINAL_SPECS
+    from relay import native_agent
+
+    class Named(Client):
+        endpoint = 'http://gpubox:8080'  # no dot: this machine's network, though not an IP literal
+
+    class Terminal:
+        execution_environment = {'platform': 'fixture'}
+
+        def observations(self):
+            return []
+
+    monkeypatch.setattr('relay.console_terminal.native_terminal', lambda *a, **k: Terminal())
+    config, custody, _ = setup
+    config.update(verifiers={}, terminal=True, capabilities=['read', 'list', 'search', 'edit', *TERMINAL_SPECS])
+    client = Named(steps=[('tare_deliver', {'summary': 'Inspected.'})])
+    result = native_agent.run_session(config, deployment(endpoint=Named.endpoint), custody, 'Inspect a.py.',
+                                      client=client, local_counter=client)
+    body = [body for path, body in client.calls if path == '/chat/completions'][-1]
+    assert not {tool['function']['name'] for tool in body['tools']} & set(TERMINAL_SPECS)
+    assert '[tare] '+native_agent.LOCAL_TERMINAL in result['output']
