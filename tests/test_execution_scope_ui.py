@@ -26,6 +26,7 @@ def test_command_consent_is_answerable_with_a_keyboard_on_a_small_terminal(tmp_p
             await pilot.pause()
             assert app.screen.query_one('#permission-once').has_focus
             assert not app.screen.query('#permission-project')
+            assert str(app.screen.query_one('#permission-once').label)=='Allow this command'
             await pilot.press(key)
             await pilot.pause()
             assert command_permission.read(approvals/identity/'answer.json')['choice']==expected
