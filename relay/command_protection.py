@@ -2,6 +2,7 @@
 import ast
 from contextlib import nullcontext
 from copy import deepcopy
+from functools import cache
 import hashlib
 import json
 import ntpath
@@ -32,6 +33,26 @@ CLASSIFIERS = ('model', 'jev')
 REVIEW_POLICIES = ('always', 'on_demand')
 CONFIG_KEYS = set(DEFAULTS) | {'classifier', 'review_policy'}
 SANDBOX_PYTHON = Path(__file__).resolve().parent/'sandbox-python'
+# A project without command protection: its checks run in the same sandbox, with no model review (owner, 2026-11-13).
+CHECKS_ONLY = {**DEFAULTS, 'review': 'none', 'backend': 'mxc'}
+SANDBOXED_CHECK = 'Host-registered check, run in the sandbox by default; no model review.'
+
+
+def probe_sandbox():
+    """Whether this host has the Windows sandbox checks run in, asked of the Kernel's own support query
+    (MxcEnvironment calls QueryProcessSecurityEnvironmentSupport), deny support included: checks deny secrets."""
+    if sys.platform != 'win32':
+        return False
+    from compute_plane.windows_mxc import MxcEnvironment
+    try:
+        root = os.environ['SystemRoot']
+        MxcEnvironment(MxcPolicy((root,), (), (ntpath.join(root, 'tare-sandbox-probe'),))).close()
+        return True
+    except Exception:  # no processmodel.dll, no PSEC, no deny support: the same answer, no sandbox
+        return False
+
+
+sandbox_available = cache(probe_sandbox)  # once per process
 
 
 def digest(value):
@@ -62,6 +83,17 @@ def verifier_runtime(executable):
     if folder.name.lower() in ('scripts','bin') and (folder.parent/'pyvenv.cfg').is_file():
         return folder.parent  # the interpreter needs its own Lib/site-packages as well
     return folder
+
+
+def venv_home(root):
+    """The base installation a virtual environment at `root` runs from (pyvenv.cfg's home), or None."""
+    try:
+        lines = (Path(root)/'pyvenv.cfg').read_text(encoding='utf-8', errors='replace').splitlines()
+    except OSError:
+        return None
+    home = next((value.strip() for key, _, value in (line.partition('=') for line in lines)
+                 if key.strip().lower() == 'home'), '')
+    return str(Path(home).resolve()) if home and Path(home).is_absolute() and Path(home).is_dir() else None
 
 
 def validate(value):
@@ -128,25 +160,34 @@ def saved(value):
     return result
 
 
-def factory(config,deployment,custody,public_context,invocation_id,activity=None,*,host_checks=False):
-    options=prepare(config['command_protection'],deployment)
-    if options!=config['command_protection']:
-        raise ValueError('Command protection identity was not frozen before saving the session.')
-    automatic=options['review']=='auto'
+def factory(config,deployment,custody,public_context,invocation_id,activity=None,*,host_checks=False,checks_only=False):
+    """checks_only: a session or candidate without command protection. The same sandbox and policy run only its
+    host-registered checks (and read-only search), with no classifier, reviewer or review budget."""
+    if checks_only:
+        if config.get('command_protection') is not None:
+            raise ValueError('A protected project keeps its command review.')
+        options=dict(CHECKS_ONLY)
+        automatic=disabled=local_classification=jev=False
+    else:
+        options=prepare(config['command_protection'],deployment)
+        if options!=config['command_protection']:
+            raise ValueError('Command protection identity was not frozen before saving the session.')
+        automatic=options['review']=='auto'
     if automatic:
         native=deployment.get('native_profile',{}).get('endpoint')=='cli://codex'
         options=prepare({**options,'review':'codex' if native else 'tare',
             **({} if native else {'classifier':'jev','review_policy':'on_demand'})},deployment)
-    from .execution_scope import current
-    temporary=current()
-    disabled=temporary.disable_judge
-    local_classification=temporary.only=='local' and options['review'] in ('tare','both') and not disabled
-    if local_classification:
-        from .turn_engine import LOCAL_JUDGE
-        options={**options,'classifier':'local','review_policy':'on_demand','local_judge_model':LOCAL_JUDGE}
-        options.pop('jev_model',None)
-    if disabled:options={**options,'judge_override':'disabled'}
-    jev=not disabled and options.get('classifier') in ('jev','local')
+    if not checks_only:
+        from .execution_scope import current
+        temporary=current()
+        disabled=temporary.disable_judge
+        local_classification=temporary.only=='local' and options['review'] in ('tare','both') and not disabled
+        if local_classification:
+            from .turn_engine import LOCAL_JUDGE
+            options={**options,'classifier':'local','review_policy':'on_demand','local_judge_model':LOCAL_JUDGE}
+            options.pop('jev_model',None)
+        if disabled:options={**options,'judge_override':'disabled'}
+        jev=not disabled and options.get('classifier') in ('jev','local')
     if sys.platform!='win32':
         raise ValueError('Protected commands currently require Windows; no unisolated fallback.')
     if config.get('terminal') or len(config['repositories'])!=1:
@@ -215,6 +256,9 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         runtime_roots.update(str(verifier_runtime(row['argv'][0])) for row in config.get('verifiers',{}).values()
             if Path(row['argv'][0]).is_absolute())
         runtime_roots.update(str(verifier_runtime(p)) for p in config.get('command_runtimes', []))
+        # A virtual environment's interpreter starts from its base installation (pyvenv.cfg's home), which need not
+        # be tare's own: a project's .venv on another Python version would otherwise fail to start in the sandbox.
+        runtime_roots.update(filter(None, map(venv_home, list(runtime_roots))))
         from compute_plane.managed_process import host_executable
         search_executable=host_executable('rg') if 'search' in capabilities.names else None
         if search_executable:
@@ -372,6 +416,18 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
                         and json.loads(action.payload_json).get('read_only') is True)
                 except (ValueError,TypeError):
                     native_search=False
+                if checks_only:
+                    # Host-registered argv only: a session without protection has no command tool, and nothing else
+                    # it sends here is admitted (fail closed).
+                    declared={tuple(row['argv']) for row in config.get('verifiers',{}).values()}
+                    allowed=bool(native_search) or tuple(action.argv) in declared
+                    decision=ActionDecision(allowed,SANDBOXED_CHECK if allowed else
+                        'Only host-registered checks run in the sandbox of a project without command protection.')
+                    observed[action.effect_id]=decision
+                    if allowed:routine_ports[action.effect_id]='sandbox_by_default'
+                    append({'kind':'command_review_decision','effect_id':action.effect_id,
+                            'allowed':allowed,'reason':decision.reason,'assessments':[]})
+                    return decision
                 native_check=False
                 if staged_effects and Path(action.cwd).resolve()==root:
                     declared={tuple(v['argv']) for v in config.get('verifiers',{}).values()}
@@ -531,10 +587,86 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
     return bind
 
 
-def conversation_verifier(control, custody, config, deployment, tree, unit, commands):
-    """Use the existing command gate for a conversation candidate's host checks."""
+def sandbox_verifiers(verifiers, root):
+    """Registered checks with an absolute program, as the sandbox runs them (relative: the project, then PATH)."""
+    import shutil
+    result = {}
+    for name, row in verifiers.items():
+        argv = list(row['argv'])
+        program = Path(argv[0])
+        found = (program if program.is_absolute() else Path(root)/program if len(program.parts) > 1
+                 else shutil.which(argv[0]))
+        if found and Path(found).is_file():
+            argv[0] = str(Path(found).resolve())
+        result[name] = {**row, 'argv': argv}
+    return result
+
+
+def checks_factory(config, custody, invocation_id, activity=None):
+    """The command mediation of a native session without command protection: its registered checks (and read-only
+    search) run in the sandbox, with no model review. A project whose checks cannot be bound there (too many secrets,
+    folders too deep) gets each check refused with the reason, never run outside the sandbox."""
+    bind = factory({k: v for k, v in config.items() if k != 'terminal'}, {}, custody,
+                   'Run the registered checks of this session.', invocation_id, activity, checks_only=True)
+
+    def bound(**session):
+        try:
+            return bind(**session)
+        except (ValueError, OSError) as exc:
+            reason = 'This project\'s checks cannot run in the sandbox, so none was run: '+str(exc)
+
+            class Refused:
+                def execute(self, facts, effect):
+                    try:
+                        if json.loads(facts.payload_json).get('read_only') is True:
+                            return effect()  # read-only search, unconfined as without the sandbox
+                    except (ValueError, TypeError, AttributeError):
+                        pass
+                    raise ActionRefused(reason)
+            return Refused()
+    return bound
+
+
+def conversation_verifier(control, custody, config, deployment, tree, unit, commands, *, outside=None,
+                          read_only=False, cancelled=None):
+    """The runner of a candidate's host checks. With the project's command protection: its command gate, as before.
+    Without it: the same sandbox and policy with no model review, where this host has the sandbox; elsewhere the
+    plain process as the user, saying so in each check's receipt. `outside(name, argv, why)` -> (run, note) decides
+    whether a check the sandbox blocked (or, on a host without one, a check of a read-only project) runs outside it;
+    without it nothing runs outside. A protected project is never asked: it keeps its policy."""
     import subprocess
     from uuid import uuid4
+    from .work_units import SANDBOX_LIMITS, managed_check
+    protected = config.get('command_protection') is not None
+    cancelled = cancelled or control.should_stop
+
+    def held(argv, limitation, note):
+        done = subprocess.CompletedProcess(argv, 1, '', '')
+        done.execution_limitation = limitation+' Not run: '+note+'.'
+        return done
+
+    def unsandboxed(name, argv, kwargs, note):
+        done = managed_check(argv, **{**kwargs, 'cancelled': cancelled})
+        done.isolation = note
+        return done
+
+    def named(argv):
+        name = next((name for name, command in commands.items() if list(argv) == list(command)), None)
+        if name is None:
+            raise ValueError('The host check is not declared in this candidate.')
+        return name
+    if not protected and not sandbox_available():
+        def plain(argv, **kwargs):
+            name, note = named(argv), 'not isolated: no sandbox on this system'
+            if read_only:  # a read-only project never runs repository code unisolated unasked
+                limitation = ('ISOLATION_UNAVAILABLE: this system has no sandbox and this project is read only, so '
+                              'its check would run as the user, with the network and the user\'s files in reach.')
+                allowed, why = outside(name, argv, limitation) if outside else (False, 'no one decided it')
+                if not allowed:
+                    return held(argv, limitation, why)
+                note += '; run by the user\'s decision ('+why+')'
+            return unsandboxed(name, argv, kwargs, note)
+        return plain
     from compute_plane.native_capabilities import NativeCapabilities
     from compute_plane.native_models import object_json
     from tare_tools_agent_runtime import EffectRequest, ToolCall
@@ -543,33 +675,55 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
     session_id = 'candidate-checks-'+uuid4().hex
     child = {'repositories': {repository: str(Path(tree).resolve())},
              'writable': {repository: list(unit['target_paths'])},
-             'command_protection': config['command_protection']}
-    admitted=prepared_checks(commands)
-    child['verifiers']={name:{'repository':repository,'argv':argv} for name,argv in admitted.items()}
-    scratch = Path(custody)/'host-check-scratch'
-    scratch.mkdir(parents=True, exist_ok=True)
-    (Path(custody)/'host-checks').mkdir(parents=True, exist_ok=True)
-    caps = NativeCapabilities(session_id=session_id, binding=control.binding,
-        repositories=child['repositories'], writable=child['writable'],
-        verifiers=child['verifiers'],
-        scratch_root=scratch, role='implementer',
-        capabilities=['read', 'verify'], specgraph_edit_context=False)
-    # A verification-only request can differ from the saved implementation goal.
-    # The reviewer needs the host's exact selected checks and their execution
-    # authority, not just that old goal (whose source-write scope may be empty).
-    context=json.dumps({'work':config.get('command_context') or json.loads(encode_context(unit)),
-        'verification':{'source':'Host-selected registered checks for the requested verification or delivery.',
-            'commands':admitted,'scope':'Execute only these checks in this private candidate. '
-                'Test artifacts may use the owned scratch; no project application or network is authorized.'}},ensure_ascii=False)
-    port = factory(child, deployment, Path(custody)/'host-checks',
-                   context, session_id,host_checks=True)(session_id=session_id, binding=control.binding,
-                   control=control, config=child, custody=custody, scratch=scratch,
-                   capabilities=caps)
-    caps.bind_command_mediation(port)
+             **({'command_protection': config['command_protection']} if protected else {})}
+    refused = None
+    try:
+        admitted=prepared_checks(commands)
+        child['verifiers']={name:{'repository':repository,'argv':argv} for name,argv in admitted.items()}
+        scratch = Path(custody)/'host-check-scratch'
+        scratch.mkdir(parents=True, exist_ok=True)
+        (Path(custody)/'host-checks').mkdir(parents=True, exist_ok=True)
+        caps = NativeCapabilities(session_id=session_id, binding=control.binding,
+            repositories=child['repositories'], writable=child['writable'],
+            verifiers=child['verifiers'],
+            scratch_root=scratch, role='implementer',
+            capabilities=['read', 'verify'], specgraph_edit_context=False)
+        # A verification-only request can differ from the saved implementation goal.
+        # The reviewer needs the host's exact selected checks and their execution
+        # authority, not just that old goal (whose source-write scope may be empty).
+        context=json.dumps({'work':config.get('command_context') or json.loads(encode_context(unit)),
+            'verification':{'source':'Host-selected registered checks for the requested verification or delivery.',
+                'commands':admitted,'scope':'Execute only these checks in this private candidate. '
+                    'Test artifacts may use the owned scratch; no project application or network is authorized.'}},ensure_ascii=False)
+        port = factory(child, deployment, Path(custody)/'host-checks',
+                       context, session_id,host_checks=True,checks_only=not protected)(session_id=session_id,
+                       binding=control.binding, control=control, config=child, custody=custody, scratch=scratch,
+                       capabilities=caps)
+        caps.bind_command_mediation(port)
+    except (ValueError, OSError) as exc:
+        if protected:
+            raise
+        # Too many secrets or nested repositories, a folder too deep, a check program not found: no check of this
+        # candidate can run in the sandbox. Each asks, as a blocked check does; none runs outside silently.
+        refused = 'ISOLATION_UNAVAILABLE: this project\'s checks cannot run in the sandbox: '+str(exc)
+
     def run(argv, **kwargs):
-        name = next((name for name, command in commands.items() if list(argv) == list(command)), None)
-        if name is None:
-            raise ValueError('The host check is not declared in this candidate.')
+        name, done, limitation = named(argv), None, refused
+        if not refused:
+            done = sandboxed(name, argv, kwargs)
+            limitation = done.execution_limitation or ''
+            if protected or not limitation.startswith(SANDBOX_LIMITS):
+                return done
+        allowed, why = outside(name, argv, limitation) if outside else (False, 'no one could be asked')
+        if not allowed:
+            if done is None:
+                return held(argv, limitation, why)
+            done.execution_limitation = limitation+' Not run outside the sandbox: '+why+'.'
+            return done  # its sandboxed output stays in the receipt
+        return unsandboxed(name, argv, kwargs, 'run outside the sandbox by the user\'s decision ('+why+'), because '
+                           'the sandbox blocked it: '+limitation.split(':', 1)[0])
+
+    def sandboxed(name, argv, kwargs):
         result = caps.execute(EffectRequest(session_id, 'verify-'+uuid4().hex,
             ToolCall('verify', 'verify', json.dumps({'name': name}))), control)
         value = object_json(result.output_json)
@@ -579,12 +733,12 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
                 ('timeout', 'timed out'), ('output_limit', 'exceeded its output limit'))
                 if process.get(key)), None)
             reason = stopped or value.get('reason') or value.get('error_type') or result.status
-            raise ValueError(f'Protected verification was refused: {name}: {reason}')
+            raise ValueError(('Protected' if protected else 'Sandboxed')+f' verification was refused: {name}: {reason}')
         completed = subprocess.CompletedProcess(argv, value.get('returncode', 1),
                                                 value.get('output', ''), '')
         completed.execution_limitation = verification_limitation(value)
         return completed
-    if callable(getattr(port,'close',None)):run.close=port.close
+    if not refused and callable(getattr(port,'close',None)):run.close=port.close
     return run
 
 
@@ -666,8 +820,10 @@ def encode_context(unit):
     return json.dumps({k: unit[k] for k in ('title', 'criteria', 'target_paths')}, ensure_ascii=False)
 
 
-def protected_work_verifier(control, train_dir, *, descriptor, settings):
-    """Compose the existing command gate for host verification of a pinned candidate."""
+def protected_work_verifier(control, train_dir, *, descriptor, settings, outside=None):
+    """Compose the existing command gate for host verification of a pinned candidate. Without command protection
+    (checks_only): the same sandbox with no model review. A check it blocks is not accepted (no one can be asked in a
+    Work run) unless the project's user chose to run such checks outside it: then `outside` runs it as before."""
     import subprocess
     import tempfile
     from compute_plane.command_mediation import CommandFacts, environment_digest
@@ -677,10 +833,14 @@ def protected_work_verifier(control, train_dir, *, descriptor, settings):
     from tare_tools_agent_runtime import EffectRequest, ToolCall
     from .native_work_context import encode, work_packet
 
-    policy = saved(settings['command_protection'])
-    deployment = settings['command_protection_deployment']
-    if policy != settings['command_protection'] or prepare(policy, deployment) != policy:
-        raise ValueError('NATIVE_WORK_COMMAND_PROTECTION_IDENTITY_CHANGED')
+    checks_only = settings.get('command_protection') is None
+    if checks_only:
+        policy, deployment = None, {}
+    else:
+        policy = saved(settings['command_protection'])
+        deployment = settings['command_protection_deployment']
+        if policy != settings['command_protection'] or prepare(policy, deployment) != policy:
+            raise ValueError('NATIVE_WORK_COMMAND_PROTECTION_IDENTITY_CHANGED')
     session_id = settings['session_id']
     scratch = regular(Path(settings['custody']) / 'scratch')
     scratch.mkdir(exist_ok=True)
@@ -700,9 +860,15 @@ def protected_work_verifier(control, train_dir, *, descriptor, settings):
             raise ValueError('NATIVE_CANDIDATE_VERIFIER_NOT_DECLARED')
         root = Path(cwd).resolve(strict=True)
         repository = descriptor.execution_repository
+        declared = argv
+        if checks_only:
+            argv = tuple(sandbox_verifiers({'check': {'argv': list(argv)}}, root)['check']['argv'])
+        from .turn_engine import checks_outside_sandbox
+        always = bool(outside and settings.get('repository_root') and checks_outside_sandbox(settings['repository_root']))
         config = {'repositories': {repository: str(root)},
                   'writable': {repository: list(descriptor.tracked_paths)},
-                  'command_protection': policy}
+                  **({'verifiers': {'check': {'repository': repository, 'argv': list(argv)}}} if checks_only
+                     else {'command_protection': policy})}
         packet, _ = work_packet(descriptor, settings['node'], config['repositories'])
         context = encode(packet)
         if len(context.encode()) > 8192:
@@ -736,9 +902,17 @@ def protected_work_verifier(control, train_dir, *, descriptor, settings):
                 return receipts.claim_action(request, action, authorization)
 
         capabilities = HostCapabilities()
-        mediator = factory(config, deployment, scratch, context, session_id, review_activity)(
-            session_id=session_id, binding=control.binding, control=control,
-            config=config, custody=scratch, scratch=scratch, capabilities=capabilities)
+        try:
+            mediator = factory(config, deployment, scratch, context, session_id, review_activity,
+                checks_only=checks_only)(session_id=session_id, binding=control.binding, control=control,
+                config=config, custody=scratch, scratch=scratch, capabilities=capabilities)
+        except (ValueError, OSError) as exc:
+            if not checks_only:
+                raise
+            if always:
+                return outside(declared, cwd=cwd, timeout=timeout, env=env)
+            raise ValueError('NATIVE_CANDIDATE_VERIFIER_SANDBOX_UNAVAILABLE: this project\'s checks cannot run in the '
+                             'sandbox and no one can be asked in a Work run: '+str(exc)[:400]) from exc
         if capabilities.launcher is None or not callable(getattr(mediator, 'execute', None)):
             raise ValueError('NATIVE_WORK_COMMAND_MEDIATION_UNAVAILABLE')
         wall = min(capabilities.seconds, control.remaining_seconds(),
@@ -770,5 +944,12 @@ def protected_work_verifier(control, train_dir, *, descriptor, settings):
             err = (Path(dest) / 'stderr.txt').read_bytes()
             if len(out) + len(err) > 1024*1024:
                 raise ValueError('NATIVE_CANDIDATE_VERIFIER_OUTPUT_LIMIT')
-            return subprocess.CompletedProcess(argv, process['exit_code'], out, err)
+            limitation = checks_only and verification_limitation({'returncode': process['exit_code'],
+                'output': (out+err).decode('utf-8', 'replace'), 'process': process})
+            if limitation:
+                if always:
+                    return outside(declared, cwd=cwd, timeout=timeout, env=env)
+                raise ValueError('NATIVE_CANDIDATE_VERIFIER_SANDBOX_BLOCKED: no one can be asked in a Work run, so '
+                                 'this check was not run outside the sandbox: '+limitation[:400])
+            return subprocess.CompletedProcess(declared, process['exit_code'], out, err)
     return run

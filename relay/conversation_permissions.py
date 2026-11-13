@@ -97,7 +97,13 @@ def answer(root, request_id, choice, *, project, directory, control_root, change
             raise ValueError('This request shows no plan to change. Nothing was authorized.')
         if request.get('kind') == 'audit' and choice not in ('once', 'deny'):
             raise ValueError('Apply the change or do not apply it. Nothing was authorized.')
-        if choice == 'project':
+        if request.get('kind') == 'sandbox' and choice == 'change':
+            raise ValueError('Run the check outside the sandbox or do not run it. Nothing was authorized.')
+        if request.get('kind') == 'sandbox' and choice == 'project':
+            # Only this: no edit access, mode or command protection changes with it. /permissions shows and clears it.
+            from .turn_engine import set_checks_outside_sandbox
+            set_checks_outside_sandbox(request['project'], True)
+        elif choice == 'project':
             from .project_permissions import read_defaults, save_defaults
             defaults, revision = read_defaults(directory, project, control_root)
             # Remember file changes and the project's checks. Do not enable
@@ -270,3 +276,52 @@ def confirm_apply(root, state, task, changed, review, effect_id, control, direct
     if not value or value['choice'] != 'once':
         return {**refused, 'reason': NOT_CONFIRMED} if accepted else {**review, 'reason': NOT_APPLIED_UNACCEPTED}
     return review if accepted else {**review, 'user_decision': USER_APPLIES}
+
+
+SANDBOX_QUESTION = 'Run this check outside the sandbox?'
+SANDBOX_TURN = 'sandbox-turn.json'  # this conversation's yes for the turn: {'invocation': ...}
+BLOCKED = {  # what the sandbox stopped, in plain words, by limitation code
+    'ISOLATION_NETWORK_DENIED': 'a network connection on this machine (the sandbox denies every connection, '
+                                'loopback included)',
+    'ISOLATION_SECRET_DENIED': 'a secret file such as .env (the sandbox denies secret files to every check)',
+    'ISOLATION_INTERNAL_IPC_UNAVAILABLE': 'a loopback connection Python makes for itself (the sandbox denies '
+                                          'loopback)'}
+
+
+def sandbox_question(limitation):
+    code, _, detail = limitation.partition(': ')
+    if code in BLOCKED:
+        return 'The sandbox blocked ' + BLOCKED[code] + ', so tare cannot judge this check inside it.'
+    return detail.split('. Not run')[0] if code == 'ISOLATION_UNAVAILABLE' else limitation
+
+
+def outside_sandbox(root, state, task, effect_id, project, control, directory, invocation_id):
+    """`outside` for a conversation's checks (command_protection.conversation_verifier): may a check the sandbox
+    blocked run outside it? The project's saved "always" (every frontend), then this turn's yes, then the user, asked
+    while the turn's clock stops. Without a TUI (directory None) nobody is asked and nothing runs outside."""
+    from .native_agent import read_json
+    from .turn_engine import checks_outside_sandbox
+    folder = regular(Path(root)/'execution-permission')
+    turn = {'invocation': invocation_id}
+
+    def decide(name, argv, limitation):
+        if checks_outside_sandbox(project):
+            return True, 'always for this project, as the user chose'
+        if (folder/SANDBOX_TURN).is_file() and read_json(regular(folder/SANDBOX_TURN), 4096) == turn:
+            return True, 'for this turn, as the user chose'
+        if directory is None:
+            return False, 'no one could be asked: no TUI is connected'
+        folder.mkdir(exist_ok=True)
+        request = {'schema': SCHEMA, 'kind': 'sandbox', 'session': state['session_id'], 'effect': effect_id,
+            'task': (task or {}).get('id', ''), 'plan': ((task or {}).get('plan') or {}).get('sha256', ''),
+            'project': str(Path(project).resolve()), 'paths': [], 'checks': {name: list(argv)}, 'tests': [],
+            'objective': sandbox_question(limitation)[:2000], 'status': 'WAITING',
+            'sandbox': {'code': limitation.partition(':')[0], 'check': name}}
+        value = wait_for_answer(folder, request, control)
+        if not value or value['choice'] == 'deny':
+            return False, 'the user chose not to run it outside the sandbox'
+        if value['choice'] == 'once':
+            save_json(regular(folder/SANDBOX_TURN), turn)
+            return True, 'for this turn, as the user chose'
+        return True, 'always for this project, as the user chose'
+    return decide

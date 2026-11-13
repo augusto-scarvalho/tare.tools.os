@@ -1182,13 +1182,20 @@ class ConversationTools:
                     if unit and unit['repository']==repository:
                         scoped=planned_checks({**config,'conversation_flow':True},unit,repository,tree)
                         commands.update({n:a for n,a in scoped.items() if n in names})
-                    if config.get('command_protection'):
-                        from .command_protection import conversation_verifier
-                        check_unit = {'repository': repository, 'target_paths': [],
-                            'title': task['objective'] if task else 'Verify configured project checks',
-                            'criteria': task['criteria'] if task else []}
-                        token = CHECK_PORT.set(conversation_verifier(control, self.root/'checks', config,
-                            self.state['deployment'], tree, check_unit, commands))
+                    # Protected: the project's command gate. Otherwise the sandbox, no model review; a check it blocks
+                    # (and, with no sandbox here, any check of a read-only project) runs outside only if the user says.
+                    from .command_protection import conversation_verifier
+                    from .conversation_permissions import outside_sandbox
+                    from .turn_engine import project_permission_mode
+                    check_unit = {'repository': repository, 'target_paths': [],
+                        'title': task['objective'] if task else 'Verify configured project checks',
+                        'criteria': task['criteria'] if task else []}
+                    project = config['repositories'][repository]
+                    token = CHECK_PORT.set(conversation_verifier(control, self.root/'checks', config,
+                        self.state['deployment'], tree, check_unit, commands, **({} if config.get('command_protection')
+                        else {'outside': outside_sandbox(self.root, self.state, task, request.effect_id, project,
+                                                         control, self.permission_directory, self.invocation_id),
+                              'read_only': (project_permission_mode(project) or 'read') == 'read'})))
                     status, details = run_checks(tree, commands)
                     output = {'status': status, 'checks': details, 'applied': False}
                     if BACKLOG_CHECK in names:
@@ -1456,9 +1463,13 @@ class ConversationTools:
                 audit.packet_preflight = packet_preflight
                 audit.resume_tree = lambda: resume_tree(self, task)
                 try:
+                    from .conversation_permissions import outside_sandbox
                     output = run_unit(self.root, state, {'unit': task['id'], **args}, control.should_stop, review=audit,
                                       candidate=candidate, worker=(task.get('delivery') or {}).get('worker'),
-                                      control=control, spend_model=self.parent_model, review_effect=request.effect_id)
+                                      control=control, spend_model=self.parent_model, review_effect=request.effect_id,
+                                      outside=outside_sandbox(self.root, self.state, task, request.effect_id,
+                                          config['repositories'][plan['unit']['repository']], control,
+                                          self.permission_directory, self.invocation_id))
                 except (ValueError, OSError, KeyError, TypeError):
                     task['stage'] = 'PENDING'; save(self.root, value)
                     raise

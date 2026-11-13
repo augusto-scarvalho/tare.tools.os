@@ -9,7 +9,7 @@ import pytest
 from rich.text import Text
 from textual.app import App
 from textual.theme import Theme
-from textual.widgets import Button, Select, Static, TextArea
+from textual.widgets import Button, Checkbox, Select, Static, TextArea
 
 from relay.permissions_panel import PermissionsPanel
 
@@ -412,8 +412,8 @@ def test_commands_warning_visibility(tmp_path):
             await pilot.pause()
             assert warning.display is True
             warning_text = widget_plain(warning)
-            assert 'System commands and checks can change files outside these edit paths' in warning_text
-            assert 'not an OS sandbox' in warning_text
+            assert 'System commands can change files outside these edit paths' in warning_text
+            assert 'not sandboxed' in warning_text and 'Where checks run is under Effective permissions' in warning_text
             assert 'use the network' in warning_text
 
             # Switch back to read mode: warning hidden again
@@ -794,6 +794,33 @@ def test_review_controls_save_selected_backend_limit_and_keep_actions_visible(tm
             panel.action_close();await pilot.pause()
     asyncio.run(scenario())
 
+
+
+def test_the_saved_always_for_blocked_checks_is_shown_and_removable(tmp_path):
+    from relay.turn_engine import checks_outside_sandbox, set_checks_outside_sandbox
+    from relay.project_permissions import save_defaults
+    from relay import relay_mesh
+    project, directory = tmp_path/'project', tmp_path/'console'
+    project.mkdir()
+    set_checks_outside_sandbox(project, True)  # what the sandbox question's "always" saves
+    def reader():
+        from relay.project_permissions import permissions_view
+        return permissions_view(directory, project, relay_mesh.RELAY_ROOT)
+    def saver(defaults, revision):
+        save_defaults(directory, project, relay_mesh.RELAY_ROOT, defaults, revision)
+        return reader()
+    async def scenario():
+        app = App(); panel = PermissionsPanel(project, reader=reader, saver=saver)
+        async with app.run_test(size=(100, 30)) as pilot:
+            app.push_screen(panel); await pilot.pause(); await panel.workers.wait_for_complete(); await pilot.pause()
+            box = panel.query_one('#permissions-checks-outside', Checkbox)
+            assert box.value and not box.disabled
+            assert 'Run checks the sandbox blocks outside it' in widget_plain(panel.query_one('#permissions-effective-text'))
+            box.value = False; await pilot.pause()
+            panel.action_save(); await panel.workers.wait_for_complete(); await pilot.pause()
+            assert not panel.query_one('#permissions-checks-outside', Checkbox).value
+    asyncio.run(scenario())
+    assert not checks_outside_sandbox(project)
 
 
 def test_saved_legacy_review_is_not_changed_to_jev_auto_on_open(tmp_path):

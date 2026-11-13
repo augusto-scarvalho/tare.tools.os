@@ -446,6 +446,48 @@ def test_auditor_may_use_an_explicit_named_verifier(setup):
     assert result['capability_observations']['verifications']['unit']['returncode'] != 0
 
 
+@pytest.mark.parametrize('role,available', [('implementer', True), ('auditor', True), ('implementer', False)])
+def test_without_protection_a_sessions_verify_runs_through_the_sandboxed_checks_binding(setup, monkeypatch, role,
+                                                                                       available):
+    from relay import command_protection
+    config, custody, _ = setup
+    monkeypatch.setattr(command_protection, 'sandbox_available', lambda: available)
+    seen = []
+    class Mediation:  # stands in for the MXC launcher, as test_command_protection replaces it
+        def execute(self, facts, effect):
+            seen.append(tuple(facts.argv))
+            return effect()
+    def checks_factory(config, custody, invocation_id, activity=None):
+        seen.append(config['verifiers'])
+        return lambda **session: Mediation()
+    monkeypatch.setattr(command_protection, 'checks_factory', checks_factory)
+    if role == 'auditor':
+        config.update(role='auditor', writable={})
+    plan = steps() if role == 'implementer' else [('verify', {'name': 'unit'}), ('tare_deliver', {'summary': 'Checked.'})]
+    assert run(config, custody, Client(steps=plan))['status'] == 'PROPOSED'
+    if not available:  # no sandbox here: the check runs as before (the receipts say so where tare runs them)
+        assert seen == []
+        return
+    verifiers, argv = seen
+    assert verifiers['unit']['argv'][0] == str(Path(sys.executable).resolve()) and argv == tuple(verifiers['unit']['argv'])
+    saved = json.loads((custody/'native-agent.json').read_text())['config']['verifiers']
+    assert saved == config['verifiers']  # the session's saved checks are unchanged
+
+
+def test_sandbox_verifiers_resolve_a_program_the_way_the_sandbox_needs(tmp_path, monkeypatch):
+    from relay import command_protection
+    (tmp_path/'tools').mkdir(); (tmp_path/'tools'/'check.py').write_text('print(1)\n')
+    program = tmp_path/'bin'/'runner'; program.parent.mkdir(); program.write_text('')
+    monkeypatch.setattr('shutil.which', lambda name: str(program) if name == 'runner' else None)
+    resolved = command_protection.sandbox_verifiers({
+        'relative': {'repository': 'r', 'argv': ['tools/check.py', '-q']},
+        'bare': {'repository': 'r', 'argv': ['runner', 'x']},
+        'missing': {'repository': 'r', 'argv': ['not-installed']}}, tmp_path)
+    assert resolved['relative']['argv'] == [str((tmp_path/'tools'/'check.py').resolve()), '-q']
+    assert resolved['bare']['argv'] == [str(program.resolve()), 'x']
+    assert resolved['missing']['argv'] == ['not-installed']  # left as is: the sandbox then refuses it, saying why
+
+
 @pytest.mark.parametrize('local',[False,True])
 def test_auditor_reserves_its_last_finite_call_for_an_honest_verdict(setup,monkeypatch,local):
     from relay import challenger
@@ -680,7 +722,10 @@ def test_public_cli_over_real_http_without_legacy_imports_and_resume(setup, tmp_
     thread = Thread(target=server.serve_forever, daemon=True); thread.start()
     endpoint = f'http://127.0.0.1:{server.server_port}'
     depfile, conf = tmp_path/'deployment.json', tmp_path/'config.json'
-    depfile.write_text(json.dumps(deployment(protocol, endpoint))); conf.write_text(json.dumps(config))
+    # The loopback server stands in for a hosted provider: a local implementer is refused where no sandbox isolates
+    # its checks, and this CLI process is out of conftest's reach.
+    depfile.write_text(json.dumps({**deployment(protocol, endpoint), 'native_challenger_accounting': 'usd'}))
+    conf.write_text(json.dumps(config))
     script = tmp_path/'entry.py'
     script.write_text(f"import sys\nsys.path.insert(0, {str(Path(__file__).resolve().parents[1])!r})\n" + '''
 from pathlib import Path

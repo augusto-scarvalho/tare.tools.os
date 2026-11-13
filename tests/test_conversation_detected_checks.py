@@ -59,9 +59,10 @@ def test_implementation_uses_detected_tests_before_audit_and_keeps_saved_plan_an
 
 
 def test_later_failed_check_cannot_return_an_old_green_delivery_or_authorize_edits(host,monkeypatch):
-    from test_conversation_tasks import user_reply
+    from test_conversation_tasks import edits_allowed, user_reply
     from relay import work_units
     tools,control,project,_=host
+    edits_allowed(project)  # no sandbox in the suite: a read-only project's check would ask first
     intake(host);planned(host)
     value=tasks.load(tools.root);task=tasks.current(value)
     task.update(stage='DELIVERED',delivery={'verdict':'VERIFIED','applied':True})

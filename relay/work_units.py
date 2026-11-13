@@ -42,6 +42,9 @@ OUTPUT_BYTES = 4096
 PARALLEL_CHILDREN = 2           # children at once with parallel on (D8); TARE_PARALLEL_CHILDREN changes it, 1 to 4
 LEDGER_LOCK = threading.Lock()  # units handed at once record their state in the same ledger
 CHECK_PORT = ContextVar('conversation_check_port', default=None)
+# A check the sandbox stopped (command_protection.verification_limitation), or one that could not run in it at all.
+SANDBOX_LIMITS = ('ISOLATION_INTERNAL_IPC_UNAVAILABLE', 'ISOLATION_NETWORK_DENIED', 'ISOLATION_SECRET_DENIED',
+                  'ISOLATION_UNAVAILABLE')
 EFFORTS = ('low', 'medium', 'high', 'xhigh')
 STRINGS = {'type': 'array', 'items': {'type': 'string'}}
 UNIT_SPEC = {'implement': {
@@ -427,6 +430,8 @@ def run_checks(tree, commands):
             return 'inconclusive', receipt()
         completed.add(name)
         outputs.append(f'$ {name} (exit {done.returncode})\n{check_output(done.stdout + done.stderr)}')
+        if getattr(done, 'isolation', None):  # not sandboxed: no sandbox here, or run outside it by the user's choice
+            statuses.append(f'{name}: {done.isolation}')
         if getattr(done, 'execution_limitation', None):
             statuses.append(f'{name}: {done.execution_limitation}')
             return 'inconclusive', receipt()
@@ -537,6 +542,11 @@ def suite_states(tree, suite):
     return {name: run_checks(tree, {name: argv}) for name, argv in suite.items()}
 
 
+def blocked_by_sandbox(receipt):
+    """Whether a check receipt (run_checks' output) names a sandbox limitation. Printed by a test, it only holds."""
+    return any(f': {code}:' in receipt for code in SANDBOX_LIMITS)
+
+
 def suite_allows(config, unit, repository, tree, changed, before=None):
     """D9b, before a VERIFIED change is applied: no check of the session that was not red before the change
     (`before`, {name: state}) fails with it, and when they all pass it is applied. A check red before as well (a
@@ -550,7 +560,13 @@ def suite_allows(config, unit, repository, tree, changed, before=None):
         return False, 'the session\'s checks fail with the change:\n' + '\n'.join(after[n][1] for n in broken)
     if after and all(state == 'green' for state, _ in after.values()):
         return True, 'the session\'s checks pass with the change'
-    texts = ' '.join((Path(tree)/t).read_text(encoding='utf-8', errors='replace')
+    # The sandbox, not a timeout, stopped a check, and it did not run outside (the user said no, or no one could be
+    # asked): that settles nothing silently. The change is held like any unverified one.
+    blocked = [n for n, (state, output) in after.items() if state == 'inconclusive' and blocked_by_sandbox(output)]
+    if blocked:
+        return False, ('the session\'s checks could not be judged in the sandbox and did not run outside it; the '
+                       'patch is kept:\n' + '\n'.join(after[n][1] for n in blocked))
+    texts =' '.join((Path(tree)/t).read_text(encoding='utf-8', errors='replace')
                      for t in {test_file(t) for t in unit.get('test_paths') or []} if (Path(tree)/t).is_file())
     # Prose needs no test: a unit's documentation held a verified change (task bd6ee62, 2026-10-07).
     uncovered = [n for n in changed if Path(n).stem not in texts and Path(n).suffix.lower() not in PROSE]
@@ -942,9 +958,12 @@ def verification_evidence(session):
     return rows
 
 
-def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=None, worker=None, control=None, spend_model=None, review_effect=None):
+def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=None, worker=None, control=None, spend_model=None, review_effect=None,
+             outside=None, check_control=None):
     """Run one unit up the route ladder until VERIFIED or out of rungs; apply a VERIFIED change. The receipt and
-    the patch stay under the session's custody; the ledger records the unit's state."""
+    the patch stay under the session's custody; the ledger records the unit's state. Without command protection the
+    host checks run in the sandbox (command_protection.conversation_verifier) on the execution control (`control`, or
+    `check_control` where the child must not share the parent's clock); `outside` decides a check the sandbox blocks."""
     from .challenger import git
     from .challenger_workspace import snapshot
     from .native_agent import run_session
@@ -1014,7 +1033,10 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
         check_token = None
         keep_tree = bool(waiting)
         try:
-            if not config.get('command_protection') and CHECK_PORT.get() is None:
+            # Default (no command protection, no port a caller set): the sandbox, set once the checks are known.
+            default_checks = (not config.get('command_protection') and CHECK_PORT.get() is None
+                              and (control or check_control) is not None)
+            if not config.get('command_protection') and CHECK_PORT.get() is None and not default_checks:
                 check_token=CHECK_PORT.set(lambda argv,**kwargs:managed_check(argv,cancelled=stop,**kwargs))
             selected_limits = None if candidate and candidate.get('review_only') else child_limits(custody, state, batch.share,deployment=deployment)
             proof = unit.get('proof_paths') or {repository: unit['target_paths']}
@@ -1110,6 +1132,11 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 commands=prepared_checks(commands)
                 registered = {**session_suite(verification_config, repository), **commands}
                 check_token = CHECK_PORT.set(conversation_verifier(control, job, config, deployment, tree, unit, registered))
+            elif default_checks:
+                from .command_protection import conversation_verifier
+                registered = {**session_suite(verification_config, repository), **commands}
+                check_token = CHECK_PORT.set(conversation_verifier(control or check_control, job, config, deployment,
+                    tree, unit, registered, outside=outside, cancelled=stop))
             # Import can create UID sidecars for existing scripts. Capture only
             # missing sidecars before the trusted host checks, never worker edits.
             missing_uids = [n+'.uid' for n in git(tree, 'ls-files', '--cached', '-z').decode().split('\0')
@@ -1420,7 +1447,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
     return result
 
 
-def run_units(custody, state, args, stop):
+def run_units(custody, state, args, stop, *, check_control=None):
     from .challenger import local
     """Several units of the plan handed at once (D8): in parallel when the session asks (`parallel`) or the operator
     turned it on (experiment implement_parallel), PARALLEL_CHILDREN at a time with one on a local route and the
@@ -1450,7 +1477,8 @@ def run_units(custody, state, args, stop):
 
     def one(item, batch):
         try:
-            return run_unit(custody, state, item, stop, batch)
+            return run_unit(custody, state, item, stop, batch,
+                            **({'check_control': check_control} if check_control is not None else {}))
         except Exception as exc:  # one unit's refusal or defect never loses the others' results
             return {'verdict': 'INCONCLUSIVE', 'reason': f'{type(exc).__name__}: {exc}'[:300]}
 
@@ -1480,9 +1508,25 @@ def run_units(custody, state, args, stop):
             touched.add(plan[key].get('repository') or next(iter(config['repositories'])))
     for repository in sorted(touched):
         suite = session_suite(config, repository)
-        report.setdefault('checks_at_end', {})[repository] = dict(zip(
-            ('state', 'output'), run_checks(config['repositories'][repository], suite))) if suite else \
-            'this session has no verifier for it: run its suite before you deliver'
+        if not suite:
+            report.setdefault('checks_at_end', {})[repository] = 'this session has no verifier for it: run its suite before you deliver'
+            continue
+        token = None
+        if check_control is not None and not config.get('command_protection') and CHECK_PORT.get() is None:
+            # The project itself, not a candidate: the sandbox writes nowhere in it but its own scratch.
+            from .command_protection import conversation_verifier
+            token = CHECK_PORT.set(conversation_verifier(check_control, Path(custody)/'units', config, {},
+                config['repositories'][repository], {'repository': repository, 'target_paths': [],
+                'title': 'Run the session checks on the applied units', 'criteria': []}, suite, cancelled=stop))
+        try:
+            report.setdefault('checks_at_end', {})[repository] = dict(zip(
+                ('state', 'output'), run_checks(config['repositories'][repository], suite)))
+        finally:
+            if token is not None:
+                runner = CHECK_PORT.get()
+                CHECK_PORT.reset(token)
+                if callable(getattr(runner, 'close', None)):
+                    runner.close()
     return report
 
 
@@ -1562,8 +1606,8 @@ class ImplementTools:
                 raise ValueError('Use the declared arguments, within 16 KiB.')
             if any(not isinstance(p, str) or not literal(p) for p in args.get('target_paths') or []):
                 raise ValueError('Give relative literal paths.')
-            output = run_units(self.custody, self.state, args, control.should_stop) if args.get('units') else \
-                run_unit(self.custody, self.state, args, control.should_stop)
+            output = run_units(self.custody, self.state, args, control.should_stop, check_control=control) \
+                if args.get('units') else run_unit(self.custody, self.state, args, control.should_stop, check_control=control)
             return EffectResult(request.effect_id, 'succeeded', encode(output), True)
         except (ValueError, OSError, KeyError, TypeError) as exc:
             return EffectResult(request.effect_id, 'refused', encode({'reason': str(exc)[:500]}))

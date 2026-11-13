@@ -49,12 +49,19 @@ def implement_native(*, worktree, descriptor, node, session_id, control, journal
             raise ValueError('NATIVE_READ_REPOSITORY_INVALID')
         roots[name] = str(root.resolve())
     packet, packet_digest = work_packet(descriptor, node, roots, source_refs)
+    verifiers = {c.criterion: {'repository': descriptor.execution_repository, 'argv': list(c.command)}
+                 for c in descriptor.verification_checks}
+    sandboxed_checks = False
+    if command_protection is None and verifiers and len(roots) == 1:
+        # Without command protection the implementer's own checks run in the sandbox where this host has it.
+        from .command_protection import sandbox_available, sandbox_verifiers
+        if sandbox_available():
+            verifiers, sandboxed_checks = sandbox_verifiers(verifiers, workspace), True
     # Caller owns and provisions custody; no new global temporary root is created.
     tools = NativeCapabilities(session_id=session_id, binding=control.binding,
         repositories=roots,
         writable={descriptor.execution_repository: list(descriptor.tracked_paths)},
-        verifiers={c.criterion: {'repository': descriptor.execution_repository, 'argv': list(c.command)}
-                   for c in descriptor.verification_checks}, scratch_root=scratch,
+        verifiers=verifiers, scratch_root=scratch,
         specgraph_edit_context=specgraph_edit_context,
         project_context=NativeProjectContext(repositories=roots, work_id=descriptor.work_id,
                                              state_dirs=index_state_dirs))
@@ -85,6 +92,13 @@ def implement_native(*, worktree, descriptor, node, session_id, control, journal
         if mediation is None or not callable(getattr(mediation, 'execute', None)):
             raise ValueError('command_mediation_unavailable')
         tools.bind_command_mediation(mediation)
+    elif sandboxed_checks and 'verify' in tools.names:
+        from .command_protection import checks_factory
+        config = {'repositories': roots, 'verifiers': verifiers,
+                  'writable': {descriptor.execution_repository: list(descriptor.tracked_paths)}}
+        tools.bind_command_mediation(checks_factory(config, scratch, session_id, on_activity)(
+            session_id=session_id, binding=control.binding, control=control,
+            config=config, custody=scratch, scratch=scratch, capabilities=tools))
     exploration_tools = None
     if delegation_state:
         from .delegation_tools import ExplorationTools

@@ -311,6 +311,35 @@ def test_work_host_verifier_honors_time_scope_and_keeps_mediation(host_verifier,
     assert len(verifier.calls)==1  # the existing single-effect claim still applies
 
 
+@pytest.mark.parametrize('case', ['green', 'blocked', 'always'])
+def test_work_verification_without_protection_runs_in_the_sandbox_with_no_review(host_verifier, monkeypatch, case):
+    import subprocess
+    from relay.turn_engine import set_checks_outside_sandbox
+    verifier = host_verifier
+    monkeypatch.setattr(protection, 'sandbox_available', lambda: True)
+    settings = {k: v for k, v in verifier.settings.items()
+                if k not in ('command_protection', 'command_protection_deployment')}
+    settings['repository_root'] = str(verifier.host.root)
+    if case != 'green':
+        monkeypatch.setattr(protection, 'verification_limitation',
+                            lambda value: 'ISOLATION_NETWORK_DENIED: every failing test was a refused connection.')
+    if case == 'always':  # the project's user chose it in the TUI: a Work run, where nobody is asked, honours it
+        set_checks_outside_sandbox(verifier.host.root, True)
+    outside = []  # the plain runner NativeWorkRunner.verification_runner passes
+    runner = protection.protected_work_verifier(verifier.host.control, verifier.train,
+        descriptor=settings['descriptor'], settings=settings,
+        outside=lambda argv, **options: outside.append(argv) or subprocess.CompletedProcess(argv, 0, b'outside', b''))
+    if case == 'blocked':
+        with pytest.raises(ValueError, match='NATIVE_CANDIDATE_VERIFIER_SANDBOX_BLOCKED: no one can be asked'):
+            invoke_host_verifier(SimpleNamespace(run=runner, argv=verifier.argv, host=verifier.host))
+        assert outside == []
+    else:
+        result = invoke_host_verifier(SimpleNamespace(run=runner, argv=verifier.argv, host=verifier.host))
+        assert result.returncode == 0
+        assert (outside == [verifier.argv]) is (case == 'always') and (result.stdout == b'outside') is (case == 'always')
+    assert verifier.scopes[0]['backend'] == 'mxc' and verifier.host.native == []  # no review, no Codex gate
+
+
 def test_host_verifier_atomic_claim_prevents_second_effect(host_verifier):
     invoke_host_verifier(host_verifier)
     with pytest.raises(Exception):

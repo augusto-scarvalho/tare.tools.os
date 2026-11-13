@@ -12,8 +12,8 @@ from .console_output import plain
 from .console_panels import SupportPanel
 
 COMMANDS_WARNING = (
-    "System commands and checks can change files outside these edit paths and use the network. "
-    "These settings are not an OS sandbox."
+    "System commands can change files outside these edit paths and use the network: without an Action review they "
+    "are not sandboxed. Where checks run is under Effective permissions."
 )
 
 
@@ -233,6 +233,8 @@ class PermissionsPanel(SupportPanel):
                 with Horizontal(classes='permissions-protection-row'):
                     yield Static('Review call limit:', markup=False)
                     yield Input('24', placeholder='Calls per request, 1 to 24', type='integer', id='permissions-review-limit')
+                yield Checkbox('Run checks the sandbox blocks outside it, without asking (they can then reach the '
+                               'network and your files)', id='permissions-checks-outside')
                 yield Checkbox("Trust this repository's AGENTS.md (all its worktrees; uncommitted edits need review)", id='permissions-root')
                 yield Checkbox('Allow nested instructions (requires root adoption)', id='permissions-nested', disabled=True)
                 yield Static(COMMANDS_WARNING, id='permissions-command-warning', markup=False)
@@ -292,6 +294,7 @@ class PermissionsPanel(SupportPanel):
         defaults = {
             'mode': mode,
             'write_paths': write_paths,
+            'checks_outside_sandbox': self.query_one('#permissions-checks-outside', Checkbox).value,
         }
         plan = self.query_one('#permissions-plan', Select).value
         if plan != 'default':  # Use my default: no choice of the project's own
@@ -487,6 +490,7 @@ class PermissionsPanel(SupportPanel):
                 policy.get('mode') in ('adopted', 'trusted') and self.reviewed_preview is not None)
             self.query_one('#permissions-nested', Checkbox).value = (
                 bool(policy.get('nested', False)) and self.reviewed_preview is not None)
+            self.query_one('#permissions-checks-outside', Checkbox).value = bool(defaults.get('checks_outside_sandbox'))
         mode = defaults.get('mode', 'read')
         write_paths = defaults.get('write_paths', [])
 
@@ -532,6 +536,7 @@ class PermissionsPanel(SupportPanel):
 
         self.query_one('#permissions-root', Checkbox).disabled = True
         self.query_one('#permissions-nested', Checkbox).disabled = True
+        self.query_one('#permissions-checks-outside', Checkbox).disabled = True
         self.query_one('#permissions-mode', Select).disabled = True
         self.query_one('#permissions-plan', Select).disabled = True
         self.query_one('#permissions-plan-default', Select).disabled = True
@@ -574,6 +579,7 @@ class PermissionsPanel(SupportPanel):
         paths_area.disabled = (self.revision is None or current_mode == 'read')
 
         self.query_one('#permissions-save', Button).disabled = (self.revision is None)
+        self.query_one('#permissions-checks-outside', Checkbox).disabled = (self.revision is None)
         root = self.query_one('#permissions-root', Checkbox)
         root.disabled = self.revision is None or getattr(self, 'reviewed_preview', None) is None
         self.query_one('#permissions-nested', Checkbox).disabled = root.disabled or not root.value

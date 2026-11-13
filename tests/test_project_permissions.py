@@ -246,6 +246,31 @@ def test_panel_says_when_the_local_judge_reviews_and_what_happens_when_it_cannot
     assert 'When it is not: tare asks you about each command' in text('tare',local_only=True)
 
 
+@pytest.mark.parametrize('available', [True, False])
+def test_the_panel_says_where_checks_run_whatever_the_system_commands_line(tmp_path, monkeypatch, available):
+    from relay import command_protection
+    from relay.turn_engine import set_checks_outside_sandbox, set_project_permission_mode
+    monkeypatch.setattr(command_protection, 'sandbox_available', lambda: available)
+    root=tmp_path/'project';root.mkdir()
+    def text(**kw):
+        return permissions_view(tmp_path/'preferences',root,tmp_path/'control',
+                                pending=Selection(str(root),role='implementer',write_paths=['.'],**kw))['effective_text']
+    plain=text()
+    assert 'Configured checks run programs' not in plain and 'System commands: Disabled' in plain
+    if available:
+        assert 'Checks: in the Windows sandbox, in every mode: no network' in plain
+        assert 'Checks the sandbox blocks: tare asks you before running one outside it' in plain
+        set_checks_outside_sandbox(root,True)
+        assert 'Checks the sandbox blocks: run outside it without asking (saved for this project' in text()
+    else:
+        assert 'Checks: not isolated: no sandbox on this system' in plain and 'read-only project tare asks you first' in plain
+        assert 'A local implementer is refused on this system' in plain
+        set_project_permission_mode(root,'edit')
+        assert 'read-only' not in text()
+    protected=text(command_protection={'review':'codex','backend':'mxc','max_reviews':2})
+    assert "Checks: in the Windows sandbox, under this project's command protection." in protected
+
+
 def test_jev_auto_preferences_are_independent_and_resume_does_not_override(tmp_path):
     root=tmp_path/'project';root.mkdir()
     defaults={'mode':'commands','write_paths':['.'],'command_protection':

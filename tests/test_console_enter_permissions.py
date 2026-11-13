@@ -186,6 +186,61 @@ def test_local_only_dialog_for_an_audit_that_did_not_accept_starts_on_do_not_app
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize('keys,choice', [(('enter',), 'deny'), (('shift+tab', 'shift+tab', 'enter'), 'once'),
+                                         (('shift+tab', 'enter'), 'project')])
+def test_a_check_the_sandbox_blocked_asks_before_running_outside_it_and_starts_on_do_not_run(tmp_path, keys, choice):
+    import json
+    from types import SimpleNamespace
+    from textual.widgets import Button, Static
+    from relay import conversation_permissions as permissions
+    from relay.project_permissions import permissions_view
+    from relay.turn_engine import checks_outside_sandbox
+    project, session = tmp_path/'project', tmp_path/'session'
+    project.mkdir(); (session/'execution-permission').mkdir(parents=True)
+    argv = ['C:/venv/python.exe', '-m', 'pytest', '-q']
+    limitation = 'ISOLATION_NETWORK_DENIED: every failing test of this check failed because the sandbox denied...'
+    request = {'schema': permissions.SCHEMA, 'kind': 'sandbox', 'session': 'parent', 'effect': 'e', 'task': 't',
+               'plan': 'a'*64, 'project': str(project.resolve()), 'paths': [], 'checks': {'tests': argv}, 'tests': [],
+               'objective': permissions.sandbox_question(limitation), 'status': 'WAITING',
+               'sandbox': {'code': 'ISOLATION_NETWORK_DENIED', 'check': 'tests'}}
+    request['id'] = permissions.identity(request)
+    permissions.save_json(session/'execution-permission'/'request.json', request)
+    async def scenario():
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(110, 40)) as pilot:
+            await app.workers.wait_for_complete(); await pilot.pause()
+            app.refresh_execution_permission(SimpleNamespace(session=str(session), root=str(project)))
+            await pilot.pause()
+            panel = app.screen
+            assert isinstance(panel, ExecutionPermissionPanel)
+            assert str(panel.query_one('.panel-title', Static).content) == 'Run this check outside the sandbox?'
+            shown = '\n'.join(str(s.content) for s in panel.query(Static))
+            for part in ('The sandbox blocked a network connection on this machine', 'cannot judge this check',
+                         'Check: tests', repr(argv), 'it can use the network and read your files'):
+                assert part in shown
+            assert 'Checks:' not in shown and 'independently audited' not in shown
+            assert [str(b.label) for b in panel.query(Button)] == [
+                'Run it outside the sandbox this turn', "Always run this project's blocked checks outside it",
+                'Do not run it']
+            assert app.focused.id == 'permission-deny'  # the safe answer is the default
+            await pilot.press(*keys); await pilot.pause()
+            assert not isinstance(app.screen, ExecutionPermissionPanel)
+            assert json.loads((session/'execution-permission'/'answer.json').read_text(encoding='utf-8')) == {
+                'id': request['id'], 'choice': choice}
+    asyncio.run(scenario())
+    # Only "always" is saved, beside the project's mode, shown in /permissions and removable there.
+    assert checks_outside_sandbox(project) is (choice == 'project')
+    directory = tmp_path/'console'
+    from relay import relay_mesh
+    view = permissions_view(directory, project, relay_mesh.RELAY_ROOT)
+    assert view['defaults'].get('checks_outside_sandbox', False) is (choice == 'project')
+    if choice == 'project':
+        from relay.project_permissions import save_defaults
+        save_defaults(directory, project, relay_mesh.RELAY_ROOT, {**view['defaults'], 'checks_outside_sandbox': False},
+                      view['revision'])
+        assert not checks_outside_sandbox(project)
+
+
 @pytest.mark.parametrize('final',['Hello.','The final answer differs.'])
 def test_final_answer_replaces_only_its_identical_stream_preview(final):
     class Console(App):

@@ -357,6 +357,20 @@ def normalize_arguments(values):
     return normalized
 
 
+LOCAL_UNSANDBOXED=('tare does not run a local model as implementer on this system: a local model runs only where '
+    'the checks of its work are isolated, and this system has no sandbox for them (Windows 11 with its process '
+    'sandbox has one). Choose a hosted implementer (a cloud or CLI model), or use Windows 11 with the sandbox. '
+    'No model call was made.')
+
+
+def unsandboxed_local(deployment):
+    """A local implementer needs the sandbox its checks run in (owner, 2026-11-13); refused before any model call."""
+    from .challenger import local
+    if local(deployment):
+        from .command_protection import sandbox_available
+        if not sandbox_available():raise ValueError(LOCAL_UNSANDBOXED)
+
+
 def session_role(function):
     @wraps(function)
     def run(config,deployment,custody,*args,**kwargs):
@@ -392,6 +406,7 @@ def session_role(function):
                             deployment=candidate=select(scope.coordinator)
                 if candidate and candidate.get('native_profile'):
                     require(candidate,role)
+                    if role=='implementer':unsandboxed_local(candidate)
                     if role=='coordinator' and candidate.get('native_coordinator_pin'):
                         from .coordinator_policy import eligible
                         eligible(candidate)

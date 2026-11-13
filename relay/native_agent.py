@@ -728,8 +728,17 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 terminal_options['terminal'] = native_terminal(terminal_client,custody=root,config=config,
                                                                session_id=session_id,binding=binding)
                 invocation['execution_environment'] = terminal_options['terminal'].execution_environment
+            # Without command protection, a session's checks run in the sandbox where this host has it (owner,
+            # 2026-11-13), with their program resolved as the sandbox needs; not with a terminal, which is unsandboxed.
+            verifiers, sandboxed_checks = config['verifiers'], False
+            if (config.get('command_protection') is None and command_mediation_factory is None and verifiers
+                    and not terminal_options and not state.get('conversation_flow') and len(config['repositories']) == 1):
+                from .command_protection import sandbox_available, sandbox_verifiers
+                if sandbox_available():
+                    verifiers = sandbox_verifiers(verifiers, next(iter(config['repositories'].values())))
+                    sandboxed_checks = True
             tools = NativeCapabilities(session_id=session_id, binding=binding,
-                repositories=config['repositories'], writable=config['writable'], verifiers=config['verifiers'],
+                repositories=config['repositories'], writable=config['writable'], verifiers=verifiers,
                 scratch_root=scratch, review_root=root/'review', role=config['role'],
                 capabilities=([n for n in ('read', 'list', 'search', 'context')
                                if n in config.get('capabilities', ('read', 'list', 'search', 'context'))
@@ -755,6 +764,10 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                     return messages[-1] if messages else (follow_up if follow_up is not None else instruction)
                 command_mediation_factory = factory(config, deployment, root,
                     command_context, invocation_id, journal.publish)
+            elif sandboxed_checks and 'verify' in tools.names:
+                from .command_protection import checks_factory
+                command_mediation_factory = checks_factory({**config, 'verifiers': verifiers}, root, invocation_id,
+                                                           journal.publish)
             if command_mediation_factory is not None:
                 command_mediation = command_mediation_factory(session_id=session_id, binding=binding, control=control,
                     config=config, custody=root, scratch=scratch, capabilities=tools)
