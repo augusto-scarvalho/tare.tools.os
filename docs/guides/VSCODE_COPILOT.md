@@ -41,7 +41,8 @@ Each Copilot chat becomes a tare conversation on the open folder (Copilot's `<wo
   `X-Tare-Local-Models: on|off`, the policy it ran under (the machine's choice wins), and `/v1/models` marks
   each single route with `tare_local`.
 - **Flows**: `/plan`, `/explore` (read-only) and `/research` (links read locally, else a free search).
-  Links in any message are read as untrusted text.
+  Links in any message are read as untrusted text, from public web addresses only: `localhost`, your network and
+  Tailscale are refused ([rules](CONVERSATION_RESEARCH.md)).
 - **Images**: for a model that cannot see, the policy's vision routes describe them, in order: GPT-6 Luna
   (Codex CLI), Gemini 3.8 Flash (AGY CLI), Claude Sonnet 5.5 (Claude CLI), GPT-5.6 Luna.
 
