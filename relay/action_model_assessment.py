@@ -215,6 +215,13 @@ class TareModelAssessmentPort:
             deployment = deepcopy(self._deployment)
             profile = deployment["native_profile"]
             profile["output_tokens"] = min(profile["output_tokens"], request.max_output_tokens)
+            if "native_reasoning_budgets" in deployment:
+                # NInfer thinks up to the cap without a smaller budget (a 256-token verdict came back cut off); a
+                # quarter leaves the ~130-token answer room. ponytail: fixed quarter, size it from the answer if it grows.
+                params = json.loads(profile.get("parameters_json") or "{}")
+                params["thinking_budget"] = min(params.get("thinking_budget", profile["output_tokens"]),
+                                                profile["output_tokens"] // 4)
+                profile["parameters_json"] = json.dumps(params)
             deployment.setdefault("native_execution_limits", {})["max_model_retries"] = 0
         except Exception:
             return observation("ABSTAINED", "PREFLIGHT_FAILED")

@@ -68,9 +68,13 @@ users can select it without needing another vendor. Without an explicit
 selection, the existing automatic rules stay in place.
 
 Qwen3.8 GSQ/NInfer and Swift Next/Strata declare only low/medium/xhigh. Low
-remains the local baseline; high/max are not fabricated. Local effort changes
-only `chat_template_kwargs.reasoning_effort`, preserving cache controls,
-preserve_thinking, enable_thinking and token limits. Swift Next depends on the
+remains the local baseline; high/max are not fabricated. Local effort sets
+`chat_template_kwargs.reasoning_effort`, preserving cache controls,
+preserve_thinking, enable_thinking and token limits. A profile that declares
+`native_reasoning_budgets` also gets that level's top-level `thinking_budget`: Qwen3.8 GSQ
+sends 4,096 at medium and 8,192 at xhigh, and nothing at low (the server's 2,048), since
+NInfer otherwise stops every level at 2,048. On such a profile the action reviewer's
+256-token verdict thinks for at most a quarter of its cap, so the answer is not cut off. Swift Next depends on the
 existing memory/context admission and lease, with no speculative loading or preemption.
 
 The concrete realization pins the model, connection and effort in the conversation without changing the

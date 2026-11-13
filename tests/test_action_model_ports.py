@@ -211,3 +211,13 @@ def test_broker_denial_and_missing_native_backend(deterministic):
     assert not result.allowed and result.authority == 'NONE'
     if not deterministic: assert not h.calls and not reserved
     else: assert len(h.calls) <= 2 and all(call[1] == 'gpt-6.1-sol' for call in h.calls)
+
+
+@pytest.mark.parametrize('params', [{'thinking_budget': 8192}, {}])
+def test_a_small_cap_leaves_the_answer_room_on_a_model_with_thinking_budgets(params):
+    h = Rig('reviewer')
+    h.deploy['native_reasoning_budgets'] = {'xhigh': 8192}
+    h.deploy['native_profile']['parameters_json'] = json.dumps(params)
+    assert h.port().assess(h.assessment, h.control).status == 'OBSERVED'
+    sent = h.calls[0][0]['native_profile']
+    assert sent['output_tokens'] == 128 and json.loads(sent['parameters_json'])['thinking_budget'] == 32

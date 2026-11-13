@@ -34,7 +34,8 @@ saves the resolved profile; resume never asks again.
 
 `qwen38-gsq.json` and `swift27b.json` reach Qwen3.8 27B and Swift 1.5 27B GSQ-RCO IQ3_S on NInfer-3090
 0.11 through the same gateway, with 128K windows and estimated counting (NInfer has no `/tokenize`).
-Qwen3.8 keeps the low-effort request (the server caps thinking at 2,048 tokens); Swift runs at
+Qwen3.8 keeps the low-effort request (the server caps thinking at 2,048 tokens); its medium and xhigh also
+send the top-level `thinking_budget` its `native_reasoning_budgets` declares (4,096 and 8,192). Swift runs at
 `xhigh` without a cap, as UkisAI evaluates it, with a 16K output reserve.
 
 `tare-auto.json` is the TUI's **tare auto** entry: the `qwen38-gsq` profile plus `native_auto_routes`.

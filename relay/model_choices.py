@@ -426,6 +426,12 @@ def reasoning_parameters(value, effort):
         if effort not in value['native_reasoning_levels']:
             raise ValueError('Unsupported local reasoning level: '+effort)
         params.setdefault('chat_template_kwargs', {})['reasoning_effort'] = effort
+        # NInfer honours only a top-level thinking_budget; a level without one keeps the server's default.
+        budgets = value.get('native_reasoning_budgets')
+        if budgets:
+            params.pop('thinking_budget', None)  # a budget saved with an earlier level must not survive a switch
+            if effort in budgets:
+                params['thinking_budget'] = budgets[effort]
     elif effort and protocol == 'anthropic-messages':
         params.setdefault('output_config', {})['effort'] = effort
     elif effort and protocol == 'gemini-generate-content':
