@@ -41,6 +41,17 @@ def test_requested_high_reaches_actual_api_wire_without_changing_saved_profile_o
     for key,expected_value in expected.items():assert wire[key]==expected_value
 
 
+def test_a_policy_effort_maps_to_a_level_the_local_profile_declares():
+    from relay.execution_team import reasoning
+    from relay.native_catalog import select
+    local = select('qwen38-gsq')  # declares low, medium and xhigh
+    with pytest.raises(ValueError, match='Unsupported local reasoning level: high'):
+        with_effort(local, 'high')  # an explicit choice is not moved
+    assert [reasoning(with_effort(local, e, at_least=True)) for e in ('medium', 'high', 'max')] == ['medium', 'xhigh', 'xhigh']
+    hosted = select('claude-api-opus-5-5')
+    assert with_effort(hosted, 'high', at_least=True) == with_effort(hosted, 'high')
+
+
 def test_unsupported_connection_keeps_its_exact_parameters_without_adding_a_frontier_call():
     value={'id':'custom','native_profile':{'protocol':'openai-chat','endpoint':'http://localhost:8080/v1',
         'parameters_json':'{"chat_template_kwargs":{"reasoning_effort":"low"}}'}}

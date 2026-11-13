@@ -170,7 +170,7 @@ def projection(*, role=None, via=None, vendor=None, provider=None, include_uncon
     from .coordinator_policy import APPROVED
     from .inference_allowlist import identities
     from .environment import listed, read
-    from .native_routes import configured
+    from .native_routes import configured, roles as table_roles
     from .turn_engine import policy
     from .web_research import DEFAULT_ROUTES
     if role is not None and role not in ROLES:
@@ -188,19 +188,26 @@ def projection(*, role=None, via=None, vendor=None, provider=None, include_uncon
         raise ValueError('Unknown access; consult tare models --help (--via cli|api|local).')
     table = configured()['deployments']
     researchers = policy().get('researcher', DEFAULT_ROUTES)
+    setup = read()
     # Work dispatch also admits the operator's configured implementation
     # ladder; the static review-role table is not that ladder's authority.
-    implementers = {name for tier in policy().get('implementer', []) for name in tier}
-    setup = read()
+    # Aliases name the profile dispatch uses: local-qwen and qwen38 are qwen38-gsq, local-default the fleet default.
+    alias = lambda n: native_catalog.LOCAL.get(n, n)
+    try:
+        fleet = native_catalog.local_default(setup)
+    except (OSError, ValueError, KeyError, TypeError):
+        fleet = native_catalog.LOCAL_DEFAULT
+    implementers = {alias(fleet if name == native_catalog.LOCAL_DEFAULT else name)
+                    for tier in policy().get('implementer', []) for name in tier}
     result = []
     for name, value, installed in deployments:
         if 'native_auto_routes' in value or 'native_host_modes' in value:
             continue  # Exact pins never name a future automatic choice.
         item = describe(name, value)
         connection, _, route = identities(name, value)
-        roles = sorted({r for row in table if row.get('native_catalog', row['id']) == name
-                        for r in row.get('roles', []) if r != 'coordinator'})
-        if name in implementers:
+        roles = sorted({r for row in table if alias(row.get('native_catalog', row['id'])) == alias(name)
+                        for r in table_roles(row, scope) if r != 'coordinator'})
+        if alias(name) in implementers:
             roles.append('implementer')
         # Explicit coordinators use their existing policy, not delegated-route roles.
         # Live credentials/resource admission remains the responsibility of select().

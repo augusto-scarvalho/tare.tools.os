@@ -116,6 +116,22 @@ def test_below_floor_local_planner_is_refused_even_when_default_is_omitted(plann
     assert not calls and not (parent/'planning').exists()
 
 
+def test_local_only_plans_on_the_local_model_or_says_no_local_planner_is_available(planner, monkeypatch):
+    from relay import execution_scope as scope, native_catalog
+    from relay.execution_team import reasoning
+    parent, state, candidate = planner
+    tool = wrap(parent, state, execution())
+    with scope.activated(scope.Scope(only='local')):
+        monkeypatch.setattr(turn_engine, 'available', lambda name, **kw: (native_catalog.select(name), None))
+        name, value = tool.choose({})
+        assert name == 'local-qwen' and reasoning(value) == 'xhigh'  # its lowest level at or above high
+        monkeypatch.setattr(turn_engine, 'available', lambda name, **kw: (None, 'local GPU busy'))
+        with pytest.raises(ValueError, match=r'^No local planner is available in local-only mode \(local-qwen: '):
+            tool.choose({})
+    monkeypatch.setattr(turn_engine, 'available', lambda name, **kw: (deepcopy(candidate), None))
+    assert tool.choose({})[0] == 'worker'  # other modes keep the configured planner
+
+
 def stub_child(monkeypatch, candidate, calls):
     monkeypatch.setattr(turn_engine, 'available', lambda name: (deepcopy(candidate), None))
     def run(config, dep, root, instruction, **kwargs):

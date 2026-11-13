@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "purpose": "Operator role admission. Frontier plan/audit prefers another vendor, subscription quota before metered API, Sol before Astra and Opus before Fable within the same allowance class; Google uses Argon. This is preference policy, not measured quality or a public model ranking.",
+  "purpose": "Operator role admission. Frontier plan/audit prefers another vendor, subscription quota before metered API, Sol before Astra and Opus before Fable within the same allowance class; Google uses Argon. This is preference policy, not measured quality or a public model ranking. local_only_roles are taken only in --local_only mode, because the owner chose that mode: an operator admission, not a quality claim. There an audit by the implementer's own model family is labelled not independent and applies only after the user confirms it in the TUI; every other mode keeps the roles list and the independence rule unchanged.",
   "deployments": [
     {
       "id": "local-qwen",
@@ -15,8 +15,12 @@
         "implementer",
         "explorer"
       ],
+      "local_only_roles": [
+        "planner",
+        "auditor"
+      ],
       "kind": "primary",
-      "note": "Qualified native HTTP profile; no Aider session or implicit model fallback.",
+      "note": "Qualified native HTTP profile; no Aider session or implicit model fallback. In --local_only mode it also plans and audits: the owner's admission by choice of that mode (2026-11-13), not a quality claim; the node qualifies it for general, long-context, agent-tools and coding-baseline work, not for planning or auditing. Its audit of a Qwen-family implementer is not independent and is labelled so.",
       "cost_tier": "free",
       "native_counter_protocol": "utf8-envelope-estimate-v1",
       "native_profile": {

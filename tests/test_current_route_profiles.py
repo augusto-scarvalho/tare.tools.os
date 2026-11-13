@@ -86,6 +86,36 @@ def test_family_independence_and_version_aliases_are_preserved(installed):
     assert native_catalog.select('claude-fable-5-1-cli')['model'] == 'fable-5.1'
 
 
+def test_local_only_admits_the_local_model_to_every_role_and_no_other_mode_changes(installed):
+    """--local_only (the owner's choice, 2026-11-13): the local model plans, implements and audits; its audit of a
+    Qwen implementer is admitted only where a user can confirm, labelled. Every other mode keeps today's roles."""
+    from relay import execution_scope as scope
+    producer = native_catalog.select('qwen38-gsq')
+    def local_row(role, *author):
+        _, receipt = native_routes.ranked(role, *author)
+        return next(r for r in receipt['candidates'] if r['deployment'] == 'local-qwen')
+    for mode in (scope.Scope(), scope.Scope(prefer='local'), scope.Scope(prefer='api')):
+        with scope.activated(mode), scope.confirmable_audit(True):
+            assert local_row('implementer')['eligible']
+            assert local_row('planner')['reason'] == local_row('auditor', producer)['reason'] == 'ROLE_NOT_CONFIGURED'
+            claude = native_catalog.select('claude-cli')
+            assert next(r for r in native_routes.ranked('auditor', claude)[1]['candidates']
+                        if r['deployment'] == 'claude-cli')['reason'] == 'AUDITOR_NOT_INDEPENDENT'
+    with scope.activated(scope.Scope(only='local')):
+        planners, _ = native_routes.ranked('planner')
+        assert [d['id'] for d in planners] == ['fleet-qwen38-gsq'] and local_row('implementer')['eligible']
+        assert local_row('auditor', producer)['reason'] == 'AUDITOR_NOT_INDEPENDENT'  # nobody to confirm
+        with scope.confirmable_audit(True):
+            auditors, _ = native_routes.ranked('auditor', producer)
+            assert [d['id'] for d in auditors] == ['fleet-qwen38-gsq']
+            assert local_row('auditor', producer)['reason'] == 'SAME_FAMILY_LOCAL_ONLY_NOT_INDEPENDENT'
+    roster = round_table_roster.load_roster()
+    policy = round_table_roster.load_role_deployments(roster=roster)
+    policy['deployments'][0]['local_only_roles'] = ['chair']
+    with pytest.raises(ValueError, match='local_only_roles must list roles'):
+        round_table_roster.validate_role_deployments(policy, roster)
+
+
 def test_catalog_only_policy_is_portable_and_rejects_path_traversal():
     roster = round_table_roster.load_roster()
     policy = round_table_roster.load_role_deployments(roster=roster)

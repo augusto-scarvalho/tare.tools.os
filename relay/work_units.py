@@ -1298,7 +1298,9 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                         'candidate_sha256':candidate['sha256']}} if candidate and candidate.get('review_only') else {}),
                     **({'observed_named_checks':observed} if observed else {})})
                 result['audit'] = row['audit'] = assessment
-                if assessment.get('verdict') != 'ACCEPT':
+                # Only the host sets user_decision, after the user's yes to a same-family audit that left open
+                # items only (conversation_permissions.confirm_apply); the checks above already passed.
+                if assessment.get('verdict') != 'ACCEPT' and assessment.get('user_decision') != 'APPLY_WITHOUT_ACCEPTED_AUDIT':
                     result.update(verdict='NOT_REVIEWED', patch=row.get('patch'), reason=AUDIT_INCOMPLETE
                                   if assessment.get('verdict') == 'INCONCLUSIVE' else AUDIT_REFUSED)
                     break
@@ -1404,8 +1406,17 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
         result['next'] = 'The candidate is not delivered. Inspect its checks, review and retained patch; continue through the implementer or ask the user about an unresolved decision.'
     elif state.get('conversation_flow'):
         # The reply follows this English result: a Portuguese request got its summary in English (2026-11-03).
-        result['next'] = ('Applied after its checks and an independent review. Tell the user in plain words, in the '
-                          'language of their request, what changed and how it was checked.')
+        audit = result.get('audit') or {}
+        label = audit.get('audit_label')
+        if audit.get('user_decision') == 'APPLY_WITHOUT_ACCEPTED_AUDIT':
+            result['next'] = ('Applied by the user\'s decision after its checks, although its audit (' + label + ') did '
+                'not accept it (local-only mode). Its open items: ' + ' | '.join(str(i)[:300] for i in audit.get('remaining', [])[:10]) +
+                '. Tell the user in plain words, in the language of their request, what changed, that no audit accepted '
+                'it, and these open items; never say it was audited or accepted.')
+        else:
+            result['next'] = ('Applied after its checks and ' + ('a ' + label + ', which the user confirmed (local-only '
+                              'mode); say plainly that the review was not independent' if label else 'an independent review') +
+                              '. Tell the user in plain words, in the language of their request, what changed and how it was checked.')
     return result
 
 

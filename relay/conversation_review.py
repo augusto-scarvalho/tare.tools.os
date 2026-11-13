@@ -666,10 +666,29 @@ def committed(root):
                for p in (Path(root)/'reviews').glob('*/receipt.json'))
 
 
-def available(producer):
+NOT_INDEPENDENT = 'same-family audit, not independent'
+NO_AUDITOR = 'No independent auditor is available. The candidate remains unapplied.'
+
+
+def available(producer, owner=None):
+    """[(route, deployment)] of auditors. In --local_only mode, where the conversation's TUI can ask the user before
+    applying, an auditor of the implementer's own family is admitted (labelled NOT_INDEPENDENT); headless never."""
     from .turn_engine import pick_auditors, policy
+    from .execution_scope import confirmable_audit
     rules = policy()
-    return pick_auditors(producer, rules['auditor'] if rules.get('auditor_selection') == 'configured' else None)
+    with confirmable_audit(getattr(owner, 'permission_directory', None) is not None):
+        return pick_auditors(producer, rules['auditor'] if rules.get('auditor_selection') == 'configured' else None)
+
+
+def same_family(producer, auditor):
+    """The auditor shares the implementer's model or bias domain. An unknown identity cannot be selected
+    (pick_auditors refuses it) and leaves an earlier retried route as it was."""
+    from .work_audit import identity
+    try:
+        author, reviewer = identity(producer, 'implementer'), identity(auditor, 'auditor')
+    except (ValueError, KeyError, TypeError, OSError):
+        return False
+    return author.model_id == reviewer.model_id or author.bias_domain == reviewer.bias_domain
 
 
 def reference_sources_current(config,sources):
@@ -715,7 +734,7 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
     from .delegation_tools import count_calls
     from .native_agent import read_json, run_session
     from .native_spend import settings
-    from .turn_engine import pick_auditors, policy, with_effort
+    from .turn_engine import policy, with_effort
     rules = policy()
     from .review_diff import prepare
     diff,projections,json_views,raw_diff_sha256,failure=prepare(tree,changed)
@@ -868,13 +887,19 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
         else:
             return result or {'verdict': 'INCONCLUSIVE',
                 'reason': 'A previous review may be charged. Its interrupted request was not repeated.'}
-    from .execution_scope import current, require
+    from .execution_scope import confirmable_audit, current, require, same_family_admitted
     if pinned and not current().allows(pinned[1], 'auditor')[0]:
         pinned = None  # this instance's --auditor pin or allowlist wins over the route of the review it retries
-    candidates = [pinned] if pinned else pick_auditors(producer, rules['auditor'] if rules.get('auditor_selection') == 'configured' else None)
+    candidates = [pinned] if pinned else available(producer, owner)
     candidates = [(name, dep) for name, dep in candidates if name not in _unavailable]
     if not candidates:
-        return {'verdict': 'INCONCLUSIVE', 'reason': 'No independent auditor is available. The candidate remains unapplied.'}
+        return {'verdict': 'INCONCLUSIVE', 'reason': NO_AUDITOR}
+    with confirmable_audit(getattr(owner, 'permission_directory', None) is not None):
+        admitted = same_family_admitted()
+    # Elsewhere pick_auditors already enforced independence; a retry keeps its earlier route, so check it here.
+    label = NOT_INDEPENDENT if (admitted or pinned) and same_family(producer, candidates[0][1]) else None
+    if label and not admitted:
+        return {'verdict': 'INCONCLUSIVE', 'reason': NO_AUDITOR}  # a local-only review retried outside that mode
     from . import execution_resources as resources
     calls = resources.child_calls(audit_call_budget(len(changed), len(diff.splitlines())))
     maximum = owner.state['limits']['max_model_calls']
@@ -890,7 +915,7 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
     if auditor_pin:
         require(deployment,'auditor')
     elif not pinned:
-        deployment = with_effort(deployment, rules.get('auditor_effort', 'high'))
+        deployment = with_effort(deployment, rules.get('auditor_effort', 'high'), at_least=True)
     contract = context_contract(deployment)
     parent_spend, _ = settings(owner.state['deployment'])
     allowance = '0' if resources.spend_capped() else None
@@ -907,7 +932,8 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
     row = {'status': 'RUNNING', 'role': 'auditor', 'task': task['id'], 'route': name,
            'deployment': deployment,
            'request_sha256': identity, 'invocation': owner.invocation_id,
-           'calls_reserved': calls, 'amount_committed': allowance, 'context_contract': contract}
+           'calls_reserved': calls, 'amount_committed': allowance, 'context_contract': contract,
+           **({'audit_label': label} if label else {})}
     if coverage_previous:
         row.update(coverage_continuation_of=identity,**({'coverage_read_before':coverage_reads} if coverage_reads is not None else {}))
     save_json(path, row, max_bytes=MAX_RECEIPT_BYTES)  # durable intent, not evidence of dispatch
@@ -992,7 +1018,9 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
             'writable': {}, 'verifiers': {}, 'capabilities': ['read', 'list', 'search'],
             'instruction_repositories': ['candidate'], 'specgraph_edit_context': False,
             # Use this auditor model's fractions. One summary shares its call/time budget.
-            'context_policy': contract['policy']}
+            'context_policy': contract['policy'],
+            # Local-only, same family: an ACCEPT with open items is read as not accepted, never discarded.
+            **({'same_family_audit': True} if label else {})}
         if owner.state['config'].get('project_admission'):
             config['project_admission'] = owner.state['config']['project_admission']
         if owner.state['config'].get('folder_access'):
@@ -1087,7 +1115,8 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
         result=audit_result(outcome,owner.state['config'],unit,changed,references,reference_roots,satellites)
         result=apply_satellite_obligations(result,satellites)
         result.update(route=name, session=str(job/'session'),
-                      actor={'role':'auditor','model':deployment['native_profile']['model'],'route':name})
+                      actor={'role':'auditor','model':deployment['native_profile']['model'],'route':name},
+                      **({'audit_label': label} if label else {}))
         result = context_failure(job, row, result)
         row.update(status='FINISHED', result=result)
         save_json(path, row, max_bytes=MAX_RECEIPT_BYTES)

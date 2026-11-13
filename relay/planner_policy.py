@@ -14,8 +14,10 @@ def effective(deployment, requested=None):
         from .execution_scope import current as execution_scope
         if execution_scope().allows(deployment,'planner')[0]:
             return deepcopy(deployment)
-    level = requested if requested not in (None, 'default') else 'high'
     item = describe(deployment['id'], deployment)
+    # As the picker does (choices): with no explicit effort, the lowest registered level at or above high.
+    level = requested if requested not in (None, 'default') else next(
+        (candidate for candidate in LEVELS if candidate in item['route']['efforts']), 'high')
     from .execution_scope import current
     scope=current()
     if scope.pin('planner'):
