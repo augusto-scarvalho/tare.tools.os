@@ -73,7 +73,8 @@ def test_invalid_protection_configuration(value):
 
 def test_granted_reference_folder_is_read_only_in_worker_isolation(host, monkeypatch, tmp_path):
     from relay.folder_access import grant
-    reference = tmp_path/'old-project'; reference.mkdir()
+    reference = tmp_path/'old-project'; (reference/'api').mkdir(parents=True)
+    (reference/'api/.env').write_text('FAKE_SECRET_FIXTURE')
     store = tmp_path/'grants.json'; grant(store, str(reference))
     host.config['folder_access'] = {'grants': str(store)}
     policies = []
@@ -85,6 +86,7 @@ def test_granted_reference_folder_is_read_only_in_worker_isolation(host, monkeyp
     assert str(reference) in policies[-1].read_only
     assert str(reference) not in policies[-1].read_write
     assert str(host.root/'.git') not in policies[-1].read_write
+    assert str(reference/'api/.env') in policies[-1].denied
 
 
 def test_verifier_runtime_includes_the_virtual_environments_site_packages(tmp_path):
@@ -173,11 +175,13 @@ def test_staged_recovery_is_only_enabled_for_the_hosts_private_candidate(host,mo
     metadata=tmp_path/'git/worktrees/candidate';metadata.mkdir(parents=True)
     (metadata/'commondir').write_text('../..')
     (candidate/'.git').write_text('gitdir: '+str(metadata))
+    (candidate/'vendor/clone/.git').mkdir(parents=True);(candidate/'.env').write_text('FAKE_SECRET_FIXTURE')
     host.config['repositories']={'project':str(candidate)}
     host.build().close()
     assert captured[-1]['staged_effects'] is True
     assert str(candidate) in captured[-1]['policy'].read_write
-    assert str(candidate/'.git') not in captured[-1]['policy'].denied
+    # Git may read its metadata here, a nested repository's included; other secrets stay denied.
+    assert list(captured[-1]['policy'].denied)==[str(candidate/'.env')]
     assert str(metadata) in captured[-1]['policy'].read_only and str(tmp_path/'git') in captured[-1]['policy'].read_only
     assert not any(str(p) in captured[-1]['policy'].read_write for p in (candidate/'.git',metadata,tmp_path/'git'))
     assert captured[-1]['environment']['GIT_OPTIONAL_LOCKS']=='0'
@@ -394,6 +398,70 @@ def test_a_check_whose_every_failure_is_a_denied_connection_is_a_limitation(outp
         work_units.CHECK_PORT.reset(token)
     assert status == ('inconclusive' if limited else 'red')
     assert ('focused: ISOLATION_NETWORK_DENIED:' in receipt) is limited  # told apart from a timeout by its code
+
+
+# A test reading the project's .env inside the real sandbox (2026-11-13, Python 3.12, pytest 9.1).
+DOTENV = ('_______________________ test_settings_from_dotenv _______________________\n\n'
+          '    def test_settings_from_dotenv():\n>       assert "KEY" in Path(".env").read_text()\n\n'
+          'envtests\\test_reads_env.py:4: \n'
+          '_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\n'
+          ">       return io.open(self, mode, buffering, encoding, errors, newline)\n"
+          "E       PermissionError: [Errno 13] Permission denied: '.env'\n\n"
+          '..\\Lib\\pathlib.py:1013: PermissionError\n')
+
+
+def denied_read(path, error='[Errno 13] Permission denied'):
+    return DOTENV.replace("[Errno 13] Permission denied: '.env'", f'{error}: {path}')
+
+
+@pytest.mark.parametrize('output,limited', [
+    (pytest_report(DOTENV), True),
+    (pytest_report(denied_read("'C:\\\\project\\\\pkg\\\\.npmrc'", '[WinError 5] Access is denied')), True),
+    (pytest_report(denied_read("'keys/.ssh'", '[WinError 5] Access is denied')), True),  # listing a denied folder
+    (pytest_report(denied_read("'deploy\\\\.docker\\\\config.json'")), True),
+    (pytest_report(denied_read('"it\'s\\\\.ENV.local"')), True),  # repr's other quotes, any case
+    (pytest_report(DOTENV, DOTENV.replace('test_settings', 'test_other')), True),
+    (pytest_report(DOTENV.replace('test_settings', 'ERROR at setup of test_settings'), banner='ERRORS'), True),
+    (pytest_report(OWN_FILE), False),  # an ordinary file of the project
+    (pytest_report(denied_read("'config\\\\.env.example'")), False),  # samples stay readable: not the sandbox
+    (pytest_report(denied_read("'.ssh\\\\config'")), False),  # only the denied path's own name counts
+    (pytest_report(denied_read("'.env")), False),  # a path that does not parse
+    (pytest_report(DOTENV, ASSERTION), False),  # one real failure keeps the whole check red
+    (pytest_report(ASSERTION.replace('assert (1 + 1) == 3', "AssertionError: KEY missing from '.env'")), False),
+    (pytest_report(DOTENV.replace('E       Perm', 'E       RuntimeError: wrapped\nE       Perm')), False),
+    (pytest_report(DOTENV.replace('E       ', '        ')), False),  # nothing raised that pytest showed
+    ("PermissionError: [Errno 13] Permission denied: '.env'", False),  # no sections
+    (pytest_report(DOTENV, end=False), False)])
+def test_a_check_whose_every_failure_is_a_denied_secret_is_a_limitation(output, limited, tmp_path):
+    from relay import work_units
+    import subprocess
+    value = {'returncode': 1, 'output': output, 'process': {'confinement': {'backend': 'windows-mxc'}}}
+    diagnostic = protection.verification_limitation(value)
+    assert bool(diagnostic) is limited
+    if limited:
+        assert diagnostic.startswith('ISOLATION_SECRET_DENIED: ') and 'secret files such as .env' in diagnostic
+        assert 'network' not in diagnostic and 'the user decides' in diagnostic
+        for changed in ({'output_truncated': True}, {'returncode': 0},
+                        {'process': {'confinement': {'backend': 'codex-mxc'}}}):
+            assert protection.verification_limitation({**value, **changed}) is None
+    done = subprocess.CompletedProcess(['fixture'], 1, output, '')
+    done.execution_limitation = diagnostic
+    token = work_units.CHECK_PORT.set(lambda *a, **kw: done)
+    try:
+        status, receipt = work_units.run_checks(tmp_path, {'focused': ['fixture']})
+    finally:
+        work_units.CHECK_PORT.reset(token)
+    assert status == ('inconclusive' if limited else 'red')
+    assert ('focused: ISOLATION_SECRET_DENIED:' in receipt) is limited
+
+
+def test_denied_secrets_and_connections_in_one_check_are_one_limitation():
+    value = {'returncode': 1, 'output': pytest_report(WSAEACCES, DOTENV),
+             'process': {'confinement': {'backend': 'windows-mxc'}}}
+    diagnostic = protection.verification_limitation(value)
+    assert diagnostic.startswith('ISOLATION_SECRET_DENIED: ') and 'a secret file or a network connection' in diagnostic
+    assert 'silently enable host networking' in diagnostic
+    assert protection.verification_limitation({**value, 'output': pytest_report(WSAEACCES, DOTENV, ASSERTION)}) is None
 
 
 def test_cancelled_control_sends_no_native_request_and_runs_no_effect(host):
@@ -645,6 +713,38 @@ def test_jev_profile_denies_explicit_credentials_before_classification(jev_compo
     with pytest.raises(ActionRefused,match='denied'):
         m.execute(h.host.facts(args=[str(h.host.executable),str(secret)]),h.host.effect)
     assert h.calls==[] and h.host.native==h.host.effects==[]
+
+
+def test_secrets_are_denied_at_any_depth_without_a_classifier(host, monkeypatch):
+    captured=[];original=protection.windows_isolation_factory
+    def capture(**kwargs):
+        captured.append(kwargs);return original(**kwargs)
+    monkeypatch.setattr(protection,'windows_isolation_factory',capture)
+    holds=[]
+    class Hold:  # the real one opens Windows handles (tests/test_sandbox_secrets.py)
+        def __init__(self,paths):self.paths,self.closed=list(paths),False;holds.append(self)
+        def close(self):self.closed=True
+    monkeypatch.setattr(protection.sandbox_secrets,'Hold',Hold)
+    for name in ('.env','services/api/.env','services/api/.env.example','pkg/.npmrc','.git/config','src/app.py'):
+        path=host.root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text('FAKE_SECRET_FIXTURE')
+    mediator=host.build()  # Codex review: neither Jev nor the local classifier
+    assert list(captured[-1]['policy'].denied)==sorted(str(host.root/p) for p in
+        ('.env','.git','pkg/.npmrc','services/api/.env'))
+    # The project is writable: what a renamed folder could carry off is held, not what sits in the project's root.
+    assert holds[-1].paths==[str(host.root/'pkg/.npmrc'),str(host.root/'services/api/.env')] and not holds[-1].closed
+    with pytest.raises(ActionRefused,match='denied'):
+        mediator.execute(host.facts(args=[str(host.executable),str(host.root/'services/api/.env')]),host.effect)
+    assert host.effects==host.native==[]
+    mediator.close()
+    assert holds[-1].closed
+    def unavailable(paths):raise ValueError('tare could not hold it')
+    monkeypatch.setattr(protection.sandbox_secrets,'Hold',unavailable)
+    with pytest.raises(ValueError,match='could not hold'):host.build()
+    monkeypatch.setattr(protection.sandbox_secrets,'Hold',Hold)
+    for n in range(29):  # with the four above, one more than the sandbox can deny
+        (host.root/f'p{n:02d}').mkdir();(host.root/f'p{n:02d}/.env').write_text('FAKE_SECRET_FIXTURE')
+    with pytest.raises(ValueError,match='33 secret files or folders'):
+        host.build()
 
 
 def test_legacy_saved_protection_shape_is_not_migrated_implicitly(host):

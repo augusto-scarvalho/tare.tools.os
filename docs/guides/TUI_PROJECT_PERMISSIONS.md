@@ -51,7 +51,7 @@ the current conversation's actual permissions, and its recorded project instruct
 | --- | --- |
 | Read only | Read files, list folders and search project text |
 | Edit files | Reading plus edits within the selected paths |
-| Edit + system commands | Scoped file tools plus the terminal tools |
+| Edit + system commands | Scoped file tools plus commands: in the sandbox with an **Action review**, otherwise the terminal tools for `/session` tasks (below) |
 
 **Before implementing** and **My default, every project** (above) are saved with
 the same **Save** but are read each time a plan is about to be implemented, so
@@ -90,15 +90,46 @@ other connections use Jev and Tare MXC, with an additional Tare review only when
 Jev requests one. Configure the Jev key in Setup, Helpers. This is action approval;
 the independent Work auditor still checks the delivery separately.
 
+Whatever the review, a protected command cannot read the project's secrets: `.env`
+files (not `.env.example` and other samples), `.ssh`, `.aws`, `.npmrc`, `.pypirc`
+and similar credential files and folders, at any depth and in granted folders. It
+gets `Permission denied`, so a test that reads `.env` fails there; when that is
+the only kind of failure, the check is reported as inconclusive
+(`ISOLATION_SECRET_DENIED`), not as broken code. While such a
+command runs, you cannot rename, move or delete the folders above one that lies
+inside an editable folder (`services` and `services/api` for `services/api/.env`
+when the whole project is editable). A project with
+more than 32 of them refuses protected commands until you move some out
+([Conversation roles](CONVERSATION_ROLES.md) says what you see and the limits).
+
 For delegated implementation and named checks, the current saved project review
 policy applies even in an older conversation. The coordinator's saved prompt,
 tools, history and edit scope stay unchanged. Direct saved agent sessions and
 explicit Work runs retain their own policy. Automatic routing currently requires
 Windows; a missing service or sandbox refuses the action.
 
-System commands and configured checks run programs. They can access files outside
-the mediated edit paths and use the network; these settings are **not an operating
-system sandbox**. Configured checks remain a separate new-session field. Flows
+With **Action review** set to **None: terminal on this machine, no sandbox**,
+`/session` tasks (and `tare agent --terminal`) get the terminal tools, which run
+commands directly on this machine as you: with network access, your files and
+credentials in reach, no sandbox and no review. It is the mode for when you are
+present and trust the model; for a `/session` task **Effective permissions** says
+`System commands: Terminal on this machine, not sandboxed, not reviewed`, and each
+command shows as **Unsandboxed command** in the activity. The main conversation
+never gets this terminal: its coordinator and the workers it starts edit files and
+run the configured checks, and the panel says `System commands: Not in this chat`.
+Choose an Action review instead to run commands inside the sandbox. Configured
+checks also run programs on this machine, outside the mediated edit paths, unless
+an Action review is chosen.
+
+A local model never gets this terminal, in local-only mode or when a session's
+model is local in any other mode. Such a session runs without the terminal tools
+and still reads and edits within its write scope; its first reply and the model
+itself are told why, and **Effective permissions** says
+`System commands: None for a local model`. A session saved with the terminal
+before this rule cannot be resumed on a local model: start a new conversation or
+continue it on a cloud or CLI model.
+
+Configured checks remain a separate new-session field. Flows
 retain their own scopes and do not take permissions from these direct-conversation
 defaults.
 
