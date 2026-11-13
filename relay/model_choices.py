@@ -408,7 +408,9 @@ def declared_effort(value, effort):
 
 
 def reasoning_parameters(value, effort):
-    """Apply a level using this connection's wire format, preserving cache and other settings."""
+    """Apply a level using this connection's wire format, preserving cache and other settings. Returns the request
+    parameters; a local model that declares `native_reasoning_budgets` also gets that level's output cap written to
+    `value`'s profile, so pass the copy you are about to use."""
     profile = value['native_profile']
     params = json.loads(profile.get('parameters_json', '{}'))
     if effort == 'default':
@@ -426,6 +428,15 @@ def reasoning_parameters(value, effort):
         if effort not in value['native_reasoning_levels']:
             raise ValueError('Unsupported local reasoning level: '+effort)
         params.setdefault('chat_template_kwargs', {})['reasoning_effort'] = effort
+        # NInfer honours only a top-level thinking_budget; a level without one keeps the server's default. Thinking
+        # and the answer share the output cap, so each level states its own cap and the answer keeps its room.
+        # Both are set from the table on every call: what an earlier level left must not survive a switch.
+        limits = (value.get('native_reasoning_budgets') or {}).get(effort)
+        if limits:
+            params.pop('thinking_budget', None)
+            if 'thinking_budget' in limits:
+                params['thinking_budget'] = limits['thinking_budget']
+            profile['output_tokens'] = limits['output_tokens']
     elif effort and protocol == 'anthropic-messages':
         params.setdefault('output_config', {})['effort'] = effort
     elif effort and protocol == 'gemini-generate-content':
