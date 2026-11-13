@@ -25,7 +25,8 @@ import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
-SECRET = 'probe-fake-value-' + os.urandom(6).hex()  # in the project's .env and in a file outside it; never printed
+# A fake value in the project's .env and in a file outside it: a receipt that holds it means the sandbox let it be read.
+SECRET = 'probe-fake-value-' + os.urandom(6).hex()
 
 
 def write(root, files):

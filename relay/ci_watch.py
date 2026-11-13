@@ -20,9 +20,9 @@ removed or archived -- with the shepherd beats they left, and keeps the ones gh 
 turns on auto-merge and brings the branch up to date when main moved. Before anything is pushed it reads
 GitHub (repository settings, branch protection, rulesets) and refuses, with the reason, a push to a public
 repository whose unpublished commits carry an author or committer email that is not a GitHub noreply address,
-unsigned commits where signing is required, a repository whose settings leave no merge method and, when the branch's
-commits touch the Windows sandbox (SANDBOX_PATHS), a failed `scripts/ops/sandbox_probe.py` on this machine; otherwise the
-method is chosen from those settings (merge commit, else squash, never rebase). CI on main then skips a merge whose
+unsigned commits where signing is required, a repository whose settings leave no merge method and, when the
+branch's commits touch the Windows sandbox (SANDBOX_PATHS), a failed `scripts/ops/sandbox_probe.py` on this
+machine; otherwise the method is chosen from those settings (merge commit, else squash, never rebase). CI on main then skips a merge whose
 bytes already passed in the pull request (scripts/ci_suite.py). It leaves `tare ci shepherd <repo-dir> <number>` running
 detached: main requires a branch up to date with it and a personal account has no merge queue, so a pull request
 falls behind whenever another one merges; the shepherd merges main into it (CI runs again) until it merges or

@@ -1421,8 +1421,8 @@ def test_a_host_without_the_sandbox_opens_the_pull_request_and_says_the_probe_di
 
 
 @pytest.mark.parametrize('returncode, stdout, named', [
-    (1, 'FAIL  node-commonjs ...\n{"ok": false, "failed": ["node-commonjs", "cleanup"], "not_run": [], "seconds": 30}\n',
-     'node-commonjs, cleanup'),
+    (1, 'FAIL  node-commonjs ...\n{"ok": false, "failed": ["node-commonjs", "cleanup"], "not_run": [], '
+        '"seconds": 30}\n', 'node-commonjs, cleanup'),
     (1, 'Traceback (most recent call last):\n', 'exit 1: Traceback'),
     (None, '', 'more than 15 minutes')])
 def test_a_failed_sandbox_probe_refuses_before_anything_is_pushed(tmp_path, monkeypatch, returncode, stdout, named):
