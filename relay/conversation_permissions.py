@@ -10,6 +10,7 @@ from contextlib import contextmanager, ExitStack
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
+import sys
 import time
 
 from compute_plane.native_journal import custody_lock, regular, save_json
@@ -289,13 +290,16 @@ BLOCKED = {  # what the sandbox stopped, in plain words, by limitation code
     'ISOLATION_SECRET_DENIED': 'a secret file such as .env (the sandbox denies secret files to every check)',
     'ISOLATION_INTERNAL_IPC_UNAVAILABLE': 'a loopback connection Python makes for itself (the sandbox denies '
                                           'loopback)'}
+BLOCKED_LINUX = {**BLOCKED, 'ISOLATION_NETWORK_DENIED': 'a network connection (the sandbox has its own loopback, '
+                 'but it cannot reach the network or the services of this machine)'}
 
 
 def sandbox_question(limitation):
     """(the question's text, the output line that shows the block or '')."""
     code, _, detail = limitation.partition(': ')
-    if code in BLOCKED:
-        return 'The sandbox blocked ' + BLOCKED[code] + ', so tare cannot judge this check inside it.', ''
+    blocked = BLOCKED_LINUX if sys.platform == 'linux' else BLOCKED
+    if code in blocked:
+        return 'The sandbox blocked ' + blocked[code] + ', so tare cannot judge this check inside it.', ''
     if code == 'ISOLATION_BLOCKED_DURING':  # a red check: the rerun outside would decide it
         what, _, line = detail.partition('. Output: ')
         return ('This check failed, and the sandbox blocked ' + what + ' during it, so the failure may come from the '

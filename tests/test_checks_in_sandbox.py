@@ -279,6 +279,45 @@ def test_a_red_check_names_what_the_sandbox_blocked_during_it(output, what):
         assert protection.sandbox_blocked({**value, **other}) is None  # passing, or not this sandbox
 
 
+# The errors the Linux sandbox (bubblewrap) gives (measured 2026-11-13), as Python, Node, Rust and bwrap print them.
+@pytest.mark.parametrize('output,what', [
+    ('OSError: [Errno 101] Network is unreachable', 'a network connection'),
+    ('socket.gaierror: [Errno -3] Temporary failure in name resolution', 'a network name lookup'),
+    (CARGO_DEPENDENCY, 'a network name lookup'),
+    ('ConnectionRefusedError: [Errno 111] Connection refused', 'a connection to a service on this machine'),
+    ('Error: connect ECONNREFUSED 127.0.0.1:5432', 'a connection to a service on this machine'),
+    ("OSError: [Errno 30] Read-only file system: '/home/u/project/Cargo.lock'", 'a file it may not write'),
+    ("PermissionError: [Errno 13] Permission denied: '/home/u/project/.env'", 'a secret file (.env)'),
+    ("Error: EACCES: permission denied, open '/home/u/project/.env'", 'a secret file (.env)'),
+    ('Os { code: 13, kind: PermissionDenied, message: "Permission denied" }', 'a file it may not read or write'),
+    (CARGO, 'the Rust toolchain in your user profile'),
+    ('bwrap: Creating new namespace failed: Operation not permitted', 'the sandbox itself, which could not start'),
+    (UNITTEST_FAIL, None), (NODE_FAIL, None), (RUST_FAIL, None),
+    (UNITTEST_NETWORK, None), (NODE_ROOT, None)])  # Windows' errors are not this sandbox's
+def test_a_red_check_names_what_the_linux_sandbox_blocked_during_it(output, what):
+    value = {'returncode': 1, 'output': output, 'process': {'confinement': {'backend': 'linux-bwrap'}}}
+    found = protection.sandbox_blocked(value)
+    assert (found and found[0]) == what
+    assert protection.sandbox_blocked({**value, 'returncode': 0}) is None
+
+
+def test_a_file_the_linux_sandbox_hides_is_the_sandboxs_and_a_missing_one_is_the_tests(monkeypatch):
+    # Inside bubblewrap a path outside every scope does not exist: reading one is ENOENT, not a denial.
+    value = {'returncode': 1, 'process': {'confinement': {'backend': 'linux-bwrap'}}}
+    scopes = ('/usr', '/home/u/project')
+    here = {'/home/u/notes/private.txt', '/home/u/project/data.txt'}  # what exists on this host
+    monkeypatch.setattr(protection, 'os', SimpleNamespace(path=SimpleNamespace(exists=here.__contains__)))
+    python = "FileNotFoundError: [Errno 2] No such file or directory: '/home/u/notes/private.txt'"
+    for line in (python, "Error: ENOENT: no such file or directory, open '/home/u/notes/private.txt'",
+                 "PermissionError: [Errno 13] Permission denied: '/home/u/notes/private.txt'"):
+        what, shown = protection.sandbox_blocked({**value, 'output': line}, scopes)
+        assert what == 'a file outside the folders checks may read (/home/u/notes/private.txt)' and shown == line
+    for line in (python.replace('notes/private', 'project/data'),  # inside a scope: the test's own missing file
+                 python.replace('private', 'gone')):  # missing here too: not the sandbox's
+        assert protection.sandbox_blocked({**value, 'output': line}, scopes) is None
+    assert protection.sandbox_blocked({**value, 'output': python}) is None  # no scopes known: no claim
+
+
 @pytest.mark.parametrize('answer,outside_exit,state', [
     ('yes', 0, 'green'), ('yes', 1, 'red'), ('no', None, 'red'), ('headless', None, 'red')])
 def test_a_red_check_the_sandbox_blocked_asks_and_only_the_rerun_outside_decides(host, monkeypatch, answer,
@@ -313,8 +352,8 @@ def test_a_red_check_the_sandbox_blocked_asks_and_only_the_rerun_outside_decides
         assert ('no one could be asked' if answer == 'headless' else 'the user chose not to') in receipt
 
 
-@pytest.mark.parametrize('answer', ['no', 'yes'])
-def test_a_check_that_runs_out_of_time_in_the_sandbox_asks_and_stays_unjudged(host, monkeypatch, answer):
+@pytest.mark.parametrize('answer,platform', [('no', 'win32'), ('yes', 'win32'), ('no', 'linux')])
+def test_a_check_that_runs_out_of_time_in_the_sandbox_asks_and_stays_unjudged(host, monkeypatch, answer, platform):
     # The Kernel keeps no output of a command stopped at its time limit (node_probe.py: hang/leak.test.mjs, 301 s).
     from compute_plane.native_capabilities import NativeCapabilities
     from tare_tools_agent_runtime import EffectResult
@@ -327,17 +366,20 @@ def test_a_check_that_runs_out_of_time_in_the_sandbox_asks_and_stays_unjudged(ho
                         subprocess.CompletedProcess(argv, 0, 'passed outside\n', ''))
     run = protection.conversation_verifier(host.control, host.custody, host.config, {}, host.root, UNIT,
         {'tests': PASS}, outside=lambda name, argv, why: asked.append(why) or (answer == 'yes', 'the user chose'))
+    protection.sys.platform = platform  # after binding: the factory refuses another platform before it binds
     token = work_units.CHECK_PORT.set(run)
     try:
         state, receipt = work_units.run_checks(host.root, {'tests': PASS})
     finally:
         work_units.CHECK_PORT.reset(token)
-    assert asked == [protection.SANDBOX_TIMEOUT]  # not a raised "verification was refused: tests: timed out"
+    # Not a raised "verification was refused: tests: timed out".
+    assert asked == [protection.SANDBOX_TIMEOUT_LINUX if platform == 'linux' else protection.SANDBOX_TIMEOUT]
     assert permissions.sandbox_question(asked[0])[0].startswith('this check did not finish within its time limit')
     if answer == 'yes':
         assert state == 'green' and reruns == [PASS] and 'passed outside' in receipt
-    else:
-        assert state == 'inconclusive' and reruns == [] and 'node --test does' in receipt
+    else:  # Linux: the sandbox has its own loopback, so a test's own server is not what it waits for
+        assert state == 'inconclusive' and reruns == []
+        assert ('services of this machine' if platform == 'linux' else 'node --test does') in receipt
         assert not work_units.blocked_by_sandbox(receipt)  # a timeout settles nothing, as before (D9b)
 
 
@@ -365,12 +407,13 @@ def test_the_session_suite_holds_a_change_whose_check_the_sandbox_blocked(tmp_pa
     assert work_units.suite_allows(config, unit, 'repo', tree, {'mod.py': b''})[0]  # a timeout keeps today's rule
 
 
-def test_the_question_asks_once_per_turn_honours_always_and_never_runs_outside_headless(tmp_path):
+def test_the_question_asks_once_per_turn_honours_always_and_never_runs_outside_headless(tmp_path, monkeypatch):
     import threading
     import time
     from relay import conversation_permissions as permissions, relay_mesh
     from relay.turn_engine import checks_outside_sandbox
     from tare_tools_agent_runtime import BindingRef, CancellationToken, ExecutionControl
+    monkeypatch.setattr(permissions, 'sys', SimpleNamespace(platform='win32'))  # its wording; Linux's is tested below
     root, project, directory = tmp_path/'session', tmp_path/'project', tmp_path/'console'
     root.mkdir(); project.mkdir()
     control = ExecutionControl(BindingRef('work', 'binding', 'operator', 1, 'opaque'), CancellationToken(),
@@ -408,6 +451,16 @@ def test_the_question_asks_once_per_turn_honours_always_and_never_runs_outside_h
     assert decide('turn-3', frontend=False)[0] == (True, 'always for this project, as the user chose')
 
 
+@pytest.mark.parametrize('platform', ['win32', 'linux'])
+def test_the_network_question_says_what_this_platforms_sandbox_cannot_reach(monkeypatch, platform):
+    from relay import conversation_permissions as permissions
+    monkeypatch.setattr(permissions, 'sys', SimpleNamespace(platform=platform))
+    question = permissions.sandbox_question(NETWORK)[0]
+    assert question.startswith('The sandbox blocked a network connection')
+    assert ('loopback included' in question) is (platform == 'win32')
+    assert ('its own loopback' in question) is (platform == 'linux')
+
+
 LOCAL = {'native_profile': {'endpoint': 'http://127.0.0.1:8080/v1', 'protocol': 'openai-chat', 'model': 'qwen'}}
 HOSTED = {'native_profile': {'endpoint': 'https://api.example.test/v1', 'protocol': 'openai-chat', 'model': 'gpt'}}
 
@@ -428,6 +481,7 @@ def test_a_local_implementer_is_refused_where_no_sandbox_isolates_its_checks(tmp
         with pytest.raises(ValueError, match='does not run a local model as implementer on this system') as error:
             session({'role': role}, deployment, tmp_path)
         assert 'hosted implementer' in str(error.value) and 'Windows 11' in str(error.value) and calls == []
+        assert ('bubblewrap' in str(error.value)) is (sys.platform == 'linux')  # what Linux needs, said there only
     else:
         assert session({'role': role}, deployment, tmp_path) == 'ran'
 

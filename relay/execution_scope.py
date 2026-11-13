@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass
 from functools import wraps
 import json
 import os
+import sys
 
 ENV='TARE_SESSION_SCOPE'
 ROLE=ContextVar('tare_execution_role',default='coordinator')
@@ -358,7 +359,9 @@ def normalize_arguments(values):
 
 
 LOCAL_UNSANDBOXED=('tare does not run a local model as implementer on this system: a local model runs only where '
-    'the checks of its work are isolated, and this system has no sandbox for them (Windows 11 with its process '
+    'the checks of its work are isolated, and this system has no sandbox for them ('
+    +('on Linux the sandbox needs bubblewrap 0.8 or newer and unprivileged user namespaces; '
+      if sys.platform=='linux' else '')+'Windows 11 with its process '
     'sandbox has one). Choose a hosted implementer (a cloud or CLI model), or use Windows 11 with the sandbox. '
     'No model call was made.')
 

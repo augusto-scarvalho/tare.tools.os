@@ -8,6 +8,7 @@ import json
 import ntpath
 import os
 from pathlib import Path
+import posixpath
 import secrets
 import shlex
 import re
@@ -44,6 +45,9 @@ SANDBOX_TIMEOUT = ('ISOLATION_TIMEOUT: this check did not finish within its time
     'was not kept. The sandbox refuses every connection, loopback included: a test that leaves its server open after '
     'its own connection to it was refused (node --test does) waits there until the limit. Outside the sandbox it may '
     'finish.')
+SANDBOX_TIMEOUT_LINUX = ('ISOLATION_TIMEOUT: this check did not finish within its time limit in the sandbox, and its '
+    'output was not kept. The sandbox has its own loopback, but it cannot reach the network or the services of this '
+    'machine: a test that waits for one of them waits there until the limit. Outside the sandbox it may finish.')
 
 
 def probe_sandbox():
@@ -77,20 +81,35 @@ def file_digest(path):
 def prepared_checks(commands):
     """Resolve only host-registered checks; never discover arbitrary model commands."""
     from compute_plane.managed_process import host_executable
-    return {name:[str(Path(argv[0]).resolve(strict=True)) if Path(argv[0]).is_absolute()
+    return {name:[program(argv[0]) if Path(argv[0]).is_absolute()
                   else host_executable(argv[0],required=True),*argv[1:]] for name,argv in commands.items()}
 
 
+def program(path):
+    """A check's program as the sandbox runs it: resolved on Windows; on POSIX its absolute path, links kept, since a
+    virtual environment's python is a link to the base interpreter and resolving it loses the environment."""
+    resolved=str(Path(path).resolve(strict=True))  # a missing program raises here on every platform
+    return resolved if sys.platform=='win32' else os.path.abspath(path)
+
+
 def verifier_runtime(executable):
-    path=Path(executable).resolve(strict=True)
-    folder=path.parent
-    # Git for Windows' cmd launcher loads its runtime from the same installation.
-    if (path.name.lower()=='git.exe' and folder.name.lower() in ('cmd','bin')
-            and any((folder.parent/p).is_dir() for p in ('mingw64','ucrt64'))):
-        return folder.parent
-    if folder.name.lower() in ('scripts','bin') and (folder.parent/'pyvenv.cfg').is_file():
-        return folder.parent  # the interpreter needs its own Lib/site-packages as well
-    return folder
+    """The folders a program runs from. On POSIX the rule also applies to the path as given, not only to its target:
+    a virtual environment's python is a link, and the environment is the link's folder."""
+    paths=[Path(executable).resolve(strict=True)]
+    if sys.platform!='win32':
+        paths.append(Path(os.path.abspath(executable)))
+    roots=set()
+    for path in paths:
+        folder=path.parent
+        # Git for Windows' cmd launcher loads its runtime from the same installation.
+        if (path.name.lower()=='git.exe' and folder.name.lower() in ('cmd','bin')
+                and any((folder.parent/p).is_dir() for p in ('mingw64','ucrt64'))):
+            roots.add(folder.parent)
+        elif folder.name.lower() in ('scripts','bin') and (folder.parent/'pyvenv.cfg').is_file():
+            roots.add(folder.parent)  # the interpreter needs its own Lib/site-packages as well
+        else:
+            roots.add(folder)
+    return roots
 
 
 def venv_home(root):
@@ -261,9 +280,9 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         runtime_roots={str(Path(sys.base_prefix).resolve()),str(Path(sys.prefix).resolve())}
         if not any(SANDBOX_PYTHON.is_relative_to(p) for p in runtime_roots):
             runtime_roots.add(str(SANDBOX_PYTHON))  # a source checkout; a release has it inside its venv
-        runtime_roots.update(str(verifier_runtime(row['argv'][0])) for row in config.get('verifiers',{}).values()
-            if Path(row['argv'][0]).is_absolute())
-        runtime_roots.update(str(verifier_runtime(p)) for p in config.get('command_runtimes', []))
+        runtime_roots.update(str(r) for row in config.get('verifiers',{}).values()
+            if Path(row['argv'][0]).is_absolute() for r in verifier_runtime(row['argv'][0]))
+        runtime_roots.update(str(r) for p in config.get('command_runtimes', []) for r in verifier_runtime(p))
         # A virtual environment's interpreter starts from its base installation (pyvenv.cfg's home), which need not
         # be tare's own: a project's .venv on another Python version would otherwise fail to start in the sandbox.
         runtime_roots.update(filter(None, map(venv_home, list(runtime_roots))))
@@ -275,7 +294,7 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         from compute_plane.managed_process import host_executable
         search_executable=host_executable('rg') if 'search' in capabilities.names else None
         if search_executable:
-            runtime_roots.add(str(verifier_runtime(search_executable)))
+            runtime_roots.update(map(str, verifier_runtime(search_executable)))
         read=[os.environ['SystemRoot'],*sorted(runtime_roots)]
         references=[]
         if config.get('folder_access'):
@@ -325,7 +344,8 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         # stat-able without it; only the volume root's own metadata is then denied.
         policy=MxcPolicy(tuple(read),tuple(dict.fromkeys(write)),tuple(denied),registry_read=True)
         # MXC denies a path: renaming a writable folder above a nested secret would carry the secret out of the rule.
-        held=sandbox_secrets.Hold(sandbox_secrets.movable(denied,write))
+        # bubblewrap masks the entry itself, and a rename carries the mask along: nothing to hold (and Hold is Windows').
+        held=sandbox_secrets.Hold(sandbox_secrets.movable(denied,write) if sys.platform=='win32' else [])
         deadline_cache={};issued={};observed={};routine_ports={}
 
         def sources(argv):
@@ -347,7 +367,9 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
             for path in dict.fromkeys(files):
                 size=path.stat().st_size;total+=size
                 limit=512*1024*1024 if path==executable else 32*1024*1024
-                if path.is_symlink() or size>limit or total>544*1024*1024:
+                # On POSIX the executable may be a link (a virtual environment's python): its target is recorded.
+                linked=path.is_symlink() and (path!=executable or sys.platform=='win32')
+                if linked or size>limit or total>544*1024*1024:
                     raise ActionRefused('Command input identity is unavailable or oversized.')
                 rows.append((str(path.resolve()),file_digest(path)))
             return digest(rows)
@@ -618,8 +640,8 @@ def sandbox_verifiers(verifiers, root):
         program = Path(argv[0])
         found = (program if program.is_absolute() else Path(root)/program if len(program.parts) > 1
                  else shutil.which(argv[0]))
-        if found and Path(found).is_file():
-            argv[0] = str(Path(found).resolve())
+        if found and Path(found).is_file():  # as program(), not strict on Windows
+            argv[0] = str(Path(found).resolve()) if sys.platform == 'win32' else os.path.abspath(found)
         result[name] = {**row, 'argv': argv}
     return result
 
@@ -736,7 +758,7 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
             limitation = done.execution_limitation or ''
             if protected:
                 return done
-            if not limitation.startswith((*SANDBOX_LIMITS, SANDBOX_TIMEOUT)):
+            if not limitation.startswith((*SANDBOX_LIMITS, SANDBOX_TIMEOUT, SANDBOX_TIMEOUT_LINUX)):
                 return blocked_during(name, argv, kwargs, done) if done.sandbox_blocked else done
         allowed, why = outside(name, argv, limitation) if outside else (False, 'no one could be asked')
         if not allowed:
@@ -772,7 +794,8 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
             reason = stopped or value.get('reason') or value.get('error_type') or result.status
             if stopped == 'timed out' and not protected:  # the sandbox may be why: unjudged, and the user is asked
                 done = subprocess.CompletedProcess(argv, 1, '', '')
-                done.execution_limitation, done.sandbox_blocked = SANDBOX_TIMEOUT, None
+                done.execution_limitation = SANDBOX_TIMEOUT_LINUX if sys.platform == 'linux' else SANDBOX_TIMEOUT
+                done.sandbox_blocked = None
                 return done
             raise ValueError(('Protected' if protected else 'Sandboxed')+f' verification was refused: {name}: {reason}')
         completed = subprocess.CompletedProcess(argv, value.get('returncode', 1),
@@ -787,8 +810,9 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
 
 
 def verification_limitation(value):
-    """A check the MXC sandbox stopped (the loopback socket pair hang, or pytest tests that each failed on a
-    connection or a secret file the sandbox denied) is inconclusive, never a failing-code verdict."""
+    """A check the sandbox stopped (MXC's loopback socket pair hang, or pytest tests that each failed on a
+    connection or a secret file the sandbox denied, in MXC or bubblewrap) is inconclusive, never a failing-code
+    verdict."""
     output = str(value.get('output') or '')
     backend = (value.get('process') or {}).get('confinement', {}).get('backend')
     if (value.get('returncode') and backend == 'windows-mxc'
@@ -807,6 +831,8 @@ def verification_limitation(value):
         # a socket error only, or ERROR_ACCESS_DENIED completing asyncio's overlapped connect (windows_events.py,
         # finish_connect). A bare "Access is denied" can be the test's own file error, so it never counts.
         raised = '\n'.join(line for line in section.splitlines() if line.startswith('E '))
+        if backend == 'linux-bwrap':  # an unreachable network or a failed name lookup; its own loopback works
+            return '[Errno 101]' in raised or '[Errno -3]' in raised
         return '[WinError 10013]' in raised or ('[WinError 5]' in raised and 'windows_events.py' in section
                                                 and 'finish_connect' in section)
     def secret(line):
@@ -825,11 +851,15 @@ def verification_limitation(value):
         return 'network' if denied(section) else 'secret' if raised and all(map(secret, raised)) else 'failure'
     sections = [] if value.get('output_truncated') else pytest_failures(output)
     kinds = {kind(section) for section in sections}
-    if not (value.get('returncode') and backend == 'windows-mxc' and sections and 'failure' not in kinds):
+    if not (value.get('returncode') and backend in ('windows-mxc', 'linux-bwrap') and sections
+            and 'failure' not in kinds):
         return None
     if kinds == {'network'}:
         return ('ISOLATION_NETWORK_DENIED: every failing test of this check failed because the sandbox denied a '
-            'network connection on this machine (loopback included), so these tests cannot be judged inside the '
+            + ('network connection or a name lookup (the sandbox has its own loopback, but it cannot reach the '
+               'network or the services of this machine)' if backend == 'linux-bwrap' else
+               'network connection on this machine (loopback included)')
+            + ', so these tests cannot be judged inside the '
             'sandbox. This does not establish failing test assertions. Do not remove required checks, change '
             'tests to hide this limitation, or silently enable host networking.')
     both = 'network' in kinds
@@ -860,6 +890,21 @@ BLOCKED_LINES = (
     (re.compile(r'\bkind: PermissionDenied\b|\(os error 5\)'), 'a file it may not read or write'),
 )
 DENIED_PATH = re.compile(r'''(?:Permission denied|Access is denied|\bEACCES\b|\bEPERM\b)[^'"]*(['"])(.+?)\1''')
+# The same for the Linux sandbox (bubblewrap), from what it gave in a real run: a masked secret reads as EACCES,
+# a write to a read-only scope or a mask as EROFS, a network address as ENETUNREACH. It has its own loopback, so a
+# refused connection may be the test's own server or a service of this machine the sandbox cannot reach.
+LINUX_BLOCKED_LINES = (
+    (re.compile(r'Network is unreachable|\bENETUNREACH\b|\[Errno 101\]|\(os error 101\)'), 'a network connection'),
+    (re.compile(r'Temporary failure in name resolution|\[Errno -3\]|\bEAI_AGAIN\b|Could not resolve host'),
+     'a network name lookup'),
+    (re.compile(r'Connection refused|\bECONNREFUSED\b|\[Errno 111\]'), 'a connection to a service on this machine'),
+    (re.compile(r'Read-only file system|\bEROFS\b|\[Errno 30\]'), 'a file it may not write'),
+    (re.compile(r'rustup could not choose a version'), 'the Rust toolchain in your user profile'),
+    (re.compile(r'\bkind: PermissionDenied\b|\(os error 13\)'), 'a file it may not read or write'),
+    (re.compile(r'^bwrap: '), 'the sandbox itself, which could not start'),
+)
+# A path outside every scope does not exist inside the Linux sandbox: one that exists here was hidden by it.
+MISSING_PATH = re.compile(r'''(?:No such file or directory|\bENOENT\b)[^'"]*(['"])(.+?)\1''', re.IGNORECASE)
 
 
 def sandbox_blocked(value, readable=()):
@@ -867,12 +912,26 @@ def sandbox_blocked(value, readable=()):
     else None. Not a verdict: the check stays red; it lets tare ask whether to rerun it outside the sandbox.
     `readable`: the sandbox's read and write scopes; a denied absolute path outside all of them is the sandbox's."""
     output = str(value.get('output') or '')
-    if not value.get('returncode') or (value.get('process') or {}).get('confinement', {}).get('backend') != 'windows-mxc':
+    backend = (value.get('process') or {}).get('confinement', {}).get('backend')
+    if not value.get('returncode') or backend not in ('windows-mxc', 'linux-bwrap'):
         return None
-    scopes = [ntpath.normcase(str(p)).rstrip('\\') for p in readable]
+    linux = backend == 'linux-bwrap'
+    if linux:
+        scopes = [posixpath.normpath(str(p)) for p in readable]
+    else:
+        scopes = [ntpath.normcase(str(p)).rstrip('\\') for p in readable]
+
+    def outside(path):
+        if linux:
+            path = posixpath.normpath(path)
+            return bool(scopes and path.startswith('/')
+                        and not any(path == s or path.startswith(s+'/') for s in scopes))
+        folded = ntpath.normcase(path)
+        return bool(scopes and re.match(r'[a-z]:\\', folded)
+                    and not any(folded == s or folded.startswith(s+'\\') for s in scopes))
     for line in output.splitlines()[-2000:]:
         line = line.strip()[:400]
-        for pattern, what in BLOCKED_LINES:
+        for pattern, what in LINUX_BLOCKED_LINES if linux else BLOCKED_LINES:
             if pattern.search(line):
                 return what, line[:200]
         found = DENIED_PATH.search(line)
@@ -880,10 +939,11 @@ def sandbox_blocked(value, readable=()):
             path = found[2].replace('\\\\', '\\')
             if sandbox_secrets.secret(ntpath.basename(path), ntpath.basename(ntpath.dirname(path))):
                 return 'a secret file ('+ntpath.basename(path)+')', line[:200]
-            folded = ntpath.normcase(path)
-            if (scopes and re.match(r'[a-z]:\\', folded)
-                    and not any(folded == s or folded.startswith(s+'\\') for s in scopes)):
+            if outside(path):
                 return 'a file outside the folders checks may read ('+path[:120]+')', line[:200]
+        found = linux and MISSING_PATH.search(line)
+        if found and outside(found[2]) and os.path.exists(found[2]):
+            return 'a file outside the folders checks may read ('+found[2][:120]+')', line[:200]
     return None
 
 

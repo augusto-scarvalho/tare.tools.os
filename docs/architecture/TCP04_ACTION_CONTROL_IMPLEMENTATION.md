@@ -31,7 +31,10 @@ never the original project. File tools retain the plan's edit paths, and the hos
 refuses unplanned source changes before audit/application. The host's read/verify-only
 check capability can read linked Git metadata for its exact registered checks;
 worker commands still cannot access `.git`. Registered executable paths are resolved
-before execution, and their installation runtime is admitted read-only.
+before execution on Windows, and their installation runtime is admitted read-only. On
+POSIX a link keeps its own path (a virtual environment's `python` is a link to the base
+interpreter, and resolving it loses the environment): the installations of both the link
+and its target are admitted read-only, and the review records the target's path and digest.
 
 ## Checks without command protection (2026-11-13)
 
