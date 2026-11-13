@@ -96,8 +96,8 @@ no modo local-only; o fallback determinístico/explorador já existente cuida do
 
 **Run this command?** espera a sua resposta: a pergunta não expira e, enquanto ela está aberta, o tempo
 do turno para (o do implementador e o da conversa), assim como o tempo decorrido mostrado. Só a sua
-resposta ou o cancelamento do turno a fecham. Depois de **Allow for this task**, o tare confere se o
-comando, a pasta, as entradas e o contexto ainda são exatamente os que você viu e o executa dentro de
+resposta ou o cancelamento do turno a fecham. Depois de **Allow this command**, que vale só para aquele comando (o tare pode
+perguntar de novo no próximo), o tare confere se o comando, a pasta, as entradas e o contexto ainda são exatamente os que você viu e o executa dentro de
 uma nova janela curta de revisão (60 segundos por padrão); se algo mudou, ele não roda.
 
 Numa instalação a partir dos fontes, rode `tare PATH` no ambiente ativado; o histórico dela

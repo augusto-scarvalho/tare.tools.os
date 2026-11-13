@@ -94,8 +94,8 @@ in local-only mode; their existing deterministic/explorer fallback handles the w
 
 **Run this command?** waits for your answer: it does not expire, and while it is open the turn's
 time stops (the implementer's and the conversation's) and so does the elapsed time shown. Only your
-answer or cancelling the turn closes it. After **Allow for this task**, tare checks that the command,
-its folder, inputs and context are still exactly what you were shown and runs it within a fresh short
+answer or cancelling the turn closes it. After **Allow this command**, which covers that one command only (tare may ask
+again for the next one), tare checks that the command, its folder, inputs and context are still exactly what you were shown and runs it within a fresh short
 review window (60 seconds by default); anything changed, and it does not run.
 
 From a source install, run `tare PATH` in the activated environment; its history
