@@ -111,6 +111,18 @@ def test_command_review_status_and_known_unknown_usage_are_visible_without_inven
     assert 'codex usage: 0' not in detail
 
 
+def test_a_command_the_local_judge_could_not_review_says_so_in_execution_details():
+    journal=Journal();observer=ActivityJournal(journal)
+    observer.append(request(identity='command/1',name='command',repository='project',argv=['python','check.py']))
+    output={'output':'HOST RESULT','returncode':0,'process':{'command_protection':{'review':'tare',
+        'classifier':'local_unavailable','review_status':'not_reviewed_this_turn','reserved_calls':0,'max_reviews':6}}}
+    observer.append({'kind':'effect_returned','result':{'effect_id':'command/1','status':'succeeded',
+                    'output_json':json.dumps(output)}})
+    detail=observer.presentation()['items'][0]['detail']
+    assert detail.startswith('No model review: the local judge was not available\n')
+    assert 'Command review: tare  not_reviewed_this_turn' in detail
+
+
 def test_the_coordinator_progress_sentence_is_narrated_but_not_its_reasoning_or_final_answer():
     events = []
     observer = ActivityJournal(Journal(), events.append, narrate=True)

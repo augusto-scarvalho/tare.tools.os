@@ -700,7 +700,7 @@ class ConversationWorkbench:
             try:
                 value = permissions_view(self.permissions_directory(root), root, relay_mesh.RELAY_ROOT,
                                          session=self.assistant_session, pending=self.selection(),
-                                         judges_off=self.judges_off())
+                                         judges_off=self.judges_off(), local_only=self.local_only())
             except (OSError, ValueError) as exc:
                 self.notify('Tool scope unavailable: '+str(exc), severity='error')
                 return False

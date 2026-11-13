@@ -87,10 +87,18 @@ connection is available, tare reports the block rather than starting another kin
 of inference. A saved chat pinned to an excluded connection must be continued on an
 allowed connection; its original history and cache prefix stay intact.
 
-The local judge is used only while already loaded and idle. If command classification
-needs it and it is unavailable, tare asks for approval (or honors YOLO); it does not
-load another model over an active GPU lease. Bulk hosted-Jev optimizations remain off
-in local-only mode; their existing deterministic/explorer fallback handles the work.
+The local judge is used only while already loaded and idle; tare never loads it, waits for it
+or loads another model over an active GPU lease. When a protected command needs it and it is
+not available, no model can review that command, so tare asks you first. In **Edit + system
+commands** (YOLO) it asks once per turn: **Run commands without review this turn?** shows the
+command that raised it, and **Run without review this turn** runs that command and the rest of
+the turn's commands the judge cannot review, without asking again. Each of them is marked as
+not reviewed in its activity row, and the next turn asks again.
+**Deny** refuses only that command; the next one asks again. In the other modes tare asks
+about each command. `/permissions` says which applies. `--disable_judge` is different: there
+YOLO runs protected commands without asking, because you turned the judges off. Bulk
+hosted-Jev optimizations remain off in local-only mode; their existing
+deterministic/explorer fallback handles the work.
 
 **Run this command?** waits for your answer: it does not expire, and while it is open the turn's
 time stops (the implementer's and the conversation's) and so does the elapsed time shown. Only your

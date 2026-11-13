@@ -13,6 +13,11 @@ class ProjectPermissions:
         from .execution_scope import current
         return current().disable_judge
 
+    @staticmethod
+    def local_only():
+        from .execution_scope import current
+        return current().only == 'local'
+
     def refresh_command_permission(self):
         from .command_permission import pending,answer
         from .execution_permission_panel import ExecutionPermissionPanel
@@ -158,7 +163,7 @@ class ProjectPermissions:
             return
         def reader():
             return permissions_view(directory, project, control, session=session, pending=pending,
-                                    judges_off=self.judges_off())
+                                    judges_off=self.judges_off(), local_only=self.local_only())
         def saver(defaults, revision):
             nonlocal pending
             saved, saved_revision = save_defaults(directory, project, control, defaults, revision)
@@ -171,7 +176,7 @@ class ProjectPermissions:
                                        command_protection=dict(saved.get('command_protection', {})),
                                        verifier='' if role == 'explorer' else selected.verifier)
             view = permissions_view(directory, project, control, session=session, pending=next_pending,
-                                    judges_off=self.judges_off())
+                                    judges_off=self.judges_off(), local_only=self.local_only())
             if view['revision'] != saved_revision:
                 raise ValueError('Defaults were saved, then changed elsewhere. Refresh to see the current defaults.')
             pending = next_pending

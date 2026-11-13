@@ -225,6 +225,27 @@ def test_panel_says_when_no_model_reviews_a_command_because_judges_are_off(tmp_p
     assert 'after you approve it' in text('both',judges_off=True)
 
 
+def test_panel_says_when_the_local_judge_reviews_and_what_happens_when_it_cannot(tmp_path):
+    from relay.turn_engine import set_project_permission_mode, LOCAL_JUDGE
+    root=tmp_path/'project';root.mkdir()
+    def text(review,**kw):
+        selected=Selection(str(root),role='implementer',write_paths=['.'],
+                           command_protection={'review':review,'backend':'mxc','max_reviews':2,'classifier':'jev','review_policy':'on_demand'})
+        return permissions_view(tmp_path/'preferences',root,tmp_path/'control',pending=selected,**kw)['effective_text']
+    set_project_permission_mode(root,'commands')
+    local=text('tare',local_only=True)
+    assert 'Classifier: local judge '+LOCAL_JUDGE+', only while it is already loaded and idle' in local
+    assert 'When it is not: tare asks once per turn before running commands without review' in local
+    assert 'Classifier: Jev' not in local and 'System commands: Protected noninteractive commands' in local
+    assert 'When it is not: tare asks once' in text('both',local_only=True)
+    assert '(when the execution connection is not Codex)' in text('auto',local_only=True)
+    assert 'local judge' not in text('codex',local_only=True)  # Codex reviews; no local judge
+    assert text('tare',local_only=True,judges_off=True)==text('tare',judges_off=True)  # judges off: #134's text
+    assert text('tare')==text('tare',local_only=False)
+    set_project_permission_mode(root,'edit')
+    assert 'When it is not: tare asks you about each command' in text('tare',local_only=True)
+
+
 def test_jev_auto_preferences_are_independent_and_resume_does_not_override(tmp_path):
     root=tmp_path/'project';root.mkdir()
     defaults={'mode':'commands','write_paths':['.'],'command_protection':

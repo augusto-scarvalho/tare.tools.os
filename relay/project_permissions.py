@@ -199,7 +199,8 @@ def profile_values(defaults):
             defaults['mode'] == 'commands' and 'command_protection' not in defaults, list(defaults['write_paths']))
 
 
-def permissions_view(directory, project, control_root, *, session=None, pending=None, judges_off=False):
+def permissions_view(directory, project, control_root, *, session=None, pending=None, judges_off=False,
+                     local_only=False):
     project = str(Path(project).resolve())
     defaults, revision = read_defaults(directory, project, control_root)
     nested, nested_enabled, nested_error = {}, defaults.get('project_admission', {}).get('nested', True), None
@@ -281,13 +282,24 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
         if protection['review'] == 'tare':
             unreviewed = ('Sandboxed, not reviewed' if yolo else 'Sandboxed, you approve each command'
                           )+' (automatic judges are off in this TUI)'
+    # Local-only: the local judge classifies a command only while it is already loaded and idle; otherwise
+    # Broker.assess asks once per turn in YOLO before running commands without review, or about each command.
+    local = []
+    if protection and local_only and not judges_off and protection['review'] in ('tare', 'both', 'auto'):
+        from .turn_engine import LOCAL_JUDGE, project_permission_mode
+        local = ['Classifier: local judge '+LOCAL_JUDGE+(' (when the execution connection is not Codex)'
+                 if protection['review'] == 'auto' else '')+', only while it is already loaded and idle',
+                 'When it is not: '+('tare asks once per turn before running commands without review'
+                                     if project_permission_mode(project) == 'commands' else
+                                     'tare asks you about each command')]
     effective = [title, 'Project: '+project, 'Role: '+role, 'Tools: '+(', '.join(tools) or 'None'),
                  'Editable paths: '+(', '.join(paths) or 'None'),
                  'System commands: '+(unreviewed or 'Protected noninteractive commands' if protection else
                      'Enabled' if terminal and any(t.startswith('terminal_') for t in tools) else 'Disabled'),
                  'Configured checks: '+(', '.join(checks) or 'None in this scope')]
     if protection:
-        if protection.get('classifier')=='jev' and not judges_off:
+        effective += local
+        if protection.get('classifier')=='jev' and not judges_off and not local:
             effective += ['Classifier: Jev  Review policy: '+protection.get('review_policy','always')]
         effective += ['Command review: '+(review_text or protection['review'])+'  Isolation: '+protection['backend']]
         if not unreviewed:

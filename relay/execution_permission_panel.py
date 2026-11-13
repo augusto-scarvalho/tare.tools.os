@@ -26,9 +26,11 @@ class ExecutionPermissionPanel(SupportPanel):
     def compose(self) -> ComposeResult:
         value = self.request
         command=value.get('kind')=='command'
+        turn=command and value.get('scope')=='turn'  # a yes also covers the turn's later unreviewed commands
         plan = value.get('plan_text')
         with Vertical(classes='support-body'):
-            yield Static('Run this command?' if command else 'Implement this plan?' if plan is not None else
+            yield Static('Run commands without review this turn?' if turn else
+                         'Run this command?' if command else 'Implement this plan?' if plan is not None else
                          'Allow this task to change project files?', classes='panel-title')
             yield Static(value['objective'], markup=False)
             with VerticalScroll(classes='permission-detail'):
@@ -57,7 +59,8 @@ class ExecutionPermissionPanel(SupportPanel):
                         yield Button('Implement, always allow edits here', id='permission-project')
                     yield Button('Change the plan', id='permission-change')
                 else:
-                    yield Button('Allow this command' if command else 'Allow for this task', id='permission-once', classes='panel-primary')
+                    yield Button('Run without review this turn' if turn else 'Allow this command' if command else
+                                 'Allow for this task', id='permission-once', classes='panel-primary')
                     if not command:yield Button('Always allow in this project', id='permission-project')
                 yield Button('Deny', id='permission-deny')
 
