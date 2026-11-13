@@ -18,7 +18,7 @@ from relay.landing_policy import create_evidence, write_evidence
 
 
 class NativeFixtureClient:
-    endpoint = 'http://fixture'
+    endpoint = 'http://fixture.test'
 
     def __init__(self):
         self.generations = []
@@ -55,7 +55,7 @@ def native_fixture_arguments(tmp_path, node):
     custody = tmp_path/'native-custody'; custody.mkdir()
     return dict(node=node, session_id='native-fixture',
         control=ExecutionControl(BindingRef(node['id'],'binding','test-owner',1,'token'),CancellationToken(),time.monotonic()+30),
-        journal=ConversationLog(), profile=ModelProfile('bedrock-converse','fixture',32768,1024,'fixture','http://fixture'),
+        journal=ConversationLog(), profile=ModelProfile('bedrock-converse','fixture',32768,1024,'fixture','http://fixture.test'),
         client=NativeFixtureClient(), context_policy=ContextPolicy(32768,1024,128), custody=custody,
         budget=NativeBudget(max_model_calls=6), specgraph_edit_context=False)
 

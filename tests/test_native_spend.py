@@ -32,7 +32,7 @@ def test_invalid_money_is_a_configuration_error(amount):
 
 
 class Adapter:
-    profile=ModelProfile('bedrock-converse','fixture',1000,100,'fixture','http://fixture')
+    profile=ModelProfile('bedrock-converse','fixture',1000,100,'fixture','http://fixture.test')
     profile_digest='a'*64
     counter_protocol='server-template-tokenize'
     def __init__(self, usage=None):

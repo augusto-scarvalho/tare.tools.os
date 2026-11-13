@@ -35,7 +35,7 @@ def test_factory_never_resolves_api_credentials(tmp_path):
     ('cli://claude', '2.1.278', 'claude-cli-exclusive', False),
     ('cli://agy', '1.2.7', 'claude-cli-exclusive', False),
     ('cli://claude', '2.1.280', 'chat-inclusive', False),
-    ('http://fixture', '2.1.280', 'claude-cli-exclusive', False),
+    ('http://fixture.test', '2.1.280', 'claude-cli-exclusive', False),
 ])
 def test_claude_usage_contract_is_explicit_and_transport_qualified(tmp_path, endpoint, version, layout, accepted):
     dep = deployment(tmp_path)
