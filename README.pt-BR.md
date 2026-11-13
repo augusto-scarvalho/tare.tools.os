@@ -96,7 +96,7 @@ tare.tools.os/
 │   ├── tare.tools.kernel/        (@ 6f4b05a) # Fronteiras de execução, journals, sessões de terminal
 │   ├── tare.tools.agent-runtime/ (@ bbbe120) # Loop de agente com limites
 │   ├── tare.tools.specgraph/     (@ cce9edd) # Grafo de especificação e código do projeto
-│   ├── tare.tools.backlog-graph/ (@ 0fd1e7c) # Grafo de tarefas com atualização compare-and-swap
+│   ├── tare.tools.backlog-graph/ (@ 086f02e) # Grafo de tarefas com atualização compare-and-swap
 │   └── tare.tools.library/       (@ 6e9639e) # Biblioteca técnica e registros de conhecimento
 └── scripts/                                  # Ferramentas de release, CI e manutenção
 ```
