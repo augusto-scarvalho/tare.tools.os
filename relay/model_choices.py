@@ -19,10 +19,12 @@ CLAUDE_MODELS = {
     'claude-opus-5-5': 'Claude Opus 5.5',
     'claude-opus-5': 'Claude Opus 5',
     'claude-opus-4-8': 'Claude Opus 4.8',
+    'claude-fable-5-2': 'Claude Fable 5.2',
     'claude-fable-5-1': 'Claude Fable 5.1',
     'claude-fable-5': 'Claude Fable 5',
 }
 LABELS = {'gemini-4-argon': 'Gemini 4 Argon', 'gemini-3.8-flash': 'Gemini 3.8 Flash',
+          'gemini-4-hydrogen': 'Gemini 4 Hydrogen', 'gemini-4-carbon': 'Gemini 4 Carbon',
           'qwen38': 'Qwen3.8 27B', 'hauhaucs': 'HauhauCS · Qwen3.8',
           'fable-tc': 'Fable-TC', 'qwen36-moe': 'Qwen3.6 MoE', 'swift-next': 'Swift 1.5 Flash-Next',
           'qwen38-gsq': 'Qwen3.8 27B GSQ · NInfer', 'swift27b': 'Swift 1.5 27B · NInfer',

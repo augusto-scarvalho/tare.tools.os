@@ -55,6 +55,34 @@
   },
   "runner": "native-http"
  },
+ "agy-gemini-4-hydrogen-cli": {
+  "id": "agy-gemini-4-hydrogen-cli",
+  "model": "gemini-4-hydrogen-high",
+  "native_cli": {
+   "version": "1.2.7"
+  },
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_execution_limits": {
+   "max_model_calls": 16,
+   "max_seconds": 900,
+   "request_seconds": 300
+  },
+  "native_profile": {
+   "context_window": 200000,
+   "endpoint": "cli://agy",
+   "model": "gemini-4-hydrogen-high",
+   "output_tokens": 16384,
+   "parameters_json": "{\"effort\":\"high\"}",
+   "protocol": "vendor-cli",
+   "source": "Exact model IDs from agy models (AGY 1.5.8) 2026-11-13; xhigh left out, the Kernel takes AGY efforts low to high; existing conservative AGY transport limits, not a capacity or quality measurement"
+  },
+  "native_reasoning_models": {
+   "high": "gemini-4-hydrogen-high",
+   "low": "gemini-4-hydrogen-low",
+   "medium": "gemini-4-hydrogen-medium"
+  },
+  "runner": "native-http"
+ },
  "claude-cli": {
   "id": "claude-cli",
   "model": "claude-opus-5-5",
@@ -102,6 +130,33 @@
    "parameters_json": "{\"effort\": \"high\"}",
    "protocol": "vendor-cli",
    "source": "Claude Code 2.1.278 model-config; explicit model and effort; account availability unchecked"
+  },
+  "native_usage_contract": {
+   "layout": "claude-cli-exclusive",
+   "source": "Claude Code 2.1.280 result.usage; one admitted API message; https://platform.claude.com/docs/en/build-with-claude/prompt-caching"
+  },
+  "runner": "native-http"
+ },
+ "claude-fable-5-2-cli": {
+  "id": "claude-fable-5-2-cli",
+  "model": "claude-fable-5-2",
+  "native_cli": {
+   "version": "2.1.280"
+  },
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_execution_limits": {
+   "max_model_calls": 16,
+   "max_seconds": 900,
+   "request_seconds": 300
+  },
+  "native_profile": {
+   "context_window": 200000,
+   "endpoint": "cli://claude",
+   "model": "claude-fable-5-2",
+   "output_tokens": 16384,
+   "parameters_json": "{\"effort\": \"high\"}",
+   "protocol": "vendor-cli",
+   "source": "Claude Code 2.1.325 model table (latest Fable: claude-fable-5-2), read 2026-11-13; explicit model and effort; lowest CLI version that knows it unchecked"
   },
   "native_usage_contract": {
    "layout": "claude-cli-exclusive",

@@ -21,17 +21,26 @@ key registered in `/setup`; you do not need to register it again.
 | Anthropic | Claude Sonnet 5.5 | claude-sonnet-5-5 | claude-api-sonnet-5-5 |
 | Anthropic | Claude Opus 5.5 | claude-opus-5-5 | claude-api-opus-5-5 |
 | Anthropic | Claude Fable 5.1 | claude-fable-5-1 | claude-api-fable-5-1 |
+| Anthropic | Claude Fable 5.2 | claude-fable-5-2 | claude-api-fable-5-2 |
 | OpenAI | GPT-6.1 Sol | gpt-6.1-sol | openai-api |
 | OpenAI | GPT-6 Astra | gpt-6-astra | openai-api-gpt-6-astra |
+| OpenAI | GPT-6.1 Terra | gpt-6.1-terra | openai-api-gpt-6-1-terra |
 | OpenAI | GPT-6 Luna | gpt-6-luna | openai-api-gpt-6-luna |
 | OpenAI | GPT-6.1 Sol Pro | gpt-6.1-sol | openai-api-gpt-6-1-sol-pro |
 | OpenAI | GPT-6 Astra Pro | gpt-6-astra | openai-api-gpt-6-astra-pro |
 | Google | Gemini 3.8 Flash | gemini-3.8-flash | gemini-api-3-8-flash |
 | Google | Gemini 4 Argon | gemini-4-argon | gemini-api |
+| Google | Gemini 4 Carbon | gemini-4-carbon | gemini-api-4-carbon |
+| Google | Gemini 4 Hydrogen | gemini-4-hydrogen | gemini-api-4-hydrogen |
 
 IDs confirmed in the catalogs of the three APIs on 2026-10-23. The OpenAI catalog
 exposes **GPT-6 Luna**, with no `gpt-6.1-luna` ID. The Google Live/TTS models are
 not part of this conversation and implementation selector.
+
+Fable 5.2, GPT-6.1 Terra, Gemini 4 Carbon and Gemini 4 Hydrogen were added from the same catalogs on
+2026-11-13. They can be chosen and pinned to a role, but no automatic role picks them until they are qualified
+through tare (`"qualified": false` in `relay/role_deployments.json`). Gemini 4 Hydrogen's model page also lists
+`xhigh`; this compatibility protocol offers low to high. Like the other first-party API profiles, they carry no price.
 
 **Pro** uses the same model with `reasoning.mode: "pro"` in the Responses API,
 as described in the [OpenAI documentation](https://developers.openai.com/api/docs/guides/reasoning#reasoning-mode).
@@ -97,5 +106,8 @@ area of the Windows vault, without replacing the operator's credentials.
 Provider references: [OpenAI Responses/GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol),
 [Gemini OpenAI compatibility](https://ai.google.dev/gemini-api/docs/openai),
 [Gemini Argon](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon),
+[Gemini Carbon](https://ai.google.dev/gemini-api/docs/models/gemini-4-carbon),
+[Gemini Hydrogen](https://ai.google.dev/gemini-api/docs/models/gemini-4-hydrogen),
+[GPT-6.1 Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra),
 [Claude auth](https://platform.claude.com/docs/en/manage-claude/authentication) and
 [Claude cache](https://platform.claude.com/docs/en/build-with-claude/prompt-caching).

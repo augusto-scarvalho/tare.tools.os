@@ -45,7 +45,7 @@ def expand(profiles, codex_models=(), agy_models=()):
         if release >= (2, 1, 280):
             # Saved versions are transport/usage references, not the installed
             # executable's version. Kernel checks Haiku's actual 2.1.293 floor.
-            models += ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']
+            models += ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-2']
         for model in models:
             value = deepcopy(claude)
             value['id'] = name = model+'-cli'
