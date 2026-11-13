@@ -65,12 +65,12 @@ de modelo e os prompts das conversas não são substituídos por essas opções.
 | Opção | Efeito |
 | --- | --- |
 | `--subscription_only` | Usa as assinaturas: as CLIs do Codex, Claude e AGY e a assinatura do OpenCode. O Jev hospedado continua disponível. |
-| `--local_only` | Usa modelos locais; troca o Jev hospedado pelo juiz local. As APIs de busca continuam disponíveis. |
+| `--local_only` | Usa modelos locais em todos os papéis, inclusive planejador e auditor; troca o Jev hospedado pelo juiz local. As APIs de busca continuam disponíveis. Deixar um modelo local planejar e auditar é uma escolha sua ao usar este modo, não uma afirmação de qualidade. A auditoria dele sobre um implementador da mesma família não é independente, então o tare pergunta antes de aplicar a mudança (abaixo). |
 | `--api_only` | Usa APIs de inferência. O Jev hospedado e as APIs de busca continuam disponíveis. |
 | `--pro_planner` | Usa o OpenAI Sol PRO, depois o Astra PRO se disponível, só para o planejador separado, com raciocínio no mínimo alto. Exige uma chave de API. |
 | `--prefer_api` | Prefere as APIs de inferência disponíveis para o planejador e os auditores; recorre a outras conexões permitidas. |
 | `--prefer_subscription` | Prefere as assinaturas disponíveis (CLIs, a assinatura do OpenCode) para o planejador e os auditores; recorre a outras conexões permitidas. |
-| `--prefer_local` | Mantém coordenador, explorador, implementador e pesquisador na inferência local; usa planejador e auditores externos qualificados. O Jev hospedado continua disponível. |
+| `--prefer_local` | Mantém coordenador, explorador, implementador e pesquisador na inferência local; usa planejador e auditores externos qualificados (nunca locais). O Jev hospedado continua disponível. |
 | `--disable_judge` | Desliga o Jev hospedado e o juiz local. Um comando protegido então pergunta a você antes, exceto em **Edit + system commands** (YOLO), onde ele roda sem revisão de modelo e sem pergunta. O sandbox, as verificações fixas e as auditorias finais continuam, e o Auto-review nativo do Codex também quando a revisão de comandos do projeto é Codex ou ambos. O `/permissions` mostra qual caso vale. |
 
 ```powershell
@@ -88,6 +88,26 @@ orçamentos, independência de auditoria e leases de GPU já existentes continua
 conexão permitida estiver disponível, o tare informa o bloqueio em vez de iniciar outro tipo
 de inferência. Uma conversa salva fixada numa conexão excluída precisa continuar numa
 conexão permitida; o histórico original e o prefixo de cache dela ficam intactos.
+
+Com `--local_only` uma conversa pode planejar, implementar, verificar e auditar uma mudança só com o
+modelo local (`tare models --role planner --local_only` lista os planejadores locais). O planejador
+roda em `xhigh`, o menor nível do modelo local igual ou acima de alto. O auditor local (Qwen3.8) e o
+implementador local são da mesma família de modelos, então a auditoria não é independente: a
+auditoria, o recibo dela e o resultado da entrega levam o rótulo **same-family audit, not
+independent**. Quando essa auditoria aceita, o tare pergunta **Apply this change?**, mostrando os
+arquivos e o resumo da auditoria. **Apply the change** aplica; **Do not apply** (ou Escape) deixa o
+candidato sem aplicar, como acontece quando não há auditor. Quando a auditoria não aceita mas não
+aponta defeito, só itens em aberto (por exemplo um critério que ninguém consegue comprovar aqui), e as
+verificações passaram, a mesma pergunta diz que o auditor **não** aceitou e lista esses itens; ela
+começa em **Do not apply**, e **Apply anyway** aplica a mudança como decisão sua, registrada assim: o
+tare nunca a chama de auditada ou aceita. Uma auditoria que aponta defeitos (findings) não pergunta
+nada: o implementador os corrige, como sempre. Se o auditor local responder ACCEPT ainda listando
+itens em aberto, o tare lê isso como não aceito (com findings, como revisão; senão, como itens em
+aberto) e diz isso no início do resumo da auditoria. Enquanto a pergunta está aberta, o tempo
+do turno para. Onde ninguém pode responder (`tare serve`, execuções sem interface, Works) a mudança
+não é aplicada: "No independent auditor is available. The candidate remains unapplied." Fora do
+`--local_only` (inclusive com `--prefer_local`) o planejamento e a auditoria continuam com modelos
+hospedados e a regra de independência não muda.
 
 O juiz local só é usado quando já está carregado e ocioso; o tare nunca o carrega, não espera
 por ele e não carrega outro modelo por cima de um lease de GPU ativo. Quando um comando protegido

@@ -16,6 +16,12 @@ def configured():
     return load_role_deployments(path, roster=read_json(native_catalog.roster_path(), 4*1024*1024))
 
 
+def roles(row, scope):
+    """A role-table row's roles; in --local_only mode also its local_only_roles (an operator admission by choice
+    of that mode, not a quality claim)."""
+    return [*row.get('roles', []), *(row.get('local_only_roles', []) if scope.only == 'local' else [])]
+
+
 def credential_available(name):
     return bool(os.environ.get(name) or native_generation.vault_secret(name))
 
@@ -40,11 +46,12 @@ def _ranked(role, producer=None, *, check_resources=False):
     author = identity(producer, 'implementer') if producer is not None else None
     table = configured(); decisions = []; eligible = []; credentials = {}; seen = set()
     from . import route_facts
+    from .execution_scope import current, same_family_admitted
     fact_cache = {}; evidence = route_facts.supplied_evidence(); observed_facts = {}
     for order, row in enumerate(table['deployments']):
         decision = {'deployment': row['id'], 'eligible': False}
         decisions.append(decision)
-        if role not in row.get('roles', []):
+        if role not in roles(row, current()):
             decision['reason'] = 'ROLE_NOT_CONFIGURED'; continue
         if row.get('qualified') is False:
             # Registered from a provider's metadata: an exact pin reaches it, automatic selection waits for a live
@@ -77,7 +84,8 @@ def _ranked(role, producer=None, *, check_resources=False):
         from .turn_engine import usage_limited
         if usage_limited(deployment):
             decision['reason'] = 'QUOTA_EXHAUSTED'; continue
-        if author and (auditor.model_id == author.model_id or auditor.bias_domain == author.bias_domain):
+        same_family = bool(author and (auditor.model_id == author.model_id or auditor.bias_domain == author.bias_domain))
+        if same_family and not same_family_admitted():
             decision['reason'] = 'AUDITOR_NOT_INDEPENDENT'; continue
         if deployment['native_profile']['protocol'] == 'vendor-cli':
             executable = deployment.get('native_cli', {}).get('executable')
@@ -121,25 +129,26 @@ def _ranked(role, producer=None, *, check_resources=False):
             decision['reason'] = 'DUPLICATE_REALIZATION'; continue
         seen.add(fingerprint)
         cross = bool(author and auditor.vendor != author.vendor)
-        decision.update(eligible=True, catalog=row.get('native_catalog',row['id']), reason='CONFIGURED_INDEPENDENT_NATIVE_ROUTE' if author else 'CONFIGURED_NATIVE_ROLE',
+        decision.update(eligible=True, catalog=row.get('native_catalog',row['id']),
+            reason='SAME_FAMILY_LOCAL_ONLY_NOT_INDEPENDENT' if same_family else 'CONFIGURED_INDEPENDENT_NATIVE_ROUTE' if author else 'CONFIGURED_NATIVE_ROLE',
             cost_tier=row['cost_tier'], cross_vendor=cross, profile_sha256=fingerprint,
             selected_deployment=deployment['id'], availability='CREDENTIAL_PRESENT_HOST_UNPROBED' if key else 'HOST_UNPROBED')
         priority = row.get('review_priority', 1000) if role in {'auditor', 'plan-auditor'} else 0
         decision['review_priority'] = priority
         cli_backup = (role in {'auditor', 'plan-auditor'} and
                       (deployment['native_profile']['endpoint'] == 'cli://codex' or row['id'] == 'claude-cli'))
-        from .execution_scope import current
-        rank = (current().preference(deployment,role),not cross, COST[row['cost_tier']], priority, row['kind'] != 'primary', cli_backup, order)
+        # An independent auditor always precedes an admitted same-family one.
+        rank = (same_family, current().preference(deployment,role),not cross, COST[row['cost_tier']], priority, row['kind'] != 'primary', cli_backup, order)
         eligible.append((rank, deployment, decision))
     if check_resources:
-        current = []
+        kept = []
         for item in eligible:
             unavailable = route_facts.admission_reason(observed_facts[id(item[2])])
             if unavailable:
                 item[2].update(eligible=False, reason=unavailable)
             else:
-                current.append(item)
-        eligible = current
+                kept.append(item)
+        eligible = kept
     eligible.sort(key=lambda item: item[0])
     for position, (_, _, decision) in enumerate(eligible):
         decision['position'] = position + 1

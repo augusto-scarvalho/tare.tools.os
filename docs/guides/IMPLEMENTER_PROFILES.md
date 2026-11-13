@@ -48,6 +48,12 @@ The profile applies only to the implementer. Coordinator, planner, explorer,
 researcher, judges and auditor keep their rules and settings. Checks,
 isolation, financial limits and audit independence still apply.
 
+The local implementer can be pinned in every mode, as automatic routing already
+uses it: `tare models --role implementer --via local` lists it, and
+`--implementer ninfer/qwen38-gsq@low` (or `@medium`, `@xhigh`) selects it. Only
+`--local_only` also lets a local model plan and audit; see
+[TUI daily use](TUI_DAILY_USE.md#choose-connections-for-one-launch).
+
 Choose the configuration before dispatch and preserve the saved deployment,
 reasoning, history and cache policy. Changing profile is an explicit decision
 for a new run or revision; it does not reclassify old attempts or swap

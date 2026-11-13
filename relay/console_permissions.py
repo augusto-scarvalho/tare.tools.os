@@ -69,9 +69,14 @@ class ProjectPermissions:
                 answer(selected.session, request['id'], choice or 'deny', project=selected.root,
                     directory=self.permissions_directory(selected.root), control_root=relay_mesh.RELAY_ROOT,
                     changes=panel.changes)
-                self.set_status('Permission denied.' if choice == 'deny' else
-                                'Plan sent back for changes · nothing was implemented' if choice == 'change' else
-                                'Permission granted · continuing the saved plan')
+                if request.get('kind') == 'audit':
+                    self.set_status('Not applied · the candidate is kept' if choice == 'deny' else
+                                    'Applying the change you confirmed' if request['audit']['verdict'] == 'ACCEPT' else
+                                    'Applying the change by your decision · no audit accepted it')
+                else:
+                    self.set_status('Permission denied.' if choice == 'deny' else
+                                    'Plan sent back for changes · nothing was implemented' if choice == 'change' else
+                                    'Permission granted · continuing the saved plan')
             except (OSError, ValueError) as exc:
                 self.notify(str(exc), severity='error')
                 self._execution_permission_seen = None

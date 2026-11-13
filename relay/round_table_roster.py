@@ -198,6 +198,9 @@ def validate_role_deployments(data: dict[str, Any], roster: dict[str, Any]) -> N
         roles = entry.get("roles")
         if not roles or not set(roles) <= set(AGENT_ROLES):
             raise ValueError(f"role deployment {entry['id']} must list roles from {AGENT_ROLES}")
+        extra = entry.get("local_only_roles", [])
+        if not isinstance(extra, list) or not set(extra) <= set(AGENT_ROLES):
+            raise ValueError(f"role deployment {entry['id']} local_only_roles must list roles from {AGENT_ROLES}")
         if entry.get("kind") not in {"primary", "reserve"}:
             raise ValueError(f"role deployment {entry['id']} kind must be primary or reserve")
         if entry.get("cost_tier") not in {"free", "flat", "free-credit", "metered"}:
@@ -238,7 +241,7 @@ def render_role_deployments(roster: dict[str, Any], data: dict[str, Any]) -> str
         lines.append(
             f"| `{_cell(entry['id'])}` | {_cell(model['display_name'])} | {_cell(model['vendor'])} | "
             f"{_cell(entry['provider'])} | {_cell(entry['runner'])} | {_cell(entry.get('effort'))} | "
-            f"{_cell(', '.join(entry['roles']))} | {_cell(entry['kind'])} | {_cell(entry['cost_tier'])} | {_cell(entry['quota_domain'])} | "
+            f"{_cell(', '.join(entry['roles']) + (' (local-only: ' + ', '.join(entry['local_only_roles']) + ')' if entry.get('local_only_roles') else ''))} | {_cell(entry['kind'])} | {_cell(entry['cost_tier'])} | {_cell(entry['quota_domain'])} | "
             f"{_cell(entry['endpoint_domain'])} |"
         )
     return "\n".join(lines) + "\n"

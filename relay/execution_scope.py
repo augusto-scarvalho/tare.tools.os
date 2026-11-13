@@ -10,6 +10,7 @@ ENV='TARE_SESSION_SCOPE'
 ROLE=ContextVar('tare_execution_role',default='coordinator')
 COORDINATOR=ContextVar('tare_conversation_coordinator',default='')
 POLICY_VIEW=ContextVar('tare_policy_view',default=None)
+CONFIRMABLE_AUDIT=ContextVar('tare_confirmable_audit',default=False)  # set only by conversation_review.available
 KINDS=('subscription','local','api')
 REVIEW_ROLES={'planner','plan-auditor','auditor'}
 PIN_ROLES=('planner','implementer','explorer','researcher','auditor')
@@ -17,7 +18,7 @@ FLAGS=('subscription_only','local_only','api_only','pro_planner','prefer_api',
        'prefer_subscription','prefer_local','disable_judge')
 HELP={
     'subscription_only':'Use only subscriptions: Codex, Claude and AGY CLIs and the OpenCode subscription; keep the Jev helper.',
-    'local_only':'Use only local models and the local judge; keep search APIs. The local judge reviews a protected command only while it is already loaded and idle; otherwise tare asks you, once per turn in the "Edit + system commands" (YOLO) mode.',
+    'local_only':'Use only local models and the local judge; keep search APIs. Local models then also plan and audit (your choice of this mode, not a quality claim); an audit by the same model family is not independent, so tare asks you before applying its change. The local judge reviews a protected command only while it is already loaded and idle; otherwise tare asks you, once per turn in the "Edit + system commands" (YOLO) mode.',
     'api_only':'Use only inference APIs; keep search APIs and Jev.',
     'pro_planner':'Use OpenAI PRO via API for the separate planner only.',
     'prefer_api':'Prefer available inference APIs for planner and auditors.',
@@ -179,9 +180,23 @@ def pinned(role,producer=None):
         from .work_audit import identity
         if producer is None:raise ValueError('Pinned auditor requires the actual producer.')
         author=identity(producer,'implementer');auditor=identity(live,'auditor')
-        if author.model_id==auditor.model_id or author.bias_domain==auditor.bias_domain:
+        if (author.model_id==auditor.model_id or author.bias_domain==auditor.bias_domain) and not same_family_admitted():
             raise ValueError('Pinned auditor is not independent; consult tare models --role auditor.')
     return live
+
+
+def same_family_admitted():
+    """--local_only, where the user can confirm before applying (a conversation with its TUI): an auditor of the
+    implementer's own model or family is admitted, and labelled not independent (owner, 2026-11-13). Every other
+    mode and caller (Work runs, tare serve, headless) keeps the independence rule."""
+    return CONFIRMABLE_AUDIT.get() and current().only=='local'
+
+
+@contextmanager
+def confirmable_audit(on):
+    token=CONFIRMABLE_AUDIT.set(bool(on))
+    try:yield
+    finally:CONFIRMABLE_AUDIT.reset(token)
 
 
 def pin_selection(role, chosen=None, effort=None, producer=None):

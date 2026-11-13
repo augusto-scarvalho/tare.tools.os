@@ -46,6 +46,34 @@ def test_pro_mode_is_limited_to_the_separate_planner():
         assert value.allows(deployment('api'),role)[0]
 
 
+@pytest.mark.parametrize('mode',[scope.Scope(),scope.Scope(only='local'),scope.Scope(prefer='local'),
+    scope.Scope(only='subscription'),scope.Scope(prefer='api')])
+def test_same_family_audit_is_admitted_only_in_local_only_mode_with_a_user_to_confirm(mode):
+    with scope.activated(mode):
+        assert not scope.same_family_admitted()  # Work runs, tare serve, headless conversations
+        with scope.confirmable_audit(True):
+            assert scope.same_family_admitted() is (mode.only=='local')
+            with scope.confirmable_audit(False):assert not scope.same_family_admitted()
+
+
+@pytest.mark.parametrize('only',['','local'])
+@pytest.mark.parametrize('confirmable',[False,True])
+def test_a_pinned_same_family_auditor_needs_local_only_mode_and_a_user_to_confirm(monkeypatch,only,confirmable):
+    from types import SimpleNamespace
+    from relay import model_choices,turn_engine,work_audit
+    live={'id':'fleet-qwen38-gsq','native_model_choice':{'connection':'qwen38-gsq'}}
+    monkeypatch.setattr(model_choices,'select_exact',lambda *a,**kw:live)
+    monkeypatch.setattr(turn_engine,'available',lambda name,**kw:(live,None))
+    monkeypatch.setattr(scope,'pin_matches',lambda raw,value:True)
+    monkeypatch.setattr(work_audit,'identity',lambda value,role:SimpleNamespace(
+        model_id='qwen-3.8-27b',bias_domain='qwen/qwen-family',vendor='Qwen'))
+    with scope.activated(scope.Scope(only=only,pins=(('auditor','ninfer/qwen38-gsq@xhigh'),))),scope.confirmable_audit(confirmable):
+        if only and confirmable:
+            assert scope.pinned('auditor',{'id':'producer'}) is live
+        else:
+            with pytest.raises(ValueError,match='not independent'):scope.pinned('auditor',{'id':'producer'})
+
+
 def test_scope_lifetime_restores_the_parent_environment(monkeypatch):
     monkeypatch.delenv(scope.ENV,raising=False)
     with scope.activated(scope.Scope(only='local')):

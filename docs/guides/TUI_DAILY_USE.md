@@ -63,12 +63,12 @@ preferences and conversation prompts are not replaced by these switches.
 | Switch | Effect |
 | --- | --- |
 | `--subscription_only` | Use subscriptions: Codex, Claude and AGY CLIs and the OpenCode subscription. Hosted Jev stays available. |
-| `--local_only` | Use local models; replace hosted Jev with the local judge. Search APIs stay available. |
+| `--local_only` | Use local models for every role, planner and auditor included; replace hosted Jev with the local judge. Search APIs stay available. Letting a local model plan and audit is your choice of this mode, not a quality claim. Its audit of a same-family implementer is not independent, so tare asks before applying the change (below). |
 | `--api_only` | Use inference APIs. Hosted Jev and search APIs stay available. |
 | `--pro_planner` | Use OpenAI Sol PRO, then Astra PRO if available, for the separate planner only, with at least high reasoning. Requires an API key. |
 | `--prefer_api` | Prefer available inference APIs for planner and auditors; fall back to other allowed connections. |
 | `--prefer_subscription` | Prefer available subscriptions (CLIs, the OpenCode subscription) for planner and auditors; fall back to other allowed connections. |
-| `--prefer_local` | Keep coordinator, explorer, implementer and researcher on local inference; use qualified external planner and auditors. Hosted Jev stays available. |
+| `--prefer_local` | Keep coordinator, explorer, implementer and researcher on local inference; use qualified external planner and auditors (never local ones). Hosted Jev stays available. |
 | `--disable_judge` | Disable hosted Jev and the local judge. A protected command then asks you first, except in **Edit + system commands** (YOLO), where it runs with no model review and no question. The sandbox, the fixed checks and final audits still apply, and so does native Codex Auto-review when the project's command review is Codex or both. `/permissions` shows which of these applies. |
 
 ```powershell
@@ -86,6 +86,28 @@ exclusions, budgets, audit independence and GPU leases still apply. If no allowe
 connection is available, tare reports the block rather than starting another kind
 of inference. A saved chat pinned to an excluded connection must be continued on an
 allowed connection; its original history and cache prefix stay intact.
+
+With `--local_only` a conversation can plan, implement, check and audit a change on
+the local model alone (`tare models --role planner --local_only` lists the local
+planners). The planner runs at `xhigh`, the local model's lowest level at or above
+high. The local auditor (Qwen3.8) and the local implementer are the same model
+family, so the audit is not independent: the audit, its receipt and the delivery result carry the label
+**same-family audit, not independent**. When that audit accepts, tare asks
+**Apply this change?**, showing the files and the audit's summary. **Apply the
+change** applies it; **Do not apply** (or Escape) leaves the candidate unapplied,
+as an unavailable auditor does. When the audit does not accept but names no defect,
+only open items (for example a criterion nobody can evidence here), and the checks
+passed, the same question says the auditor did **not** accept and lists those
+items; it starts on **Do not apply**, and **Apply anyway** applies the change as
+your decision, recorded as such: tare never calls it audited or accepted. An audit
+that names defects (findings) asks nothing: the implementer corrects them, as
+usual. If the local auditor answers ACCEPT while still listing open items, tare
+reads it as not accepted (with findings as a revision, otherwise as open items)
+and says so at the start of the audit's summary. While the question is open the turn's time stops.
+Where nobody can answer (`tare serve`, headless runs, Work runs) the change is not
+applied: "No independent auditor is available. The candidate remains unapplied."
+Outside `--local_only` (including `--prefer_local`) planning and auditing stay with
+hosted models and the independence rule is unchanged.
 
 The local judge is used only while already loaded and idle; tare never loads it, waits for it
 or loads another model over an active GPU lease. When a protected command needs it and it is

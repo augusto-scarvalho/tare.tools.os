@@ -107,6 +107,85 @@ def test_plan_dialog_shows_the_whole_plan_and_sends_the_requested_changes(tmp_pa
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize('key,choice', [('enter', 'once'), ('escape', 'deny')])
+def test_local_only_apply_dialog_says_the_audit_is_not_independent_and_sends_the_answer(tmp_path, key, choice):
+    import json
+    from types import SimpleNamespace
+    from textual.widgets import Button, Static
+    from relay import conversation_permissions as permissions
+    project, session = tmp_path/'project', tmp_path/'session'
+    project.mkdir(); (session/'execution-permission').mkdir(parents=True)
+    request = {'schema': permissions.SCHEMA, 'kind': 'audit', 'session': 'parent', 'effect': 'e', 'task': 't',
+               'plan': 'a'*64, 'project': str(project.resolve()), 'paths': ['a.py'], 'checks': {}, 'tests': [],
+               'objective': permissions.APPLY_QUESTION, 'status': 'WAITING',
+               'audit': {'label': 'same-family audit, not independent', 'verdict': 'ACCEPT', 'route': 'local-qwen',
+                         'summary': 'The change sets value to two.'}}
+    request['id'] = permissions.identity(request)
+    permissions.save_json(session/'execution-permission'/'request.json', request)
+    async def scenario():
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(100, 30)) as pilot:
+            await app.workers.wait_for_complete(); await pilot.pause()
+            app.refresh_execution_permission(SimpleNamespace(session=str(session), root=str(project)))
+            await pilot.pause()
+            panel = app.screen
+            assert isinstance(panel, ExecutionPermissionPanel)
+            assert str(panel.query_one('.panel-title', Static).content) == 'Apply this change?'
+            shown = '\n'.join(str(s.content) for s in panel.query(Static))
+            for part in ('same model family as the implementer, so the audit is not independent',
+                         'Audit (same-family audit, not independent): ACCEPT by local-qwen', 'a.py'):
+                assert part in shown
+            assert 'independently audited' not in shown
+            assert [str(b.label) for b in panel.query(Button)] == ['Apply the change', 'Do not apply']
+            assert app.focused.id == 'permission-once'
+            await pilot.press(key); await pilot.pause()
+            assert not isinstance(app.screen, ExecutionPermissionPanel)
+            assert json.loads((session/'execution-permission'/'answer.json').read_text(encoding='utf-8')) == {
+                'id': request['id'], 'choice': choice}
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('keys,choice', [(('enter',), 'deny'), (('shift+tab', 'enter'), 'once')])
+def test_local_only_dialog_for_an_audit_that_did_not_accept_starts_on_do_not_apply(tmp_path, keys, choice):
+    import json
+    from types import SimpleNamespace
+    from textual.widgets import Button, Static
+    from relay import conversation_permissions as permissions
+    project, session = tmp_path/'project', tmp_path/'session'
+    project.mkdir(); (session/'execution-permission').mkdir(parents=True)
+    items = ['Running hello.py was not evidenced [bold]x[/bold].'] + [f'Item {n}.' for n in range(2, 12)]
+    request = {'schema': permissions.SCHEMA, 'kind': 'audit', 'session': 'parent', 'effect': 'e', 'task': 't',
+               'plan': 'a'*64, 'project': str(project.resolve()), 'paths': ['hello.py'], 'checks': {}, 'tests': [],
+               'objective': permissions.APPLY_UNACCEPTED_QUESTION, 'status': 'WAITING',
+               'audit': {'label': 'same-family audit, not independent', 'verdict': 'INCONCLUSIVE', 'route': 'local-qwen',
+                         'summary': 'Criteria 1 and 2 hold.', 'open_items': items[:10], 'open_items_total': 11}}
+    request['id'] = permissions.identity(request)
+    permissions.save_json(session/'execution-permission'/'request.json', request)
+    async def scenario():
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(100, 40)) as pilot:
+            await app.workers.wait_for_complete(); await pilot.pause()
+            app.refresh_execution_permission(SimpleNamespace(session=str(session), root=str(project)))
+            await pilot.pause()
+            panel = app.screen
+            assert isinstance(panel, ExecutionPermissionPanel)
+            assert str(panel.query_one('.panel-title', Static).content) == 'Apply this change?'
+            shown = '\n'.join(str(s.content) for s in panel.query(Static))
+            for part in ('the auditor did NOT accept this change', 'so its audit is not independent either',
+                         'Audit (same-family audit, not independent): INCONCLUSIVE by local-qwen (not accepted)',
+                         'Open items the auditor left:\n- Running hello.py was not evidenced [bold]x[/bold].',
+                         '- Item 10.', '(1 more in the audit receipt)', 'Criteria 1 and 2 hold.'):
+                assert part in shown  # items are plain text: no markup is interpreted
+            assert 'Item 11.' not in shown
+            assert [str(b.label) for b in panel.query(Button)] == ['Apply anyway', 'Do not apply']
+            assert app.focused.id == 'permission-deny'  # the safe answer is the default
+            await pilot.press(*keys); await pilot.pause()
+            assert not isinstance(app.screen, ExecutionPermissionPanel)
+            assert json.loads((session/'execution-permission'/'answer.json').read_text(encoding='utf-8')) == {
+                'id': request['id'], 'choice': choice}
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize('final',['Hello.','The final answer differs.'])
 def test_final_answer_replaces_only_its_identical_stream_preview(final):
     class Console(App):

@@ -394,6 +394,39 @@ def test_only_an_audit_that_refuses_counts_toward_the_refusal_limit(setup, tmp_p
     assert work_units.audit_refusal(result) is refusal
 
 
+@pytest.mark.parametrize('decision', [None, 'ACCEPT', 'APPLY_WITHOUT_ACCEPTED_AUDIT'])
+def test_a_not_accepted_audit_applies_only_on_the_users_recorded_decision(setup, tmp_path, monkeypatch, decision):
+    from pathlib import Path
+    config, custody, root = setup
+    repository(root)
+    config.update(conversation_flow=True, writable={'repo': ['docs/new.md']},
+        verifiers={'conversation-diff': {'repository': 'repo',
+            'argv': ['git', 'diff', '--check', 'HEAD', '--', 'docs/new.md']}})
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
+    monkeypatch.setattr(work_units, 'routes', lambda *a, **kw: iter([('worker', deployment())]))
+    def worker(child, *args, **kwargs):
+        target = Path(child['repositories']['repo'])/'docs/new.md'
+        target.parent.mkdir(); target.write_bytes(b'New content.\n')
+        return {'status': 'PROPOSED', 'model_calls': 1}
+    monkeypatch.setattr(native_agent, 'run_session', worker)
+    audit = {'verdict': 'INCONCLUSIVE', 'summary': 'Static criteria hold.', 'findings': [], 'sources': [],
+             'reference_sources': [], 'remaining': ['Running it was not evidenced.'],
+             'audit_label': 'same-family audit, not independent',
+             **({'user_decision': decision} if decision else {})}  # only confirm_apply's exact value counts
+    result = work_units.run_unit(custody, {'config': config, 'conversation_flow': True,
+        'deployment': deployment(), 'limits': {'max_model_calls': 30}, 'deadline_utc': None},
+        {'title': 'New document', 'target_paths': ['docs/new.md'], 'criteria': ['Write the document'],
+         'verifiers': ['conversation-diff']}, lambda: False, review=lambda *a: audit)
+    if decision != 'APPLY_WITHOUT_ACCEPTED_AUDIT':
+        assert result['verdict'] == 'NOT_REVIEWED' and not result.get('applied') and not (root/'docs/new.md').exists()
+        return
+    assert result['applied'] and (root/'docs/new.md').read_bytes() == b'New content.\n'
+    assert result['audit']['verdict'] == 'INCONCLUSIVE'
+    assert result['next'].startswith("Applied by the user's decision after its checks, although its audit (same-family "
+                                     'audit, not independent) did not accept it') and 'Running it was not evidenced.' in result['next']
+    assert 'never say it was audited or accepted' in result['next']
+
+
 def test_a_verified_change_waits_for_the_sessions_checks_or_for_coverage(tmp_path, monkeypatch):
     tree = tmp_path/'tree'; (tree/'tests').mkdir(parents=True)
     (tree/'tests'/'test_mod.py').write_text('from pkg import mod\n')
