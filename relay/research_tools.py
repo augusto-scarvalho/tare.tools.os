@@ -60,6 +60,8 @@ class ResearchTools:
         if type(start) is not int or start < 1 or type(limit) is not int or not 1 <= limit <= 160:
             raise ValueError('Use a positive start_line and a limit from 1 to 160.')
         value = web.page(self.root, args.get('url'), control, refresh=args.get('refresh', False))
+        if value.get('status') == 'REFUSED':
+            raise ValueError(value['error'])
         text = value.pop('text', '')
         lines = text.splitlines()
         excerpt = '\n'.join(lines[start-1:start-1+limit])
