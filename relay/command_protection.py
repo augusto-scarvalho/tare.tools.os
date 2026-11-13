@@ -37,6 +37,13 @@ SANDBOX_PYTHON = Path(__file__).resolve().parent/'sandbox-python'
 CHECKS_ONLY = {**DEFAULTS, 'review': 'none', 'backend': 'mxc'}
 SANDBOXED_CHECK = 'Host-registered check, run in the sandbox by default; no model review.'
 BLOCKED_DURING = 'ISOLATION_BLOCKED_DURING'  # a red check during which the sandbox blocked something (asks; stays red)
+# A check of a project without command protection that hit its time limit in the sandbox, whose output the Kernel does
+# not keep then. Unjudged (as a timeout is), it asks. Measured 2026-11-13: a `node --test` file whose test leaves its
+# server listening after the sandbox refused the test's own connection to it waits until the limit.
+SANDBOX_TIMEOUT = ('ISOLATION_TIMEOUT: this check did not finish within its time limit in the sandbox, and its output '
+    'was not kept. The sandbox refuses every connection, loopback included: a test that leaves its server open after '
+    'its own connection to it was refused (node --test does) waits there until the limit. Outside the sandbox it may '
+    'finish.')
 
 
 def probe_sandbox():
@@ -260,6 +267,11 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         # A virtual environment's interpreter starts from its base installation (pyvenv.cfg's home), which need not
         # be tare's own: a project's .venv on another Python version would otherwise fail to start in the sandbox.
         runtime_roots.update(filter(None, map(venv_home, list(runtime_roots))))
+        # rustup picks the toolchain from RUSTUP_HOME, by default in the profile this sandbox moves to scratch, where
+        # cargo's own home (registry, credentials) stays. Measured 2026-11-13: a crate with no dependencies then builds.
+        rustup=Path(os.environ.get('RUSTUP_HOME') or Path.home()/'.rustup')
+        if rustup.is_dir():
+            environment['RUSTUP_HOME']=str(rustup.resolve());runtime_roots.add(environment['RUSTUP_HOME'])
         from compute_plane.managed_process import host_executable
         search_executable=host_executable('rg') if 'search' in capabilities.names else None
         if search_executable:
@@ -282,7 +294,15 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
             # still rejects unplanned source changes after independent review.
             write.append(str(root))
         # Every classifier: secrets at any depth of the project and its granted folders, found once per binding.
-        denied=sandbox_secrets.find([root,*references],git=not (host_checks or staged_effects))
+        modules=[]
+        denied=sandbox_secrets.find([root,*references],git=not (host_checks or staged_effects),modules=modules)
+        if not any(map(sandbox_secrets.linked,modules)):
+            # Node resolves each module's real path, and on Windows that lstat()s the drive root, which this sandbox
+            # denies (no enumerate scope, below): no script loads. These flags keep the path Node was given (Node's
+            # CLI docs; NODE_OPTIONS takes both since Node 12). Linked packages (pnpm, npm link, workspaces) would then
+            # look for their dependencies beside the link and fail as plain errors, so there Node still fails on the
+            # drive root, which asks (measured 2026-11-13).
+            environment['NODE_OPTIONS']='--preserve-symlinks --preserve-symlinks-main'
         if (host_checks or staged_effects) and (root/'.git').exists():
             # Exact host verifiers and private staged workers can inspect Git
             # metadata, with no metadata write grant. This admits status/diff
@@ -716,7 +736,7 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
             limitation = done.execution_limitation or ''
             if protected:
                 return done
-            if not limitation.startswith(SANDBOX_LIMITS):
+            if not limitation.startswith((*SANDBOX_LIMITS, SANDBOX_TIMEOUT)):
                 return blocked_during(name, argv, kwargs, done) if done.sandbox_blocked else done
         allowed, why = outside(name, argv, limitation) if outside else (False, 'no one could be asked')
         if not allowed:
@@ -750,6 +770,10 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
                 ('timeout', 'timed out'), ('output_limit', 'exceeded its output limit'))
                 if process.get(key)), None)
             reason = stopped or value.get('reason') or value.get('error_type') or result.status
+            if stopped == 'timed out' and not protected:  # the sandbox may be why: unjudged, and the user is asked
+                done = subprocess.CompletedProcess(argv, 1, '', '')
+                done.execution_limitation, done.sandbox_blocked = SANDBOX_TIMEOUT, None
+                return done
             raise ValueError(('Protected' if protected else 'Sandboxed')+f' verification was refused: {name}: {reason}')
         completed = subprocess.CompletedProcess(argv, value.get('returncode', 1),
                                                 value.get('output', ''), '')
@@ -821,15 +845,19 @@ def verification_limitation(value):
 # unittest, node --test, cargo test). Broad on purpose: it only asks the user (it never makes a red check
 # inconclusive), and a yes reruns the check outside the sandbox, whose own result decides.
 BLOCKED_LINES = (
-    # Python, Node, .NET: a connect the sandbox refused (WSAEACCES); Python's asyncio reports ERROR_ACCESS_DENIED.
-    (re.compile(r'\[WinError 10013\]|\bWSAEACCES\b|\bconnect EACCES\b|\[WinError 5\].*finish_connect'),
-     'a network connection'),
-    (re.compile(r'getaddrinfo failed|\[Errno 1100[12]\]|\bgetaddrinfo (?:ENOTFOUND|EAI_AGAIN)\b'),
-     'a network name lookup'),
-    # Node resolves every script's real path, which reads the drive's root folder: the sandbox denies it.
-    (re.compile(r'''\b(?:EPERM|EACCES)\b.*\b(?:lstat|stat|realpath)\b '[A-Za-z]:\\{1,2}'$'''),
-     "the drive's root folder, which Node reads to load any script"),
+    # Python, Node, .NET, Rust: a connect the sandbox refused (WSAEACCES); Python's asyncio reports ERROR_ACCESS_DENIED.
+    (re.compile(r'\[WinError 10013\]|\bWSAEACCES\b|\bconnect EACCES\b|\[WinError 5\].*finish_connect'
+                r'|\bcode: 10013\b'), 'a network connection'),
+    (re.compile(r'getaddrinfo failed|\[Errno 1100[12]\]|\bgetaddrinfo (?:ENOTFOUND|EAI_AGAIN)\b'
+                r'|Could not resolve host'), 'a network name lookup'),
+    # Node resolves every script's real path, which reads the drive's root folder: the sandbox denies it. Where the
+    # binding avoids that (NODE_OPTIONS), a Node older than 12 rejects the option and exits (the line Node prints for
+    # any option it rejects there; without the option it fails on the root folder).
+    (re.compile(r'''\b(?:EPERM|EACCES)\b.*\b(?:lstat|stat|realpath)\b '[A-Za-z]:\\{1,2}'$'''
+                r'|is not allowed in NODE_OPTIONS'), "the drive's root folder, which Node reads to load any script"),
     (re.compile(r'rustup could not choose a version'), 'the Rust toolchain in your user profile'),
+    # Rust's io::Error names no path: a secret file such as .env, or a write outside the check's write scopes.
+    (re.compile(r'\bkind: PermissionDenied\b|\(os error 5\)'), 'a file it may not read or write'),
 )
 DENIED_PATH = re.compile(r'''(?:Permission denied|Access is denied|\bEACCES\b|\bEPERM\b)[^'"]*(['"])(.+?)\1''')
 

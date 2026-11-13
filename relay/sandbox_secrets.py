@@ -7,6 +7,7 @@ read the secret at its new path (probed 2026-11-13), so the host holds such secr
 import ctypes
 import os
 from pathlib import Path
+import stat
 import weakref
 
 # Named alone, these hold credentials (compared case-insensitively). `.env.*` is a secret too, except the samples.
@@ -28,8 +29,35 @@ def secret(name, folder):
             or name == 'config.json' and folder.lower() == '.docker')
 
 
-def find(roots, *, git):
+def link(entry):
+    """Whether a scandir entry is a symlink or a junction."""
+    return entry.is_symlink() or getattr(entry.stat(follow_symlinks=False), 'st_reparse_tag', 0) == JUNCTION
+
+
+def linked(modules):
+    """Whether the node_modules folder `modules` is a link or holds a package that is one (pnpm, npm link,
+    workspaces), at its top level or in a @scope."""
+    try:
+        info = os.lstat(modules)
+        if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_reparse_tag', 0) == JUNCTION:
+            return True
+        with os.scandir(modules) as listing:
+            entries = list(listing)
+        for entry in entries:
+            if link(entry):
+                return True
+            if entry.name.startswith('@') and entry.is_dir():
+                with os.scandir(entry.path) as scope:
+                    if any(map(link, scope)):
+                        return True
+    except OSError:  # the host cannot read it: neither can the sandbox
+        pass
+    return False
+
+
+def find(roots, *, git, modules=None):
     """Sorted paths of the secrets under `roots`, plus every `.git` folder (and a root `.git` file) when `git`.
+    `modules`, a list, also receives each node_modules folder the walk passes (it does not search them).
 
     Links are never followed: a link's target is either outside every read scope, so the sandbox cannot read it
     either, or inside one, where this walk finds it. A folder the host cannot list is skipped for the same reason:
@@ -54,8 +82,7 @@ def find(roots, *, git):
             continue  # a virtual environment or a tagged cache
         for entry in entries:
             name = entry.name.lower()
-            directory = entry.is_dir(follow_symlinks=False) and not (entry.is_symlink() or getattr(
-                entry.stat(follow_symlinks=False), 'st_reparse_tag', 0) == JUNCTION)
+            directory = entry.is_dir(follow_symlinks=False) and not link(entry)
             if name == '.git':
                 if git and (directory or depth == 0):
                     found.add(entry.path)
@@ -68,6 +95,8 @@ def find(roots, *, git):
                         f'than {MAX_DEPTH} levels deep ({entry.path}), so it cannot say none is left readable; '
                         'protected commands are refused. Open a smaller folder as the project.')
                 pending.append((entry.path, depth + 1))
+            elif name == 'node_modules' and modules is not None and (directory or link(entry)):
+                modules.append(entry.path)
     if len(found) > MAX_DENIED:
         shown, kind = ', '.join(sorted(found)[:3]), ' (Git folders included)' if git else ''
         raise ValueError(f'The project has {len(found)} secret files or folders{kind}, such as {shown}: '

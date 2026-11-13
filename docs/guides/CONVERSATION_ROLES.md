@@ -117,9 +117,11 @@ stopped by the sandbox holds the change, like any unverified change; only a
 timeout still settles nothing (a change whose own checks pass is then applied
 only when its unit's tests cover every changed file). A check of any other
 runner that fails while its output shows a block (a refused connection, a
-secret or outside file, Node's drive-root `lstat`, a missing Rust toolchain)
-stays red and asks the same question; only the rerun outside can turn it
-green, and without one the receipt says the failure may come from the sandbox.
+secret or outside file, Node's drive-root `lstat` where `node_modules` holds
+links, a missing Rust toolchain) stays red and asks the same question; only the
+rerun outside can turn it green, and without one the receipt says the failure
+may come from the sandbox. A check that runs out of time in the sandbox asks
+too and stays unjudged, as a timeout does.
 
 The sandbox also denies the project's secrets, at any depth and in folders granted
 to the project: `.env` and `.env.*` files (samples such as `.env.example` stay

@@ -93,6 +93,24 @@ def test_a_project_venv_on_another_python_reads_its_base_installation(host, tmp_
     assert str(env) in read and str(base.resolve()) in read and str(base) not in bound[0]['policy'].read_write
 
 
+@pytest.mark.parametrize('linked', [False, True])
+def test_node_keeps_its_paths_in_the_sandbox_unless_node_modules_holds_links(host, tmp_path, monkeypatch, linked):
+    unprotected(host, monkeypatch)
+    (host.root/'node_modules'/'dep').mkdir(parents=True)
+    monkeypatch.setattr(protection.sandbox_secrets, 'linked', lambda folder: linked and folder.endswith('node_modules'))
+    rustup = tmp_path/'rustup'; rustup.mkdir()
+    monkeypatch.setenv('RUSTUP_HOME', str(rustup))
+    bound, isolation = [], protection.windows_isolation_factory
+    monkeypatch.setattr(protection, 'windows_isolation_factory', lambda **kw: bound.append(kw) or isolation(**kw))
+    protection.conversation_verifier(host.control, host.custody, host.config, {}, host.root, UNIT, {'check': PASS})
+    environment = bound[0]['environment']
+    # Node's realpath reads the drive root, which the sandbox denies; linked packages need it (pnpm, npm link).
+    assert environment.get('NODE_OPTIONS') == (None if linked else '--preserve-symlinks --preserve-symlinks-main')
+    # rustup's toolchains, which the profile moved to scratch would hide; cargo's own home stays in scratch.
+    assert environment['RUSTUP_HOME'] == str(rustup.resolve()) and str(rustup.resolve()) in bound[0]['policy'].read_only
+    assert 'CARGO_HOME' not in environment
+
+
 @pytest.mark.parametrize('allowed', [True, False])
 def test_a_check_the_sandbox_blocked_runs_outside_only_when_the_user_says_so(host, monkeypatch, allowed):
     unprotected(host, monkeypatch)
@@ -213,6 +231,20 @@ NODE_FAIL = ("\u2716 failing tests:\nAssertionError [ERR_ASSERTION]: Expected va
              "  code: 'ERR_ASSERTION',\n")
 CARGO = ("error: rustup could not choose a version of cargo to run, because one wasn't specified explicitly, and no "
          "default is configured.\n")
+# node_probe.py (2026-11-13): cargo test with the toolchain readable, and the line Node prints for an option it rejects
+# in NODE_OPTIONS (as a Node older than 12 does for the preserve-symlinks flags).
+RUST_NETWORK = ("thread 'echo_server' (6272) panicked at src\\lib.rs:4:59:\ncalled `Result::unwrap()` on an `Err` value: "
+                'Os { code: 10013, kind: PermissionDenied, message: "An attempt was made to access a socket in a way '
+                'forbidden by its access permissions." }\n')
+RUST_SECRET = ("thread 'settings' (6360) panicked at src\\lib.rs:3:48:\ncalled `Result::unwrap()` on an `Err` value: "
+               'Os { code: 5, kind: PermissionDenied, message: "Access is denied." }\n')
+RUST_WRITE = ('error: failed to write C:\\tare-np\\rust-ro\\rs_ok\\Cargo.lock\n\nCaused by:\n  failed to open: '
+              'C:\\tare-np\\rust-ro\\rs_ok\\Cargo.lock\n\nCaused by:\n  Access is denied. (os error 5)\n')
+CARGO_DEPENDENCY = ('warning: spurious network error (3 tries remaining): [6] Could not resolve hostname (Could not '
+                    'resolve host: index.crates.io)\nerror: failed to get `cfg-if` as a dependency of package\n')
+RUST_FAIL = ("thread 'regression' (18772) panicked at src\\lib.rs:3:5:\nassertion `left == right` failed\n  left: 2\n"
+             " right: 3\nerror: test failed, to rerun pass `--lib`\n")
+NODE_OPTION = 'C:\\Program Files\\nodejs\\node.exe: --bogus-flag is not allowed in NODE_OPTIONS\n'
 
 
 def test_a_denied_file_outside_every_scope_is_the_sandboxs_and_one_inside_is_the_tests():
@@ -232,7 +264,10 @@ def test_a_denied_file_outside_every_scope_is_the_sandboxs_and_one_inside_is_the
     (UNITTEST_NETWORK, 'a network connection'), (UNITTEST_SECRET, 'a secret file (.env)'),
     (UNITTEST_DNS, 'a network name lookup'), (NODE_ROOT, "the drive's root folder, which Node reads to load any script"),
     (NODE_SECRET, 'a secret file (.env)'), (NODE_CONNECT, 'a network connection'),
-    (CARGO, 'the Rust toolchain in your user profile'), (UNITTEST_FAIL, None), (NODE_FAIL, None)])
+    (CARGO, 'the Rust toolchain in your user profile'), (UNITTEST_FAIL, None), (NODE_FAIL, None),
+    (RUST_NETWORK, 'a network connection'), (RUST_SECRET, 'a file it may not read or write'),
+    (RUST_WRITE, 'a file it may not read or write'), (CARGO_DEPENDENCY, 'a network name lookup'),
+    (NODE_OPTION, "the drive's root folder, which Node reads to load any script"), (RUST_FAIL, None)])
 def test_a_red_check_names_what_the_sandbox_blocked_during_it(output, what):
     value = {'returncode': 1, 'output': output, 'process': {'confinement': {'backend': 'windows-mxc'}}}
     found = protection.sandbox_blocked(value)
@@ -276,6 +311,34 @@ def test_a_red_check_the_sandbox_blocked_asks_and_only_the_rerun_outside_decides
         assert 'the sandbox blocked a network connection during this check' in receipt
         assert 'may come from the sandbox, not from the code' in receipt
         assert ('no one could be asked' if answer == 'headless' else 'the user chose not to') in receipt
+
+
+@pytest.mark.parametrize('answer', ['no', 'yes'])
+def test_a_check_that_runs_out_of_time_in_the_sandbox_asks_and_stays_unjudged(host, monkeypatch, answer):
+    # The Kernel keeps no output of a command stopped at its time limit (node_probe.py: hang/leak.test.mjs, 301 s).
+    from compute_plane.native_capabilities import NativeCapabilities
+    from tare_tools_agent_runtime import EffectResult
+    from relay import conversation_permissions as permissions
+    unprotected(host, monkeypatch)
+    monkeypatch.setattr(NativeCapabilities, 'execute', lambda self, request, control: EffectResult(request.effect_id,
+        'failed', json.dumps({'error_type': 'CommandInterrupted', 'process': {'timeout': True}})))
+    reruns, asked = [], []
+    monkeypatch.setattr(work_units, 'managed_check', lambda argv, **kw: reruns.append(argv) or
+                        subprocess.CompletedProcess(argv, 0, 'passed outside\n', ''))
+    run = protection.conversation_verifier(host.control, host.custody, host.config, {}, host.root, UNIT,
+        {'tests': PASS}, outside=lambda name, argv, why: asked.append(why) or (answer == 'yes', 'the user chose'))
+    token = work_units.CHECK_PORT.set(run)
+    try:
+        state, receipt = work_units.run_checks(host.root, {'tests': PASS})
+    finally:
+        work_units.CHECK_PORT.reset(token)
+    assert asked == [protection.SANDBOX_TIMEOUT]  # not a raised "verification was refused: tests: timed out"
+    assert permissions.sandbox_question(asked[0])[0].startswith('this check did not finish within its time limit')
+    if answer == 'yes':
+        assert state == 'green' and reruns == [PASS] and 'passed outside' in receipt
+    else:
+        assert state == 'inconclusive' and reruns == [] and 'node --test does' in receipt
+        assert not work_units.blocked_by_sandbox(receipt)  # a timeout settles nothing, as before (D9b)
 
 
 def test_the_question_for_a_red_check_shows_the_line_and_says_the_rerun_decides():

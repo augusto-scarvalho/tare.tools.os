@@ -47,18 +47,43 @@ def test_dependencies_environments_and_caches_are_not_searched(tmp_path):
     assert found(tmp_path) == ['app/.env']  # a virtual environment named .env is not a secret
 
 
-def test_links_are_not_followed(tmp_path):
-    outside = tree(tmp_path/'outside', ['.env'])
-    root = tree(tmp_path/'project', ['ok.txt'])
+def folder_link(target, link):
+    """A junction on Windows (no privilege needed), a symlink elsewhere."""
     try:
         if sys.platform == 'win32':
             import _winapi
-            _winapi.CreateJunction(str(outside), str(root/'linked'))
+            _winapi.CreateJunction(str(target), str(link))
         else:
-            os.symlink(outside, root/'linked', target_is_directory=True)
+            os.symlink(target, link, target_is_directory=True)
     except OSError as exc:
         pytest.skip(f'cannot create a folder link here: {exc}')
+
+
+def test_links_are_not_followed(tmp_path):
+    outside = tree(tmp_path/'outside', ['.env'])
+    root = tree(tmp_path/'project', ['ok.txt'])
+    folder_link(outside, root/'linked')
     assert found(root) == []
+
+
+def test_the_walk_reports_node_modules_folders_and_tells_a_linked_one_apart(tmp_path):
+    # pnpm, npm link and workspaces put links there; Node in the sandbox needs to know (command_protection.bind).
+    tree(tmp_path, ['node_modules/dep/index.js', 'node_modules/@scope/pkg/index.js', 'node_modules/.bin/dep.cmd',
+                    'web/node_modules/x/index.js', 'api/node_modules/@scope/plain/index.js', 'elsewhere/pkg/index.js'],
+         ['app'])
+    modules = []
+    assert sandbox_secrets.find([tmp_path], git=False, modules=modules) == []
+    assert sorted(Path(p).relative_to(tmp_path).as_posix() for p in modules) == [
+        'api/node_modules', 'node_modules', 'web/node_modules']
+    assert not any(map(sandbox_secrets.linked, modules))  # flat installs
+    folder_link(tmp_path/'elsewhere/pkg', tmp_path/'api/node_modules/@scope/linked')  # in a scope
+    folder_link(tmp_path/'elsewhere', tmp_path/'web/node_modules/pkg')  # at the top level
+    assert all(sandbox_secrets.linked(str(tmp_path/p/'node_modules')) for p in ('api', 'web'))
+    folder_link(tmp_path/'node_modules', tmp_path/'app/node_modules')  # the folder itself
+    modules = []
+    sandbox_secrets.find([tmp_path/'app'], git=False, modules=modules)
+    assert modules == [str(tmp_path/'app/node_modules')] and sandbox_secrets.linked(modules[0])
+    assert not sandbox_secrets.linked(str(tmp_path/'missing'))
 
 
 def test_the_result_is_sorted_and_stable(tmp_path):
