@@ -55,6 +55,30 @@ def test_the_explicit_accounting_decides_first():
     assert local(dep('https://api.openai.com/v1', native_challenger_accounting='local'))
 
 
+def test_the_gpu_reservation_secret_goes_only_to_this_machines_own_gateways(monkeypatch, tmp_path):
+    import json
+    from compute_plane.gpu_lease_client import RESERVATION_HEADER
+    from relay import environment
+    from relay.challenger import client_headers
+    store = tmp_path/'environment.json'  # tare setup saved a second gateway, by host name
+    store.write_text(json.dumps({'schema': environment.SCHEMA, 'local_models': {'gateways': [
+        {'origin': 'http://models.example.com:8080'}, {'origin': 'http://gpu2:8080'}]}}), encoding='utf-8')
+    monkeypatch.setenv('TARE_ENVIRONMENT_STORE', str(store))
+    monkeypatch.setenv('TARE_GPU_RESERVATION', 's3cret')
+    monkeypatch.setenv('TARE_LOCAL_GATEWAY', 'http://Models.Example.com.:8080')
+    secret = lambda endpoint: client_headers(dep(endpoint)).get(RESERVATION_HEADER) == 's3cret'
+    for endpoint in ('http://models.example.com:8080/v1', 'http://gpu2:8080/v1', 'http://10.0.0.5:8080/v1',
+                     'http://127.0.0.1:8080/v1', 'http://100.64.0.10:8080/v1', 'http://localhost:8080/v1'):
+        assert secret(endpoint), endpoint
+    # Local by the form of the name only, or the gateway's host on another port: the User-Agent, not the secret.
+    for endpoint in ('http://box.internal:8080/v1', 'https://gpu.other-tailnet.ts.net/v1', 'http://aaaaa:8080/v1',
+                     'http://models.example.com:9000/v1', 'https://gpu2/v1'):
+        assert local(dep(endpoint)) and 'User-Agent' in client_headers(dep(endpoint)) and not secret(endpoint), endpoint
+    assert client_headers(dep('https://api.openai.com/v1')) == {}
+    monkeypatch.setenv('TARE_LOCAL_GATEWAY', 'http://192.168.0.10:8080')  # the gateway by IP, as today
+    assert secret('http://192.168.0.10:8080/v1') and not secret('http://box.internal:8080/v1')
+
+
 def test_local_only_admits_a_host_name_gateway_and_api_only_does_not(monkeypatch):
     monkeypatch.setenv('TARE_LOCAL_GATEWAY', 'http://models.example.com:8080')
     for endpoint in ('http://aaaaa:8080/v1', 'http://models.example.com:8080/v1'):
