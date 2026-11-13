@@ -1,6 +1,7 @@
 """Checks run in the Windows sandbox by default, whatever the project's mode (owner, 2026-11-13). The launcher is
 replaced as in test_command_protection; the real sandbox is proven by the probe harness, not here."""
 import asyncio  # noqa: F401  Winsock starts here, before the host fixture points SystemRoot at a stand-in runtime
+import errno
 import json
 import subprocess
 import sys
@@ -539,14 +540,27 @@ def test_a_linux_host_without_the_sandbox_is_told_why_where_it_decides(tmp_path,
     assert lines[0].startswith('Checks: not isolated') and lines[1] == 'Why there is no sandbox: ' + why + GUIDE
 
 
-@pytest.mark.parametrize('code', ['bwrap_scope_changed', 'bwrap_denied_path_changed'])
-def test_a_launch_bubblewrap_refuses_is_the_sandbox_refusing_the_check_never_a_run_outside(host, monkeypatch, code):
+@pytest.mark.parametrize('where, error, code', [
     # A granted folder's real path or a masked secret moved since binding: the Kernel's profile refuses to launch.
+    ('launch', ValueError('bwrap_scope_changed'), 'bwrap_scope_changed'),
+    ('launch', ValueError('bwrap_denied_path_changed'), 'bwrap_denied_path_changed'),
+    # The Kernel keeps only an OSError's type: Popen's, or one from the check's mediation, keeps its text here.
+    ('launch', OSError(errno.E2BIG, 'Argument list too long'), r'\[Errno 7\] Argument list too long'),
+    ('mediation', OSError(errno.EACCES, 'Permission denied'), r'\[Errno 13\] Permission denied')],
+    ids=['scope-changed', 'denied-path-changed', 'popen-oserror', 'mediation-oserror'])
+def test_a_check_bubblewrap_refuses_says_why_and_never_runs_outside(host, monkeypatch, where, error, code):
     from relay.windows_isolation import windows_isolation_factory
     unprotected(host, monkeypatch)
     class Refusing:
         def __init__(self, policy, *, cwd, environment): pass
-        def __call__(self, argv, **options): raise ValueError(code)
+        def __call__(self, argv, **options):
+            if where == 'launch':
+                raise error
+            pytest.fail('A check refused in its mediation is not launched.')
+    def refused(path):
+        raise error
+    if where == 'mediation':
+        monkeypatch.setattr(protection, 'names_file', refused)  # reading the check's arguments as command inputs
     monkeypatch.setattr('compute_plane.linux_bwrap.LinuxBwrapProfile', Refusing)
     monkeypatch.setattr(protection, 'windows_isolation_factory', windows_isolation_factory)  # the real composition
     monkeypatch.setattr(work_units, 'managed_check', lambda *a, **kw: pytest.fail('Nothing runs outside.'))
@@ -555,3 +569,14 @@ def test_a_launch_bubblewrap_refuses_is_the_sandbox_refusing_the_check_never_a_r
         {'tests': PASS}, outside=lambda *a: pytest.fail('A refused launch is not a question.'))
     with pytest.raises(ValueError, match=f'^Sandboxed verification was refused: tests: {code}$'):
         run(PASS)
+
+
+def test_an_argument_longer_than_a_file_name_is_no_command_input(tmp_path):
+    # `python -c '<code>'` with more than 255 bytes of code: on Linux its stat raises ENAMETOOLONG, which refused the
+    # check (the sandbox probe's io_uring and task-limit cases, 2026-11-13). Any other error still refuses it.
+    assert protection.names_file(tmp_path/('x'*300)) is False
+    def stat(code):
+        raise OSError(code, 'fixture')
+    assert protection.names_file(SimpleNamespace(is_file=lambda: stat(errno.ENAMETOOLONG))) is False
+    with pytest.raises(PermissionError):
+        protection.names_file(SimpleNamespace(is_file=lambda: stat(errno.EACCES)))
