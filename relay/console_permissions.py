@@ -18,6 +18,17 @@ class ProjectPermissions:
         from .execution_scope import current
         return current().only == 'local'
 
+    @staticmethod
+    def local_model(deployment):
+        """Whether a deployment (a name, or a saved session's dict) runs on this machine's GPU."""
+        try:
+            from .challenger import local
+            from .native_catalog import select
+            value = select(deployment) if isinstance(deployment, str) else deployment
+            return 'native_auto_routes' not in value and local(value)
+        except Exception:
+            return False
+
     def refresh_command_permission(self):
         from .command_permission import pending,answer
         from .execution_permission_panel import ExecutionPermissionPanel
@@ -129,7 +140,8 @@ class ProjectPermissions:
         terminal.disabled=blocked or bool(getattr(self, 'busy', False))
         terminal.tooltip=('System commands require edit access in project permissions (/permissions).'
                           if role!='implementer' else
-                          'Commands use the project review and isolation policy.' if self.command_protection else None)
+                          'Commands use the project review and isolation policy.' if self.command_protection else
+                          'A terminal on this machine, not sandboxed, not reviewed; never given to a local model.')
 
     def load_project_permissions(self, project, *, force=False):
         project = str(Path(project).resolve())
@@ -170,9 +182,10 @@ class ProjectPermissions:
         except Exception as exc:
             self.notify(str(exc), severity='error')
             return
+        local_model = self.local_model(selected.deployment)  # tare auto: unknown until the request, so False
         def reader():
             return permissions_view(directory, project, control, session=session, pending=pending,
-                                    judges_off=self.judges_off(), local_only=self.local_only())
+                                    judges_off=self.judges_off(), local_only=self.local_only(), local_model=local_model)
         def saver(defaults, revision):
             nonlocal pending
             saved, saved_revision = save_defaults(directory, project, control, defaults, revision)
@@ -185,7 +198,7 @@ class ProjectPermissions:
                                        command_protection=dict(saved.get('command_protection', {})),
                                        verifier='' if role == 'explorer' else selected.verifier)
             view = permissions_view(directory, project, control, session=session, pending=next_pending,
-                                    judges_off=self.judges_off(), local_only=self.local_only())
+                                    judges_off=self.judges_off(), local_only=self.local_only(), local_model=local_model)
             if view['revision'] != saved_revision:
                 raise ValueError('Defaults were saved, then changed elsewhere. Refresh to see the current defaults.')
             pending = next_pending

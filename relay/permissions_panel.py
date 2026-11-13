@@ -12,8 +12,9 @@ from .console_output import plain
 from .console_panels import SupportPanel
 
 COMMANDS_WARNING = (
-    "System commands can change files outside these edit paths and use the network: without an Action review they "
-    "are not sandboxed. Where checks run is under Effective permissions."
+    "Without an Action review, system commands run in a terminal directly on this machine as you, with network "
+    "access and your files and credentials in reach: no sandbox and no review. A local model never gets this "
+    "terminal. Choose an Action review to run commands in the sandbox. Where checks run is under Effective permissions."
 )
 
 
@@ -224,7 +225,7 @@ class PermissionsPanel(SupportPanel):
                                  allow_blank=False, id='permissions-classifier')
                 with Horizontal(classes='permissions-protection-row'):
                     yield Static('Action review:', markup=False)
-                    yield Select([('Automatic: Codex or Tare + Jev', 'auto'), ('No command protection', 'off'), ('Selected model', 'tare'), ('Codex built-in reviewer (CLI)', 'codex'),
+                    yield Select([('Automatic: Codex or Tare + Jev', 'auto'), ('None: terminal on this machine, no sandbox', 'off'), ('Selected model', 'tare'), ('Codex built-in reviewer (CLI)', 'codex'),
                                   ('Selected model + Codex reviewer', 'both')], value='off', allow_blank=False, id='permissions-review')
                 with Horizontal(classes='permissions-protection-row'):
                     yield Static('Execution sandbox:', markup=False)

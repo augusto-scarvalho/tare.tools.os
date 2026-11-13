@@ -412,9 +412,10 @@ def test_commands_warning_visibility(tmp_path):
             await pilot.pause()
             assert warning.display is True
             warning_text = widget_plain(warning)
-            assert 'System commands can change files outside these edit paths' in warning_text
-            assert 'not sandboxed' in warning_text and 'Where checks run is under Effective permissions' in warning_text
-            assert 'use the network' in warning_text
+            assert 'directly on this machine as you, with network access' in warning_text
+            assert 'no sandbox and no review' in warning_text
+            assert 'A local model never gets this terminal' in warning_text
+            assert 'Where checks run is under Effective permissions' in warning_text  # not "checks run on this machine"
 
             # Switch back to read mode: warning hidden again
             mode_select.value = 'read'

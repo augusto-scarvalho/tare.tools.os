@@ -232,7 +232,8 @@ def check_isolation(defaults, protection, saved=False):
 
 
 def permissions_view(directory, project, control_root, *, session=None, pending=None, judges_off=False,
-                     local_only=False):
+                     local_only=False, local_model=False):
+    """local_model: the selected model of the next session is local (a saved session's own model decides there)."""
     project = str(Path(project).resolve())
     defaults, revision = read_defaults(directory, project, control_root)
     nested, nested_enabled, nested_error = {}, defaults.get('project_admission', {}).get('nested', True), None
@@ -246,6 +247,10 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
             original = records[0].event().get('capabilities', [])
             tools = sorted(set(original) & set(config.get('capabilities', original)))
             role, terminal = config['role'], bool(config.get('terminal'))
+            # A main chat (coordinator) never runs the terminal, nor do its workers (work_units builds them without it).
+            chat, known = bool(state.get('conversation_flow')), True
+            from .challenger import local  # the saved model decides, as in native_agent.run_session
+            local_model = terminal and not chat and local(state['deployment'])
             protection = config.get('command_protection', {})
             paths = config['writable'].get(name, []) if 'edit' in tools else []
             checks = [key for key, row in config['verifiers'].items() if row['repository'] == name and 'verify' in tools]
@@ -286,7 +291,10 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
             protection = getattr(pending, 'command_protection', {})
         paths = paths if role == 'implementer' else []
         tools = ['read', 'list', 'search'] + (['edit'] if role == 'implementer' else [])
-        if terminal and role == 'implementer':
+        local_model = local_model or local_only
+        # The TUI's selection: 'assistant' is the main chat, 'session' a /session task; otherwise it cannot tell.
+        chat, known = getattr(pending, 'mode', None) == 'assistant', getattr(pending, 'mode', None) in ('assistant', 'session')
+        if terminal and role == 'implementer' and not local_model and not chat:
             from compute_plane.native_terminal import TERMINAL_SPECS
             tools += list(TERMINAL_SPECS)
         if protection:
@@ -327,7 +335,15 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
     effective = [title, 'Project: '+project, 'Role: '+role, 'Tools: '+(', '.join(tools) or 'None'),
                  'Editable paths: '+(', '.join(paths) or 'None'),
                  'System commands: '+(unreviewed or 'Protected noninteractive commands' if protection else
-                     'Enabled' if terminal and any(t.startswith('terminal_') for t in tools) else 'Disabled'),
+                     'Not in this chat: its coordinator and workers do not get the terminal. /session tasks do: a '
+                     'terminal on this machine, not sandboxed, not reviewed, never given to a local model'
+                     if terminal and chat else
+                     'None for a local model: tare never gives a local model the unsandboxed terminal. Choose an '
+                     'Action review for sandboxed commands' if terminal and role == 'implementer' and local_model else
+                     'Terminal on this machine, not sandboxed, not reviewed'+('' if known else
+                     ', for /session tasks and tare agent --terminal only: a chat\'s coordinator and workers and '
+                     'local models do not get it') if terminal and any(t.startswith('terminal_') for t in tools)
+                     else 'Disabled'),
                  'Configured checks: '+(', '.join(checks) or 'None in this scope')]
     if protection:
         effective += local
@@ -337,6 +353,9 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
         if not unreviewed:
             effective += ['Review calls: up to '+str(protection['max_reviews'])+' per request; native usage may be unknown.']
         effective += ['Protected commands use the declared Windows profile. Interactive terminal is unavailable in this mode.']
+    elif any(t.startswith('terminal_') for t in tools):
+        effective.append('The terminal runs commands as you, with network access and your files and credentials '
+                         'in reach. A local model never gets it. An Action review runs commands in the sandbox.')
     effective += check_isolation(defaults, protection, saved=bool(session))
     if not session:
         effective.append('The new-session verifier field is separate; saved conversations keep their original checks.')

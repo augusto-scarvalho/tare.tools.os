@@ -2151,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 127235,
-      "sha256": "f9c9eefaa4fab3b1ec9cb8b77c75e71b991cda99b9928d3aa627022ac37947cc"
+      "size_bytes": 129119,
+      "sha256": "114e540563e93b25b9e5765a67ed77cf084e8bb926c5cbb49432976a2f7e644f"
     },
     {
       "name": "native_artifacts.py",
@@ -2461,8 +2461,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator-facing entry points and route policy; Runtime retains session execution.",
-      "size_bytes": 35043,
-      "sha256": "373e9dc15cf4a4d7f277bccc7bb4d1248d18052117fbb53c5c797aec938d199e"
+      "size_bytes": 35606,
+      "sha256": "6d425a606bdc316aeace8bdc483ad3eced3a68d9d0e382b450c7c699d1f19af6"
     },
     {
       "name": "turn_capabilities.py",
@@ -2681,8 +2681,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 181995,
-      "sha256": "aef52be0558d3be4352e7177f8d752ef9f40df09ad9dec0729e1c1299ac93812"
+      "size_bytes": 181575,
+      "sha256": "4ca4a4457e2b0b37703a78c7977f7c96a7d6629fec622eb7f75f82f42baf5827"
     },
     {
       "name": "native_display.py",
@@ -3161,8 +3161,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS projects recorded activity; Runtime and Kernel retain execution ownership.",
-      "size_bytes": 21308,
-      "sha256": "3f1401ec9c82a296fb21692656259a47923bbc1e066de7dd712968fb650ebf13"
+      "size_bytes": 21314,
+      "sha256": "1ca775f36310305529e62c949f56385e3895c5755e6432f64d291503c077cfd4"
     },
     {
       "name": "console_panels.py",
@@ -3267,8 +3267,8 @@
     {
       "name": "console_permissions.py",
       "path": "tare.tools.os/relay/console_permissions.py",
-      "size_bytes": 11259,
-      "sha256": "b440db762c85b8cc7ea3e9b01a5eb77fa022c873868f55058388e8e63b70ba14",
+      "size_bytes": 11989,
+      "sha256": "503984fc157c18c6ae03b02656bb01056f176a1170b4a477546403b99ab703d0",
       "summary": "Compose project permission defaults with new-session controls.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
@@ -3277,8 +3277,8 @@
     {
       "name": "permissions_panel.py",
       "path": "tare.tools.os/relay/permissions_panel.py",
-      "size_bytes": 28207,
-      "sha256": "f915aeaaf9b1ac117598b6d4bd253f749b65dbafdb2ece16898744c00954311e",
+      "size_bytes": 28383,
+      "sha256": "5a942b0579def93fffd3c38b406dc12846d45d3c602d6c4a50505b2795ff4f12",
       "summary": "View saved permissions and explicitly save defaults for new conversations.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
@@ -3287,8 +3287,8 @@
     {
       "name": "project_permissions.py",
       "path": "tare.tools.os/relay/project_permissions.py",
-      "size_bytes": 27198,
-      "sha256": "253e3c8268d38dc4ab860773bf42be1aa31214cd77ecad55f17fd0943ed25ee3",
+      "size_bytes": 29065,
+      "sha256": "17f1155de417982c9bd27ffd0aea32bfc04005f3ce21ec2e979d4c4ca5e7e1c4",
       "summary": "Validate scoped project defaults and observe saved session permissions.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
@@ -3421,8 +3421,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator views and draft composition; Runtime retains execution authority.",
-      "size_bytes": 39880,
-      "sha256": "1254ce7ab20b2d2ffb12a7a964e6ecb8afbd76398a18a176f65ee51374872d0f"
+      "size_bytes": 39980,
+      "sha256": "f3663420f13a8cd47d0ae466fb253a641dd0cf1a1816d52caecf15d551d6ae81"
     },
     {
       "name": "adaptive_routes.py",

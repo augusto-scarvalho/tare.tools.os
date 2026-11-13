@@ -201,17 +201,21 @@ Para padrões avançados, abra `/permissions`:
   plan and ask** ou **Go straight on**.
 - **Read only** — sem edição de arquivos nem terminal.
 - **Edit files** — grava dentro do escopo escolhido; terminal desativado.
-- **Edit + system commands** — edição de arquivos mais comandos de terminal.
+- **Edit + system commands** — edição de arquivos mais comandos. Com uma **Action review** eles rodam no
+  sandbox; sem ela (**None: terminal on this machine, no sandbox**) as tarefas de `/session` e o
+  `tare agent --terminal` os rodam num terminal direto nesta máquina, como você, com acesso à rede e aos
+  seus arquivos e credenciais, sem sandbox e sem revisão. O coordenador da conversa principal e os workers
+  dele nunca recebem esse terminal, nem um modelo local.
 
 Os padrões são salvos separadamente para cada projeto. As ferramentas, o modelo,
 as instruções e o histórico do próprio coordenador continuam fixos; a autorização dos workers é verificada à parte
 ao executar um plano. Conversas explícitas de `/session` mantêm as capacidades
-originais. Comandos do terminal podem acessar o host e a rede: o escopo de edição de arquivos sozinho
-não é um sandbox do sistema. As verificações são diferentes: em qualquer modo elas rodam no sandbox do
-Windows (sem rede, sem arquivos secretos, gravando só nos caminhos de edição). Quando o sandbox bloqueia
-uma verificação, o tare pergunta **Run this check outside the sandbox?** (neste turno, sempre neste
-projeto ou não rodar; o padrão é não rodar). Num sistema sem sandbox, o `/permissions` diz que as
-verificações não estão isoladas, e um modelo local não é usado como implementador ali.
+originais. O escopo de edição de arquivos sozinho não é um sandbox do sistema. As verificações são
+diferentes: em qualquer modo elas rodam no sandbox do Windows (sem rede, sem arquivos secretos, gravando
+só nos caminhos de edição). Quando o sandbox bloqueia uma verificação, o tare pergunta **Run this check
+outside the sandbox?** (neste turno, sempre neste projeto ou não rodar; o padrão é não rodar). Num sistema
+sem sandbox, o `/permissions` diz que as verificações não estão isoladas, e um modelo local não é usado
+como implementador ali.
 
 ## 4. Enviar um pedido normal de código
 

@@ -33,6 +33,10 @@ MAX_INITIAL_INSTRUCTION_BYTES = 18 * 1024
 ROLES = ('implementer', 'planner', 'plan-auditor', 'auditor', 'explorer')
 CAPSULE_ROLES = (*ROLES, 'coordinator', 'researcher')  # OS composition roles; not effect-bearing Kernel roles
 SESSION_ROOT = None  # Tests may select a local custody root; installed sessions use the descriptor.
+# Owner, 2026-11-13: a local model never gets the unsandboxed terminal. Told to the user, the model and /permissions.
+LOCAL_TERMINAL = ("tare does not give a local model the unsandboxed terminal: its commands would run directly on this "
+                  "machine as the user, with network access and the user's files and credentials in reach, without "
+                  "review. Choose an Action review in /permissions for sandboxed commands.")
 
 
 def session_root():
@@ -723,7 +727,19 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             save_json(path, state)
             observations = NativeObservationJournal(root / 'observations.jsonl')
             terminal_options = {}
-            if config.get('terminal') and not state.get('conversation_flow'):
+            capabilities = config.get('capabilities')
+            from .challenger import local
+            # Every native session passes here with its final deployment (new, resumed or continued), so a local
+            # model never holds the terminal tools, and so never sends input to a process an earlier turn left open.
+            withheld = bool(config.get('terminal') and not state.get('conversation_flow') and local(deployment))
+            if withheld:
+                saved = journal.snapshot().records
+                if saved and any(n.startswith('terminal_') for n in saved[0].event().get('capabilities', ())):
+                    raise ValueError('This session was saved with the terminal and runs on a local model, so it '
+                                     'cannot continue: start a new conversation or continue it on a cloud or CLI '
+                                     'model. ' + LOCAL_TERMINAL)
+                capabilities = [n for n in capabilities if not n.startswith('terminal_')]
+            elif config.get('terminal') and not state.get('conversation_flow'):
                 from .console_terminal import native_terminal
                 terminal_options['terminal'] = native_terminal(terminal_client,custody=root,config=config,
                                                                session_id=session_id,binding=binding)
@@ -744,8 +760,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                                if n in config.get('capabilities', ('read', 'list', 'search', 'context'))
                                if not (n == 'search' and state.get('search_unavailable'))]
                               if state.get('conversation_flow') else
-                              [n for n in config['capabilities'] if n != 'search'] if state.get('search_unavailable')
-                              else config.get('capabilities')),
+                              [n for n in capabilities if n != 'search'] if state.get('search_unavailable')
+                              else capabilities),
                 specgraph_edit_context=config.get('specgraph_edit_context', True),
                 project_context=NativeProjectContext(repositories=config['repositories'],
                     work_id=binding.work_id, state_dirs=config['index_states'],
@@ -913,6 +929,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                     fill(state.get('prompt_capsule', {}).get('system_append', ''), found) +
                     (' Current command host facts (apply on this invocation): ' +
                     encode(terminal_options['terminal'].execution_environment) if terminal_options else '') +
+                    (' ' + LOCAL_TERMINAL + ' You can still read and edit within your write scope; if the task needs '
+                     'commands, tell the user so.' if withheld else '') +
                     ((' ' + conversation_guidance)
                      if state.get('conversation_flow') and not state.get('conversation_role') else '') +
                     ''.join(' ' + fill(text['text'], found) for text in state.get('common_guidance', ())))
@@ -1273,6 +1291,9 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             from .consent_decisions import pending_notices, acknowledge_notices
             notices = pending_notices(root, session_id)
             lines = [q['notice'] for q in notices]
+            if withheld and not resume:  # once, on the session's first turn
+                lines.insert(0, '[tare] ' + LOCAL_TERMINAL + ' This session runs without it; it can still read and '
+                             'edit within its write scope.')
             if state.get('conversation_flow'):
                 from .conversation_tasks import delivery_notice
                 lines += filter(None, [delivery_notice(root, invocation_id)])

@@ -1,4 +1,5 @@
 """Project defaults, CLI scope enforcement, and saved conversation identity."""
+from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
@@ -154,8 +155,18 @@ def test_pending_draft_permissions_are_distinct_from_saved_defaults(tmp_path):
     assert view['defaults']=={'mode':'read','write_paths':[]}
     assert 'Next message' in view['effective_text']
     assert 'Editable paths: src' in view['effective_text']
-    assert 'System commands: Enabled' in view['effective_text']
+    assert 'System commands: Terminal on this machine, not sandboxed, not reviewed' in view['effective_text']
+    assert 'terminal_start' in view['effective_text'] and 'A local model never gets it' in view['effective_text']
     assert 'check (configured; validated at session start)' in view['effective_text']
+    for local in ({'local_model': True}, {'local_only': True}):  # the selected model, or the whole scope, is local
+        text = permissions_view(directory,project,control,pending=pending,**local)['effective_text']
+        assert 'System commands: None for a local model' in text and 'terminal_start' not in text
+    # The pending draft above is a /session task (mode 'session'); the main chat's coordinator and workers never
+    # get the terminal, and a view that cannot tell says where it applies.
+    text = permissions_view(directory,project,control,pending=replace(pending,mode='assistant'))['effective_text']
+    assert 'System commands: Not in this chat' in text and '/session tasks do' in text and 'terminal_start' not in text
+    text = permissions_view(directory,project,control,pending=replace(pending,mode='plan'))['effective_text']
+    assert 'not reviewed, for /session tasks and tare agent --terminal only' in text
 
 
 def test_protected_preferences_roundtrip_and_legacy_terminal_is_not_enabled(tmp_path):

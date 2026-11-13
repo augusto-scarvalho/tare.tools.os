@@ -200,17 +200,20 @@ For advanced defaults, open `/permissions`:
   and ask** or **Go straight on**.
 - **Read only** — no file edits or terminal.
 - **Edit files** — write within the chosen scope; terminal disabled.
-- **Edit + system commands** — file edits plus terminal commands.
+- **Edit + system commands** — file edits plus commands. With an **Action review** they run in the
+  sandbox; without one (**None: terminal on this machine, no sandbox**) `/session` tasks and
+  `tare agent --terminal` run them in a terminal directly on this machine as you, with network access and
+  your files and credentials in reach, no sandbox and no review. The main conversation's coordinator and
+  its workers never get that terminal, and neither does a local model.
 
 Defaults are saved separately for each project. A coordinator's own tools, model,
 instructions and history remain fixed; worker authorization is checked separately
 when executing a plan. Explicit `/session` conversations retain their original
-capabilities. Terminal commands can access the host and network: file edit scope alone is
-not a system sandbox. Checks are different: in every mode they run in the Windows sandbox (no
-network, no secret files, writes only to the edit paths). When the sandbox blocks a check, tare asks
-**Run this check outside the sandbox?** (this turn, always for this project, or not at all; it starts on
-not running it). On a system with no sandbox, `/permissions` says checks are not isolated, and a local
-model is not used as implementer there.
+capabilities. File edit scope alone is not a system sandbox. Checks are different: in every mode
+they run in the Windows sandbox (no network, no secret files, writes only to the edit paths). When the
+sandbox blocks a check, tare asks **Run this check outside the sandbox?** (this turn, always for this
+project, or not at all; it starts on not running it). On a system with no sandbox, `/permissions` says
+checks are not isolated, and a local model is not used as implementer there.
 
 ## 4. Send a normal coding request
 

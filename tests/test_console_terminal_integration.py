@@ -64,6 +64,7 @@ def test_windows_host_context_shell_exit_wait_timeout_and_followup(tmp_path, mon
     server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
     thread=Thread(target=server.serve_forever,daemon=True); thread.start()
     configured=deployment(endpoint=f'http://127.0.0.1:{server.server_port}')
+    configured['native_challenger_accounting']='usd'  # stands for a hosted model: a local one gets no terminal
     configured['native_profile']['context_window']=131072
     profile=tmp_path/'profile.json'; profile.write_text(json.dumps(configured))
     monkeypatch.setenv('TARE_STORAGE_ROOT',str(tmp_path/'state'))
@@ -170,6 +171,7 @@ def test_terminal_survives_agent_turn_and_closes_with_tui(tmp_path, monkeypatch)
     thread = Thread(target=server.serve_forever,daemon=True); thread.start()
     profile = tmp_path/'profile.json'
     configured = deployment(endpoint=f'http://127.0.0.1:{server.server_port}')
+    configured['native_challenger_accounting'] = 'usd'  # stands for a hosted model: a local one gets no terminal
     configured['native_profile']['context_window'] = 131072
     profile.write_text(json.dumps(configured))
     monkeypatch.setenv('PYTHONPATH',str(Path(__file__).resolve().parents[1]))
