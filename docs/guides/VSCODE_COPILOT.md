@@ -13,9 +13,12 @@ Each Copilot chat becomes a tare conversation on the open folder (Copilot's `<wo
   models first, then cheap, then intermediate API price (subscription quota counts at API price). A blocked
   or rejected turn continues on the next tier; a session that spent its per-message budget (60 calls, one
   hour) continues in a fresh session with the continuity brief (`turn_engine.successor`).
-- **Modes**: `/read-only`, `/accept-edits` (default) and `/yolo` (a terminal for any command, operator
-  authorised) set the chat's permissions; `/<mode> default` makes it the project's mode for new chats. The
-  mode is per project and machine, shared with the TUI (read, edit, commands).
+- **Modes**: `/read-only`, `/accept-edits` (default) and `/yolo` set the chat's permissions; `/<mode> default`
+  makes it the project's mode for new chats. `/yolo` edits files as `/accept-edits` does and finds a turn's
+  changes for the audit from a snapshot of the whole project; no model gets a terminal in `tare serve`. The
+  mode is per project and machine, shared with the TUI (read, edit, commands): after `/yolo default` the
+  TUI's `/session` tasks get a terminal on this machine, not sandboxed or reviewed, unless an Action review
+  is set in `/permissions`.
 - **Audit**: every turn that changed code is reviewed, only on what changed, by an independent auditor from
   another vendor first (GPT-6.1 Sol or Opus 5.5 at high). The project's tests (a detected pytest or
   `npm test` verifier) and the commands the turn ran reach it as host evidence. Cheap judges (hosted Jev,

@@ -493,7 +493,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                     yield Static('Requires a published index. Consultative snapshot lookup: not proof of coverage, '
                                  'not additional permissions. Saved sessions keep their choice.',
                                  classes='settings-note', markup=False)
-                    yield Checkbox('Allow system commands', False, id='terminal')
+                    yield Checkbox('Allow system commands · terminal on this machine, no sandbox', False, id='terminal')
                     with Vertical(id='direct-check-options'):
                         yield Label('Verification argv for a new conversation')
                         yield Input(placeholder='Optional: ["python", "-m", "pytest", "-q"]', id='verifier')
@@ -1505,17 +1505,6 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 self.notify('Model set to tare-auto, which now skips the local GPU.')
             except Exception:
                 self.notify('The selected model runs on the local GPU: choose a cloud or CLI model.', severity='warning')
-
-    @staticmethod
-    def local_model(deployment):
-        """Whether a deployment (a name, or a saved session's dict) runs on this machine's GPU."""
-        try:
-            from .challenger import local
-            from .native_catalog import select
-            value = select(deployment) if isinstance(deployment, str) else deployment
-            return 'native_auto_routes' not in value and local(value)
-        except Exception:
-            return False
 
     def local_gpu_refusal(self, selected, resume):
         """Why this run would use a local model the conversation or the machine ruled out, or None."""

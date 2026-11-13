@@ -79,7 +79,11 @@ def chat_store(key):
 
 MODES = {'read-only': 'read, search and run the detected tests',
          'accept-edits': 'also edit files',
-         'yolo': 'also run any command in a terminal'}
+         # Every serve session is a coordinator, which never gets the terminal, nor do its workers.
+         'yolo': "edit files as in accept-edits; a turn's changes are found from a snapshot of the whole project "
+                 'for the audit; no model gets a terminal in tare serve'}
+YOLO_DEFAULT = ('; in the TUI this project is now in Edit + system commands, where /session tasks get a terminal on '
+                'this machine, not sandboxed, not reviewed, unless an Action review is set (never for a local model)')
 
 
 MODE = re.compile(r'/(read-only|accept-edits|yolo)\b(\s+default\b)?\s*(.*)', re.S)
@@ -315,7 +319,8 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
             if mode_command.group(2):
                 save_project_mode(root, chosen)
             note = (f"_tare: this chat is in {chosen} mode ({MODES[chosen]})"
-                    f"{'; new chats in this project start in it' if mode_command.group(2) else ''}._\n\n")
+                    f"{'; new chats in this project start in it' if mode_command.group(2) else ''}"
+                    f"{YOLO_DEFAULT if mode_command.group(2) and chosen == 'yolo' else ''}._\n\n")
             if not requests[-1]:
                 remember(state, digests[-1])
                 return save(note)
