@@ -282,7 +282,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 pause_requested=None, receive_message=None, permission_directory=None,
                 active_time_budget=None,active_call_budget=None,recheck_candidate=False,retry_delivery=False,repair_plan=False,
                 unlimited_resources=(), model_recovery_call_limit=None, folder_consent_request=None,
-                raw_user_reply=None, invocation_limits=None):
+                raw_user_reply=None, invocation_limits=None, parent_clock=None):
     from compute_plane.native_capabilities import NativeCapabilities
     from compute_plane.native_models import NativeHttpClient, NativeModelAdapter
     from compute_plane.native_project_context import NativeProjectContext
@@ -692,7 +692,9 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             binding = BindingRef('session:'+session_id, session_id, 'operator', 1, session_id)
             cancel = cancellation or CancellationToken()
             from .worker_wait import TurnClock
-            clock = TurnClock(state)  # stops while the host waits for the user's answer (conversation_permissions)
+            # Stops while the host waits for the user's answer (conversation_permissions, command_permission), and
+            # so does the delegating session's clock (parent_clock) when this one is its implementer.
+            clock = TurnClock(state, parent_clock)
             control = ExecutionControl(binding, cancel,
                 math.inf if invocation_deadline is None else clock()+max(0, invocation_deadline-time.time()),
                 monotonic=clock)

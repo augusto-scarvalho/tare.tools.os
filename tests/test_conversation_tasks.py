@@ -1162,6 +1162,8 @@ def test_native_conversation_runs_all_roles_with_real_effects_and_typed_artifact
         role = child_config['role']; roles.append(role)
         assert (root/'a.py').read_bytes() == before
         assert role != 'planner' or 'Change value to two.' in instruction
+        from relay.worker_wait import TurnClock  # an implementer's question stops the coordinator's clock too
+        assert role != 'implementer' or isinstance(kwargs.get('parent_clock'), TurnClock)
         client = clients[role]
         return actual(child_config, dep, session, instruction, client=client, local_counter=client, **kwargs)
     monkeypatch.setattr(native_agent, 'run_session', child)

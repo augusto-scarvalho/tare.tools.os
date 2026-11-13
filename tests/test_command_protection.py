@@ -519,16 +519,23 @@ def test_unavailable_jev_uses_exact_human_approval_without_frontier_fallback(jev
     h = jev_composition
     original = protection.TareJevActionClassifier.assess
     def unavailable(self, request, control):
-        return replace(original(self, request, control), status='ABSTAINED', verdict=None,
-                       reason_codes=('ASSESSMENT_INPUT_OVERFLOW',))
+        result = replace(original(self, request, control), status='ABSTAINED', verdict=None,
+                         reason_codes=('ASSESSMENT_INPUT_OVERFLOW',))
+        from dataclasses import asdict  # recorded under the assessed action, as the real port does
+        self.kwargs['journal_factory']().append(dict(asdict(result), kind='action_assessment_result'))
+        return result
     monkeypatch.setattr(protection.TareJevActionClassifier, 'assess', unavailable)
+    asked = []
     def approve(action, public, control):
-        h.calls.append('human'); return allow
+        h.calls.append('human'); asked.append(action.action_sha256)
+        time.sleep(.05)  # a later answer: the executed action gets a new window
+        return allow
     monkeypatch.setattr('relay.command_permission.approve', approve)
     mediator = h.select('tare')
     if allow:
-        mediator.execute(h.host.facts(), h.host.effect)
+        result = mediator.execute(h.host.facts(), h.host.effect)
         assert h.host.effects == ['effect']
+        assert result['command_protection']['usage']['classifier'] == {'input_tokens': 300, 'output_tokens': 0}
     else:
         with pytest.raises(ActionRefused): mediator.execute(h.host.facts(), h.host.effect)
         assert not h.host.effects and not h.host.claims
@@ -536,6 +543,10 @@ def test_unavailable_jev_uses_exact_human_approval_without_frontier_fallback(jev
     rows=[r.event() for r in protection.NativeJournal(h.host.custody/'command-reviews.jsonl').snapshot().records]
     decision=next(r for r in rows if r['kind']=='command_review_decision')
     assert decision['assessments'][0]['reason_codes'] == ['ASSESSMENT_INPUT_OVERFLOW']
+    assert decision['action_sha256'] == asked[0]  # the action the user was asked about
+    if allow:  # executed under the same effect, with only its deadline renewed
+        executed = next(r for r in rows if r['kind'] == 'command_protected_effect')
+        assert executed['effect_id'] == decision['effect_id'] and executed['action_sha256'] != asked[0]
 
 
 def test_unavailable_jev_cannot_skip_an_always_required_review(jev_composition, monkeypatch):

@@ -1,4 +1,5 @@
 """Mediate command actions: assessments advise; only owner authorization and guard execute."""
+from dataclasses import replace
 
 from compute_plane.action_control import ActionRefused, ActionSnapshot
 from compute_plane.command_mediation import CommandFacts
@@ -56,6 +57,12 @@ class CommandActionMediator:
             raise ActionRefused('invalid execution-review requirement')
         if decision.execution_review_required and self.reviewed_execution is None:
             raise ActionRefused('mandatory execution review is unavailable')
+        # The assessment may have waited for the user's answer. They approved the command, never its deadline: take
+        # the action again on a fresh control, where the host may give it a new deadline and nothing else.
+        control = self.control_factory()
+        approved, action = action, refresh()
+        if replace(action, deadline=approved.deadline) != approved:
+            raise ActionRefused('the command changed while it was assessed')
         authorization = self.authorization_factory(action, decision, control)
         def execute_effect():
             if self.reviewed_execution is None:

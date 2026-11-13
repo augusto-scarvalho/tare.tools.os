@@ -11,7 +11,7 @@ from test_command_protection import host,jev_composition  # noqa:F401
 from test_action_model_assessment import assessment,jev_host  # noqa:F401
 
 
-@pytest.mark.parametrize('choice',['once','deny','cancel','source_changed'])
+@pytest.mark.parametrize('choice',['once','late','deny','cancel','source_changed'])
 def test_disabled_judges_ask_for_the_exact_command_and_run_no_model(jev_composition,tmp_path,monkeypatch,choice):
     h=jev_composition;root=tmp_path/'approvals'
     monkeypatch.setenv(command_permission.ROOT_ENV,str(root))
@@ -25,14 +25,17 @@ def test_disabled_judges_ask_for_the_exact_command_and_run_no_model(jev_composit
                 if choice=='cancel':h.host.control.cancellation.cancel()
                 else:
                     if choice=='source_changed':h.host.executable.write_bytes(b'changed while waiting')
+                    if choice=='late':time.sleep(1.5)  # past the action's one-second review window
                     command_permission.answer(root,question['id'],'once' if choice!='deny' else 'deny')
                 return
             time.sleep(.01)
         raise AssertionError('No command question arrived.')
     with scope.activated(scope.Scope(disable_judge=True)),ThreadPoolExecutor(1) as executor:
         mediation=h.select('tare',maximum=1)
+        if choice=='late':
+            h.host.config['command_protection']['review_seconds']=1;mediation=h.host.build()
         reply=executor.submit(respond)
-        if choice=='once':
+        if choice in ('once','late'):
             result=mediation.execute(h.host.facts(),h.host.effect)
             assert result['command_protection']['review_status']=='human_approved'
             assert result['command_protection']['reserved_calls']==0
@@ -40,7 +43,7 @@ def test_disabled_judges_ask_for_the_exact_command_and_run_no_model(jev_composit
             with pytest.raises(ActionRefused):mediation.execute(h.host.facts(),h.host.effect)
         reply.result(timeout=4)
     assert not h.calls and not h.host.native
-    assert h.host.effects==(['effect'] if choice=='once' else [])
+    assert h.host.effects==(['effect'] if choice in ('once','late') else [])
     assert not root.exists()
 
 

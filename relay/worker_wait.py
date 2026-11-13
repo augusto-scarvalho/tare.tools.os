@@ -16,11 +16,13 @@ from compute_plane.native_journal import regular, read_json
 class TurnClock:
     """A turn's monotonic clock that stops while the host waits for the user's answer. The session's
     ExecutionControl reads it (monotonic=), so a wait spends none of the turn's time; resuming also moves the
-    saved deadline_utc (the conversation's time budget, its accounting and child funding) by the same wait."""
+    saved deadline_utc (the conversation's time budget, its accounting and child funding) by the same wait.
+    A delegated session's clock names the delegating session's (parent), which stops with it."""
 
-    def __init__(self, state=None):
+    def __init__(self, state=None, parent=None):
         # (paused since, seconds waited so far), replaced as one value: other threads read the clock.
         self.state, self.mark = state, (None, 0.0)
+        self.parent = parent if isinstance(parent, TurnClock) else None
 
     @property
     def since(self):
@@ -50,7 +52,8 @@ class TurnClock:
     def waiting_for_user(self):
         self.pause()
         try:
-            yield
+            with self.parent.waiting_for_user() if self.parent is not None else nullcontext():
+                yield
         finally:
             self.resume()
 

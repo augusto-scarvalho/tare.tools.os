@@ -24,11 +24,11 @@ def permission_worker(control, workers=1):
             control.cancellation.cancel()
 
 
-def wait_request(root):
+def wait_request(root, questions=permissions):
     deadline = time.monotonic()+3
     while time.monotonic() < deadline:
         try:
-            request = permissions.pending(root)
+            request = questions.pending(root)
         except PermissionError:  # Windows: the worker is replacing request.json; the TUI polls again too
             request = None
         if request: return request
@@ -381,6 +381,79 @@ def test_cancellation_still_ends_the_paused_wait(host, tmp_path):
         with pytest.raises(PermissionError, match='cancellation'):
             running.result(timeout=3)
     assert not permissions.pending(tools.root)
+
+
+def test_an_implementers_question_stops_the_delegating_turns_clock_too():
+    from tare_tools_agent_runtime import BindingRef, CancellationToken, ExecutionControl
+    from relay.worker_wait import TurnClock, waiting_for_user
+    parent_state, child_state = {'deadline_utc': time.time()+60}, {'deadline_utc': time.time()+30}
+    parent = turn_control(parent_state, 60)
+    clock = TurnClock(child_state, parent.monotonic)  # as run_unit hands native_agent the coordinator's clock
+    child = ExecutionControl(BindingRef('child', 'binding', 'owner', 1, 'opaque'), CancellationToken(),
+                             clock()+30, monotonic=clock)
+    before = (parent.remaining_seconds(), child.remaining_seconds(),
+              parent_state['deadline_utc'], child_state['deadline_utc'])
+    with waiting_for_user(child):
+        time.sleep(.5)
+    assert abs(parent.remaining_seconds()-before[0]) < .1 and abs(child.remaining_seconds()-before[1]) < .1
+    assert parent_state['deadline_utc']-before[2] >= .5 and child_state['deadline_utc']-before[3] >= .5
+    assert TurnClock(None, time.monotonic).parent is None  # a parent off a TurnClock keeps counting, as before
+
+
+def command_question(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from relay import command_permission
+    root = tmp_path/'approvals'
+    monkeypatch.setenv(command_permission.ROOT_ENV, str(root))
+    monkeypatch.setattr(command_permission, 'LEASE', .4)  # renewed about every .2 s
+    action = SimpleNamespace(action_sha256='a'*64, effect_id='effect', cwd=str(tmp_path/'project'),
+                             argv=('python', 'check.py'), deadline=time.monotonic())  # its review window has passed
+    return command_permission, root, action
+
+
+def test_run_this_command_waits_for_the_answer_and_spends_none_of_the_turns_time(tmp_path, monkeypatch):
+    questions, root, action = command_question(tmp_path, monkeypatch)
+    state = {'deadline_utc': time.time()+.5}
+    control = turn_control(state, .5)
+    with permission_worker(control) as pool:
+        asking = pool.submit(questions.approve, action, 'Run the check.', control)
+        question = wait_request(root, questions)
+        left = control.remaining_seconds()
+        time.sleep(1)  # past the action's window, the turn's limit and two leases
+        assert not asking.done() and not control.should_stop()
+        renewed = wait_request(root, questions)
+        assert renewed['id'] == question['id'] and renewed['expires'] > question['expires']
+        questions.answer(root, question['id'], 'once')
+        assert asking.result(timeout=3) is True  # the late answer is honoured
+        assert abs(control.remaining_seconds()-left) < .2 and state['answer_wait_seconds'] >= 1
+    assert not root.exists()
+
+
+def test_an_abandoned_command_question_leaves_the_console_and_a_live_one_is_not_replayed(tmp_path, monkeypatch):
+    from compute_plane.action_control import ActionRefused
+    questions, root, action = command_question(tmp_path, monkeypatch)
+    # What an asker that died without cleaning up leaves: a question nobody renews.
+    stale = root/('b'*64); stale.mkdir(parents=True)
+    permissions.save_json(stale/'request.json', {'schema': questions.SCHEMA, 'kind': 'command', 'id': 'b'*64,
+        'status': 'WAITING', 'expires': time.time()+.3, 'project': str(tmp_path), 'cwd': str(tmp_path),
+        'argv': ['python', 'old.py'], 'objective': 'Review this command.'})
+    assert wait_request(root, questions)['id'] == 'b'*64
+    time.sleep(.4)
+    assert questions.pending(root) is None
+    with pytest.raises(ValueError, match='expired'):
+        questions.answer(root, 'b'*64, 'once')
+    control = turn_control({}, .3)
+    with permission_worker(control) as pool:
+        asking = pool.submit(questions.approve, action, 'Run the check.', control)
+        wait_request(root, questions)
+        with pytest.raises(ActionRefused, match='already pending; it is not replayed'):
+            questions.approve(action, 'Run the check.', control)
+        time.sleep(.6)  # past the turn's limit: only cancellation (or the answer) closes it
+        assert not asking.done()
+        control.cancellation.cancel()
+        with pytest.raises(ActionRefused, match='cancelled'):
+            asking.result(timeout=3)
+    assert questions.pending(root) is None
 
 
 def test_the_implementer_is_funded_from_the_time_left_before_the_question(host, tmp_path, monkeypatch):

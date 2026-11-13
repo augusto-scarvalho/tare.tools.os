@@ -2162,7 +2162,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
     @work(group='execution')
     async def run_command(self, args, selection):
         from .worker_wait import TurnClock
-        clock = TurnClock()  # the elapsed time shown stops, like the turn's, while the plan dialog waits
+        clock = TurnClock()  # the elapsed time shown stops, like the turn's, while a question waits for the user
         started = clock()
         succeeded = False
         completion = None
@@ -2197,7 +2197,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 self.refresh_command_permission()
                 if selection.mode == 'session' and self.selection().mode == 'assistant':
                     self.refresh_execution_permission(selection)
-                if getattr(self, '_execution_permission_panel', None) is not None:
+                if any(getattr(self, name, None) is not None
+                       for name in ('_execution_permission_panel', '_command_permission_panel')):
                     clock.pause()
                 else:
                     clock.resume()

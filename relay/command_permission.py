@@ -3,9 +3,11 @@ import hashlib,json,os,time
 from pathlib import Path
 from compute_plane.action_control import ActionRefused
 from compute_plane.native_journal import custody_lock,regular,save_json
+from .worker_wait import waiting_for_user
 
 ROOT_ENV='TARE_ACTION_APPROVAL_ROOT'
 SCHEMA='tare.tools/command-permission/1'
+LEASE=10  # seconds: 'expires' is renewed while the asker waits, so a question whose asker died leaves the console
 
 
 def read(path):
@@ -34,7 +36,8 @@ def answer(root,identifier,choice):
     if len(identifier)!=64 or any(c not in '0123456789abcdef' for c in identifier):
         raise ValueError('Invalid command question.')
     folder=regular(Path(root)/identifier)
-    with custody_lock(folder):
+    from .conversation_permissions import decision_lock
+    with decision_lock(folder):  # the asker briefly holds it to renew the lease
         value=read(folder/'request.json')
         if (value.get('schema')!=SCHEMA or value.get('id')!=identifier or value.get('status')!='WAITING'
                 or value.get('expires',0)<=time.time() or regular(folder/'answer.json').exists()):
@@ -43,6 +46,9 @@ def answer(root,identifier,choice):
 
 
 def approve(action,public_context,control):
+    """Wait for the user's answer about this exact action. Only the answer, cancellation (or a stale binding) or this
+    process ending closes the question; the action's review window does not, so the caller takes the action again
+    after a yes. On the session's control (a TurnClock) the wait spends none of the turn's time."""
     location=os.environ.get(ROOT_ENV)
     if not location:raise ActionRefused('Human command approval requires the connected TUI; no command ran.')
     root=regular(Path(location))
@@ -50,12 +56,11 @@ def approve(action,public_context,control):
         raise ActionRefused('Human approval custody must be outside the command workspace.')
     identifier=hashlib.sha256((action.action_sha256+'\n'+action.effect_id).encode()).hexdigest()
     folder=regular(root/identifier)
-    deadline=min(action.deadline,control.deadline_monotonic)
     request={'schema':SCHEMA,'kind':'command','id':identifier,'status':'WAITING',
         'objective':'Automatic judges are off or unavailable. Review this command before it runs.',
         'project':os.environ.get('TARE_ACTION_APPROVAL_PROJECT',action.cwd),'cwd':action.cwd,
         'argv':list(action.argv),'action_sha256':action.action_sha256,
-        'context':public_context,'expires':time.time()+max(0,deadline-control.monotonic())}
+        'context':public_context,'expires':time.time()+LEASE}
     if len(json.dumps(request,ensure_ascii=False).encode('utf-8'))>32768:
         raise ActionRefused('Command approval question exceeds 32 KiB; use a smaller exact command.')
     root.mkdir(parents=True,exist_ok=True)
@@ -63,17 +68,23 @@ def approve(action,public_context,control):
     folder.mkdir()
     try:
         save_json(folder/'request.json',request)
-        while not control.should_stop() and control.monotonic()<deadline:
-            path=regular(folder/'answer.json')
-            if path.is_file():
-                from .conversation_permissions import decision_lock
-                with decision_lock(folder):reply=read(path)
-                return reply.get('id')==identifier and reply.get('choice')=='once'
-            time.sleep(.05)
+        with waiting_for_user(control):  # the turn's time stops while the user reads and decides
+            while not control.should_stop():
+                path=regular(folder/'answer.json')
+                if path.is_file():
+                    from .conversation_permissions import decision_lock
+                    with decision_lock(folder):reply=read(path)
+                    return reply.get('id')==identifier and reply.get('choice')=='once'
+                if request['expires']-time.time()<LEASE/2:
+                    request['expires']=time.time()+LEASE
+                    try:
+                        with custody_lock(folder):save_json(folder/'request.json',request)
+                    except (ValueError,OSError):pass  # an answer is being written or a reader holds the file
+                time.sleep(.05)
         raise ActionRefused('Human command approval was cancelled or expired; no command ran.')
     finally:
         # Only files created by this exact question; no recursive deletion.
-        for name in ('answer.json','request.json','writer.lock'):
+        for name in ('answer.json','request.json','request.json.pending','writer.lock'):
             try:regular(folder/name).unlink(missing_ok=True)
             except OSError:pass
         try:folder.rmdir();root.rmdir()

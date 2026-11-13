@@ -19,6 +19,7 @@ from .action_control import ActionDecision, ActionPolicy, ActionReviewBroker
 from .action_mediation import CommandActionMediator
 from .action_model_assessment import TareActionClassifier, TareActionReviewer, TareJevActionClassifier, JEV_MODEL
 from .windows_isolation import windows_isolation_factory
+from .worker_wait import steady
 
 REVIEWS = ('auto', 'tare', 'codex', 'both')
 BACKENDS = ('mxc', 'codex')
@@ -350,6 +351,14 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
                 {} if reviewer is None else {'tare':reviewer},
                 lambda action,live:not live.should_stop(),reserve)
 
+        def ask(action,public):
+            """The user's answer about this exact command. It waits on the session's own control, whose clock stops
+            meanwhile, and forgets the review window: the mediator then takes the action again with a fresh one."""
+            from .command_permission import approve
+            allowed=approve(action,public,control)
+            deadline_cache.pop(action.effect_id,None)
+            return allowed
+
         class Broker:
             def assess(self,action,public,live):
                 try:
@@ -399,9 +408,9 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
                          'Waiting for operator command approval.' if manual else 'Classifying command with Jev.' if jev else
                          'Reviewing command with '+options['review']+'.')
                 if manual:
-                    from .command_permission import approve,yolo
+                    from .command_permission import yolo
                     unattended=yolo()
-                    allowed=unattended or approve(action,public,live)
+                    allowed=unattended or ask(action,public)
                     decision=ActionDecision(allowed,'Operator YOLO: deterministic gates and sandbox remain.' if unattended else
                         'Human approved this exact command.' if allowed else 'Human denied this command.')
                 else:
@@ -413,16 +422,16 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
                             and options.get('review_policy')=='on_demand' and failed_classification):
                         # No classifier verdict is approval. Reuse the exact-command human gate;
                         # never buy an unconfigured frontier fallback or bypass an observed denial.
-                        from .command_permission import approve
                         announce(action,'Classifier unavailable; waiting for approval of this exact command.')
-                        allowed=approve(action,public,live)
+                        allowed=ask(action,public)
                         decision=ActionDecision(allowed,'Human approved this exact command after classifier failure.'
                             if allowed else 'Human denied this command after classifier failure.',decision.observations)
                 if decision.allowed and decision.execution_review_required and reserved_count()>=options['max_reviews']:
                     decision=ActionDecision(False,'Native review budget exhausted; no command claim or effect.')
                 observed[action.effect_id]=decision
+                # The assessed action; after the user's yes the executed one differs only in its deadline.
                 append({'kind':'command_review_decision','effect_id':action.effect_id,
-                        'allowed':decision.allowed,'reason':decision.reason,
+                        'action_sha256':action.action_sha256,'allowed':decision.allowed,'reason':decision.reason,
                         'assessments':[{'stage':o.stage,'status':o.status,'reason_codes':o.reason_codes,
                                         'result_origin':o.result_origin} for o in decision.observations]})
                 return decision
@@ -459,9 +468,10 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
             if disabled and options['review'] in ('tare','both') or local_classification and not decision.observations:
                 report.update(classifier='disabled' if disabled else 'local_unavailable',
                     review_status='operator_yolo' if 'YOLO' in decision.reason else 'human_approved')
+            assessed={action.action_sha256,*(o.action_sha256 for o in decision.observations)}
             for record in journal.snapshot().records:
                 event=record.event()
-                if event.get('action_sha256')==action.action_sha256 and event.get('kind')=='action_assessment_result':
+                if event.get('action_sha256') in assessed and event.get('kind')=='action_assessment_result':
                     report['usage'][event['stage']]=json.loads(event.get('usage_json') or 'null')
                 elif event.get('kind')=='command_native_review':
                     native=event.get('receipt',{})
@@ -487,8 +497,10 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
                     before_effect()
                     return effect()
             gate=ConditionalExecutionReview()
+        # Reviews and the Kernel gate read time.monotonic: each command gets the session's control on it, built
+        # after any wait for the user (the session's own clock may have stopped meanwhile).
         mediator=CommandActionMediator(Broker(),snapshot,lambda a,c:context,authorize,guard,
-            lambda:control,result_handler=result,reviewed_execution=gate)
+            lambda:steady(control),result_handler=result,reviewed_execution=gate)
         mediator.close=weakref.finalize(mediator,test_directory.cleanup)
         cli_options=({'codex_executable':pinned_cli['executable'],'codex_sha256':options['codex_sha256']}
                      if options['backend']=='codex' else {})
@@ -512,8 +524,7 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
     from compute_plane.native_capabilities import NativeCapabilities
     from compute_plane.native_models import object_json
     from tare_tools_agent_runtime import EffectRequest, ToolCall
-    from .worker_wait import steady
-    control = steady(control)  # command reviews and the action gate read time.monotonic, not the turn's clock
+    # The turn's own control: a command question stops its clock; the mediator steadies it for each command.
     repository = unit.get('repository') or next(iter(config['repositories']))
     session_id = 'candidate-checks-'+uuid4().hex
     child = {'repositories': {repository: str(Path(tree).resolve())},
