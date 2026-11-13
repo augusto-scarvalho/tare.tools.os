@@ -20,7 +20,8 @@ removed or archived -- with the shepherd beats they left, and keeps the ones gh 
 turns on auto-merge and brings the branch up to date when main moved. Before anything is pushed it reads
 GitHub (repository settings, branch protection, rulesets) and refuses, with the reason, a push to a public
 repository whose unpublished commits carry an author or committer email that is not a GitHub noreply address,
-unsigned commits where signing is required, and a repository whose settings leave no merge method; otherwise the
+unsigned commits where signing is required, a repository whose settings leave no merge method and, when the branch's
+commits touch the Windows sandbox (SANDBOX_PATHS), a failed `scripts/ops/sandbox_probe.py` on this machine; otherwise the
 method is chosen from those settings (merge commit, else squash, never rebase). CI on main then skips a merge whose
 bytes already passed in the pull request (scripts/ci_suite.py). It leaves `tare ci shepherd <repo-dir> <number>` running
 detached: main requires a branch up to date with it and a personal account has no merge queue, so a pull request
@@ -713,11 +714,47 @@ def merge_plan(settings, branch, protection, rules):
             'linear_history': linear, 'visibility': settings.get('visibility')}
 
 
+# What builds the Windows sandbox checks run in (its policy, environment and launcher) and the probe that proves it.
+# CI's Windows has none, so a pull request touching one runs the probe here first (docs/guides/CI_FEEDBACK.md).
+SANDBOX_PATHS = ('relay/command_protection.py', 'relay/sandbox_secrets.py', 'relay/sandbox-python/',
+                 'relay/work_units.py', 'relay/windows_isolation.py', 'satellites/tare.tools.kernel',
+                 'scripts/ops/sandbox_probe.py')
+
+
+def sandbox_probe(repo_dir):
+    """'not needed', 'passed' or 'not run: no sandbox on this host'; ValueError when the probe of this checkout fails.
+    No flag skips it: someone who must can open the pull request with gh by hand."""
+    git_in(repo_dir, 'fetch', '--quiet', 'origin', 'main')
+    if not any(path.startswith(SANDBOX_PATHS) for path in
+               git_in(repo_dir, 'diff', '--name-only', 'origin/main...HEAD').splitlines()):
+        return 'not needed'
+    repo_dir = Path(repo_dir)
+    path = os.pathsep.join((str(repo_dir), str(repo_dir/'satellites'/'tare.tools.kernel')))
+    try:
+        done = subprocess.run([sys.executable, str(repo_dir/'scripts'/'ops'/'sandbox_probe.py')], cwd=repo_dir,
+                              env={**os.environ, 'PYTHONPATH': path, 'PYTHONUTF8': '1'}, capture_output=True,
+                              text=True, encoding='utf-8', errors='replace', timeout=900)
+    except subprocess.TimeoutExpired:
+        raise ValueError('Preflight refused: the sandbox probe failed: it ran for more than 15 minutes.') from None
+    if done.returncode == 3:
+        print('tare ci pr: this host has no sandbox, so the sandbox probe did not run: the real sandbox was not '
+              'exercised.', file=sys.stderr)
+        return 'not run: no sandbox on this host'
+    if done.returncode:
+        try:
+            failed = ', '.join(json.loads(done.stdout.splitlines()[-1])['failed'])
+        except (ValueError, IndexError, KeyError, TypeError):
+            failed = f'exit {done.returncode}: ' + (done.stdout + done.stderr).strip()[-300:]
+        raise ValueError(f'Preflight refused: the sandbox probe failed: {failed}. See why with '
+                         '`python scripts/ops/sandbox_probe.py`.')
+    return 'passed'
+
+
 def pull_request(repo_dir, body=None):
     """main takes changes through pull requests that merge themselves once CI is green: refuse what the
     preflight refuses, push the current branch, open its pull request into main (or reuse the open one), turn on
     auto-merge with the merge method the repository allows and, when main moved, bring the branch up to date
-    (main requires it). Returns {'number', 'url', 'state', 'preflight'}."""
+    (main requires it). Returns {'number', 'url', 'state', 'preflight', 'sandbox_probe'}."""
     def git(*args):
         return subprocess.run([host_executable('git', required=True), '-C', str(repo_dir), *args], capture_output=True, text=True, encoding='utf-8',
                               errors='replace', check=True).stdout.strip()
@@ -739,6 +776,7 @@ def pull_request(repo_dir, body=None):
                      for sha in push_preflight.unsigned(repo_dir, 'HEAD', git=executable)]
     if refusals:
         raise ValueError('Preflight refused: ' + '; '.join(refusals) + '.' + fix)
+    probe = sandbox_probe(repo_dir)
     git('push', '--quiet', '--set-upstream', 'origin', branch)
     found = json.loads(gh(['pr', 'list', '--head', branch, '--base', 'main', '--state', 'open', '--json', 'number,url'],
                           repo_dir) or '[]')
@@ -767,22 +805,24 @@ def pull_request(repo_dir, body=None):
     # gh --auto merges immediately when the base has no enforced protection.
     # Keep the reviewable PR open rather than assuming another repo's CI gate.
     if plan['protected'] is not True:
-        return {'number': number, 'url': url, 'preflight': plan,
+        return {'number': number, 'url': url, 'preflight': plan, 'sandbox_probe': probe,
                 'state': 'UNPROTECTED_AWAITING_INTEGRATION' if plan['protected'] is False else 'PROTECTION_UNCONFIRMED'}
     if plan['auto_merge'] is False:
-        return {'number': number, 'url': url, 'state': 'AUTO_MERGE_DISABLED_AWAITING_INTEGRATION', 'preflight': plan}
+        return {'number': number, 'url': url, 'state': 'AUTO_MERGE_DISABLED_AWAITING_INTEGRATION', 'preflight': plan,
+                'sandbox_probe': probe}
     try:
         gh(['pr', 'merge', str(number), '--auto', '--' + plan['method']], repo_dir)
     except subprocess.CalledProcessError as exc:
         if 'Auto merge is not allowed for this repository' not in str(exc.stderr or ''):
             raise
-        return {'number': number, 'url': url, 'state': 'AUTO_MERGE_DISABLED_AWAITING_INTEGRATION', 'preflight': plan}
+        return {'number': number, 'url': url, 'state': 'AUTO_MERGE_DISABLED_AWAITING_INTEGRATION', 'preflight': plan,
+                'sandbox_probe': probe}
     state = json.loads(gh(['pr', 'view', str(number), '--json', 'mergeStateStatus'], repo_dir))['mergeStateStatus']
     if state == 'BEHIND':  # main moved: GitHub merges main into the branch, and the local branch follows
         gh(['pr', 'update-branch', str(number)], repo_dir)
         git('pull', '--quiet', '--ff-only', 'origin', branch)
     detached('shepherd', repo_dir, number)
-    return {'number': number, 'url': url, 'state': state, 'preflight': plan}
+    return {'number': number, 'url': url, 'state': state, 'preflight': plan, 'sandbox_probe': probe}
 
 
 def forget_pushing_worktree():

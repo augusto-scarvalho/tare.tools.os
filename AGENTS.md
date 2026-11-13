@@ -34,8 +34,8 @@ project's own `AGENTS.md`; rules of one machine live in that machine's global in
 - A material change adds a bullet under `## Unreleased` in `CHANGELOG.md` (the push hook checks it). Earlier
   entries are never rewritten.
 - A change to `relay/*.py` regenerates the disposition manifest: `python scripts/sync_disposition_manifest.py .`
-  Its compliance test compares against the Git index. Stage only this change's relay files and the regenerated
-  manifest before running that check; regenerating the working copy alone leaves the staged hashes stale.
+  Its compliance test reads the Git index: stage only this change's relay files and the regenerated manifest first.
+- Prove a sandbox change with `python scripts/ops/sandbox_probe.py`; `tare ci pr` runs it and refuses on failure.
 - A compound flow must carry the TUI's `--invocation-id` through `flow_invocation` and recovery, restore its
   selection through `demand_console`, and expose its knowledge outcome. Test the actual public CLI arguments
   and saved-demand reopening; adding a mode label alone does not establish the TUI path.

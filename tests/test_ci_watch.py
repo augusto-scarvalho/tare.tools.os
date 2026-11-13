@@ -1372,3 +1372,80 @@ def test_an_unsigned_commit_is_pushed_where_signing_is_not_required(tmp_path, mo
     remote, work, git = feature_checkout(tmp_path, NOREPLY_EMAIL)
     scripted_github(monkeypatch)
     assert ci_watch.pull_request(work)['number'] == 5 and on_remote(remote)
+
+
+def probe_outcome(monkeypatch, returncode, stdout=''):
+    """The sandbox probe answers `returncode` (None: it runs past its limit); every other process is real."""
+    started, real = [], subprocess.run
+    def run(argv, **kwargs):
+        if not str(argv[-1]).endswith('sandbox_probe.py'):
+            return real(argv, **kwargs)
+        started.append((argv, kwargs))
+        if returncode is None:
+            raise subprocess.TimeoutExpired(argv, kwargs['timeout'])
+        return subprocess.CompletedProcess(argv, returncode, stdout, '')
+    monkeypatch.setattr(ci_watch.subprocess, 'run', run)
+    return started
+
+
+@pytest.mark.parametrize('path', ['relay/sandbox-python/sitecustomize.py', 'relay/work_units.py', 'a.txt'])
+def test_the_sandbox_probe_runs_only_when_the_pull_request_touches_the_sandbox(tmp_path, monkeypatch, path):
+    import sys
+    remote, work, git = feature_checkout(tmp_path, NOREPLY_EMAIL)
+    (work/path).parent.mkdir(parents=True, exist_ok=True); (work/path).write_text('changed')
+    git('add', '.'); git('commit', '-qm', 'Touch ' + path)
+    scripted_github(monkeypatch)
+    started = probe_outcome(monkeypatch, 0, '{"ok": true, "failed": [], "not_run": [], "seconds": 20.0}\n')
+    result = ci_watch.pull_request(work)
+    assert result['number'] == 5 and on_remote(remote)
+    if path == 'a.txt':
+        assert result['sandbox_probe'] == 'not needed' and not started
+        return
+    assert result['sandbox_probe'] == 'passed'
+    [(argv, kwargs)] = started
+    assert argv == [sys.executable, str(work/'scripts'/'ops'/'sandbox_probe.py')] and kwargs['timeout'] >= 900
+    assert kwargs['env']['PYTHONPATH'] == os.pathsep.join((str(work), str(work/'satellites'/'tare.tools.kernel')))
+
+
+def test_a_host_without_the_sandbox_opens_the_pull_request_and_says_the_probe_did_not_run(tmp_path, monkeypatch,
+                                                                                           capsys):
+    remote, work, git = feature_checkout(tmp_path, NOREPLY_EMAIL)
+    (work/'relay').mkdir(); (work/'relay'/'command_protection.py').write_text('changed')
+    git('add', '.'); git('commit', '-qm', 'Touch the sandbox')
+    scripted_github(monkeypatch)
+    probe_outcome(monkeypatch, 3, '{"ok": null, "reason": "no sandbox on this host"}\n')
+    assert ci_watch.main(['pr', '--repo-dir', str(work)]) == 0
+    out, err = capsys.readouterr()
+    assert json.loads(out)['sandbox_probe'] == 'not run: no sandbox on this host' and on_remote(remote)
+    assert err.count('\n') == 1 and 'the real sandbox was not exercised' in err
+
+
+@pytest.mark.parametrize('returncode, stdout, named', [
+    (1, 'FAIL  node-commonjs ...\n{"ok": false, "failed": ["node-commonjs", "cleanup"], "not_run": [], "seconds": 30}\n',
+     'node-commonjs, cleanup'),
+    (1, 'Traceback (most recent call last):\n', 'exit 1: Traceback'),
+    (None, '', 'more than 15 minutes')])
+def test_a_failed_sandbox_probe_refuses_before_anything_is_pushed(tmp_path, monkeypatch, returncode, stdout, named):
+    remote, work, git = feature_checkout(tmp_path, NOREPLY_EMAIL)
+    (work/'satellites').mkdir(); (work/'satellites'/'tare.tools.kernel').write_text('a pin')
+    git('add', '.'); git('commit', '-qm', 'Move the Kernel pin')
+    calls = scripted_github(monkeypatch)
+    probe_outcome(monkeypatch, returncode, stdout)
+    with pytest.raises(ValueError, match='^Preflight refused: the sandbox probe failed: ') as refused:
+        ci_watch.pull_request(work)
+    assert named in str(refused.value)
+    assert not on_remote(remote) and not [call for call in calls if call[0] == 'pr']
+
+
+def test_the_sandbox_probe_exits_3_with_its_json_on_a_host_without_the_sandbox(tmp_path, monkeypatch, capsys):
+    import runpy
+    from pathlib import Path
+    import sys
+    import tempfile
+    pytest.importorskip('relay.command_protection', reason='the probe needs the Kernel and its FlatBuffers')
+    monkeypatch.setattr(sys, 'path', list(sys.path))
+    monkeypatch.setattr(tempfile, 'tempdir', str(tmp_path))  # where the probe makes its own folder
+    probe = runpy.run_path(str(Path(ci_watch.__file__).parents[1]/'scripts'/'ops'/'sandbox_probe.py'))
+    assert probe['main']() == 3  # conftest: no test sees a sandbox
+    assert capsys.readouterr().out.splitlines()[-1] == '{"ok": null, "reason": "no sandbox on this host"}'
+    assert not list(tmp_path.iterdir())
