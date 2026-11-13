@@ -99,8 +99,12 @@ it `asyncio`, still works there through an AF_UNIX pair tare provides; tests
 that open real TCP or UDP servers on 127.0.0.1 still fail. An observed MXC
 timeout creating a loopback socket pair (Python started with `-I`, `-E` or `-S`,
 or a library that builds its own) is reported as inconclusive execution
-compatibility. Inspect check scope or choose a compatible policy explicitly;
-this never enables host networking or waives required tests.
+compatibility, and so is a pytest check whose every failure is a connection
+the sandbox denied (`ISOLATION_NETWORK_DENIED`); one other failure in it keeps
+the check red. Inspect check scope or choose a compatible policy explicitly;
+this never enables host networking or waives required tests. Like a timeout,
+an inconclusive session check settles nothing: a change whose own checks pass
+is then applied only when its unit's tests cover every changed file.
 
 F3 includes the host-applied files, recorded candidate checks and their observed
 freshness. Existing file/turn preview and explicit undo use the same hashed

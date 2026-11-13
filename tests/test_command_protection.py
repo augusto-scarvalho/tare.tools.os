@@ -334,6 +334,68 @@ def test_internal_ipc_diagnostic_is_not_a_failing_test_assertion(backend, code, 
         assert 'ISOLATION_INTERNAL_IPC_UNAVAILABLE' in output and 'silently enable host networking' in output
 
 
+# Pytest failure sections as the real sandbox printed them (2026-11-13, Python 3.12, pytest 9.1).
+WSAEACCES = ('___________________ test_sync_connect_to_own_listener ___________________\n\n'
+             '>               sock.connect(sa)\n'
+             'E               PermissionError: [WinError 10013] An attempt was made to access a socket in a way '
+             'forbidden by its access permissions\n\n..\\Lib\\socket.py:850: PermissionError\n')
+ASYNCIO_CONNECT = ('_______________________ test_tcp_server_and_connect _______________________\n\n'
+                   '..\\Lib\\asyncio\\windows_events.py:803: in _poll\n    value = callback(transferred, key, ov)\n'
+                   '_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\n'
+                   '    def finish_connect(trans, key, ov):\n>       ov.getresult()\n'
+                   'E       PermissionError: [WinError 5] Access is denied\n\n'
+                   '..\\Lib\\asyncio\\windows_events.py:599: PermissionError\n')
+ASSERTION = ('_________________________ test_real_regression _________________________\n\n'
+             '>       assert 1 + 1 == 3\nE       assert (1 + 1) == 3\n\ntest_mixed.py:12: AssertionError\n')
+OWN_FILE = ('__________________________ test_reads_its_data __________________________\n\n'
+            ">       open(path).read()\nE       PermissionError: [WinError 5] Access is denied: "
+            "'C:\\\\project\\\\data.txt'\n\ntest_data.py:4: PermissionError\n")
+
+
+def pytest_report(*sections, banner='FAILURES', end=True):
+    # The short summary names a denial in every case: only the sections may count.
+    return ('============================= test session starts =============================\n'
+            'collected 2 items\n\ntest_x.py FF                                     [100%]\n\n'
+            f'================================== {banner} ===================================\n'
+            + ''.join(sections) + ('=========================== short test summary info ===========================\n'
+            'FAILED test_x.py::test_sync_connect_to_own_listener - PermissionError: [WinError 10013] A...\n'
+            '============================== 2 failed in 0.54s ==============================\n' if end else ''))
+
+
+@pytest.mark.parametrize('output,limited', [
+    (pytest_report(WSAEACCES), True),
+    (pytest_report(ASYNCIO_CONNECT), True),
+    (pytest_report(WSAEACCES.replace('test_sync', 'ERROR at setup of test_sync'), banner='ERRORS'), True),
+    (pytest_report(WSAEACCES, ASYNCIO_CONNECT), True),
+    (pytest_report(ASSERTION), False),
+    (pytest_report(OWN_FILE), False),  # the test's own file error inside the project: never the sandbox's
+    (pytest_report(WSAEACCES, ASSERTION), False),  # one real failure keeps the whole check red
+    (pytest_report(ASYNCIO_CONNECT.replace('finish_connect', 'read_config')), False),
+    (pytest_report(ASSERTION + '----- Captured stdout call -----\nretrying after [WinError 10013]\n'), False),
+    ('Traceback (most recent call last):\nPermissionError: [WinError 10013] An attempt was made', False),  # no sections
+    (pytest_report(WSAEACCES, end=False), False)])  # a report cut off before its end
+def test_a_check_whose_every_failure_is_a_denied_connection_is_a_limitation(output, limited, tmp_path):
+    from relay import work_units
+    import subprocess
+    value = {'returncode': 1, 'output': output, 'process': {'confinement': {'backend': 'windows-mxc'}}}
+    diagnostic = protection.verification_limitation(value)
+    assert bool(diagnostic) is limited
+    if limited:
+        assert diagnostic.startswith('ISOLATION_NETWORK_DENIED: ') and 'network connection on this machine' in diagnostic
+        for changed in ({'output_truncated': True}, {'returncode': 0},
+                        {'process': {'confinement': {'backend': 'codex-mxc'}}}):
+            assert protection.verification_limitation({**value, **changed}) is None
+    done = subprocess.CompletedProcess(['fixture'], 1, output, '')
+    done.execution_limitation = diagnostic
+    token = work_units.CHECK_PORT.set(lambda *a, **kw: done)
+    try:
+        status, receipt = work_units.run_checks(tmp_path, {'focused': ['fixture']})
+    finally:
+        work_units.CHECK_PORT.reset(token)
+    assert status == ('inconclusive' if limited else 'red')
+    assert ('focused: ISOLATION_NETWORK_DENIED:' in receipt) is limited  # told apart from a timeout by its code
+
+
 def test_cancelled_control_sends_no_native_request_and_runs_no_effect(host):
     mediator=host.build();host.control.cancellation.cancel()
     with pytest.raises(ActionRefused):mediator.execute(host.facts(),host.effect)
