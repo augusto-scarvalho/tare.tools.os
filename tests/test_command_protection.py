@@ -526,6 +526,34 @@ def test_own_reviews_keep_low_classifier_high_reviewer_and_require_both_approval
     assert efforts==['low','high'] and host.effects==host.native==[] and host.claims==set()
 
 
+@pytest.mark.parametrize('levels,expected', [(None, 'xhigh'), (['low', 'medium'], None)])
+def test_a_local_implementers_reviewer_binds_at_a_level_its_model_declares(host, monkeypatch, levels, expected):
+    """Local-only, Action review Selected model (tare): the local judge classifies, the implementer's own local model
+    reviews. Its policy level high becomes xhigh, the lowest level qwen38-gsq declares at or above it."""
+    from relay import execution_scope as scope
+    from relay.execution_team import reasoning
+    from relay.native_catalog import select
+    local = select('qwen38-gsq')
+    if levels:
+        local['native_reasoning_levels'] = levels
+    built = []
+    monkeypatch.setattr(protection, 'TareJevActionClassifier', lambda **kwargs: built.append(('classifier', kwargs['provider'])))
+    monkeypatch.setattr(protection, 'TareActionReviewer', lambda deployment, **kwargs: built.append(('reviewer', reasoning(deployment))))
+    monkeypatch.setattr(protection, 'TareActionClassifier', lambda *a, **kw: pytest.fail('The local judge classifies here.'))
+    config = {**host.config, 'command_protection': protection.prepare({'review': 'tare', 'max_reviews': 2}, local)}
+    def bind():
+        return protection.factory(config, local, host.custody, 'Run the owned offline check once.', 'invocation')(
+            session_id='session', binding=host.binding, control=host.control, config=config, custody=host.custody,
+            scratch=host.custody/'scratch', capabilities=host.capabilities)
+    with scope.activated(scope.Scope(only='local')):
+        if expected is None:
+            with pytest.raises(ValueError, match='declares no reasoning level at or above high .it declares low, medium.'):
+                bind()
+        else:
+            bind()
+    assert built == ([('classifier', 'local'), ('reviewer', 'xhigh')] if expected else [('classifier', 'local')])
+
+
 def test_jev_and_following_reviewer_receive_the_same_observed_reference_grants(host, monkeypatch, tmp_path):
     from relay.folder_access import grant
     reference = tmp_path/'approved-evidence'; reference.mkdir()
