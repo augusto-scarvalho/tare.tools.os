@@ -41,6 +41,10 @@ it does not mean it was tested. **Do not use** excludes it. A group restriction
 in **Advanced** overrides individual choices. Saved conversations keep
 their settings.
 
+In **Local models** (or `tare setup --local-gateway URL`, or `TARE_LOCAL_GATEWAY`), the address may use an IP
+address or a host name: `http://aaaaa:8080`, `http://box.local:11434` or a Tailscale name all work. Every model that
+address serves counts as local, so it never gets the unsandboxed terminal and `--local_only` admits it.
+
 Keys are saved immediately. **Save settings** applies the usage choices and
 shows a confirmation; **Back · Esc** returns to the conversation. Saving everything as
 Automatic also completes the initial setup.

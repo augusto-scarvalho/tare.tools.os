@@ -46,15 +46,25 @@ def policy(root):
 
 
 def local(deployment):
+    """Served from this machine or its network, decided without a DNS query: a private, loopback or Tailscale
+    address, a name without a dot or under a local suffix, or the configured local gateway's own host.
+    native_challenger_accounting, when present, decides instead."""
     if deployment.get('native_challenger_accounting'):
         return deployment['native_challenger_accounting'] == 'local'
     url = urlparse(deployment['native_profile']['endpoint'])
-    host = url.hostname or ''
+    host = (url.hostname or '').rstrip('.')
     try:
         address = ipaddress.ip_address(host)
         private = address.is_private or address in ipaddress.ip_network('100.64.0.0/10')
     except ValueError:
-        private = host == 'localhost'
+        from .web_research import LOCAL_NAMES
+        private = bool(host) and ('.' not in host or host.endswith(LOCAL_NAMES))
+        if host and not private:
+            from .native_catalog import local_gateway
+            try:  # the operator's gateway, however it is named (http://models.example.com:8080)
+                private = host == urlparse(local_gateway()).hostname.rstrip('.')
+            except ValueError:  # no storage or a malformed gateway: the name rules alone decide
+                pass
     return url.scheme in {'http', 'https'} and private
 
 
