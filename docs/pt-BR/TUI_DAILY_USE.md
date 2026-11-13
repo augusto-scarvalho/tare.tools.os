@@ -71,7 +71,7 @@ de modelo e os prompts das conversas não são substituídos por essas opções.
 | `--prefer_api` | Prefere as APIs de inferência disponíveis para o planejador e os auditores; recorre a outras conexões permitidas. |
 | `--prefer_subscription` | Prefere as assinaturas disponíveis (CLIs, a assinatura do OpenCode) para o planejador e os auditores; recorre a outras conexões permitidas. |
 | `--prefer_local` | Mantém coordenador, explorador, implementador e pesquisador na inferência local; usa planejador e auditores externos qualificados. O Jev hospedado continua disponível. |
-| `--disable_judge` | Desliga o Jev hospedado e o juiz local. Comandos protegidos exigem aprovação humana quando necessário; o YOLO pula essas perguntas. Verificações, auditorias finais, sandbox e o Auto-review nativo do Codex continuam. |
+| `--disable_judge` | Desliga o Jev hospedado e o juiz local. Um comando protegido então pergunta a você antes, exceto em **Edit + system commands** (YOLO), onde ele roda sem revisão de modelo e sem pergunta. O sandbox, as verificações fixas e as auditorias finais continuam, e o Auto-review nativo do Codex também quando a revisão de comandos do projeto é Codex ou ambos. O `/permissions` mostra qual caso vale. |
 
 ```powershell
 tare --subscription_only

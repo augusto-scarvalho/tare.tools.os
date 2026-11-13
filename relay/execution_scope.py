@@ -23,7 +23,7 @@ HELP={
     'prefer_api':'Prefer available inference APIs for planner and auditors.',
     'prefer_subscription':'Prefer available subscriptions (CLIs, the OpenCode subscription) for planner and auditors.',
     'prefer_local':'Use local models; delegate planner and auditors to external providers.',
-    'disable_judge':'Disable Jev and the local judge; use human approval unless the project is in YOLO.',
+    'disable_judge':'Turn off Jev and the local judge. A protected command then asks you first, except in the "Edit + system commands" (YOLO) mode, where it runs with no model review and no question; Codex review, if selected, the sandbox and the fixed checks still apply.',
 }
 
 

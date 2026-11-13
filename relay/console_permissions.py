@@ -8,6 +8,11 @@ from .project_permissions import read_defaults, profile_values, permissions_view
 
 
 class ProjectPermissions:
+    @staticmethod
+    def judges_off():
+        from .execution_scope import current
+        return current().disable_judge
+
     def refresh_command_permission(self):
         from .command_permission import pending,answer
         from .execution_permission_panel import ExecutionPermissionPanel
@@ -152,7 +157,8 @@ class ProjectPermissions:
             self.notify(str(exc), severity='error')
             return
         def reader():
-            return permissions_view(directory, project, control, session=session, pending=pending)
+            return permissions_view(directory, project, control, session=session, pending=pending,
+                                    judges_off=self.judges_off())
         def saver(defaults, revision):
             nonlocal pending
             saved, saved_revision = save_defaults(directory, project, control, defaults, revision)
@@ -164,7 +170,8 @@ class ProjectPermissions:
                                            {'mode': 'quarantine', 'root_sha256': None, 'nested': False})),
                                        command_protection=dict(saved.get('command_protection', {})),
                                        verifier='' if role == 'explorer' else selected.verifier)
-            view = permissions_view(directory, project, control, session=session, pending=next_pending)
+            view = permissions_view(directory, project, control, session=session, pending=next_pending,
+                                    judges_off=self.judges_off())
             if view['revision'] != saved_revision:
                 raise ValueError('Defaults were saved, then changed elsewhere. Refresh to see the current defaults.')
             pending = next_pending

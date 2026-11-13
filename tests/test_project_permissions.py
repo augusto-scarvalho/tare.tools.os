@@ -202,6 +202,29 @@ def test_pending_protection_displays_actual_tools_and_limits(tmp_path):
 
 
 
+def test_panel_says_when_no_model_reviews_a_command_because_judges_are_off(tmp_path):
+    from relay.turn_engine import set_project_permission_mode
+    root=tmp_path/'project';root.mkdir()
+    def text(review,**kw):
+        selected=Selection(str(root),role='implementer',write_paths=['.'],
+                           command_protection={'review':review,'backend':'mxc','max_reviews':2,'classifier':'jev','review_policy':'on_demand'})
+        return permissions_view(tmp_path/'preferences',root,tmp_path/'control',pending=selected,**kw)['effective_text']
+    set_project_permission_mode(root,'commands')
+    on=text('tare')
+    assert 'System commands: Protected noninteractive commands' in on and 'Classifier: Jev' in on
+    assert 'Command review: tare  Isolation: mxc' in on and 'Review calls: up to 2' in on
+    assert text('tare',judges_off=False)==on
+    off=text('tare',judges_off=True)
+    assert 'System commands: Sandboxed, not reviewed (automatic judges are off in this TUI)' in off
+    assert 'Command review: none while judges are off; the sandbox and fixed checks still apply  Isolation: mxc' in off
+    assert 'Review calls' not in off and 'Classifier' not in off
+    assert 'Command review: codex on every command; no Jev or Tare model review' in text('codex',judges_off=True)
+    assert 'Review calls: up to 2' in text('codex',judges_off=True)
+    set_project_permission_mode(root,'edit')  # another frontend changed the mode: nothing runs unasked
+    assert 'Sandboxed, you approve each command (automatic judges are off' in text('tare',judges_off=True)
+    assert 'after you approve it' in text('both',judges_off=True)
+
+
 def test_jev_auto_preferences_are_independent_and_resume_does_not_override(tmp_path):
     root=tmp_path/'project';root.mkdir()
     defaults={'mode':'commands','write_paths':['.'],'command_protection':
