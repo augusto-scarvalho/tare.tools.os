@@ -37,7 +37,7 @@ package-dir = {tare_os_schemas = "schemas"}
 [tool.setuptools.package-data]
 "scripts.round_table" = ["*.html"]
 tare_os_schemas = ["*.json"]
-relay = ["round_table_roster.json", "role_deployments.json", "retired_aider_deployments.json", "model_evidence.json", "behavioral_evidence.json", "prompt_capsules.json", "native_deployments/*.json", "templates/*.md"]
+relay = ["round_table_roster.json", "role_deployments.json", "retired_aider_deployments.json", "model_evidence.json", "behavioral_evidence.json", "prompt_capsules.json", "native_deployments/*.json", "templates/*.md", "sandbox-python/sitecustomize.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
