@@ -93,7 +93,7 @@ tare.tools.os/
 │   ├── tare.tools.kernel/        (@ 6f4b05a) # Execution boundaries, journals, terminal sessions
 │   ├── tare.tools.agent-runtime/ (@ bbbe120) # Bounded agent loop
 │   ├── tare.tools.specgraph/     (@ cce9edd) # Project specification and code graph
-│   ├── tare.tools.backlog-graph/ (@ 0fd1e7c) # Task graph with compare-and-swap updates
+│   ├── tare.tools.backlog-graph/ (@ 086f02e) # Task graph with compare-and-swap updates
 │   └── tare.tools.library/       (@ 6e9639e) # Technical library and knowledge records
 └── scripts/                                  # Release, CI and maintenance tools
 ```

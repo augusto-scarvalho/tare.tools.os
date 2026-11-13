@@ -247,16 +247,10 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
             environment['GIT_OPTIONAL_LOCKS']='0'
         # Runtime and project read scopes are explicit; nested scopes retain their configured write grants.
         read=[p for p in dict.fromkeys(read) if p not in write]
-        # PSEC 1.1 permits ancestor metadata queries without granting their
-        # contents. Path safety checks (including Backlog's symlink guard) need
-        # these queries even when the leaf itself is already admitted.
-        content_directories=[Path(p).resolve() for p in (*read,*write) if Path(p).is_dir()]
-        # PSEC's enumerate rule can narrow an overlapping content grant. Query
-        # only ancestors outside admitted directories, including metadata roots.
-        ancestors=tuple(sorted({str(parent) for p in (*read,*write) for parent in Path(p).parents
-            if not any(parent==d or d in parent.parents for d in content_directories)}))
-        policy=MxcPolicy(tuple(read),tuple(dict.fromkeys(write)),tuple(denied),registry_read=True,
-                         enumerate_only=ancestors if options['backend']=='mxc' else ())
+        # No enumerate-only scope: PSEC's fs_enumerate admits listing of the whole subtree, so the volume
+        # root's lets a command list every folder on the drive (probed 2026-11-13). Ancestors stay
+        # stat-able without it; only the volume root's own metadata is then denied.
+        policy=MxcPolicy(tuple(read),tuple(dict.fromkeys(write)),tuple(denied),registry_read=True)
         deadline_cache={};issued={};observed={};routine_ports={}
 
         def sources(argv):
