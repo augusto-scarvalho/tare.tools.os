@@ -205,8 +205,12 @@ For advanced defaults, open `/permissions`:
 Defaults are saved separately for each project. A coordinator's own tools, model,
 instructions and history remain fixed; worker authorization is checked separately
 when executing a plan. Explicit `/session` conversations retain their original
-capabilities. Commands can access the host and network: file edit scope alone is
-not a system sandbox.
+capabilities. Terminal commands can access the host and network: file edit scope alone is
+not a system sandbox. Checks are different: in every mode they run in the Windows sandbox (no
+network, no secret files, writes only to the edit paths). When the sandbox blocks a check, tare asks
+**Run this check outside the sandbox?** (this turn, always for this project, or not at all; it starts on
+not running it). On a system with no sandbox, `/permissions` says checks are not isolated, and a local
+model is not used as implementer there.
 
 ## 4. Send a normal coding request
 

@@ -206,8 +206,12 @@ Para padrões avançados, abra `/permissions`:
 Os padrões são salvos separadamente para cada projeto. As ferramentas, o modelo,
 as instruções e o histórico do próprio coordenador continuam fixos; a autorização dos workers é verificada à parte
 ao executar um plano. Conversas explícitas de `/session` mantêm as capacidades
-originais. Comandos podem acessar o host e a rede: o escopo de edição de arquivos sozinho
-não é um sandbox do sistema.
+originais. Comandos do terminal podem acessar o host e a rede: o escopo de edição de arquivos sozinho
+não é um sandbox do sistema. As verificações são diferentes: em qualquer modo elas rodam no sandbox do
+Windows (sem rede, sem arquivos secretos, gravando só nos caminhos de edição). Quando o sandbox bloqueia
+uma verificação, o tare pergunta **Run this check outside the sandbox?** (neste turno, sempre neste
+projeto ou não rodar; o padrão é não rodar). Num sistema sem sandbox, o `/permissions` diz que as
+verificações não estão isoladas, e um modelo local não é usado como implementador ali.
 
 ## 4. Enviar um pedido normal de código
 
