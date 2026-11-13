@@ -266,6 +266,29 @@ def test_a_late_human_answer_gets_a_fresh_window_for_the_same_command_only(answe
     assert (issued == assessed) is (answer == 'machine')  # a machine review keeps its window and its exact action
 
 
+def test_a_yes_covers_a_repeat_only_when_everything_but_its_effect_and_deadline_is_the_same(tmp_path):
+    from relay.command_permission import same_command
+    facts, control, *_, mediator, _ = setup()
+    action = mediator().snapshot_factory(facts, control)
+    assert same_command(replace(action, effect_id='a later run', deadline=999.0)) == same_command(action)
+    helper, created = tmp_path/'helper.py', tmp_path/'new.py'  # files the plan lets the session write
+    helper.write_text('VALUE = 1\n')
+    approved = same_command(action, [helper, created])
+    assert same_command(replace(action, effect_id='a later run'), [helper, created]) == approved
+    helper.write_text('VALUE = 2\n')  # an edit to code the command imports, not named in its argv
+    assert same_command(action, [helper, created]) != approved
+    helper.write_text('VALUE = 1\n'); created.write_text('')
+    assert same_command(action, [helper, created]) != approved
+    assert same_command(action, [tmp_path]) is None  # a writable folder: always ask
+    for field, value in (('work_id', 'w2'), ('session_id', 's2'), ('binding_id', 'b2'), ('fence_seq', 4),
+                         ('operation', 'terminal_start'), ('repository', 'r2'), ('cwd', '/elsewhere'),
+                         ('execution_profile', 'another-sandbox'), ('environment_sha256', 'f'*64),
+                         ('context_sha256', 'f'*64), ('source_sha256', 'f'*64), ('policy_sha256', 'f'*64),
+                         ('grant_sha256', 'f'*64), ('argv', ('python', 'other.py')), ('stdin', b'input'),
+                         ('payload_json', '{}')):
+        assert same_command(replace(action, **{field: value})) != same_command(action), field
+
+
 def test_mandatory_external_review_cannot_be_lost_before_an_effect():
     facts,control,current,claims,effects,issued,mediator,effect=setup()
     class RequiresReview:

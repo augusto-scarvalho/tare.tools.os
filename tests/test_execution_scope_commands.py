@@ -5,7 +5,7 @@ import time
 
 import pytest
 from compute_plane.action_control import ActionRefused
-from relay import command_permission,execution_scope as scope,turn_engine
+from relay import command_permission,command_protection as protection,execution_scope as scope,turn_engine
 from relay.action_model_assessment import TareJevActionClassifier
 from test_command_protection import host,jev_composition  # noqa:F401
 from test_action_model_assessment import assessment,jev_host  # noqa:F401
@@ -45,6 +45,35 @@ def test_disabled_judges_ask_for_the_exact_command_and_run_no_model(jev_composit
     assert not h.calls and not h.host.native
     assert h.host.effects==(['effect'] if choice in ('once','late') else [])
     assert not root.exists()
+
+
+def test_a_yes_covers_the_same_exact_command_again_in_this_session_and_a_no_is_never_kept(jev_composition,monkeypatch):
+    from dataclasses import replace
+    h=jev_composition;asked=[];reply=[False]
+    monkeypatch.setenv('TARE_SESSION_OPERATOR_MODE','edits')
+    monkeypatch.setattr(command_permission,'approve',lambda action,public,control:asked.append(action.effect_id) or reply[0])
+    helper=h.host.root/'helper.py';helper.write_text('VALUE = 1\n')
+    h.host.config['writable']={'project':['helper.py']}  # the plan's file, imported by the command, not in its argv
+    def run(effect):  # the same command under a new effect id, as a rerun of a registered check is
+        return mediation.execute(replace(h.host.facts(effect),payload_json=h.host.facts().payload_json),h.host.effect)
+    with scope.activated(scope.Scope(disable_judge=True)):
+        mediation=h.select('tare',maximum=1)
+        with pytest.raises(ActionRefused,match='denied'):run('1')
+        reply[0]=True
+        statuses=[run('2')['command_protection']['review_status'],run('3')['command_protection']['review_status']]
+        helper.write_text('VALUE = 2\n')  # an edit the session may make: asked again
+        statuses.append(run('4')['command_protection']['review_status'])
+        h.host.executable.write_bytes(b'changed after the yes')  # one of its inputs: asked again
+        statuses.append(run('5')['command_protection']['review_status'])
+    assert asked==['1','2','4','5']
+    assert statuses==['human_approved','human_approved_earlier','human_approved','human_approved']
+    assert h.host.effects==['effect']*4 and not h.calls and not h.host.native
+    rows=[r.event() for r in protection.NativeJournal(h.host.custody/'command-reviews.jsonl').snapshot().records]
+    assert [r['reason'] for r in rows if r['kind']=='command_review_decision']==['Human denied this command.',
+        'Human approved this exact command.','Human approved this exact command earlier in this task.',
+        'Human approved this exact command.','Human approved this exact command.']
+    assert any(a['id']=='3' and 'earlier' in a['detail'] for a in h.host.activities)
+    assert all(r['protection']['reserved_calls']==0 for r in rows if r['kind']=='command_protected_effect')
 
 
 def test_disabled_judges_in_yolo_run_no_judge_and_never_ask(jev_composition,monkeypatch):

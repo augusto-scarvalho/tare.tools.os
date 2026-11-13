@@ -1,5 +1,6 @@
 """One exact host-owned action question; no inference or persistent command grants."""
 import hashlib,json,os,time
+from dataclasses import replace
 from pathlib import Path
 from compute_plane.action_control import ActionRefused
 from compute_plane.native_journal import custody_lock,regular,save_json
@@ -43,6 +44,23 @@ def answer(root,identifier,choice):
                 or value.get('expires',0)<=time.time() or regular(folder/'answer.json').exists()):
             raise ValueError('This command question expired or was already answered.')
         save_json(folder/'answer.json',{'id':identifier,'choice':choice})
+
+
+def same_command(action,writable=()):
+    """What one yes covers when the command comes up again in the same session: everything the action hash binds
+    (session, binding, folder, argv, payload, environment, the files the argv names, context, policy, grant, sandbox)
+    except what each run has of its own, its effect id and its deadline; and the bytes of the files the session may
+    write, so a run after an edit to code the command imports asks again. None (ask every time) when a folder is
+    writable. ponytail: a folder scope is not hashed on each question; walk it, bounded, if such plans need repeats."""
+    state=[]
+    try:
+        for path in map(Path,writable):
+            if path.exists() and not path.is_file():return None
+            if not path.exists():state.append((str(path),None));continue
+            with path.open('rb') as stream:state.append((str(path),hashlib.file_digest(stream,'sha256').hexdigest()))
+    except OSError:return None  # unreadable now: ask
+    exact=replace(action,effect_id='repeat',deadline=0.0).action_sha256
+    return hashlib.sha256(json.dumps([exact,state]).encode()).hexdigest()
 
 
 def approve(action,public_context,control):

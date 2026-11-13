@@ -96,7 +96,11 @@ in local-only mode; their existing deterministic/explorer fallback handles the w
 time stops (the implementer's and the conversation's) and so does the elapsed time shown. Only your
 answer or cancelling the turn closes it. After **Allow for this task**, tare checks that the command,
 its folder, inputs and context are still exactly what you were shown and runs it within a fresh short
-review window (60 seconds by default); anything changed, and it does not run.
+review window (60 seconds by default); anything changed, and it does not run. A yes also covers that
+exact command when the same session runs it again in this task, such as the checks tare reruns before
+applying a change; tare asks again when anything differs (the command, its folder, the files it names
+or the plan lets the session change, its environment, the request or the sandbox), when another session
+runs it, when the plan lets the session change a whole folder, and after a no.
 
 From a source install, run `tare PATH` in the activated environment; its history
 goes to `.reconciliation` next to the clone unless `TARE_STORAGE_ROOT` is set.

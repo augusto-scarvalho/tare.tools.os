@@ -218,6 +218,7 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         write=[]
         for scopes in config['writable'].values():
             write.extend(str((root/p).resolve()) for p in scopes)
+        planned=list(write)  # what the plan lets this session change; a remembered yes covers it unchanged only
         read.append(str(root));write.extend((str(scratch),str(test_scratch)))
         from .native_installation import storage_root
         staged_effects=bool(root.parent==storage_root().resolve()/'wt' and re.fullmatch('[0-9a-f]{8}',root.name))
@@ -351,13 +352,23 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
                 {} if reviewer is None else {'tare':reviewer},
                 lambda action,live:not live.should_stop(),reserve)
 
+        approved=set()  # same_command() of each command the user said yes to in this session; a no is never kept
+
         def ask(action,public):
-            """The user's answer about this exact command. It waits on the session's own control, whose clock stops
-            meanwhile, and forgets the review window: the mediator then takes the action again with a fresh one."""
-            from .command_permission import approve
+            """The user's answer about this exact command, and why. It waits on the session's own control, whose clock
+            stops meanwhile, and forgets the review window: the mediator then takes the action again with a fresh one.
+            A yes also covers the same exact command when this session runs it again (owner, 2026-11-12).
+            ponytail: kept in memory for this binding only, so a resumed session asks again for a command it already
+            ran; keep the keys beside the conversation task (the granted.json pattern) if that repeat shows up."""
+            from .command_permission import approve,same_command
+            key=same_command(action,planned)
+            if key is not None and key in approved:
+                announce(action,'Approved earlier in this task; running it again without asking.')
+                return True,'Human approved this exact command earlier in this task'
             allowed=approve(action,public,control)
             deadline_cache.pop(action.effect_id,None)
-            return allowed
+            if allowed and key is not None:approved.add(key)
+            return allowed,'Human approved this exact command' if allowed else 'Human denied this command'
 
         class Broker:
             def assess(self,action,public,live):
@@ -409,10 +420,8 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
                          'Reviewing command with '+options['review']+'.')
                 if manual:
                     from .command_permission import yolo
-                    unattended=yolo()
-                    allowed=unattended or ask(action,public)
-                    decision=ActionDecision(allowed,'Operator YOLO: deterministic gates and sandbox remain.' if unattended else
-                        'Human approved this exact command.' if allowed else 'Human denied this command.')
+                    allowed,why=(True,'Operator YOLO: deterministic gates and sandbox remain') if yolo() else ask(action,public)
+                    decision=ActionDecision(allowed,why+'.')
                 else:
                     decision=(assessment.assess(action,public,live) if classifier is not None else
                               ActionDecision(True,'Host-selected native execution review is mandatory.',execution_review_required=True))
@@ -423,9 +432,8 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
                         # No classifier verdict is approval. Reuse the exact-command human gate;
                         # never buy an unconfigured frontier fallback or bypass an observed denial.
                         announce(action,'Classifier unavailable; waiting for approval of this exact command.')
-                        allowed=ask(action,public)
-                        decision=ActionDecision(allowed,'Human approved this exact command after classifier failure.'
-                            if allowed else 'Human denied this command after classifier failure.',decision.observations)
+                        allowed,why=ask(action,public)
+                        decision=ActionDecision(allowed,why+' after classifier failure.',decision.observations)
                 if decision.allowed and decision.execution_review_required and reserved_count()>=options['max_reviews']:
                     decision=ActionDecision(False,'Native review budget exhausted; no command claim or effect.')
                 observed[action.effect_id]=decision
@@ -468,6 +476,7 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
             if disabled and options['review'] in ('tare','both') or local_classification and not decision.observations:
                 report.update(classifier='disabled' if disabled else 'local_unavailable',
                     review_status='operator_yolo' if 'YOLO' in decision.reason else 'human_approved')
+            if 'earlier in this task' in decision.reason:report['review_status']='human_approved_earlier'
             assessed={action.action_sha256,*(o.action_sha256 for o in decision.observations)}
             for record in journal.snapshot().records:
                 event=record.event()
