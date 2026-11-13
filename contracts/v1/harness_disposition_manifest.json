@@ -2427,8 +2427,8 @@
     {
       "name": "round_table_roster.py",
       "path": "tare.tools.os/relay/round_table_roster.py",
-      "size_bytes": 19691,
-      "sha256": "4c360dc1806612d1f08d09d62cb246830c601c543ddc06fe65ff0f7ba0bc1977",
+      "size_bytes": 20041,
+      "sha256": "22054b74ef4257a67599d09eb8f7a953257593a57d502dc3cba396a08eb15202",
       "summary": "Round Table roster validation and Markdown matrix projection.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -2481,8 +2481,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns the product turn coordination shared by its frontends; the agent loop stays in the runtime.",
-      "size_bytes": 93667,
-      "sha256": "d5b576447dac36b948ac0149f2fc33da980cde104444c34f6d39d165cccf30ce"
+      "size_bytes": 94193,
+      "sha256": "2c3662aa1cf4605ed319a146e4243cb309673d4cee9bdbd470d0c1d642666fa2"
     },
     {
       "name": "audit_report.py",
@@ -2981,8 +2981,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS selects configured eligible role routes and persists the rationale; existing native Work owner executes and recovers them.",
-      "size_bytes": 17542,
-      "sha256": "debc4fe7b50f3a978ad5e71a77637ec48a597be45e907686a3209147f709b8a0"
+      "size_bytes": 18072,
+      "sha256": "05edef3f7468aa210e7d9fba7a79915ab992e352bd5a9d056fe9c598fc92fb7b"
     },
     {
       "name": "native_serve.py",
@@ -3267,8 +3267,8 @@
     {
       "name": "console_permissions.py",
       "path": "tare.tools.os/relay/console_permissions.py",
-      "size_bytes": 10480,
-      "sha256": "1a4d8f2973809a285062e3594fc25ef0f7686d56793fa76c74924e387d499113",
+      "size_bytes": 10738,
+      "sha256": "99294a379247d70af266d0eaab9a81d5b4eda8445395e75dc3d094a294c85df0",
       "summary": "Compose project permission defaults with new-session controls.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
@@ -3361,8 +3361,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator model selection; Runtime retains session execution.",
-      "size_bytes": 29246,
-      "sha256": "935dea7a667ab0a7565cd1a79bba65c371fbdeaa90b6f478ecf10547268c2e0e"
+      "size_bytes": 29701,
+      "sha256": "751390fcc7271bdcd8958aab6d5df8b3c78c1f5d26c79cdd1524465721109504"
     },
     {
       "name": "model_picker.py",
@@ -3841,8 +3841,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 99124,
-      "sha256": "758eb8466ce16facfb4065c87b8b42018e156e7054d85fdcbe7f962d569e53e0"
+      "size_bytes": 99350,
+      "sha256": "3a8a22a77e55a73b4d3273804f0ce72a0f43bd698931cee6a4b7caa7c07e2a60"
     },
     {
       "name": "gpu.py",
@@ -4091,8 +4091,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 41522,
-      "sha256": "5261b1ee488c94c5983ab8fd2e332621e585f6c93de09c37fbfd04869a31f60a"
+      "size_bytes": 41791,
+      "sha256": "1246bd5ba75feb7ff633c688aa6f44d5021b2a30f6cb416e450e1a5f5a6d56ac"
     },
     {
       "name": "conversation_tasks.py",
@@ -4101,8 +4101,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 109780,
-      "sha256": "13b2d3be36ddbff5609d6373eb2f075668026c6015dd343caeac3d741987f795"
+      "size_bytes": 110377,
+      "sha256": "1a9e3a1776eb5a3ade4d57c52570261736ec4aae5e1a01bc13b280e7bae4dca1"
     },
     {
       "name": "conversation_review.py",
@@ -4111,8 +4111,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 71913,
-      "sha256": "70ad3be85cde8468f9a9db2c93738f80a00fd21a691ccebec7ac0877759894af"
+      "size_bytes": 73491,
+      "sha256": "d6e95c06188e69905875484858563ffd07216a8acb8510502b8bb4451caa9399"
     },
     {
       "name": "conversation_workspace.py",
@@ -4131,8 +4131,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 11110,
-      "sha256": "81c7042b982a05e6a94665a3040de888619d9a541a232296af0a7b02b6a96d7d"
+      "size_bytes": 13316,
+      "sha256": "998af1fcddd16cbeb849ec5eaaa79d1606a82d2356046d35aa9bfed9bf135a8e"
     },
     {
       "name": "execution_permission_panel.py",
@@ -4141,8 +4141,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 4780,
-      "sha256": "21ab57173b2c662e2857667c76fed58bc4c38af5722d6926057a8cdb60eba83b"
+      "size_bytes": 5945,
+      "sha256": "9c71913ac43e8847716ea63f97ac4460e7275341ce7a03e016a2d15c4ee43920"
     },
     {
       "name": "web_research.py",
@@ -4201,8 +4201,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 3240,
-      "sha256": "1473da201f4c1fa11e8aedebea3e32581c5074cc9bcbfe8d8151e9a14c5ef0e1"
+      "size_bytes": 3440,
+      "sha256": "2a5a4767ad003afc1e028e8526cedda4bddf5ecd605eed70c70558c0422b0808"
     },
     {
       "name": "web_search.py",
@@ -4231,8 +4231,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 24458,
-      "sha256": "dc6a57d50475e1a40913e38cea777cf751511c018389c0e2335ce289b8784d8b"
+      "size_bytes": 25340,
+      "sha256": "53fcda3e51303f15decf72d40972559fe0f59fcb6d27f4af263bd05f5d3efe0d"
     },
     {
       "name": "command_permission.py",

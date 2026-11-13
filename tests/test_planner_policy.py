@@ -62,6 +62,14 @@ def test_shipped_claude_api_uses_top_level_effort_without_changing_cache_or_thin
     assert reasoning(selected) == level and dep == original
 
 
+def test_omitted_effort_takes_the_lowest_registered_level_at_or_above_high():
+    from relay.native_catalog import select
+    local = select('qwen38-gsq')  # declares low, medium and xhigh
+    assert reasoning(effective(local)) == 'xhigh' and reasoning(local) == 'low'
+    with pytest.raises(ValueError, match='no registered high setting'):
+        effective(local, 'high')  # an explicit level is never moved
+
+
 def test_picker_removes_low_levels_and_incapable_connections_without_changing_coordinator_options():
     item = describe('codex', profile('cli://codex', 'gpt-6.1-sol', 'low'))
     values = [{k: item[k] for k in ('key', 'label', 'group')} | {'routes': [item['route']]}]

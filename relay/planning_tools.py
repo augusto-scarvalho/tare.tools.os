@@ -373,6 +373,10 @@ class PlanningTools:
             if trace is not None:
                 trace.update(mode=mode, visited=visited, skipped=skipped)
             return name, value
+        if scope.only == 'local':
+            raise ValueError('No local planner is available in local-only mode ('+(
+                ', '.join(n+': '+why for n, why in skipped) or 'no local model is admitted as planner')+
+                '). No model call was made.')
         raise ValueError('No configured planner with at least high reasoning is available on this allowance. '
                          'Choose a capable planner in /delegation.')
 

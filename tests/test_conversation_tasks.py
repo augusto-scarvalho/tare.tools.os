@@ -1436,6 +1436,37 @@ def test_one_later_review_retry_keeps_the_auditor_and_never_resamples_a_verdict(
     assert conversation_review.review(*args) == accepted and len(dispatched) == 2
 
 
+def test_a_same_family_local_review_is_labelled_and_its_retry_outside_local_only_is_refused(host, tmp_path, monkeypatch):
+    from compute_plane.native_journal import NativeJournal
+    from relay import conversation_review, execution_scope as scope, native_catalog, turn_engine
+    from relay.execution_team import reasoning
+    tools, execution, root, _ = host
+    intake(host); task = planned(host)
+    for args in [('init',), ('add', '.'), ('-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost',
+                                         '-c', 'commit.gpgsign=false', 'commit', '-m', 'input')]:
+        subprocess.run(['git', '-C', str(root), *args], check=True, capture_output=True)
+    (root/'a.py').write_bytes(b'value = 2\n')
+    NativeJournal(tools.root/'journal.jsonl').append({'kind': 'session_started', 'session_id': 'parent'})
+    local = native_catalog.select('qwen38-gsq')
+    monkeypatch.setattr(turn_engine, 'pick_auditors', lambda *a, **kw: [('local-qwen', deepcopy(local))])
+    tools.permission_directory = tmp_path/'prefs'
+    sent = []
+    def failed(config, dep, custody, *a, **kw):
+        sent.append(reasoning(dep))
+        custody.mkdir(); NativeJournal(custody/'journal.jsonl').append({'kind': 'session_started', 'session_id': 'review'})
+        return {'status': 'FAILED', 'reason': 'MODEL_FAILURE', 'failure_code': 'INVALID_DELIVERY'}
+    monkeypatch.setattr(native_agent, 'run_session', failed)
+    args = (tools, task, root, local, task['plan']['unit'], {'a.py': b'value = 2\n'}, {'after': 'passed'}, execution)
+    with scope.activated(scope.Scope(only='local')):
+        first = conversation_review.review(*args)
+    receipt = json.loads(next((tools.root/'reviews').glob('*/receipt.json')).read_bytes())
+    assert first['verdict'] == 'INCONCLUSIVE' and first['audit_label'] == 'same-family audit, not independent'
+    assert receipt['audit_label'] == first['audit_label'] and sent == ['xhigh']  # auditor_effort high: its next level
+    tools.invocation_id = 'turn-2'  # reopened without --local_only: the retry keeps the same-family route, so no
+    assert conversation_review.review(*args) == {'verdict': 'INCONCLUSIVE',
+        'reason': 'No independent auditor is available. The candidate remains unapplied.'} and len(sent) == 1
+
+
 @pytest.mark.parametrize('failure_reason', ['COMPACTION_BUDGET', 'DEADLINE'])
 def test_context_failures_require_an_actual_host_contract_change_not_another_message(host, monkeypatch, failure_reason):
     from compute_plane.native_journal import NativeJournal

@@ -22,11 +22,18 @@ Candidate reuse does not create a fictitious new implementer execution.
 
 New planning requires **high** reasoning or greater. The planner picker offers
 capable connections at that level. Delegated planning validates the same minimum
-before dispatch, including requests made through an older saved tool schema. A
+before dispatch, including requests made through an older saved tool schema. With
+no explicit level, a planner takes the lowest level its connection registers at or
+above high: the local models register low, medium and xhigh, so they plan at
+xhigh (only in `--local_only` mode, where they may plan at all). A
 saved planner below that minimum cannot resume with low reasoning; a new planner
 can use its retained findings without changing the earlier conversation. The
 coordinator, explorer, implementer and auditor retain their own settings. Pro mode
 is not enabled by the reasoning floor.
+
+In `--local_only` mode an audit by the implementer's own model family is recorded
+with the label **same-family audit, not independent**, in the review, its receipt
+and the delivery result, and the change is applied only after you confirm it.
 
 On Claude API connections, the level is sent through `output_config.effort`,
 independently of the thinking configuration, as defined in the

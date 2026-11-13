@@ -260,6 +260,26 @@ def test_local_auto_resolves_once_from_the_host_recommendation():
     assert native_catalog.resolve_host_mode(plain, observe=None) is plain
 
 
+def test_local_model_roles_follow_dispatch_aliases_and_local_only_mode():
+    """tare models and exact pins list what dispatch uses: the local implementer in every mode (the role table and
+    the implementer ladder name it as local-qwen and local-default); planner and auditor only under --local_only."""
+    from relay.execution_scope import Scope
+    from relay.execution_team import reasoning
+    def roles(scope):
+        row = next(r for r in models.projection(include_unconfigured=True, scope=scope) if r['deployment'] == 'qwen38-gsq')
+        return {role: [a.rsplit('@', 1)[1] for a in arguments] for role, arguments in row['role_arguments'].items()}
+    default = roles(Scope())
+    assert default['implementer'] == ['low', 'medium', 'xhigh'] and not {'planner', 'auditor'} & set(default)
+    assert roles(Scope(prefer='local').validate()) == default
+    local = roles(Scope(only='local').validate())
+    assert local['planner'] == ['xhigh'] and local['auditor'] == local['implementer'] == ['low', 'medium', 'xhigh']
+    assert reasoning(models.select_exact('ninfer/qwen38-gsq@low', 'implementer', scope=Scope())) == 'low'
+    assert reasoning(models.select_exact('ninfer/qwen38-gsq@xhigh', 'planner', scope=Scope(only='local'))) == 'xhigh'
+    for role in ('planner', 'auditor'):
+        with pytest.raises(ValueError, match='Pin is unknown, unconfigured or incompatible'):
+            models.select_exact('ninfer/qwen38-gsq@xhigh', role, scope=Scope(prefer='local').validate())
+
+
 def test_shipped_local_profiles_use_this_machines_gateway(tmp_path, monkeypatch):
     from relay import native_catalog
     monkeypatch.delenv('TARE_LOCAL_GATEWAY', raising=False)

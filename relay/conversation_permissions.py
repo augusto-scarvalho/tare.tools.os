@@ -1,4 +1,5 @@
-"""An operator decision for a saved plan, outside the coordinator's capabilities.
+"""An operator decision for a saved plan (and, in local-only mode, for applying a change whose audit was not
+independent), outside the coordinator's capabilities.
 
 The worker waits without making model calls. Only its frontend writes the answer;
 the plan and effect identity bind it to this execution. No session prompt, tools or
@@ -94,6 +95,8 @@ def answer(root, request_id, choice, *, project, directory, control_root, change
             raise ValueError('This permission request changed or ended. Nothing was authorized.')
         if choice == 'change' and 'artifact' not in request:
             raise ValueError('This request shows no plan to change. Nothing was authorized.')
+        if request.get('kind') == 'audit' and choice not in ('once', 'deny'):
+            raise ValueError('Apply the change or do not apply it. Nothing was authorized.')
         if choice == 'project':
             from .project_permissions import read_defaults, save_defaults
             defaults, revision = read_defaults(directory, project, control_root)
@@ -174,37 +177,76 @@ def authorize(root, state, task, effect_id, control, directory):
         allowed = True
     if ask:  # one dialog: the plan, and the files when they still need permission
         request.update(artifact=task['plan']['artifact'], files_allowed=allowed)
+    value = wait_for_answer(folder, request, control)
+    if value is None:
+        raise PermissionError('Execution permission was not granted before cancellation or the time limit. No implementer started.')
+    if value['choice'] == 'deny':
+        raise PermissionError('The user denied this execution. No implementer started. Do not ask again in this turn.')
+    if value['choice'] == 'change':
+        raise PlanChangeRequested(
+            'The user asked to change the plan; no implementer started. '+
+            ('Ask the planner for a revised plan with delegate_plan, passing their words; the user '
+             'sees the new plan before implementation. The user wrote: '+value['changes']
+             if value.get('changes') else
+             'Ask the user what to change; do not plan or implement again before they answer.'))
+    if ask:
+        save_json(approved, approval)
+    if allowed:
+        return config
+    if value['choice'] == 'once':
+        save_json(granted, grant)
+    config.setdefault('writable', {})[repository] = list(paths)
+    return config
+
+
+def wait_for_answer(folder, request, control):
+    """Publish one question for the conversation's TUI and return its answer, or None if the turn stops first.
+    The turn's time stops while the user reads and decides, and no inference runs."""
+    from .native_agent import read_json
     request['id'] = identity(request)
     with custody_lock(folder):
         regular(folder/'answer.json').unlink(missing_ok=True)
         save_json(regular(folder/'request.json'), request)
     try:
-        with waiting_for_user(control):  # the turn's time stops while the user reads and decides
+        with waiting_for_user(control):
             while not control.should_stop():
                 response = regular(folder/'answer.json')
                 if response.exists():
                     value = read_json(response, 4096)
                     if value.get('id') == request['id'] and value.get('choice') in CHOICES:
-                        if value['choice'] == 'deny':
-                            raise PermissionError('The user denied this execution. No implementer started. Do not ask again in this turn.')
-                        if value['choice'] == 'change':
-                            raise PlanChangeRequested(
-                                'The user asked to change the plan; no implementer started. '+
-                                ('Ask the planner for a revised plan with delegate_plan, passing their words; the user '
-                                 'sees the new plan before implementation. The user wrote: '+value['changes']
-                                 if value.get('changes') else
-                                 'Ask the user what to change; do not plan or implement again before they answer.'))
-                        if ask:
-                            save_json(approved, approval)
-                        if allowed:
-                            return config
-                        if value['choice'] == 'once':
-                            save_json(granted, grant)
-                        config.setdefault('writable', {})[repository] = list(paths)
-                        return config
-                time.sleep(.1)  # no inference while the operator decides; with a TurnClock only cancellation or a stale binding ends it
-            raise PermissionError('Execution permission was not granted before cancellation or the time limit. No implementer started.')
+                        return value
+                time.sleep(.1)  # with a TurnClock only cancellation or a stale binding ends it
+        return None
     finally:
         with decision_lock(folder):
             request['status'] = 'CLOSED'
             save_json(regular(folder/'request.json'), request)
+
+
+APPLY_QUESTION = ('Local-only mode: the auditor accepted this change, but it is the same model family as the '
+                  'implementer, so the audit is not independent. Apply the change to the project?')
+NOT_CONFIRMED = ('The user did not confirm applying a change whose audit was not independent '
+                 '(same-family audit, local-only mode). The candidate remains unapplied.')
+
+
+def confirm_apply(root, state, task, changed, review, effect_id, control, directory):
+    """--local_only: before applying a candidate that a same-family auditor accepted, ask the user. Without a TUI
+    (tare serve, headless) nobody can confirm, and outside local-only mode (a conversation reopened without it) the
+    rule is independence, so nothing is applied, as when no independent auditor exists."""
+    from .conversation_review import NO_AUDITOR
+    from .execution_scope import current
+    refused = {'verdict': 'INCONCLUSIVE', 'audit_label': review['audit_label'],
+               **({'actor': review['actor']} if review.get('actor') else {})}
+    if directory is None or current().only != 'local':
+        return {**refused, 'reason': NO_AUDITOR}
+    unit = task['plan']['unit']
+    folder = regular(Path(root)/'execution-permission')
+    folder.mkdir(exist_ok=True)
+    request = {'schema': SCHEMA, 'kind': 'audit', 'session': state['session_id'], 'effect': effect_id,
+        'task': task['id'], 'plan': task['plan']['sha256'],
+        'project': str(Path(state['config']['repositories'][unit['repository']]).resolve()),
+        'paths': sorted(changed), 'checks': {}, 'tests': [], 'objective': APPLY_QUESTION, 'status': 'WAITING',
+        'audit': {'label': review['audit_label'], 'verdict': review['verdict'], 'route': review.get('route'),
+                  'summary': str(review.get('summary', ''))[:2000]}}
+    value = wait_for_answer(folder, request, control)
+    return review if value and value['choice'] == 'once' else {**refused, 'reason': NOT_CONFIRMED}

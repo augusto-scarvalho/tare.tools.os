@@ -1404,8 +1404,10 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
         result['next'] = 'The candidate is not delivered. Inspect its checks, review and retained patch; continue through the implementer or ask the user about an unresolved decision.'
     elif state.get('conversation_flow'):
         # The reply follows this English result: a Portuguese request got its summary in English (2026-11-03).
-        result['next'] = ('Applied after its checks and an independent review. Tell the user in plain words, in the '
-                          'language of their request, what changed and how it was checked.')
+        label = (result.get('audit') or {}).get('audit_label')
+        result['next'] = ('Applied after its checks and ' + ('a ' + label + ', which the user confirmed (local-only '
+                          'mode); say plainly that the review was not independent' if label else 'an independent review') +
+                          '. Tell the user in plain words, in the language of their request, what changed and how it was checked.')
     return result
 
 

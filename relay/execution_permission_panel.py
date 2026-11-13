@@ -1,4 +1,5 @@
-"""One question, in the conversation, before a worker needs edit access or a plan is implemented."""
+"""One question, in the conversation, before a worker needs edit access, a plan is implemented or (local-only
+mode) a change whose audit was not independent is applied."""
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Input, Static
@@ -26,17 +27,25 @@ class ExecutionPermissionPanel(SupportPanel):
     def compose(self) -> ComposeResult:
         value = self.request
         command=value.get('kind')=='command'
+        audit=value.get('kind')=='audit'  # local-only: apply a change whose audit was not independent?
         turn=command and value.get('scope')=='turn'  # a yes also covers the turn's later unreviewed commands
         plan = value.get('plan_text')
         with Vertical(classes='support-body'):
             yield Static('Run commands without review this turn?' if turn else
-                         'Run this command?' if command else 'Implement this plan?' if plan is not None else
+                         'Run this command?' if command else 'Apply this change?' if audit else
+                         'Implement this plan?' if plan is not None else
                          'Allow this task to change project files?', classes='panel-title')
             yield Static(value['objective'], markup=False)
             with VerticalScroll(classes='permission-detail'):
                 if plan is not None:
                     yield Static(plan+'\n', markup=False)
-                if command:
+                if audit:
+                    review=value['audit']
+                    yield Static('Project: '+value['project']+'\n\nFiles:\n'+'\n'.join(value['paths'])+
+                        '\n\nAudit ('+review['label']+'): '+review['verdict']+' by '+str(review.get('route'))+
+                        ('\n'+review['summary'] if review.get('summary') else '')+
+                        '\n\nThe checks passed. Not applying keeps the candidate unapplied.', markup=False)
+                elif command:
                     yield Static('Project: '+value['project']+'\nWorking folder: '+value['cwd']+
                         '\n\nExact command:\n'+repr(value['argv'])+'\n\nSandbox and execution limits still apply.',markup=False)
                 else:
@@ -46,14 +55,19 @@ class ExecutionPermissionPanel(SupportPanel):
                 from .conversation_tasks import BACKLOG_CHECK
                 checks = '\n'.join('Validate Backlog Graph format' if n == BACKLOG_CHECK else n+': '+repr(argv)
                                    for n, argv in value.get('checks',{}).items())
-                if not command:yield Static('Checks: '+(checks or 'host diff check; any tests named in the plan')+
+                from .execution_scope import current
+                if not command and not audit:yield Static('Checks: '+(checks or 'host diff check; any tests named in the plan')+
                     ('\nTest targets: '+', '.join(value['tests']) if value.get('tests') else '')+
-                    '\nThe candidate is checked and independently audited before applying.', markup=False)
+                    ('\nThe candidate is checked and audited before applying; an audit by the same model family is '
+                     'not independent, so tare asks you before applying it.' if current().only == 'local' else
+                     '\nThe candidate is checked and independently audited before applying.'), markup=False)
             if plan is not None:
                 yield Input(placeholder='What should change? (optional, sent with Change the plan)',
                             max_length=480, id='permission-changes')
             with Horizontal(classes='permission-buttons'):
-                if plan is not None:
+                if audit:
+                    yield Button('Apply the change', id='permission-once', classes='panel-primary')
+                elif plan is not None:
                     yield Button('Implement this plan', id='permission-once', classes='panel-primary')
                     if not value.get('files_allowed'):
                         yield Button('Implement, always allow edits here', id='permission-project')
@@ -62,7 +76,7 @@ class ExecutionPermissionPanel(SupportPanel):
                     yield Button('Run without review this turn' if turn else 'Allow this command' if command else
                                  'Allow for this task', id='permission-once', classes='panel-primary')
                     if not command:yield Button('Always allow in this project', id='permission-project')
-                yield Button('Deny', id='permission-deny')
+                yield Button('Do not apply' if audit else 'Deny', id='permission-deny')
 
     def on_mount(self):
         self.query_one('#permission-once', Button).focus()
