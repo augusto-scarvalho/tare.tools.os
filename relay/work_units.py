@@ -1133,10 +1133,16 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 registered = {**session_suite(verification_config, repository), **commands}
                 check_token = CHECK_PORT.set(conversation_verifier(control, job, config, deployment, tree, unit, registered))
             elif default_checks:
+                from .challenger import local
                 from .command_protection import conversation_verifier
                 registered = {**session_suite(verification_config, repository), **commands}
+                # This rung's deployment produced the code under check (a new attempt, a recheck, a waiting worker):
+                # a local model's work never runs outside the sandbox on the project's saved "always".
+                checked = outside
+                if outside is not None and deployment.get('native_profile') and local(deployment):
+                    checked = lambda name, argv, why: outside(name, argv, why, local_producer=True)
                 check_token = CHECK_PORT.set(conversation_verifier(control or check_control, job, config, deployment,
-                    tree, unit, registered, outside=outside, cancelled=stop))
+                    tree, unit, registered, outside=checked, cancelled=stop))
             # Import can create UID sidecars for existing scripts. Capture only
             # missing sidecars before the trusted host checks, never worker edits.
             missing_uids = [n+'.uid' for n in git(tree, 'ls-files', '--cached', '-z').decode().split('\0')

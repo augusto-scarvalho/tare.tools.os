@@ -241,6 +241,41 @@ def test_a_check_the_sandbox_blocked_asks_before_running_outside_it_and_starts_o
         assert not checks_outside_sandbox(project)
 
 
+@pytest.mark.parametrize('keys,choice', [(('enter',), 'deny'), (('shift+tab', 'enter'), 'once')])
+def test_the_question_about_a_local_models_work_has_no_always(tmp_path, keys, choice):
+    import json
+    from types import SimpleNamespace
+    from textual.widgets import Button, Static
+    from relay import conversation_permissions as permissions
+    from relay.turn_engine import checks_outside_sandbox
+    project, session = tmp_path/'project', tmp_path/'session'
+    project.mkdir(); (session/'execution-permission').mkdir(parents=True)
+    question, _ = permissions.sandbox_question('ISOLATION_NETWORK_DENIED: every failing test of this check failed.')
+    request = {'schema': permissions.SCHEMA, 'kind': 'sandbox', 'session': 'parent', 'effect': 'e', 'task': 't',
+               'plan': 'a'*64, 'project': str(project.resolve()), 'paths': [], 'checks': {'tests': ['python', '-m',
+               'pytest']}, 'tests': [], 'objective': question, 'status': 'WAITING',
+               'sandbox': {'code': 'ISOLATION_NETWORK_DENIED', 'check': 'tests', 'always': False}}
+    request['id'] = permissions.identity(request)
+    permissions.save_json(session/'execution-permission'/'request.json', request)
+    async def scenario():
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(110, 40)) as pilot:
+            await app.workers.wait_for_complete(); await pilot.pause()
+            app.refresh_execution_permission(SimpleNamespace(session=str(session), root=str(project)))
+            await pilot.pause()
+            panel = app.screen
+            assert isinstance(panel, ExecutionPermissionPanel)
+            shown = '\n'.join(str(s.content) for s in panel.query(Static))
+            assert 'A local model wrote the code this check runs, so its checks are asked about each turn.' in shown
+            assert [str(b.label) for b in panel.query(Button)] == ['Run it outside the sandbox this turn', 'Do not run it']
+            assert app.focused.id == 'permission-deny'
+            await pilot.press(*keys); await pilot.pause()
+            assert json.loads((session/'execution-permission'/'answer.json').read_text(encoding='utf-8')) == {
+                'id': request['id'], 'choice': choice}
+    asyncio.run(scenario())
+    assert not checks_outside_sandbox(project)
+
+
 def test_the_question_for_a_failed_check_shows_the_blocked_line_as_plain_text(tmp_path):
     from types import SimpleNamespace
     from textual.widgets import Static

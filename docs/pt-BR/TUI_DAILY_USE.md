@@ -216,7 +216,8 @@ ao executar um plano. Conversas explícitas de `/session` mantêm as capacidades
 originais. O escopo de edição de arquivos sozinho não é um sandbox do sistema. As verificações são
 diferentes: em qualquer modo elas rodam no sandbox do Windows (sem rede, sem arquivos secretos, gravando
 só nos caminhos de edição). Quando o sandbox bloqueia uma verificação, o tare pergunta **Run this check
-outside the sandbox?** (neste turno, sempre neste projeto ou não rodar; o padrão é não rodar). Num sistema
+outside the sandbox?** (neste turno, sempre neste projeto ou não rodar; o padrão é não rodar). O "sempre"
+não vale para verificações do trabalho de um modelo local: sobre elas o tare pergunta a cada turno. Num sistema
 sem sandbox, o `/permissions` diz que as verificações não estão isoladas, e um modelo local não é usado
 como implementador ali.
 

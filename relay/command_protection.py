@@ -925,8 +925,12 @@ def protected_work_verifier(control, train_dir, *, descriptor, settings, outside
         declared = argv
         if checks_only:
             argv = tuple(sandbox_verifiers({'check': {'argv': list(argv)}}, root)['check']['argv'])
+        from .conversation_permissions import local_work
         from .turn_engine import checks_outside_sandbox
-        always = bool(outside and settings.get('repository_root') and checks_outside_sandbox(settings['repository_root']))
+        # The project's saved "always", never for a local implementer's work (unknown counts as local).
+        always = bool(outside and settings.get('repository_root')
+                      and not local_work(settings.get('local_producer') is not False)
+                      and checks_outside_sandbox(settings['repository_root']))
         config = {'repositories': {repository: str(root)},
                   'writable': {repository: list(descriptor.tracked_paths)},
                   **({'verifiers': {'check': {'repository': repository, 'argv': list(argv)}}} if checks_only

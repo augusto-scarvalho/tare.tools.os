@@ -49,7 +49,9 @@ class ExecutionPermissionPanel(SupportPanel):
                         '\n\nOutside the sandbox this program runs as you: it can use the network and read your '
                         'files, secret files included. '+('Not running it leaves the check failed.' if line else
                         'Not running it leaves the check unjudged, and a change it checks is not applied on its '
-                        'strength.'), markup=False)
+                        'strength.')+('\n\nA local model wrote the code this check runs, so its checks are asked '
+                        'about each turn.' if (value.get('sandbox') or {}).get('always') is False else ''),
+                        markup=False)
                 elif audit:
                     review=value['audit']
                     items=review.get('open_items') or []
@@ -83,7 +85,8 @@ class ExecutionPermissionPanel(SupportPanel):
             with Horizontal(classes='permission-buttons'):
                 if sandbox:
                     yield Button('Run it outside the sandbox this turn', id='permission-once')
-                    yield Button("Always run this project's blocked checks outside it", id='permission-project')
+                    if (value.get('sandbox') or {}).get('always') is not False:  # never for a local model's work
+                        yield Button("Always run this project's blocked checks outside it", id='permission-project')
                     yield Button('Do not run it', id='permission-deny')
                     return
                 if audit:

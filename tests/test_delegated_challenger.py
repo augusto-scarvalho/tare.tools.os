@@ -16,6 +16,10 @@ def test_delegated_implementer_runs_one_isolated_challenger(project, tmp_path, m
     marker=native_agent.read_json(tmp_path/'primary'/'challenger.json')
     job=Path(marker['job']); row=native_agent.read_json(job/'run.json')
     assert row['execution_contract']['delegated_leaf'] is True
+    from relay.command_protection import probe_sandbox
+    if not probe_sandbox():  # the local challenger is refused there, as _exercise_trial asserts: no session to read
+        assert not (job/'implementation'/'native-agent.json').exists()
+        return
     saved=native_agent.read_json(job/'implementation'/'native-agent.json')
     assert saved['delegated_leaf'] is True
     assert saved['instruction']==row['instruction']

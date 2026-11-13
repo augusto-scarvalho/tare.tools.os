@@ -659,6 +659,49 @@ def test_without_a_tui_or_outside_local_only_a_same_family_audit_applies_nothing
     assert seen == [False, True, False]
 
 
+@pytest.mark.parametrize('producer', ['hosted', 'local', 'local-only'])
+def test_the_saved_always_never_covers_a_local_models_work(host, tmp_path, producer):
+    import threading
+    import time
+    from relay import execution_scope as scope
+    from relay.turn_engine import set_checks_outside_sandbox
+    tools, control, root, _ = host
+    set_checks_outside_sandbox(root, True)  # the project's standing "always"
+    state, argv = {'session_id': 'parent'}, ['python', '-m', 'pytest']
+    blocked = 'ISOLATION_NETWORK_DENIED: every failing test of this check failed because the sandbox denied it.'
+    mode = scope.Scope(only='local') if producer == 'local-only' else scope.Scope()
+    local = producer == 'local'
+    def decide(directory, turn, answer=None):
+        requests = []
+        def user():
+            while permissions.pending(tools.root) is None:
+                time.sleep(.01)
+            request = permissions.pending(tools.root); requests.append(request)
+            if answer == 'project':  # the dialog has no such button; the frontend refuses it too
+                with pytest.raises(ValueError, match="local model's checks are asked about each turn"):
+                    permissions.answer(tools.root, request['id'], 'project', project=root, directory=directory,
+                                       control_root=relay_mesh.RELAY_ROOT)
+            permissions.answer(tools.root, request['id'], 'once' if answer == 'project' else answer, project=root,
+                               directory=directory, control_root=relay_mesh.RELAY_ROOT)
+        thread = threading.Thread(target=user, daemon=True)
+        if answer:
+            thread.start()
+        with scope.activated(mode):
+            outcome = permissions.outside_sandbox(tools.root, state, None, 'effect', root, control, directory, turn,
+                                                  local_producer=local)('tests', argv, blocked)
+        if answer:
+            thread.join(5)
+        return outcome, requests
+    if producer == 'hosted':  # as before: runs outside, unasked, also without a TUI
+        assert decide(None, 'turn-1') == ((True, 'always for this project, as the user chose'), [])
+        return
+    assert decide(None, 'turn-1') == ((False, 'no one could be asked: no TUI is connected'), [])  # headless: never
+    (allowed, why), requests = decide(tmp_path/'prefs', 'turn-1', 'project')
+    assert (allowed, why) == (True, 'for this turn, as the user chose') and requests[0]['sandbox']['always'] is False
+    assert decide(tmp_path/'prefs', 'turn-1')[0] == (True, 'for this turn, as the user chose')  # the turn's yes holds
+    assert decide(tmp_path/'prefs', 'turn-2', 'deny')[0][0] is False  # a new turn asks again
+
+
 @pytest.mark.local_implementer_rule
 def test_local_only_where_no_sandbox_exists_refuses_before_planning_or_implementing(host, tmp_path, monkeypatch):
     from relay import execution_scope as scope

@@ -1190,11 +1190,15 @@ class ConversationTools:
                     check_unit = {'repository': repository, 'target_paths': [],
                         'title': task['objective'] if task else 'Verify configured project checks',
                         'criteria': task['criteria'] if task else []}
+                    from . import execution_scope
                     project = config['repositories'][repository]
+                    # No implementer here: the project's files, which this conversation's implementers may have
+                    # changed. They are local in local-only mode (outside_sandbox) and with --prefer_local.
                     token = CHECK_PORT.set(conversation_verifier(control, self.root/'checks', config,
                         self.state['deployment'], tree, check_unit, commands, **({} if config.get('command_protection')
                         else {'outside': outside_sandbox(self.root, self.state, task, request.effect_id, project,
-                                                         control, self.permission_directory, self.invocation_id),
+                                                         control, self.permission_directory, self.invocation_id,
+                                                         local_producer=execution_scope.current().prefer == 'local'),
                               'read_only': (project_permission_mode(project) or 'read') == 'read'})))
                     status, details = run_checks(tree, commands)
                     output = {'status': status, 'checks': details, 'applied': False}

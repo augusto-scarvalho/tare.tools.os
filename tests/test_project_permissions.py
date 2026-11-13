@@ -282,13 +282,20 @@ def test_the_panel_says_where_checks_run_whatever_the_system_commands_line(tmp_p
     if available:
         assert 'Checks: in the Windows sandbox, in every mode: no network' in plain
         assert 'Checks the sandbox blocks: tare asks you before running one outside it' in plain
+        assert "does not apply to checks of a local model's work" not in plain
         set_checks_outside_sandbox(root,True)
         assert 'Checks the sandbox blocks: run outside it without asking (saved for this project' in text()
+        assert "This does not apply to checks of a local model's work" in text()  # beside the saved choice
     else:
-        assert 'Checks: not isolated: no sandbox on this system' in plain and 'read-only project tare asks you first' in plain
+        assert 'Checks: not isolated: no sandbox on this system' in plain and 'read-only' not in plain  # the draft edits
         assert 'A local implementer is refused on this system' in plain
-        set_project_permission_mode(root,'edit')
-        assert 'read-only' not in text()
+        reader=lambda **kw:permissions_view(tmp_path/'preferences',root,tmp_path/'control',
+            pending=Selection(str(root),role='explorer'),**kw)['effective_text']
+        assert 'in this read-only project tare asks you first' in reader()  # a read-only draft
+        set_project_permission_mode(root,'edit')  # a save elsewhere does not change what this draft shows
+        assert 'in this read-only project tare asks you first' in reader()
+        stored=permissions_view(tmp_path/'preferences',root,tmp_path/'control')['effective_text']
+        assert 'read-only' not in stored  # the stored defaults' own view follows the saved mode
     protected=text(command_protection={'review':'codex','backend':'mxc','max_reviews':2})
     assert "Checks: in the Windows sandbox, under this project's command protection." in protected
 

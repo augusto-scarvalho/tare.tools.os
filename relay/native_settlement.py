@@ -63,13 +63,16 @@ def recover_accepted_candidate(train_dir, descriptor, repository_root, custody, 
 
 
 class NativeWorkRunner:
-    def __init__(self, *, authority_gate, identity, settings, verification_timeout=60.0):
+    def __init__(self, *, authority_gate, identity, settings, verification_timeout=60.0, local_producer=None):
         profile = settings['profile']
         if (identity.payload['role'] != 'implementer' or identity.payload['runtime_key'] != 'native'
                 or identity.payload['runtime_model'] != profile.model):
             raise ValueError('NATIVE_IMPLEMENTER_IDENTITY_MISMATCH')
         self.authority_gate, self.identity, self.settings = authority_gate, identity, dict(settings)
         self.verification_timeout = verification_timeout
+        # challenger.local of the implementer's deployment; unknown (None) counts as local: the project's saved
+        # "always" then never runs its blocked checks outside the sandbox.
+        self.local_producer = local_producer
 
     def run(self, *, train_dir, descriptor, lease, node, resume=False, rebind=False):
         from . import challenger
@@ -129,7 +132,8 @@ class NativeWorkRunner:
             check_control=lambda: self.check_control(control),
             verification_timeout=self.verification_timeout,
             verification_runner=self.verification_runner(control, root, descriptor=descriptor,
-                settings=self.settings | {'node': node, 'repository_root': lease.repository_root}))
+                settings=self.settings | {'node': node, 'repository_root': lease.repository_root,
+                                          'local_producer': self.local_producer}))
         claim = claim_for(candidate)
         save_json(regular(root / 'NATIVE_CLAIM.json'), json.loads(claim.output))
         self.check_control(control)

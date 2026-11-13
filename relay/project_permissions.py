@@ -209,26 +209,35 @@ def profile_values(defaults):
             defaults['mode'] == 'commands' and 'command_protection' not in defaults, list(defaults['write_paths']))
 
 
-def check_isolation(defaults, protection, saved=False):
+def check_isolation(defaults, protection, saved=False, read_only=None):
     """Where the checks tare runs for a model's work run, whatever the System commands line says. `saved`: a saved
-    conversation's view, which the project's later mode does not change (its checks read the mode when they run)."""
+    conversation's view, which the project's later mode does not change (its checks read the mode when they run).
+    `read_only`: the viewed draft's own role when there is one, so a concurrent save does not change what it shows."""
     if protection:
         return ['Checks: in the Windows sandbox, under this project\'s command protection.']
     from .command_protection import sandbox_available
     if not sandbox_available():
+        read_only = defaults['mode'] == 'read' if read_only is None else read_only
         return ['Checks: not isolated: no sandbox on this system. They run as you, with network access and your '
                 'files in reach' + ('; in a read-only project tare asks you first.' if saved else
-                '.' if defaults['mode'] != 'read' else '; in this read-only project they run '
+                '.' if not read_only else '; in this read-only project they run '
                 'without asking, as you chose (clear "Run checks the sandbox blocks outside it" above to be asked).'
                 if defaults.get('checks_outside_sandbox') else '; in this read-only project tare asks you first.'),
-                'A local implementer is refused on this system: a local model runs only where its checks are isolated.']
+                'A local implementer is refused on this system: a local model runs only where its checks are isolated.',
+                *([LOCAL_WORK_ASKED] if defaults.get('checks_outside_sandbox') else [])]
     return ['Checks: in the Windows sandbox, in every mode: no network, the project and its runtimes read only, '
             'writes only to the edit paths and scratch, secret files denied. No model reviews them: tare registered '
             'them, no model typed them.',
             'Checks the sandbox blocks: ' + ('run outside it without asking (saved for this project; clear "Run '
             'checks the sandbox blocks outside it" above to be asked again).' if defaults.get('checks_outside_sandbox')
             else 'tare asks you before running one outside it (it would then reach the network and your files); '
-            'without the TUI it stays unjudged and its change is not applied.')]
+            'without the TUI it stays unjudged and its change is not applied.'),
+            *([LOCAL_WORK_ASKED] if defaults.get('checks_outside_sandbox') else [])]
+
+
+# Beside the project's saved "always" (conversation_permissions.local_work).
+LOCAL_WORK_ASKED = ("This does not apply to checks of a local model's work (local-only mode, --prefer_local, a local "
+                    'implementer): those are asked about each turn, and never run outside without the TUI.')
 
 
 def permissions_view(directory, project, control_root, *, session=None, pending=None, judges_off=False,
@@ -361,7 +370,8 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
     elif any(t.startswith('terminal_') for t in tools):
         effective.append('The terminal runs commands as you, with network access and your files and credentials '
                          'in reach. A local model never gets it. An Action review runs commands in the sandbox.')
-    effective += check_isolation(defaults, protection, saved=bool(session))
+    effective += check_isolation(defaults, protection, saved=bool(session),
+                                 read_only=role != 'implementer' if pending is not None and not session else None)
     if not session:
         effective.append('The new-session verifier field is separate; saved conversations keep their original checks.')
     instruction_policy = (config.get('project_admission') if session else

@@ -996,7 +996,8 @@ def test_real_candidate_is_verified_then_audited_before_application(tmp_path, mo
     if protected:assert config['verifiers']['conversation-diff']['argv'][0]=='git'
 
 
-def test_without_protection_a_units_checks_run_through_the_sandboxed_verifier(tmp_path, monkeypatch):
+@pytest.mark.parametrize('endpoint', ['http://fixture.test/v1', 'http://127.0.0.1:8080/v1'])
+def test_without_protection_a_units_checks_run_through_the_sandboxed_verifier(tmp_path, monkeypatch, endpoint):
     from relay import command_protection
     root = tmp_path/'project'; root.mkdir()
     def git(*args):
@@ -1020,17 +1021,23 @@ def test_without_protection_a_units_checks_run_through_the_sandboxed_verifier(tm
     from relay.work_forms import record_plan
     record_plan(custody, config, {'units': [{'key': 'change', 'title': 'Change value', 'target_paths': ['a.py'],
         'criteria': ['value equals two'], 'verifiers': ['value']}], 'criteria': ['value equals two']})
-    monkeypatch.setattr(work_units, 'routes', lambda *a, **kw: iter([('fixture', deployment())]))
+    monkeypatch.setattr(work_units, 'routes', lambda *a, **kw: iter([('fixture', deployment(endpoint=endpoint))]))
     def child(child_config, dep, session, instruction, **kwargs):
         Path(child_config['repositories']['repo'], 'a.py').write_text('value = 2\n')
         return {'status': 'PROPOSED', 'model_calls': 1}
     monkeypatch.setattr(native_agent, 'run_session', child)
-    outside = object()
+    asked = []
+    def outside(name, argv, why, **producer):
+        asked.append(producer)
+        return False, 'fixture'
     result = work_units.run_unit(custody, state, {'unit': 'change'}, lambda: False, control=control(), outside=outside)
     assert result['applied'] and (root/'a.py').read_text() == 'value = 2\n'
     (seen_config, commands, kwargs), = ports
-    assert 'command_protection' not in seen_config and kwargs['outside'] is outside
+    assert 'command_protection' not in seen_config
     assert commands['value'] == check and ran.count(check) >= 2  # before, after and the session suite: one port
+    kwargs['outside']('value', check, 'ISOLATION_NETWORK_DENIED: fixture')
+    # The implementer that wrote this candidate is local: the project's saved "always" never covers its checks.
+    assert asked == ([{'local_producer': True}] if '127.0.0.1' in endpoint else [{}])
 
 
 @pytest.mark.parametrize('mode', [None, 'read', 'edit'])
@@ -1050,6 +1057,24 @@ def test_the_coordinators_check_runs_through_the_default_verifier_and_knows_a_re
     result = tools.execute(effect('check', {'names': ['value']}), execution)
     assert result.status == 'succeeded' and json.loads(result.output_json)['status'] == 'green'
     assert ports[0]['read_only'] is (mode != 'edit') and callable(ports[0]['outside'])
+
+
+@pytest.mark.parametrize('scope_args', [{}, {'prefer': 'local'}, {'only': 'local'}])
+def test_the_coordinators_check_honours_the_saved_always_except_for_local_work(host, monkeypatch, scope_args):
+    """No implementer here: the project's files, which local implementers changed in local-only and prefer_local."""
+    from relay import command_protection, execution_scope as scope
+    from relay.turn_engine import set_checks_outside_sandbox, set_project_permission_mode
+    tools, execution, project, _ = host
+    set_project_permission_mode(project, 'edit'); set_checks_outside_sandbox(project, True)
+    tools.state['config']['verifiers']['value'] = {'repository': 'repo', 'argv': [sys.executable, '-c', 'print(1)']}
+    ports = []
+    monkeypatch.setattr(command_protection, 'conversation_verifier', lambda *a, **kw: ports.append(kw) or (
+        lambda argv, **options: subprocess.CompletedProcess(argv, 0, 'ok', '')))
+    with scope.activated(scope.Scope(**scope_args)):
+        assert tools.execute(effect('check', {'names': ['value']}), execution).status == 'succeeded'
+        decision = ports[0]['outside']('value', ['x'], 'ISOLATION_NETWORK_DENIED: fixture')
+    assert decision == ((True, 'always for this project, as the user chose') if not scope_args else
+                        (False, 'no one could be asked: no TUI is connected'))  # headless, and never "always"
 
 
 def test_failed_candidate_is_preserved_for_a_narrow_correction_and_audited_before_application(tmp_path, monkeypatch):

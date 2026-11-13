@@ -311,7 +311,7 @@ def test_work_host_verifier_honors_time_scope_and_keeps_mediation(host_verifier,
     assert len(verifier.calls)==1  # the existing single-effect claim still applies
 
 
-@pytest.mark.parametrize('case', ['green', 'blocked', 'always'])
+@pytest.mark.parametrize('case', ['green', 'blocked', 'always', 'always-local', 'always-unknown'])
 def test_work_verification_without_protection_runs_in_the_sandbox_with_no_review(host_verifier, monkeypatch, case):
     import subprocess
     from relay.turn_engine import set_checks_outside_sandbox
@@ -320,11 +320,15 @@ def test_work_verification_without_protection_runs_in_the_sandbox_with_no_review
     settings = {k: v for k, v in verifier.settings.items()
                 if k not in ('command_protection', 'command_protection_deployment')}
     settings['repository_root'] = str(verifier.host.root)
+    # NativeWorkRunner passes challenger.local of the implementer's deployment; unknown counts as local.
+    settings.update({'always': {'local_producer': False}, 'always-local': {'local_producer': True}}.get(case, {}))
     if case != 'green':
         monkeypatch.setattr(protection, 'verification_limitation',
                             lambda value: 'ISOLATION_NETWORK_DENIED: every failing test was a refused connection.')
-    if case == 'always':  # the project's user chose it in the TUI: a Work run, where nobody is asked, honours it
-        set_checks_outside_sandbox(verifier.host.root, True)
+    if case.startswith('always'):  # the project's user chose it in the TUI: a Work run, where nobody is asked,
+        set_checks_outside_sandbox(verifier.host.root, True)  # honours it, but never for a local model's work
+    if case != 'always':
+        case = 'blocked' if case != 'green' else case
     outside = []  # the plain runner NativeWorkRunner.verification_runner passes
     runner = protection.protected_work_verifier(verifier.host.control, verifier.train,
         descriptor=settings['descriptor'], settings=settings,

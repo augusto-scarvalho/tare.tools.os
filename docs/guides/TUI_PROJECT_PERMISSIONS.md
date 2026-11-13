@@ -178,6 +178,10 @@ run it** and shows the exact command.
 **Always** is saved for the project on this machine (every frontend, `tare serve`
 and Work runs included) and shown in `/permissions` as **Run checks the sandbox
 blocks outside it, without asking**; clear the box and **Save** to be asked again.
+**Always** never applies to checks of a local model's work (local-only mode,
+`--prefer_local`, or a local implementer): those are asked about each turn, the
+dialog offers only **Run it outside the sandbox this turn** and **Do not run it**,
+and without the TUI they do not run outside.
 Without the TUI (`tare serve`, headless runs, Work runs) nobody can be asked: such a
 check stays unjudged unless the project has **Always**.
 

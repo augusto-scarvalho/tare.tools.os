@@ -110,7 +110,8 @@ the sandbox denied (`ISOLATION_NETWORK_DENIED`); one other failure in it keeps
 the check red. Inspect check scope or choose a compatible policy explicitly;
 this never enables host networking or waives required tests. Without command
 protection, tare then asks you whether that check may run outside the sandbox,
-for this turn or always for this project ([Project permissions](TUI_PROJECT_PERMISSIONS.md#checks-run-in-the-sandbox));
+for this turn or always for this project (never "always" for a local model's work:
+[Project permissions](TUI_PROJECT_PERMISSIONS.md#checks-run-in-the-sandbox));
 a yes reruns it outside and its receipt says so. Without a yes, a session check
 stopped by the sandbox holds the change, like any unverified change; only a
 timeout still settles nothing (a change whose own checks pass is then applied

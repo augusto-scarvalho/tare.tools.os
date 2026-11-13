@@ -282,8 +282,9 @@ def create_runner(deployment, work_id, custody, *, budget=None, timeout=native_l
         settings['shared_context'] = shared_context
     if receive_message is not None:
         settings['receive_message'] = receive_message
+    from .challenger import local
     return NativeWorkRunner(authority_gate=gate, identity=identity, settings=settings,
-                            verification_timeout=saved['verification_timeout'])
+                            verification_timeout=saved['verification_timeout'], local_producer=local(deployment))
 
 
 def settle_host_attempt(runner, accepted):
