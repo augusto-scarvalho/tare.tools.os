@@ -1,6 +1,7 @@
-"""Prove the Windows sandbox that checks run in, case by case, on this machine.
+"""Prove the sandbox that checks run in (Windows' MXC, or bubblewrap on Linux), case by case, on this machine.
 
-CI cannot: its Windows image has no process security environment. `tare ci pr` runs this file on the machine that
+CI cannot on Windows: its image has no process security environment. CI's `Linux sandbox probe` job runs it on
+Linux. `tare ci pr` runs this file on the machine that
 opens a pull request whose commits touch the sandbox files (relay/ci_watch.py SANDBOX_PATHS) and refuses to open it
 when a case fails. By hand, from the repository root, with an interpreter that has the Kernel's dependencies
 (FlatBuffers; the installed product's has them):
@@ -11,7 +12,8 @@ It runs the code of the checkout it lives in. It builds throwaway projects in a 
 checks the way tare runs the checks of a project without command protection (command_protection.conversation_verifier
 with work_units.run_checks), answers no to every question (nothing runs outside the sandbox) and removes everything it
 created. One line per case, then a JSON line; exit 0 when every case that ran passed, 1 when one failed, 3 when this
-host has no sandbox. Standard library only; no network, no installs, no model.
+host has no sandbox (on Linux its JSON says why). A failed case prints the end of its receipt to stderr. Standard
+library only; no network, no installs, no model.
 """
 import json
 import os
@@ -101,7 +103,52 @@ def projects(storage, outside):
         link = os.symlink
     link(str(store/'pkg@1.0.0'/'node_modules'/'pkg'), str(pnpm/'node_modules'/'pkg'))
     link(str(store/'peer@1.0.0'/'node_modules'/'peer'), str(store/'pkg@1.0.0'/'node_modules'/'peer'))
-    drive = os.environ.get('SystemDrive', 'C:') + '\\'
+    if os.name == 'nt':
+        drive = os.environ.get('SystemDrive', 'C:') + '\\'
+        system = [
+            ('python-lists-drive', ['python', '-c', 'import os, sys; print(os.listdir(sys.argv[1]))', drive], 'red', True),
+            ('python-lists-users', ['python', '-c', 'import os, sys; print(os.listdir(sys.argv[1]))',
+                                    os.path.join(drive, 'Users')], 'red', True)]
+    else:  # bubblewrap (compute_plane/linux_bwrap.py). Green cases print what they saw, for a failed run's receipt.
+        write(flat, {'config/.env': f'KEY={SECRET}\n'})
+        system = [
+            # Only bound paths exist inside: the folder above the project shows the project, not its sibling.
+            ('python-lists-sibling', ['python', '-c', 'import os, sys; names = os.listdir(sys.argv[1]); print(names); '
+                                      'sys.exit(sys.argv[2] in names)', str(flat.parent), pnpm.name], 'green', False),
+            # The mask travels with its folder. Renamed back, so the binding's next launch is not refused.
+            ('python-renames-above-secret', ['python', '-c', "import os\nos.rename('config', 'moved')\ntry:\n"
+                                             "    print(open('moved/.env').read())\nfinally:\n"
+                                             "    os.rename('moved', 'config')"], 'red', True),
+            ('python-own-loopback', ['python', '-c', 'import socket\nwith socket.create_server(("127.0.0.1", 0)) as s, '
+                                     'socket.create_connection(s.getsockname(), 5) as c:\n    a, _ = s.accept()\n'
+                                     '    c.sendall(b"ping"); print("own loopback", a.recv(4))'], 'green', False),
+            ('python-connects-off-machine', ['python', '-c', 'import socket; socket.create_connection(("192.0.2.1", '
+                                             '80), timeout=5).close(); print("connected")'], 'red', True),
+            ('python-resolves-name', ['python', '-c', 'import socket; print(socket.getaddrinfo("x.invalid", 80))'],
+             'red', True),
+            # EPERM from the sandbox's seccomp filter (not EAFNOSUPPORT from a kernel without vsock).
+            ('python-vsock-refused', ['python', '-c', 'import errno, socket, sys\ntry:\n'
+                                      '    socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM).close()\n'
+                                      'except OSError as error:\n    print(error); sys.exit(error.errno != errno.EPERM)\n'
+                                      'sys.exit("an AF_VSOCK socket was created")'], 'green', False),
+            ('python-io-uring-refused', ['python', '-c', 'import ctypes, errno, sys\n'
+                                         'libc = ctypes.CDLL(None, use_errno=True)\n'
+                                         'done = libc.syscall(425, 1, ctypes.create_string_buffer(120))\n'
+                                         'print("io_uring_setup:", done, errno.errorcode.get(ctypes.get_errno()))\n'
+                                         'sys.exit(not (done == -1 and ctypes.get_errno() == errno.EPERM))'],
+             'green', False),
+            ('python-writes-root', ['python', '-c', "open('/tare-sandbox-probe', 'w').close(); print('written')"],
+             'red', True),
+            # The task limit (1024) counts threads: a runaway stops short of it.
+            ('python-task-limit', ['python', '-c', 'import resource, sys, threading\nthreading.stack_size(65536)\n'
+                                   'stop, started = threading.Event(), 0\ntry:\n    for _ in range(1100):\n'
+                                   '        threading.Thread(target=stop.wait, daemon=True).start(); started += 1\n'
+                                   'except RuntimeError as error:\n    print(error)\nstop.set()\n'
+                                   'print("threads:", started, "RLIMIT_NPROC:", resource.getrlimit(resource.RLIMIT_NPROC))'
+                                   '\nsys.exit(not 900 < started < 1024)'], 'green', False),
+            # A virtual environment's python is a link to its base interpreter; the check keeps the environment.
+            ('python-keeps-venv', ['venv-python', '-c', 'import sys; print(sys.prefix); sys.exit(sys.prefix != '
+                                   'sys.argv[1])', sys.prefix], 'green', False)]
     return {flat: [
         ('python-test-passes', ['python', '-m', 'unittest', 'test_ok'], 'green', False),
         ('python-assertion-fails', ['python', '-m', 'unittest', 'test_fail'], 'red', False),
@@ -110,9 +157,7 @@ def projects(storage, outside):
         ('python-reads-dotenv', ['python', '-c', "print(open('.env').read())"], 'red', True),
         ('python-connects-loopback', ['python', '-c', 'import socket, sys; socket.create_connection(("127.0.0.1", '
                                       'int(sys.argv[1])), timeout=5).close(); print("connected")', '{port}'], 'red', True),
-        ('python-lists-drive', ['python', '-c', 'import os, sys; print(os.listdir(sys.argv[1]))', drive], 'red', True),
-        ('python-lists-users', ['python', '-c', 'import os, sys; print(os.listdir(sys.argv[1]))',
-                                os.path.join(drive, 'Users')], 'red', True),
+        *system,
         # The socketpair shim (relay/sandbox-python); without it asyncio waits forever, so the timer ends it.
         ('python-asyncio-runs', ['python', '-c', 'import asyncio, os, threading; t = threading.Timer(30, os._exit, (9,)); '
                                  't.daemon = True; t.start(); asyncio.run(asyncio.sleep(0.01)); print("asyncio ok")'],
@@ -124,7 +169,9 @@ def projects(storage, outside):
         ('node-assertion-fails', ['node', '--test', 'fail/fail.test.mjs'], 'red', False),
         ('cargo-test', ['cargo', 'test', '--offline'], 'green', False),
     ], pnpm: [
-        ('node-pnpm-junction', ['node', 'main.js'], 'red', True),
+        # Windows: still fails on the drive's root folder, and asks. Linux: the links stay inside the project.
+        ('node-pnpm-junction', ['node', 'main.js'], 'red', True) if os.name == 'nt' else
+        ('node-pnpm-symlinks', ['node', 'main.js'], 'green', False),
     ]}
 
 
@@ -134,7 +181,9 @@ def run_cases(base, storage):
     tempfile.tempdir = str(base/'tmp')  # the binding's own temporary folders go there too
     os.mkdir(tempfile.tempdir)
     tools = {'python': sys.executable, 'node': shutil.which('node'), 'cargo': shutil.which('cargo'),
-             'npm': shutil.which('npm.cmd') or shutil.which('npm')}
+             'venv-python': sys.executable if sys.prefix != sys.base_prefix else None}
+    # Without node, no npm: in WSL the npm found may be Windows' (/mnt/c on PATH), which the sandbox cannot start.
+    tools['npm'] = tools['node'] and (shutil.which('npm.cmd') or shutil.which('npm'))
     listener = socket.create_server(('127.0.0.1', 0))
     listener.settimeout(0.2)
     reached, stop = [], threading.Event()
@@ -207,7 +256,8 @@ def main():
     try:
         from relay import command_protection
         if not command_protection.sandbox_available():
-            print(json.dumps({'ok': None, 'reason': 'no sandbox on this host'}))
+            why = command_protection.no_sandbox_error  # Linux: the Kernel's require_support() error
+            print(json.dumps({'ok': None, 'reason': 'no sandbox on this host', **({'why': why} if why else {})}))
             return 3
         rows = run_cases(base, base/'storage')
     finally:

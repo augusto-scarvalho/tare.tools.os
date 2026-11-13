@@ -120,17 +120,23 @@ commits before pushing: a published commit cannot be taken back from a public re
 afterwards. Auto-merge uses a merge commit, else a squash (when merge commits are off or linear history is required),
 never a rebase.
 CI cannot exercise the Windows sandbox tare runs every check in: its Windows image has no process security
-environment. `scripts/ops/sandbox_probe.py` proves it on a real machine instead. It builds throwaway projects in a
-temporary folder of its own, runs their checks through tare's default check path, answers no to every question and
-asserts each case: Python (a passing and a failing test, a file outside the project, the project's `.env`, a loopback
-connection, listing `C:\` and `C:\Users`, `asyncio`), Node when installed (CommonJS, an ES module, `node --test`,
-`npm test`, a failing assertion, a pnpm-like `node_modules`), `cargo test` when installed, and that nothing it
-created is left. When the commits a pull request would carry touch the sandbox (`SANDBOX_PATHS` in
+environment. `scripts/ops/sandbox_probe.py` proves it on a real machine instead. On Linux CI does: its `Linux sandbox
+probe` job, always on a GitHub-hosted `ubuntu-24.04` runner since it uses `sudo`, installs bubblewrap and the AppArmor
+profile of [the Linux sandbox](LINUX_SANDBOX.md) and runs the same probe; its exit 3 (no sandbox) fails the job. The
+probe builds throwaway projects in a temporary folder of its own, runs their checks through tare's default check
+path, answers no to every question and asserts each case: Python (a passing and a failing test, a file outside the
+project, the project's `.env`, a connection to a listener of the probe, listing `C:\` and `C:\Users` on Windows,
+`asyncio`; on Linux instead of those listings: the project's sibling folder not listed, a folder renamed above a
+nested secret, the sandbox's own loopback server, `192.0.2.1`, a name lookup, an `AF_VSOCK` socket and
+`io_uring_setup` refused with EPERM, a write to `/`, the task limit and a virtual environment's interpreter), Node
+when installed (CommonJS, an ES module, `node --test`, `npm test`, a failing assertion, a pnpm-like `node_modules`:
+red and asking on Windows, green on Linux), `cargo test` when installed, and that nothing it created is left. A
+failed case prints the end of its receipt. When the commits a pull request would carry touch the sandbox (`SANDBOX_PATHS` in
 `relay/ci_watch.py`), `tare ci pr` runs that checkout's probe before its push and refuses, naming the failed cases;
 on a machine without the sandbox it says the probe did not run and goes on (`sandbox_probe` in its JSON). Run it by
 hand from the repository root with an interpreter that has the Kernel's dependencies (the installed product's):
 `python scripts/ops/sandbox_probe.py` prints one line per case and a JSON line, and exits 0 (passed), 1 (failed) or
-3 (no sandbox here).
+3 (no sandbox here; on Linux the JSON's `why` is the Kernel's reason).
 The post-commit hook pushes later commits to a pull request that is already open with auto-merge on, and nobody
 runs `tare ci pr` again. So every push's watcher (`tare ci watch`), before it follows the runs, asks whether the
 checkout's branch has an open pull request into `main` and, if it has, runs the same probe. A probe that fails or does not finish turns that

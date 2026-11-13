@@ -2,6 +2,7 @@
 import ast
 from contextlib import nullcontext
 from copy import deepcopy
+import errno
 from functools import cache
 import hashlib
 import json
@@ -50,9 +51,24 @@ SANDBOX_TIMEOUT_LINUX = ('ISOLATION_TIMEOUT: this check did not finish within it
     'machine: a test that waits for one of them waits there until the limit. Outside the sandbox it may finish.')
 
 
+LINUX_SANDBOX_GUIDE = 'https://github.com/augusto-scarvalho/tare.tools.os/blob/main/docs/guides/LINUX_SANDBOX.md'
+no_sandbox_error = None  # why probe_sandbox answered no on Linux: the Kernel's require_support() error, for the user
+
+
 def probe_sandbox():
-    """Whether this host has the Windows sandbox checks run in, asked of the Kernel's own support query
-    (MxcEnvironment calls QueryProcessSecurityEnvironmentSupport), deny support included: checks deny secrets."""
+    """Whether this host has the sandbox checks run in, asked of the Kernel's own support query: on Windows
+    MxcEnvironment (QueryProcessSecurityEnvironmentSupport), deny support included: checks deny secrets; on Linux
+    linux_bwrap.require_support(), one real launch of its bubblewrap profile, masks and filter included."""
+    global no_sandbox_error
+    no_sandbox_error = None
+    if sys.platform == 'linux':
+        try:
+            from compute_plane import linux_bwrap
+            linux_bwrap.require_support()
+            return True
+        except Exception as error:  # no bubblewrap, too old, user namespaces refused...: no sandbox, never a weaker one
+            no_sandbox_error = str(error) or type(error).__name__
+            return False
     if sys.platform != 'win32':
         return False
     from compute_plane.windows_mxc import MxcEnvironment
@@ -65,6 +81,37 @@ def probe_sandbox():
 
 
 sandbox_available = cache(probe_sandbox)  # once per process
+
+
+def no_sandbox_why():
+    """Why probe_sandbox found no sandbox on this Linux host, in plain words for the user; '' when it was not told."""
+    if not no_sandbox_error:
+        return ''
+    code, _, detail = no_sandbox_error.partition(':')
+    install = ' Install the packages bubblewrap (0.8 or newer) and util-linux (for prlimit).'
+    # The Kernel lists every user-namespace setting it found; only these values refuse them.
+    refusing = re.findall(r'kernel\.apparmor_restrict_unprivileged_userns=1|kernel\.unprivileged_userns_clone=0'
+                          r'|user\.max_user_namespaces=0', detail)
+    why = {'bwrap_missing': 'bubblewrap is not installed.' + install,
+           'bwrap_prlimit_missing': 'prlimit is not installed.' + install,
+           'bwrap_too_old': f'This bubblewrap is too old ({detail.split(";")[0].strip()}).' + install,
+           'bwrap_architecture_unsupported': 'The Linux sandbox runs only on x86_64 and aarch64 machines.',
+           'bwrap_userns_refused': 'This system does not let bubblewrap create its sandbox.'
+               + ''.join(f' The setting {setting} refuses it.' for setting in refusing)
+               + ' An administrator can allow it for bubblewrap alone. tare does not change system settings.',
+           }.get(code, f'bubblewrap could not start the sandbox: {no_sandbox_error.rstrip(".")}.')
+    return why + ' How to set it up: ' + LINUX_SANDBOX_GUIDE
+
+
+def names_file(path):
+    """Whether a command argument names an existing file. One longer than a file name may be (inline code, as in
+    `python -c '...'`) names none: Linux raises ENAMETOOLONG for it, where pathlib ignores only a missing path."""
+    try:
+        return path.is_file()
+    except OSError as error:
+        if error.errno == errno.ENAMETOOLONG:
+            return False
+        raise
 
 
 def digest(value):
@@ -377,7 +424,7 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
             for arg in argv[1:]:
                 candidate=Path(arg)
                 candidate=candidate if candidate.is_absolute() else root/candidate
-                if candidate.is_file() and any(candidate.resolve().is_relative_to(p.resolve()) for p in admitted):
+                if names_file(candidate) and any(candidate.resolve().is_relative_to(p.resolve()) for p in admitted):
                     files.append(candidate)
             if any(path.resolve().is_relative_to(Path(p).resolve()) for path in files for p in policy.denied):
                 raise ActionRefused('Command input is denied by the sandbox.')
@@ -415,7 +462,7 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
                 'unknowns':['Runtime internals and transitive dependencies are not inspected.']}
             for arg in action.argv[1:]:
                 candidate=Path(arg);candidate=candidate if candidate.is_absolute() else root/candidate
-                if candidate.suffix.lower() not in ('.py','.ps1','.sh','.bat','.cmd','.js') or not candidate.is_file():
+                if candidate.suffix.lower() not in ('.py','.ps1','.sh','.bat','.cmd','.js') or not names_file(candidate):
                     continue
                 if not candidate.resolve().is_relative_to(root):
                     facts['unknowns'].append('Executable source is outside the admitted project.');continue

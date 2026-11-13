@@ -42,23 +42,27 @@ def windows_isolation_factory(*, backend, policy, cwd, environment, seconds,
             launcher = WindowsMxcProfile(policy, cwd=str(root), environment=environment)
         elif backend == 'bwrap':
             from compute_plane.linux_bwrap import LinuxBwrapProfile
-            profile = LinuxBwrapProfile(policy, cwd=str(root), environment=environment)
-
-            def launcher(argv, **options):
-                # A refused launch (bwrap_scope_changed, bwrap_denied_path_changed...) raises; the Kernel then keeps
-                # only the error's type, so the mediator keeps why, for its host's receipt. Nothing runs.
-                mediator.launch_refused = None
-                try:
-                    return profile(argv, **options)
-                except ValueError as error:
-                    mediator.launch_refused = str(error)
-                    raise
+            launcher = LinuxBwrapProfile(policy, cwd=str(root), environment=environment)
         else:
             launcher = CodexSandboxProfile(policy, executable=codex_executable,
                 expected_executable_sha256=codex_sha256, cwd=str(root), environment=environment)
         mediator = mediation_factory(**session)
         if not callable(getattr(mediator, 'execute', None)):
             raise ValueError('command_mediation_unavailable')
+        if backend == 'bwrap':
+            execute = mediator.execute
+
+            def kept(facts, effect):
+                # A check refused before it runs (bwrap_scope_changed, bwrap_denied_path_changed, an OSError from
+                # its mediation or from Popen) raises; the Kernel then keeps only the error's type once the check
+                # started, and an OSError's type always, so the mediator keeps why, for its host's receipt.
+                mediator.launch_refused = None
+                try:
+                    return execute(facts, effect)
+                except (ValueError, OSError) as error:
+                    mediator.launch_refused = str(error)
+                    raise
+            mediator.execute = kept
         capabilities.bind_command_confinement(launcher, environment, seconds,
             **({'verification_seconds':verification_seconds} if verification_seconds is not None else {}),
             **({'unbounded_verification':True} if unbounded_verification else {}),

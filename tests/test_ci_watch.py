@@ -1458,6 +1458,13 @@ def test_the_sandbox_probe_builds_its_linked_projects_and_removes_them_on_this_p
     roots = probe['projects'](tmp_path/'storage', tmp_path/'outside')  # pnpm's links: junctions on Windows, else symlinks
     pnpm = next(root for root in roots if (root/'node_modules'/'.pnpm').is_dir())
     assert (pnpm/'node_modules'/'pkg'/'index.js').is_file()  # through the link
+    # Each platform's own table: 15 cases and cleanup on Windows; bubblewrap's cases on Linux.
+    cases = {name: (state, asks) for rows in roots.values() for name, _, state, asks in rows}
+    windows = os.name == 'nt'
+    assert len(cases) == sum(map(len, roots.values())) == (15 if windows else 23)
+    assert ('python-lists-drive' in cases, 'python-task-limit' in cases) == (windows, not windows)
+    assert cases.get('node-pnpm-junction' if windows else 'node-pnpm-symlinks') == (('red', True) if windows
+                                                                                     else ('green', False))
     probe['remove'](tmp_path/'storage')  # each link first, then the rest
     assert not (tmp_path/'storage').exists()
 

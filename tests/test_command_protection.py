@@ -168,7 +168,7 @@ def test_a_binding_holds_secrets_open_on_windows_only(host, monkeypatch):
 
 @pytest.mark.parametrize('platform', ['win32', 'linux'])
 def test_linux_binds_checks_in_bubblewrap_and_windows_binds_what_it_did(host, monkeypatch, tmp_path, platform):
-    # Dormant until probe_sandbox answers True on Linux; the policy and launcher are replaced (host fixture).
+    # The policy and launcher are replaced (host fixture); the real sandbox is proven by scripts/ops/sandbox_probe.py.
     from compute_plane import linux_bwrap
     (host.root/'.env').write_text('FAKE_SECRET_FIXTURE'); (host.root/'node_modules').mkdir()
     rustup = tmp_path/'rustup'; rustup.mkdir(); monkeypatch.setenv('RUSTUP_HOME', str(rustup))

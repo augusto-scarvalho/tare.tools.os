@@ -23,7 +23,7 @@ turns on auto-merge and brings the branch up to date when main moved. Before any
 GitHub (repository settings, branch protection, rulesets) and refuses, with the reason, a push to a public
 repository whose unpublished commits carry an author or committer email that is not a GitHub noreply address,
 unsigned commits where signing is required, a repository whose settings leave no merge method and, when the
-branch's commits touch the Windows sandbox (SANDBOX_PATHS), a failed `scripts/ops/sandbox_probe.py` on this
+branch's commits touch the sandbox (SANDBOX_PATHS), a failed `scripts/ops/sandbox_probe.py` on this
 machine; otherwise the method is chosen from those settings (merge commit, else squash, never rebase). CI on main then skips a merge whose
 bytes already passed in the pull request (scripts/ci_suite.py). It leaves `tare ci shepherd <repo-dir> <number>` running
 detached: main requires a branch up to date with it and a personal account has no merge queue, so a pull request
@@ -717,8 +717,9 @@ def merge_plan(settings, branch, protection, rules):
             'linear_history': linear, 'visibility': settings.get('visibility')}
 
 
-# What builds the Windows sandbox checks run in (its policy, environment and launcher) and the probe that proves it.
-# CI's Windows has none, so a pull request touching one runs the probe here first (docs/guides/CI_FEEDBACK.md).
+# What builds the sandbox checks run in (its policy, environment and launcher) and the probe that proves it. CI's
+# Windows has none (its Linux sandbox job proves bubblewrap's), so a pull request touching one runs the probe here
+# first (docs/guides/CI_FEEDBACK.md).
 SANDBOX_PATHS = ('relay/command_protection.py', 'relay/sandbox_secrets.py', 'relay/sandbox-python/',
                  'relay/work_units.py', 'relay/windows_isolation.py', 'satellites/tare.tools.kernel',
                  'scripts/ops/sandbox_probe.py')
@@ -755,11 +756,11 @@ def sandbox_probe(repo_dir):
 
 def probe_pushed_pull_request(repo_dir, *, session=None, tries=3, every=30, sleep=time.sleep):
     """Run the sandbox probe for a push to a branch whose pull request into main is open, as `tare ci pr` does before
-    it opens one: the post-commit hook pushes later commits there with auto-merge on, and CI cannot run the sandbox.
-    A probe that fails or does not finish turns auto-merge off and alerts under a key of its own, since the shepherd
-    clears its pull request's alert when auto-merge goes off; `tare ci pr` clears it once its probe passes. A gh that
-    cannot say whether the pull request exists is retried, then alerted. Returns the probe's answer, 'failed', or None
-    when there was nothing to probe."""
+    it opens one: the post-commit hook pushes later commits there with auto-merge on, and CI cannot run the Windows
+    sandbox. A probe that fails or does not finish turns auto-merge off and alerts under a key of its own, since the
+    shepherd clears its pull request's alert when auto-merge goes off; `tare ci pr` clears it once its probe passes. A
+    gh that cannot say whether the pull request exists is retried, then alerted. Returns the probe's answer, 'failed',
+    or None when there was nothing to probe."""
     try:
         branch = git_in(repo_dir, 'rev-parse', '--abbrev-ref', 'HEAD')  # the checkout as it is now, as the probe
     except (OSError, subprocess.SubprocessError):
@@ -778,7 +779,7 @@ def probe_pushed_pull_request(repo_dir, *, session=None, tries=3, every=30, slee
                 reason = f"{error} {getattr(error, 'stderr', None) or ''}".strip()[-500:]
                 pr_alert(repo, '?', {'headRefName': branch, 'title': branch, 'url': ''}, 'sandbox probe not run',
                          [f'gh could not say whether this branch has an open pull request into main: {reason}',
-                          'If it has one and its commits touch the Windows sandbox, run `python scripts/ops/'
+                          'If it has one and its commits touch the sandbox, run `python scripts/ops/'
                           'sandbox_probe.py`; if it fails, turn auto-merge off (`gh pr merge <number> --disable-auto`)'
                           ', fix it and run `tare ci pr` again.'], session, 'sandbox probe')
                 return None
@@ -797,9 +798,9 @@ def probe_pushed_pull_request(repo_dir, *, session=None, tries=3, every=30, slee
         what = 'sandbox probe failed, auto-merge still on'
         off = (f"and turning auto-merge off failed ({error}), so it can still merge once CI is green: turn it off "
                f"with `gh pr merge {pr['number']} --disable-auto`")
-    pr_alert(repo, pr['number'], pr, what, [failed, 'The Windows sandbox probe failed on this machine for a push to '
-             f'this open pull request (CI cannot run the sandbox), {off}. Fix it, then run `tare ci pr` again: it '
-             'runs the probe again and turns auto-merge back on.'], session, 'sandbox probe')
+    pr_alert(repo, pr['number'], pr, what, [failed, 'The sandbox probe failed on this machine for a push to this open '
+             f'pull request (CI cannot run the Windows sandbox), {off}. Fix it, then run `tare ci pr` again: it runs '
+             'the probe again and turns auto-merge back on.'], session, 'sandbox probe')
     return 'failed'
 
 
