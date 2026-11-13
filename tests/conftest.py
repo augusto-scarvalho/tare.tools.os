@@ -43,11 +43,13 @@ def disable_installed_flow_assessor(monkeypatch, tmp_path_factory, request):
     monkeypatch.delenv('TARE_AVOID_LOCAL_GPU', raising=False)
     # Launch flags constrain real workers, not the fixture's authored route policy.
     monkeypatch.delenv('TARE_SESSION_SCOPE', raising=False)
-    # The Windows sandbox exists on some developer machines and on no CI runner: a test sees none unless it says so,
-    # so where a check runs never depends on the machine running the suite.
+    # The sandbox (Windows' MXC, or bubblewrap on Linux) exists on some developer machines and can on a Linux CI
+    # runner (one with bubblewrap allowed): a test sees none, and no reason for none, unless it says so, so where a
+    # check runs never depends on the machine running the suite.
     try:
         from relay import command_protection
         monkeypatch.setattr(command_protection, 'sandbox_available', lambda: False)
+        monkeypatch.setattr(command_protection, 'no_sandbox_error', None)
     except ImportError:  # no kernel or FlatBuffers here: the tests that need them skip themselves
         pass
     # With no sandbox, tare refuses a local implementer (execution_scope.unsandboxed_local); many fixtures stand in for

@@ -28,6 +28,8 @@ documents are the reference.
   is enough to start.
 - [Project permissions in the TUI](guides/TUI_PROJECT_PERMISSIONS.md): read, edit and system-command
   permissions for a project, and the **Implement this plan?** dialog that shows a plan before it is implemented.
+- [The Linux sandbox for checks](guides/LINUX_SANDBOX.md): bubblewrap, what a check gets and where it differs from
+  Windows, the requirements, and how an administrator allows bubblewrap on Ubuntu.
 - [Model and reasoning selection](guides/MODEL_PICKER.md): choosing the model and reasoning effort per
   conversation and role.
 - [Guidance sent to the models](guides/GUIDANCE.md): the `/guidance` panel; tare's role guidance (editable), the

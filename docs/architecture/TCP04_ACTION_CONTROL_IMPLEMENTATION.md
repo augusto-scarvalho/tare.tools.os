@@ -59,9 +59,17 @@ read-only project's checks ask first, and `execution_scope.session_role` refuses
 local implementer.
 
 On Linux the same checks are bound in the Kernel's bubblewrap profile
-(`compute_plane/linux_bwrap.py`, Kernel 0.9.89), and nowhere else yet:
-`sandbox_available()` still answers False on Linux, so Linux has no sandbox until
-the probe asks the Kernel's `require_support()`. `factory(..., checks_only=True)`
+(`compute_plane/linux_bwrap.py`, Kernel 0.9.89). There `sandbox_available()` asks the
+Kernel's `require_support()`, one real launch of the profile with its masks, filter
+and task limit; any exception means no sandbox (fail closed). Its text is kept in
+`no_sandbox_error`, and `no_sandbox_why()` turns it into what the user reads below
+**Checks: not isolated** in `/permissions` and at the end of a local implementer's
+refusal (`execution_scope.local_unsandboxed`): bubblewrap or `prlimit` missing or too
+old (what to install), or user namespaces refused (the refusing setting, and
+`docs/guides/LINUX_SANDBOX.md` for the administrator; tare changes no system
+setting). `scripts/ops/sandbox_probe.py` has a Linux case table, and CI's `Linux
+sandbox probe` job runs it on a hosted Ubuntu 24.04 runner with an AppArmor profile
+for bubblewrap alone. `factory(..., checks_only=True)`
 admits Linux (protected commands stay Windows-only) and sets backend `bwrap`, which
 each receipt names. `bind` builds a `BwrapPolicy` whose read scopes start from the
 Kernel's `SYSTEM_ROOTS` instead of `SystemRoot`, followed by the same runtime,

@@ -3287,8 +3287,8 @@
     {
       "name": "project_permissions.py",
       "path": "tare.tools.os/relay/project_permissions.py",
-      "size_bytes": 30376,
-      "sha256": "f5cbf78ec775957dd7bd501db53ca1e7d5a1d03d80432772f792c9395dcaa891",
+      "size_bytes": 30553,
+      "sha256": "9372ffb8ff2d38c55be142a3c74b82e1922842f6a6c71aa5f46ef2aedddc4a1b",
       "summary": "Validate scoped project defaults and observe saved session permissions.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
@@ -3771,8 +3771,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 63310,
-      "sha256": "cd4e384310ad39ce84a4d95e002c8ea6bde2083d7123eb220f6396b826d3467a"
+      "size_bytes": 63340,
+      "sha256": "ce95e3eb0bb4e32e05fa3af520f35b03cd05f366dd3ce2c0a41affbec1c7dbed"
     },
     {
       "name": "folder_access.py",
@@ -3941,8 +3941,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 74409,
-      "sha256": "b38c9cdc2472c566601299a2cfa400ed33645cccd05c2cacfe77a02d3c9c37c4"
+      "size_bytes": 76603,
+      "sha256": "4d7bcc46e61bf2f3da20ee4782089a80b24797ed4285723a6020a68ff2e3e354"
     },
     {
       "name": "test_selection_pilot.py",
@@ -4231,8 +4231,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 26551,
-      "sha256": "bb8eebaf78c3bd2a61e5225ecc0b34d31729aa095fd7ba1aeaa73baa17021d3b"
+      "size_bytes": 26837,
+      "sha256": "888ba5a22681c183f5a51625cdab0186f74b88da46571cbfbb78bc32486d5ae8"
     },
     {
       "name": "command_permission.py",

@@ -363,12 +363,19 @@ LOCAL_UNSANDBOXED=('tare does not run a local model as implementer on this syste
     'No model call was made.')
 
 
+def local_unsandboxed():
+    """LOCAL_UNSANDBOXED, and on Linux what this host lacks, as the Kernel's support query said."""
+    from .command_protection import no_sandbox_why
+    why=no_sandbox_why()
+    return LOCAL_UNSANDBOXED+(' Why there is no sandbox: '+why if why else '')
+
+
 def unsandboxed_local(deployment):
     """A local implementer needs the sandbox its checks run in (owner, 2026-11-13); refused before any model call."""
     from .challenger import local
     if local(deployment):
         from .command_protection import sandbox_available
-        if not sandbox_available():raise ValueError(LOCAL_UNSANDBOXED)
+        if not sandbox_available():raise ValueError(local_unsandboxed())
 
 
 def local_only_unsandboxed():
@@ -376,7 +383,7 @@ def local_only_unsandboxed():
     checks, said before a delivery is planned or started rather than when its implementer starts; else None."""
     if current().only!='local':return None
     from .command_protection import sandbox_available
-    return None if sandbox_available() else LOCAL_UNSANDBOXED
+    return None if sandbox_available() else local_unsandboxed()
 
 
 def session_role(function):

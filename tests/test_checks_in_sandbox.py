@@ -481,17 +481,62 @@ def test_a_local_implementer_is_refused_where_no_sandbox_isolates_its_checks(tmp
         with pytest.raises(ValueError, match='does not run a local model as implementer on this system') as error:
             session({'role': role}, deployment, tmp_path)
         assert 'hosted implementer' in str(error.value) and 'Windows 11' in str(error.value) and calls == []
-        assert 'bubblewrap' not in str(error.value)  # what Linux needs is said once Linux has a sandbox
+        assert 'bubblewrap' not in str(error.value)  # no reason from the Kernel here (the next tests have one)
     else:
         assert session({'role': role}, deployment, tmp_path) == 'ran'
 
 
-def test_without_flatbuffers_or_windows_the_probe_says_no_sandbox(monkeypatch):
-    # CI's Linux shards pretend to be Windows elsewhere: the probe itself must not reach ctypes off Windows. Linux has
-    # no sandbox yet even where bubblewrap works: its binding is in place, dormant until the probe asks the Kernel.
+def test_linux_has_the_sandbox_exactly_where_the_kernels_bubblewrap_launch_works(monkeypatch):
+    # CI's Linux shards pretend to be Windows elsewhere: the probe itself must not reach ctypes off Windows.
+    def refused():
+        raise OSError('bwrap_missing')
     monkeypatch.setattr('compute_plane.linux_bwrap.require_support', lambda: None)
     monkeypatch.setattr(protection, 'sys', SimpleNamespace(platform='linux'))
-    assert protection.probe_sandbox() is False
+    assert protection.probe_sandbox() is True and protection.no_sandbox_why() == ''
+    for failure in (refused, lambda: 1/0):  # any failure is no sandbox, never a weaker one
+        monkeypatch.setattr('compute_plane.linux_bwrap.require_support', failure)
+        assert protection.probe_sandbox() is False and protection.no_sandbox_error
+    protection.sys.platform = 'darwin'
+    assert protection.probe_sandbox() is False and protection.no_sandbox_why() == ''
+
+
+GUIDE = ' How to set it up: https://github.com/augusto-scarvalho/tare.tools.os/blob/main/docs/guides/LINUX_SANDBOX.md'
+INSTALL = ' Install the packages bubblewrap (0.8 or newer) and util-linux (for prlimit).'
+
+
+@pytest.mark.local_implementer_rule
+@pytest.mark.parametrize('error, why', [
+    ('bwrap_missing', 'bubblewrap is not installed.' + INSTALL),
+    ('bwrap_prlimit_missing', 'prlimit is not installed.' + INSTALL),
+    ('bwrap_too_old: bubblewrap 0.6.1; 0.8 or newer is required', 'This bubblewrap is too old (bubblewrap 0.6.1).'
+     + INSTALL),
+    ('bwrap_userns_refused: kernel.apparmor_restrict_unprivileged_userns=1; kernel.unprivileged_userns_clone=1; '
+     'user.max_user_namespaces=63238; bwrap: setting up uid map: Permission denied',
+     'This system does not let bubblewrap create its sandbox. The setting '
+     'kernel.apparmor_restrict_unprivileged_userns=1 refuses it. An administrator can allow it for bubblewrap alone. '
+     'tare does not change system settings.'),
+    ('bwrap_userns_refused: no userns sysctl; bwrap: No permissions to create new namespace',
+     'This system does not let bubblewrap create its sandbox. An administrator can allow it for bubblewrap alone. '
+     'tare does not change system settings.'),
+    ('bwrap_launch_failed: exit 1: bwrap: Can\'t mount proc on /newroot/proc: Operation not permitted',
+     'bubblewrap could not start the sandbox: bwrap_launch_failed: exit 1: bwrap: Can\'t mount proc on '
+     '/newroot/proc: Operation not permitted.')],
+    ids=['missing', 'no-prlimit', 'too-old', 'apparmor', 'userns-refused', 'launch-failed'])
+def test_a_linux_host_without_the_sandbox_is_told_why_where_it_decides(tmp_path, monkeypatch, error, why):
+    from relay.project_permissions import check_isolation
+    def refused():
+        raise OSError(error)
+    monkeypatch.setattr('compute_plane.linux_bwrap.require_support', refused)
+    monkeypatch.setattr(protection, 'sys', SimpleNamespace(platform='linux'))
+    monkeypatch.setattr(protection, 'sandbox_available', protection.probe_sandbox)
+    assert protection.probe_sandbox() is False and protection.no_sandbox_error == error
+    assert protection.no_sandbox_why() == why + GUIDE
+    # The refusal of a local implementer, after its earlier words, and the permissions panel, below its checks line.
+    with pytest.raises(ValueError) as refusal:
+        execution_scope.unsandboxed_local(LOCAL)
+    assert str(refusal.value) == execution_scope.LOCAL_UNSANDBOXED + ' Why there is no sandbox: ' + why + GUIDE
+    lines = check_isolation({'mode': 'edit'}, {})
+    assert lines[0].startswith('Checks: not isolated') and lines[1] == 'Why there is no sandbox: ' + why + GUIDE
 
 
 @pytest.mark.parametrize('code', ['bwrap_scope_changed', 'bwrap_denied_path_changed'])
