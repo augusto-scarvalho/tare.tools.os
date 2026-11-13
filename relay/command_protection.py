@@ -1,8 +1,10 @@
 """Local session composition of existing review, exact guard and Windows isolation."""
+import ast
 from contextlib import nullcontext
 from copy import deepcopy
 import hashlib
 import json
+import ntpath
 import os
 from pathlib import Path
 import secrets
@@ -19,6 +21,7 @@ from .action_control import ActionDecision, ActionPolicy, ActionReviewBroker
 from .action_mediation import CommandActionMediator
 from .action_model_assessment import TareActionClassifier, TareActionReviewer, TareJevActionClassifier, JEV_MODEL
 from .command_permission import UNREVIEWED, unreviewed as allowed_this_turn, yolo
+from . import sandbox_secrets
 from .windows_isolation import windows_isolation_factory
 from .worker_wait import steady
 
@@ -233,8 +236,8 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
             # project remains outside the command write boundary; application
             # still rejects unplanned source changes after independent review.
             write.append(str(root))
-        denied_names=('.git','.codex','.aws','.env','.ssh','.npmrc','.pypirc') if jev else ('.git','.codex','.aws')
-        denied=[str(root/p) for p in denied_names if (root/p).exists()]
+        # Every classifier: secrets at any depth of the project and its granted folders, found once per binding.
+        denied=sandbox_secrets.find([root,*references],git=not (host_checks or staged_effects))
         if (host_checks or staged_effects) and (root/'.git').exists():
             # Exact host verifiers and private staged workers can inspect Git
             # metadata, with no metadata write grant. This admits status/diff
@@ -247,7 +250,6 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
             read.extend((str(root/'.git'),str(metadata)))
             if (metadata/'commondir').is_file():
                 read.append(str((metadata/(metadata/'commondir').read_text().strip()).resolve(strict=True)))
-            denied=[p for p in denied if p!=str(root/'.git')]
             # Git discovers this worktree from cwd. A global GIT_WORK_TREE also
             # reaches test fixtures' init/clone commands and changes their roots.
             environment['GIT_OPTIONAL_LOCKS']='0'
@@ -257,6 +259,8 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         # root's lets a command list every folder on the drive (probed 2026-11-13). Ancestors stay
         # stat-able without it; only the volume root's own metadata is then denied.
         policy=MxcPolicy(tuple(read),tuple(dict.fromkeys(write)),tuple(denied),registry_read=True)
+        # MXC denies a path: renaming a writable folder above a nested secret would carry the secret out of the rule.
+        held=sandbox_secrets.Hold(sandbox_secrets.movable(denied,write))
         deadline_cache={};issued={};observed={};routine_ports={}
 
         def sources(argv):
@@ -511,7 +515,7 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         # after any wait for the user (the session's own clock may have stopped meanwhile).
         mediator=CommandActionMediator(Broker(),snapshot,lambda a,c:context,authorize,guard,
             lambda:steady(control),result_handler=result,reviewed_execution=gate)
-        mediator.close=weakref.finalize(mediator,test_directory.cleanup)
+        mediator.close=weakref.finalize(mediator,lambda:(held.close(),test_directory.cleanup()))
         cli_options=({'codex_executable':pinned_cli['executable'],'codex_sha256':options['codex_sha256']}
                      if options['backend']=='codex' else {})
         from .work_units import VERIFY_SECONDS
@@ -586,7 +590,7 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
 
 def verification_limitation(value):
     """A check the MXC sandbox stopped (the loopback socket pair hang, or pytest tests that each failed on a
-    connection the sandbox denied) is inconclusive, never a failing-code verdict."""
+    connection or a secret file the sandbox denied) is inconclusive, never a failing-code verdict."""
     output = str(value.get('output') or '')
     backend = (value.get('process') or {}).get('confinement', {}).get('backend')
     if (value.get('returncode') and backend == 'windows-mxc'
@@ -607,13 +611,36 @@ def verification_limitation(value):
         raised = '\n'.join(line for line in section.splitlines() if line.startswith('E '))
         return '[WinError 10013]' in raised or ('[WinError 5]' in raised and 'windows_events.py' in section
                                                 and 'finish_connect' in section)
+    def secret(line):
+        # A permission error on a path whose own name the sandbox denies (`.env`, `.npmrc`...), read back from the
+        # message's repr. Another exception, wording or name, or a path that does not parse, is not this.
+        found = re.fullmatch(r'PermissionError: \[(?:Errno 13|WinError 5)\] (?:Permission|Access is) denied: '
+                             r'''(['"].*['"])''', line)
+        try:
+            path = ast.literal_eval(found[1]) if found else None
+        except (ValueError, SyntaxError):
+            return False
+        return isinstance(path, str) and sandbox_secrets.secret(ntpath.basename(path),
+                                                                ntpath.basename(ntpath.dirname(path)))
+    def kind(section):
+        raised = [line[1:].strip() for line in section.splitlines() if line.startswith('E ') and line[1:].strip()]
+        return 'network' if denied(section) else 'secret' if raised and all(map(secret, raised)) else 'failure'
     sections = [] if value.get('output_truncated') else pytest_failures(output)
-    if value.get('returncode') and backend == 'windows-mxc' and sections and all(map(denied, sections)):
+    kinds = {kind(section) for section in sections}
+    if not (value.get('returncode') and backend == 'windows-mxc' and sections and 'failure' not in kinds):
+        return None
+    if kinds == {'network'}:
         return ('ISOLATION_NETWORK_DENIED: every failing test of this check failed because the sandbox denied a '
             'network connection on this machine (loopback included), so these tests cannot be judged inside the '
             'sandbox. This does not establish failing test assertions. Do not remove required checks, change '
             'tests to hide this limitation, or silently enable host networking.')
-    return None
+    both = 'network' in kinds
+    return ('ISOLATION_SECRET_DENIED: every failing test of this check failed because the sandbox denied it a secret '
+        'file' + (' or a network connection' if both else '') + ': the sandbox does not let commands read secret '
+        'files such as .env, so these tests cannot be judged inside the sandbox. This does not establish failing '
+        'test assertions. Do not copy secrets into other files, rename them or change tests to hide this'
+        + (', or silently enable host networking' if both else '') + '; the user decides whether such a check may '
+        'run outside the sandbox.')
 
 
 def pytest_failures(output):

@@ -2,7 +2,7 @@
   "$schema": "https://tare.tools/schemas/v1/disposition-manifest.json",
   "version": "1.0.0",
   "generated_at": "2026-10-04T03:10:28.054735+00:00",
-  "total_modules": 443,
+  "total_modules": 444,
   "modules": [
     {
       "name": "consent_decisions.py",
@@ -3941,8 +3941,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 48293,
-      "sha256": "90f08cfad5ff2e76d27f21a35b9241b255d637b91b38754f49c12e8d7e29dca7"
+      "size_bytes": 50258,
+      "sha256": "e5ee073e02ea9e39b7ce9218e0a74e728be9d83bc1a671289a280dd4da824239"
     },
     {
       "name": "test_selection_pilot.py",
@@ -4433,6 +4433,16 @@
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
       "size_bytes": 18954,
       "sha256": "c7a9a6823ea2a220a6444727ab76039ea3b99c4b31437c1d004d86f7277faf2e"
+    },
+    {
+      "name": "sandbox_secrets.py",
+      "path": "tare.tools.os/relay/sandbox_secrets.py",
+      "summary": "Secret files and folders a protected command's Windows sandbox denies, found once per binding.",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
+      "size_bytes": 6763,
+      "sha256": "4c40bd4cf4cd712d395bf50bde204240a7452df63026865262b34d273d084eb5"
     }
   ]
 }

@@ -106,6 +106,32 @@ this never enables host networking or waives required tests. Like a timeout,
 an inconclusive session check settles nothing: a change whose own checks pass
 is then applied only when its unit's tests cover every changed file.
 
+The sandbox also denies the project's secrets, at any depth and in folders granted
+to the project: `.env` and `.env.*` files (samples such as `.env.example` stay
+readable), `.ssh`, `.aws`, `.codex`, `.npmrc`, `.pypirc`, `.netrc` and similar
+credential files and folders, and Git folders except in host checks and private
+candidates, which read them.
+tare finds them when the command or check starts; a secret created later is not
+covered. A command that names one is refused; a program that opens one gets
+`Permission denied` (`Access is denied` in `cmd` and PowerShell), and `git status`
+warns that it could not open a denied folder. A test that reads `.env` therefore
+fails in the sandbox with `PermissionError`. A pytest check whose every failure
+is such a denied secret (or a denied connection, above) is reported as
+inconclusive, `ISOLATION_SECRET_DENIED`, not as failing code; one other failure
+in it keeps the check red. The model is told not to copy or rename the secret or
+change the test to hide this: give the test its own settings or a sample file, or
+decide yourself whether that check may run outside the sandbox. Like a timeout,
+an inconclusive session check settles nothing: a change whose own checks pass is
+then applied only when its unit's tests cover every changed file. A project
+with more than 32 such paths, or too large to search (100,000 files and folders,
+32 levels; dependencies, virtual environments and caches are skipped), refuses
+protected commands with a message that says so: move secrets out of the project
+or open a smaller folder. Their names stay visible in listings. Windows applies
+the rule to the path, so while a protected command or check runs, tare keeps each
+nested secret in an editable folder open: no folder above it can be renamed or
+moved to carry the secret out of the rule. You cannot rename, move or delete
+those folders yourself until that command's session or check ends.
+
 F3 includes the host-applied files, recorded candidate checks and their observed
 freshness. Existing file/turn preview and explicit undo use the same hashed
 snapshots. Undo never overwrites a later external edit or calls a model.
