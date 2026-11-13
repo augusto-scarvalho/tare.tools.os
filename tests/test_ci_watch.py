@@ -1449,3 +1449,83 @@ def test_the_sandbox_probe_exits_3_with_its_json_on_a_host_without_the_sandbox(t
     assert probe['main']() == 3  # conftest: no test sees a sandbox
     assert capsys.readouterr().out.splitlines()[-1] == '{"ok": null, "reason": "no sandbox on this host"}'
     assert not list(tmp_path.iterdir())
+
+
+OPEN_PR = {'number': 7, 'url': 'https://github.com/me/os/pull/7', 'title': 'Touch the sandbox', 'headRefName': 'feature'}
+
+
+def pushed_github(monkeypatch, prs, unreachable=0, disable_fails=False):
+    """The watcher's `gh`: `pr list` answers `prs` after `unreachable` failures; returns the calls and notifications."""
+    calls, notified = [], []
+    def gh(args, cwd):
+        calls.append(args)
+        if args[:2] == ['pr', 'list'] and sum(call[:2] == ['pr', 'list'] for call in calls) <= unreachable:
+            raise subprocess.CalledProcessError(1, ['gh', *args], stderr='error connecting to api.github.com')
+        if args[:2] == ['pr', 'merge'] and disable_fails:
+            raise subprocess.CalledProcessError(1, ['gh', *args], stderr='HTTP 502')
+        return {'repo': json.dumps({'nameWithOwner': 'me/os'}), 'pr': json.dumps(prs)}.get(args[0], '')
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+    monkeypatch.setattr(ci_watch, 'notify', notified.append)
+    return calls, notified
+
+
+def test_the_watcher_probes_an_open_pull_request_before_it_follows_the_runs(tmp_path, monkeypatch):
+    order = []
+    monkeypatch.setattr(ci_watch, 'probe_pushed_pull_request', lambda repo_dir, session: order.append('probe'))
+    monkeypatch.setattr(ci_watch, 'watch', lambda repo_dir, sha, **_: order.append('watch') or [])
+    monkeypatch.setattr(ci_watch, 'nightly', lambda repo_dir: [])
+    assert ci_watch.main(['watch', str(tmp_path), 'abc']) == 0 and order == ['probe', 'watch']
+
+
+@pytest.mark.parametrize('prs, unreachable', [([], 0), ([OPEN_PR], 0), ([OPEN_PR], 2)])
+def test_a_push_runs_the_sandbox_probe_only_for_an_open_pull_request_and_a_pass_changes_nothing(
+        tmp_path, monkeypatch, prs, unreachable):
+    remote, work, git = feature_checkout(tmp_path, NOREPLY_EMAIL)
+    calls, notified = pushed_github(monkeypatch, prs, unreachable)
+    probed, waits = [], []
+    monkeypatch.setattr(ci_watch, 'sandbox_probe', lambda repo_dir: probed.append(repo_dir) or 'passed')
+    answer = ci_watch.probe_pushed_pull_request(work, sleep=waits.append)
+    assert answer == ('passed' if prs else None) and probed == ([work] if prs else []) and len(waits) == unreachable
+    assert ['pr', 'list', '--head', 'feature', '--base', 'main', '--state', 'open', '--json',
+            'number,url,title,headRefName'] in calls
+    assert not [call for call in calls if call[:2] == ['pr', 'merge']] and not ci_watch.open_alerts() and not notified
+
+
+def test_github_unable_to_say_whether_the_pull_request_is_open_is_an_alert_not_a_skip(tmp_path, monkeypatch):
+    remote, work, git = feature_checkout(tmp_path, NOREPLY_EMAIL)
+    pushed_github(monkeypatch, [OPEN_PR], unreachable=3)
+    monkeypatch.setattr(ci_watch, 'sandbox_probe', lambda repo_dir: pytest.fail('probed without a pull request'))
+    assert ci_watch.probe_pushed_pull_request(work, session='s', sleep=lambda s: None) is None
+    [(key, alert)] = ci_watch.alert_entries()
+    assert key == 'me/os|sandbox probe|feature' and 'sandbox probe not run' in alert['commit']
+    assert 'error connecting to api.github.com' in alert['errors'][0] and alert['session'] == 's'
+
+
+@pytest.mark.parametrize('returncode, named, disable_fails', [
+    (1, 'node-commonjs', False),
+    (None, 'more than 15 minutes', True)])  # a probe that does not finish failed, as `tare ci pr` takes it
+def test_a_failed_probe_on_a_push_to_an_open_pull_request_turns_auto_merge_off_until_tare_ci_pr_passes(
+        tmp_path, monkeypatch, returncode, named, disable_fails):
+    remote, work, git = feature_checkout(tmp_path, NOREPLY_EMAIL)
+    (work/'relay').mkdir(); (work/'relay'/'command_protection.py').write_text('changed')
+    git('add', '.'); git('commit', '-qm', 'Touch the sandbox')
+    calls, notified = pushed_github(monkeypatch, [OPEN_PR], disable_fails=disable_fails)
+    probe_outcome(monkeypatch, returncode, '{"ok": false, "failed": ["node-commonjs"], "not_run": [], "seconds": 30}\n')
+    assert ci_watch.probe_pushed_pull_request(work, session='s') == 'failed'
+    assert ['pr', 'merge', '7', '--disable-auto'] in calls
+    [(key, alert)] = ci_watch.alert_entries()
+    assert key == 'me/os|sandbox probe|feature' and notified == [alert] and alert['session'] == 's'
+    assert named in alert['errors'][0] and 'run `tare ci pr` again' in alert['errors'][1]
+    if disable_fails:
+        assert 'auto-merge still on' in alert['commit'] and 'gh pr merge 7 --disable-auto' in alert['errors'][1]
+    else:
+        assert 'auto-merge turned off' in alert['commit'] and 'so auto-merge was turned off' in alert['errors'][1]
+    # The shepherd ends once auto-merge is off and clears its pull request's alert: not this one.
+    view = {'nameWithOwner': 'me/os', 'state': 'OPEN', 'autoMergeRequest': None, 'mergeStateStatus': 'BLOCKED',
+            'headRefOid': 'h', **OPEN_PR}
+    monkeypatch.setattr(ci_watch, 'gh', lambda args, cwd: '[]' if args[:2] == ['run', 'list'] else json.dumps(view))
+    assert ci_watch.shepherd(work, 7, sleep=lambda s: None) == 'OPEN' and ci_watch.open_alerts() == [alert]
+    # Fixed: `tare ci pr` runs the probe again, turns auto-merge back on and closes the alert.
+    scripted_github(monkeypatch, lambda endpoint: api_answer(endpoint, settings={'full_name': 'me/os'}))
+    probe_outcome(monkeypatch, 0, '{"ok": true, "failed": [], "not_run": [], "seconds": 20.0}\n')
+    assert ci_watch.pull_request(work)['sandbox_probe'] == 'passed' and ci_watch.open_alerts() == []

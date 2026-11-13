@@ -131,7 +131,16 @@ on a machine without the sandbox it says the probe did not run and goes on (`san
 hand from the repository root with an interpreter that has the Kernel's dependencies (the installed product's):
 `python scripts/ops/sandbox_probe.py` prints one line per case and a JSON line, and exits 0 (passed), 1 (failed) or
 3 (no sandbox here).
-The watcher leaves pull request alerts to the shepherd. A shepherd beats in
+The post-commit hook pushes later commits to a pull request that is already open with auto-merge on, and nobody
+runs `tare ci pr` again. So every push's watcher (`tare ci watch`), before it follows the runs, asks whether the
+checkout's branch has an open pull request into `main` and, if it has, runs the same probe. A probe that fails or does not finish turns that
+pull request's auto-merge off (`gh pr merge <number> --disable-auto`) and opens an alert saying so, under a key of its
+own (the shepherd stops once auto-merge is off). Fix the cause and run `tare ci pr` again: it runs the probe again,
+turns auto-merge back on and closes the alert. A `gh` that still cannot say whether the pull request is open after
+three tries is an alert too. The watcher starts after the push and probes the checkout as it is then, so its branch
+and HEAD may have moved since. The first push of `tare ci pr` comes before its pull request exists, so that watcher
+finds none; a later `tare ci pr` on an open pull request runs the probe twice.
+The watcher leaves a pull request's CI alerts to the shepherd. A shepherd beats in
 `shepherds.json` every round; the end of an agent's turn (the stop hook), `tare ci check`, every push's watcher and
 the daily check start again one silent for 15 minutes (the machine restarted or the process died), so a red pull
 request never waits unseen. It has no time limit and stops when the pull request merges, closes or loses auto-merge.
