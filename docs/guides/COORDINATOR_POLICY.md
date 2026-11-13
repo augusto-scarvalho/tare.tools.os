@@ -74,8 +74,10 @@ preserve_thinking and enable_thinking. A profile that declares
 `native_reasoning_budgets` also gets that level's top-level `thinking_budget` and output cap: Qwen3.8 GSQ
 sends 4,096 at medium and xhigh and nothing at low (the server's 2,048), since NInfer otherwise stops every
 level at 2,048. Thinking and the answer share the output cap, so those two levels raise it from 16,384 to
-18,432 and the answer keeps its room. In a blind sample of 27 plans (2026-11-13), 4,096 and 8,192 at xhigh
-scored the same, both above 2,048, and 8,192 cost about 45 seconds more per call. Swift Next depends on the
+18,432 and the answer keeps its room. 4,096 is a starting point, chosen for its shorter time: in a blind sample
+of 27 plans (2026-11-13) both 4,096 and 8,192 at xhigh beat 2,048 and 8,192 cost about 45 seconds more per call.
+That sample does not settle which of the two plans better: 2 of the 9 answers at 8,192 were cut off by the cap
+the two then shared. Swift Next depends on the
 existing memory/context admission and lease, with no speculative loading or preemption.
 
 The concrete realization pins the model, connection and effort in the conversation without changing the
