@@ -119,6 +119,18 @@ To fix an identity refusal, set `git config user.email` to your GitHub noreply a
 commits before pushing: a published commit cannot be taken back from a public repository, so nothing is rewritten
 afterwards. Auto-merge uses a merge commit, else a squash (when merge commits are off or linear history is required),
 never a rebase.
+CI cannot exercise the Windows sandbox tare runs every check in: its Windows image has no process security
+environment. `scripts/ops/sandbox_probe.py` proves it on a real machine instead. It builds throwaway projects in a
+temporary folder of its own, runs their checks through tare's default check path, answers no to every question and
+asserts each case: Python (a passing and a failing test, a file outside the project, the project's `.env`, a loopback
+connection, listing `C:\` and `C:\Users`, `asyncio`), Node when installed (CommonJS, an ES module, `node --test`,
+`npm test`, a failing assertion, a pnpm-like `node_modules`), `cargo test` when installed, and that nothing it
+created is left. When the commits a pull request would carry touch the sandbox (`SANDBOX_PATHS` in
+`relay/ci_watch.py`), `tare ci pr` runs that checkout's probe before its push and refuses, naming the failed cases;
+on a machine without the sandbox it says the probe did not run and goes on (`sandbox_probe` in its JSON). Run it by
+hand from the repository root with an interpreter that has the Kernel's dependencies (the installed product's):
+`python scripts/ops/sandbox_probe.py` prints one line per case and a JSON line, and exits 0 (passed), 1 (failed) or
+3 (no sandbox here).
 The watcher leaves pull request alerts to the shepherd. A shepherd beats in
 `shepherds.json` every round; the end of an agent's turn (the stop hook), `tare ci check`, every push's watcher and
 the daily check start again one silent for 15 minutes (the machine restarted or the process died), so a red pull
