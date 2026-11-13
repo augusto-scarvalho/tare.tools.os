@@ -135,7 +135,7 @@ def test_semantic_judges_obey_the_same_launch_override(monkeypatch,temporary,mod
     calls=[]
     monkeypatch.setattr(turn_engine,'jev_key',lambda:'offline fixture')
     monkeypatch.setattr('relay.environment.decides',lambda name:scope.current().judge(name))
-    monkeypatch.setattr(turn_engine,'local_judge',lambda:'http://fixture' if scope.current().judge('local_judge') else None)
+    monkeypatch.setattr(turn_engine,'local_judge',lambda:'http://fixture.test' if scope.current().judge('local_judge') else None)
     monkeypatch.setattr(hosted,'assess',lambda *a,**kw:calls.append('jev') or {})
     monkeypatch.setattr(local,'assess',lambda *a,**kw:calls.append('local') or {})
     request={'state':'fixture','question':'Pick?','options':{'a':'A','b':'B'}}

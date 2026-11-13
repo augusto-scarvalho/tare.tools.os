@@ -46,27 +46,76 @@ def policy(root):
 
 
 def local(deployment):
+    """Served from this machine or its network, decided without a DNS query: a private, loopback or Tailscale
+    address, a name without a dot or under a local suffix, or the configured local gateway's own host.
+    native_challenger_accounting, when present, decides instead."""
     if deployment.get('native_challenger_accounting'):
         return deployment['native_challenger_accounting'] == 'local'
     url = urlparse(deployment['native_profile']['endpoint'])
-    host = url.hostname or ''
+    host = (url.hostname or '').rstrip('.')
+    private = private_address(host)
+    if private is None:
+        from .web_research import LOCAL_NAMES
+        private = bool(host) and ('.' not in host or host.endswith(LOCAL_NAMES))
+        if host and not private:
+            from .native_catalog import local_gateway
+            try:  # the operator's gateway, however it is named (http://models.example.com:8080)
+                private = host == urlparse(local_gateway()).hostname.rstrip('.')
+            except ValueError:  # no storage or a malformed gateway: the name rules alone decide
+                pass
+    return url.scheme in {'http', 'https'} and private
+
+
+def private_address(host):
+    """True for a private, loopback or Tailscale IP literal, False for another literal, None for a name."""
     try:
         address = ipaddress.ip_address(host)
-        private = address.is_private or address in ipaddress.ip_network('100.64.0.0/10')
     except ValueError:
-        private = host == 'localhost'
-    return url.scheme in {'http', 'https'} and private
+        return None
+    return address.is_private or address in ipaddress.ip_network('100.64.0.0/10')
+
+
+def reach(url):
+    """(scheme, host, port) of a URL, to compare origins exactly; None without a host or with an invalid port."""
+    parts = urlparse(url)
+    try:
+        port = parts.port or {'http': 80, 'https': 443}.get(parts.scheme)
+    except ValueError:
+        return None
+    host = (parts.hostname or '').rstrip('.')
+    return (parts.scheme, host, port) if host else None
+
+
+def own_gateway(endpoint):
+    """Whether the GPU reservation secret may go to this endpoint: a private, loopback or Tailscale IP literal,
+    localhost, or exactly the origin of a gateway this machine set up (local_gateway() and the gateways `tare setup
+    --local-gateway` saved). A host that is local only by the form of its name (box.internal, a .ts.net name, a bare
+    name) gets no secret."""
+    host = (urlparse(endpoint).hostname or '').rstrip('.')
+    if private_address(host) or host == 'localhost':
+        return True
+    from .environment import read
+    from .native_catalog import local_gateway
+    try:
+        origins = [local_gateway()]
+    except ValueError:
+        origins = []
+    saved = (read().get('local_models') or {}).get('gateways')
+    origins += [g['origin'] for g in saved if isinstance(g, dict) and isinstance(g.get('origin'), str)] \
+        if isinstance(saved, list) else []
+    target = reach(endpoint)
+    return target is not None and target in {reach(value) for value in origins}
 
 
 def client_headers(deployment):
     """Who calls a local route, for the gateway's log and text queue: the frontend that set TARE_CLIENT (the TUI,
     tare serve; their sessions inherit it), else tare.tools. A process running under a GPU reservation (`tare gpu
     run`, TARE_GPU_RESERVATION) also shows its secret, so the node lets it use the reserved GPU (contract
-    gpu-lease/2). Other routes get nothing."""
+    gpu-lease/2), but only to one of this machine's own gateways (own_gateway). Other routes get nothing."""
     if not local(deployment):
         return {}
     headers = {'User-Agent': os.environ.get('TARE_CLIENT', 'tare.tools')[:120]}
-    if os.environ.get('TARE_GPU_RESERVATION'):
+    if os.environ.get('TARE_GPU_RESERVATION') and own_gateway(deployment['native_profile']['endpoint']):
         from compute_plane.gpu_lease_client import RESERVATION_HEADER
         headers[RESERVATION_HEADER] = os.environ['TARE_GPU_RESERVATION']
     return headers

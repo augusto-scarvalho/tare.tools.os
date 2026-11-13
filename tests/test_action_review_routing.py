@@ -21,7 +21,7 @@ def test_automatic_codex_uses_only_native_review_and_preserves_declared_policy(j
     assert h.host.config==saved
 
 
-@pytest.mark.parametrize('endpoint',['http://fixture','cli://claude','cli://agy'])
+@pytest.mark.parametrize('endpoint',['http://fixture.test','cli://claude','cli://agy'])
 def test_automatic_other_connections_use_jev_without_a_codex_dependency(jev_composition,endpoint):
     h=jev_composition
     h.host.deployment['native_profile']['endpoint']=endpoint
@@ -41,7 +41,7 @@ def test_automatic_other_connections_use_jev_without_a_codex_dependency(jev_comp
 ])
 def test_automatic_jev_keeps_review_and_denial_semantics(jev_composition,verdict,expected,executed):
     h=jev_composition
-    h.host.deployment['native_profile']['endpoint']='http://fixture'
+    h.host.deployment['native_profile']['endpoint']='http://fixture.test'
     h.choice[0]=verdict
     h.host.config['command_protection']=protection.prepare({'review':'auto','max_reviews':2},h.host.deployment)
     if executed:

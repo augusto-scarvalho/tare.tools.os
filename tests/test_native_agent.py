@@ -35,7 +35,7 @@ def response(protocol, name, args):
 
 
 class Client:
-    endpoint = 'http://fixture'
+    endpoint = 'http://fixture.test'  # a dotted public-looking name: the fixture stands for a hosted model
 
     def __init__(self, protocol='openai-chat', steps=(), after_model=lambda: None):
         self.protocol, self.steps = protocol, iter(steps)
@@ -56,7 +56,7 @@ class Client:
         return response(self.protocol, *step)
 
 
-def deployment(protocol='openai-chat', endpoint='http://fixture', *, role=None):
+def deployment(protocol='openai-chat', endpoint='http://fixture.test', *, role=None):
     parameters = ({'chat_template_kwargs': {'enable_thinking': True, 'thinking_budget': 256}}
                   if protocol == 'openai-chat' else {
                       'additionalModelRequestFields': {'thinking': {'type': 'enabled', 'budget_tokens': 256}}})
@@ -997,7 +997,7 @@ def test_a_prompt_capsule_is_chosen_by_deployment_then_endpoint_and_frozen(setup
     config, custody, root = setup
     registry = tmp_path/'capsules.json'
     monkeypatch.setattr(native_agent, 'PROMPT_CAPSULES', registry)
-    capsules = [{'id': 'pc/endpoint', 'version': '1', 'endpoint': 'http://fixture', 'role': '*',
+    capsules = [{'id': 'pc/endpoint', 'version': '1', 'endpoint': 'http://fixture.test', 'role': '*',
                  'system_append': 'Endpoint text.'},
                 {'id': 'pc/fixture', 'version': '1', 'deployment': 'fixture', 'role': 'implementer',
                  'system_append': 'Batch the reads.', 'instruction_append': 'A measured hint.'}]

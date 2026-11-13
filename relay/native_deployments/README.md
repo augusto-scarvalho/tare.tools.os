@@ -2,7 +2,10 @@
 
 Local profiles name `http://local-gateway:8080`; tare resolves it to this machine's model gateway
 (`TARE_LOCAL_GATEWAY`, then `local-gateway.json` in tare's storage with `{"origin": "http://host:port"}`,
-else `http://127.0.0.1:8080`). The slop.cpp fleet profiles use `slop-fleet-v1`.
+else `http://127.0.0.1:8080`). A host name works there too and its models count as local, like any endpoint
+on a private or Tailscale address, a name without a dot or one ending in `.local`, `.internal`, `.lan`,
+`.home.arpa`, `.localhost` or `.ts.net` (`relay/challenger.py` `local`, no DNS query). The slop.cpp fleet profiles
+use `slop-fleet-v1`.
 `local-qwen` (and the `qwen38` alias) is the native default and resolves to `qwen38-gsq.json`; the slop
 Qwen3.8 Q4_K_XL profiles (`qwen38.json`, `qwen38-no-cache.json`) were retired on 2026-09-29. Bedrock Opus
 uses the direct Converse profile.

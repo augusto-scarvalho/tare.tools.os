@@ -151,7 +151,7 @@ def test_resident_model_does_not_grant_gpu(monkeypatch, lease):
     monkeypatch.setattr('relay.challenger.local', lambda d: True)
     status = {'current_model': 'tiny', 'gpu_coordination': lease}
     monkeypatch.setattr(request, 'urlopen', lambda *a, **kw: io.BytesIO(json.dumps(status).encode()))
-    why = engine.local_gpu_busy({'native_profile': {'endpoint': 'http://fixture/v1'}})
+    why = engine.local_gpu_busy({'native_profile': {'endpoint': 'http://fixture.test/v1'}})
     assert why is not None
     assert why.diagnostic['code'] in {'GPU_BUSY', 'GPU_RESERVED'}
 
@@ -160,7 +160,7 @@ def test_resident_model_does_not_grant_gpu(monkeypatch, lease):
 def test_real_availability_filters_before_any_assessment(monkeypatch, blocked):
     from relay import native_catalog, native_generation
     profile = {'id': 'fixture', 'native_profile': {'protocol': 'openai-chat', 'model': 'fixture',
-                                                 'endpoint': 'http://fixture/v1'}}
+                                                 'endpoint': 'http://fixture.test/v1'}}
     if blocked == 'credential':
         profile['native_credential_env'] = 'FIXTURE_MISSING_KEY'
     monkeypatch.delenv('FIXTURE_MISSING_KEY', raising=False)

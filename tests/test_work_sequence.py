@@ -38,7 +38,7 @@ def sequence(host, monkeypatch):
     save_graph(data)
     calls=[]
     class Client:
-        endpoint='http://fixture'
+        endpoint='http://fixture.test'
         def post(self, path, body, control):
             if path.endswith('/count-tokens'): return {'inputTokens':500}
             calls.append(body)
