@@ -1,8 +1,10 @@
 """Local session composition of existing review, exact guard and Windows isolation."""
+import ast
 from contextlib import nullcontext
 from copy import deepcopy
 import hashlib
 import json
+import ntpath
 import os
 from pathlib import Path
 import secrets
@@ -588,7 +590,7 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
 
 def verification_limitation(value):
     """A check the MXC sandbox stopped (the loopback socket pair hang, or pytest tests that each failed on a
-    connection the sandbox denied) is inconclusive, never a failing-code verdict."""
+    connection or a secret file the sandbox denied) is inconclusive, never a failing-code verdict."""
     output = str(value.get('output') or '')
     backend = (value.get('process') or {}).get('confinement', {}).get('backend')
     if (value.get('returncode') and backend == 'windows-mxc'
@@ -609,13 +611,36 @@ def verification_limitation(value):
         raised = '\n'.join(line for line in section.splitlines() if line.startswith('E '))
         return '[WinError 10013]' in raised or ('[WinError 5]' in raised and 'windows_events.py' in section
                                                 and 'finish_connect' in section)
+    def secret(line):
+        # A permission error on a path whose own name the sandbox denies (`.env`, `.npmrc`...), read back from the
+        # message's repr. Another exception, wording or name, or a path that does not parse, is not this.
+        found = re.fullmatch(r'PermissionError: \[(?:Errno 13|WinError 5)\] (?:Permission|Access is) denied: '
+                             r'''(['"].*['"])''', line)
+        try:
+            path = ast.literal_eval(found[1]) if found else None
+        except (ValueError, SyntaxError):
+            return False
+        return isinstance(path, str) and sandbox_secrets.secret(ntpath.basename(path),
+                                                                ntpath.basename(ntpath.dirname(path)))
+    def kind(section):
+        raised = [line[1:].strip() for line in section.splitlines() if line.startswith('E ') and line[1:].strip()]
+        return 'network' if denied(section) else 'secret' if raised and all(map(secret, raised)) else 'failure'
     sections = [] if value.get('output_truncated') else pytest_failures(output)
-    if value.get('returncode') and backend == 'windows-mxc' and sections and all(map(denied, sections)):
+    kinds = {kind(section) for section in sections}
+    if not (value.get('returncode') and backend == 'windows-mxc' and sections and 'failure' not in kinds):
+        return None
+    if kinds == {'network'}:
         return ('ISOLATION_NETWORK_DENIED: every failing test of this check failed because the sandbox denied a '
             'network connection on this machine (loopback included), so these tests cannot be judged inside the '
             'sandbox. This does not establish failing test assertions. Do not remove required checks, change '
             'tests to hide this limitation, or silently enable host networking.')
-    return None
+    both = 'network' in kinds
+    return ('ISOLATION_SECRET_DENIED: every failing test of this check failed because the sandbox denied it a secret '
+        'file' + (' or a network connection' if both else '') + ': the sandbox does not let commands read secret '
+        'files such as .env, so these tests cannot be judged inside the sandbox. This does not establish failing '
+        'test assertions. Do not copy secrets into other files, rename them or change tests to hide this'
+        + (', or silently enable host networking' if both else '') + '; the user decides whether such a check may '
+        'run outside the sandbox.')
 
 
 def pytest_failures(output):

@@ -400,6 +400,70 @@ def test_a_check_whose_every_failure_is_a_denied_connection_is_a_limitation(outp
     assert ('focused: ISOLATION_NETWORK_DENIED:' in receipt) is limited  # told apart from a timeout by its code
 
 
+# A test reading the project's .env inside the real sandbox (2026-11-13, Python 3.12, pytest 9.1).
+DOTENV = ('_______________________ test_settings_from_dotenv _______________________\n\n'
+          '    def test_settings_from_dotenv():\n>       assert "KEY" in Path(".env").read_text()\n\n'
+          'envtests\\test_reads_env.py:4: \n'
+          '_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\n'
+          ">       return io.open(self, mode, buffering, encoding, errors, newline)\n"
+          "E       PermissionError: [Errno 13] Permission denied: '.env'\n\n"
+          '..\\Lib\\pathlib.py:1013: PermissionError\n')
+
+
+def denied_read(path, error='[Errno 13] Permission denied'):
+    return DOTENV.replace("[Errno 13] Permission denied: '.env'", f'{error}: {path}')
+
+
+@pytest.mark.parametrize('output,limited', [
+    (pytest_report(DOTENV), True),
+    (pytest_report(denied_read("'C:\\\\project\\\\pkg\\\\.npmrc'", '[WinError 5] Access is denied')), True),
+    (pytest_report(denied_read("'keys/.ssh'", '[WinError 5] Access is denied')), True),  # listing a denied folder
+    (pytest_report(denied_read("'deploy\\\\.docker\\\\config.json'")), True),
+    (pytest_report(denied_read('"it\'s\\\\.ENV.local"')), True),  # repr's other quotes, any case
+    (pytest_report(DOTENV, DOTENV.replace('test_settings', 'test_other')), True),
+    (pytest_report(DOTENV.replace('test_settings', 'ERROR at setup of test_settings'), banner='ERRORS'), True),
+    (pytest_report(OWN_FILE), False),  # an ordinary file of the project
+    (pytest_report(denied_read("'config\\\\.env.example'")), False),  # samples stay readable: not the sandbox
+    (pytest_report(denied_read("'.ssh\\\\config'")), False),  # only the denied path's own name counts
+    (pytest_report(denied_read("'.env")), False),  # a path that does not parse
+    (pytest_report(DOTENV, ASSERTION), False),  # one real failure keeps the whole check red
+    (pytest_report(ASSERTION.replace('assert (1 + 1) == 3', "AssertionError: KEY missing from '.env'")), False),
+    (pytest_report(DOTENV.replace('E       Perm', 'E       RuntimeError: wrapped\nE       Perm')), False),
+    (pytest_report(DOTENV.replace('E       ', '        ')), False),  # nothing raised that pytest showed
+    ("PermissionError: [Errno 13] Permission denied: '.env'", False),  # no sections
+    (pytest_report(DOTENV, end=False), False)])
+def test_a_check_whose_every_failure_is_a_denied_secret_is_a_limitation(output, limited, tmp_path):
+    from relay import work_units
+    import subprocess
+    value = {'returncode': 1, 'output': output, 'process': {'confinement': {'backend': 'windows-mxc'}}}
+    diagnostic = protection.verification_limitation(value)
+    assert bool(diagnostic) is limited
+    if limited:
+        assert diagnostic.startswith('ISOLATION_SECRET_DENIED: ') and 'secret files such as .env' in diagnostic
+        assert 'network' not in diagnostic and 'the user decides' in diagnostic
+        for changed in ({'output_truncated': True}, {'returncode': 0},
+                        {'process': {'confinement': {'backend': 'codex-mxc'}}}):
+            assert protection.verification_limitation({**value, **changed}) is None
+    done = subprocess.CompletedProcess(['fixture'], 1, output, '')
+    done.execution_limitation = diagnostic
+    token = work_units.CHECK_PORT.set(lambda *a, **kw: done)
+    try:
+        status, receipt = work_units.run_checks(tmp_path, {'focused': ['fixture']})
+    finally:
+        work_units.CHECK_PORT.reset(token)
+    assert status == ('inconclusive' if limited else 'red')
+    assert ('focused: ISOLATION_SECRET_DENIED:' in receipt) is limited
+
+
+def test_denied_secrets_and_connections_in_one_check_are_one_limitation():
+    value = {'returncode': 1, 'output': pytest_report(WSAEACCES, DOTENV),
+             'process': {'confinement': {'backend': 'windows-mxc'}}}
+    diagnostic = protection.verification_limitation(value)
+    assert diagnostic.startswith('ISOLATION_SECRET_DENIED: ') and 'a secret file or a network connection' in diagnostic
+    assert 'silently enable host networking' in diagnostic
+    assert protection.verification_limitation({**value, 'output': pytest_report(WSAEACCES, DOTENV, ASSERTION)}) is None
+
+
 def test_cancelled_control_sends_no_native_request_and_runs_no_effect(host):
     mediator=host.build();host.control.cancellation.cancel()
     with pytest.raises(ActionRefused):mediator.execute(host.facts(),host.effect)

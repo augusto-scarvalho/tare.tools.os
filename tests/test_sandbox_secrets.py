@@ -134,3 +134,29 @@ def test_a_secret_that_cannot_be_held_refuses_the_binding_and_releases_the_rest(
     with pytest.raises(ValueError, match=r'could not hold .*missing.*protected commands are refused'):
         sandbox_secrets.Hold([str(tmp_path/'a/b/.env'), str(tmp_path/'a/missing/.env')])
     assert rename(tmp_path/'a/b', tmp_path/'a/moved')
+
+
+def test_the_walk_needs_nothing_only_windows_has(tmp_path, monkeypatch):
+    """CI's Linux runners walk the trees of tests that pretend to be Windows: no Windows-only name may be needed."""
+    import contextlib
+    import stat
+    from types import SimpleNamespace
+    tree(tmp_path, ['.env', 'a/.npmrc', 'a/b/c.txt'], ['a/.ssh'])
+    expected = sandbox_secrets.find([tmp_path], git=False)
+    for name in [n for n in dir(stat) if n.startswith(('IO_REPARSE_TAG_', 'FILE_ATTRIBUTE_'))]:
+        monkeypatch.delattr(stat, name)
+    scandir = os.scandir
+
+    class Entry:  # what Linux gives: a stat result without st_reparse_tag
+        def __init__(self, entry): self.entry, self.name, self.path = entry, entry.name, entry.path
+        def is_dir(self, **options): return self.entry.is_dir(**options)
+        def is_symlink(self): return self.entry.is_symlink()
+        def stat(self, **options): return SimpleNamespace()
+
+    @contextlib.contextmanager
+    def listing(path):
+        with scandir(path) as entries:
+            yield [Entry(entry) for entry in entries]
+    monkeypatch.setattr(os, 'scandir', listing)
+    assert sandbox_secrets.find([tmp_path], git=False) == expected and len(expected) == 3
+    assert sandbox_secrets.movable(expected, [str(tmp_path)]) == [str(tmp_path/'a/.npmrc'), str(tmp_path/'a/.ssh')]

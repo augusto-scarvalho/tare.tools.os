@@ -115,8 +115,14 @@ tare finds them when the command or check starts; a secret created later is not
 covered. A command that names one is refused; a program that opens one gets
 `Permission denied` (`Access is denied` in `cmd` and PowerShell), and `git status`
 warns that it could not open a denied folder. A test that reads `.env` therefore
-fails in the sandbox, and tare reports that failure as a failing check, not as a
-sandbox limitation: give the test its own settings or a sample file. A project
+fails in the sandbox with `PermissionError`. A pytest check whose every failure
+is such a denied secret (or a denied connection, above) is reported as
+inconclusive, `ISOLATION_SECRET_DENIED`, not as failing code; one other failure
+in it keeps the check red. The model is told not to copy or rename the secret or
+change the test to hide this: give the test its own settings or a sample file, or
+decide yourself whether that check may run outside the sandbox. Like a timeout,
+an inconclusive session check settles nothing: a change whose own checks pass is
+then applied only when its unit's tests cover every changed file. A project
 with more than 32 such paths, or too large to search (100,000 files and folders,
 32 levels; dependencies, virtual environments and caches are skipped), refuses
 protected commands with a message that says so: move secrets out of the project

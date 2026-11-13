@@ -7,7 +7,6 @@ read the secret at its new path (probed 2026-11-13), so the host holds such secr
 import ctypes
 import os
 from pathlib import Path
-import stat
 import weakref
 
 # Named alone, these hold credentials (compared case-insensitively). `.env.*` is a secret too, except the samples.
@@ -18,6 +17,8 @@ NAMES = frozenset({'.env', '.ssh', '.aws', '.codex', '.npmrc', '.pypirc', '.netr
 SAMPLES = ('.example', '.sample', '.template', '.dist', '.defaults')
 SKIPPED = frozenset({'node_modules', '__pycache__'})  # and folders holding pyvenv.cfg or CACHEDIR.TAG
 MAX_ENTRIES, MAX_DEPTH, MAX_DENIED = 100_000, 32, 32  # MAX_DENIED: MxcPolicy's limit per path group
+# IO_REPARSE_TAG_MOUNT_POINT, which `stat` names on Windows only: CI's Linux runners walk test trees too.
+JUNCTION = 0xA0000003
 
 
 def secret(name, folder):
@@ -54,7 +55,7 @@ def find(roots, *, git):
         for entry in entries:
             name = entry.name.lower()
             directory = entry.is_dir(follow_symlinks=False) and not (entry.is_symlink() or getattr(
-                entry.stat(follow_symlinks=False), 'st_reparse_tag', 0) == stat.IO_REPARSE_TAG_MOUNT_POINT)
+                entry.stat(follow_symlinks=False), 'st_reparse_tag', 0) == JUNCTION)
             if name == '.git':
                 if git and (directory or depth == 0):
                     found.add(entry.path)

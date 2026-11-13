@@ -93,7 +93,9 @@ the independent Work auditor still checks the delivery separately.
 Whatever the review, a protected command cannot read the project's secrets: `.env`
 files (not `.env.example` and other samples), `.ssh`, `.aws`, `.npmrc`, `.pypirc`
 and similar credential files and folders, at any depth and in granted folders. It
-gets `Permission denied`, so a test that reads `.env` fails there. While such a
+gets `Permission denied`, so a test that reads `.env` fails there; when that is
+the only kind of failure, the check is reported as inconclusive
+(`ISOLATION_SECRET_DENIED`), not as broken code. While such a
 command runs, you cannot rename, move or delete the folders above one that lies
 inside an editable folder (`services` and `services/api` for `services/api/.env`
 when the whole project is editable). A project with
