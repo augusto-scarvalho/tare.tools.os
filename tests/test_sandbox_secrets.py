@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -95,12 +96,16 @@ def test_the_result_is_sorted_and_stable(tmp_path):
     assert sandbox_secrets.find([tmp_path, tmp_path/'p1'], git=False) == first
 
 
-def test_more_secrets_than_the_sandbox_can_deny_refuse_the_binding(tmp_path):
+def test_more_secrets_than_the_sandbox_can_deny_refuse_the_binding(tmp_path, monkeypatch):
     tree(tmp_path, [f'p{n:02d}/.env' for n in range(sandbox_secrets.MAX_DENIED)])
     assert len(sandbox_secrets.find([tmp_path], git=False)) == 32
     tree(tmp_path, ['.git/config'])
     with pytest.raises(ValueError, match=r'33 secret files or folders \(Git folders included\).*the 32 paths'):
         sandbox_secrets.find([tmp_path], git=True)
+    for platform, sandbox in (('win32', 'the Windows sandbox'), ('linux', 'the sandbox')):
+        monkeypatch.setattr(sandbox_secrets, 'sys', SimpleNamespace(platform=platform))
+        with pytest.raises(ValueError, match=f'the 32 paths {sandbox} can deny'):
+            sandbox_secrets.find([tmp_path], git=True)
 
 
 def test_a_walk_cut_short_refuses_rather_than_claim_protection(tmp_path, monkeypatch):

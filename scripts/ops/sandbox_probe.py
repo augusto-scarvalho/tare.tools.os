@@ -42,7 +42,7 @@ def remove(folder):
         for name in list(directories):
             link = os.path.join(path, name)
             if os.path.islink(link) or getattr(os.lstat(link), 'st_reparse_tag', 0):
-                os.rmdir(link)
+                (os.rmdir if os.name == 'nt' else os.unlink)(link)
                 directories.remove(name)
 
     def unlock(function, path, _):
@@ -83,7 +83,8 @@ def projects(storage, outside):
         'Cargo.toml': '[package]\nname = "probe"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\n',
         'src/lib.rs': 'pub fn two() -> i32 { 2 }\n\n#[test]\nfn adds() {\n    assert_eq!(two() + 1, 3);\n}\n',
     })
-    # pnpm's layout: node_modules/pkg is a junction into node_modules/.pnpm, where pkg finds its peer through another.
+    # pnpm's layout: node_modules/pkg is a link into node_modules/.pnpm (a junction on Windows, as pnpm makes there),
+    # where pkg finds its peer through another.
     store = pnpm/'node_modules'/'.pnpm'
     write(pnpm, {
         'package.json': json.dumps({'name': 'pnpm-like', 'version': '1.0.0', 'private': True}),
@@ -94,10 +95,12 @@ def projects(storage, outside):
         'node_modules/.pnpm/peer@1.0.0/node_modules/peer/package.json': json.dumps({'name': 'peer', 'version': '1.0.0'}),
         'node_modules/.pnpm/peer@1.0.0/node_modules/peer/index.js': "module.exports = { name: 'peer' };\n",
     })
-    import _winapi  # Windows only, as the sandbox is
-    _winapi.CreateJunction(str(store/'pkg@1.0.0'/'node_modules'/'pkg'), str(pnpm/'node_modules'/'pkg'))
-    _winapi.CreateJunction(str(store/'peer@1.0.0'/'node_modules'/'peer'),
-                           str(store/'pkg@1.0.0'/'node_modules'/'peer'))
+    if os.name == 'nt':
+        from _winapi import CreateJunction as link
+    else:
+        link = os.symlink
+    link(str(store/'pkg@1.0.0'/'node_modules'/'pkg'), str(pnpm/'node_modules'/'pkg'))
+    link(str(store/'peer@1.0.0'/'node_modules'/'peer'), str(store/'pkg@1.0.0'/'node_modules'/'peer'))
     drive = os.environ.get('SystemDrive', 'C:') + '\\'
     return {flat: [
         ('python-test-passes', ['python', '-m', 'unittest', 'test_ok'], 'green', False),

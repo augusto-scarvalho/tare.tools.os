@@ -1,13 +1,15 @@
-"""The secret files and folders a protected command must not read, found once when its Windows sandbox is bound.
+"""The secret files and folders a protected command must not read, found once when its sandbox is bound.
 
 Stdlib only, so its tests run without the Kernel's FlatBuffers. A secret created after binding is not covered.
-MXC denies a path, not a file: a command that could rename a folder between a write scope and a nested secret would
-read the secret at its new path (probed 2026-11-13), so the host holds such secrets open while the binding lives.
+On Windows, MXC denies a path, not a file: a command that could rename a folder between a write scope and a nested
+secret would read the secret at its new path (probed 2026-11-13), so the host holds such secrets open while the
+binding lives.
 """
 import ctypes
 import os
 from pathlib import Path
 import stat
+import sys
 import weakref
 
 # Named alone, these hold credentials (compared case-insensitively). `.env.*` is a secret too, except the samples.
@@ -100,7 +102,7 @@ def find(roots, *, git, modules=None):
     if len(found) > MAX_DENIED:
         shown, kind = ', '.join(sorted(found)[:3]), ' (Git folders included)' if git else ''
         raise ValueError(f'The project has {len(found)} secret files or folders{kind}, such as {shown}: '
-            f'more than the {MAX_DENIED} paths the Windows sandbox can deny, so '
+            f'more than the {MAX_DENIED} paths the {"Windows " if sys.platform == "win32" else ""}sandbox can deny, so '
             'protected commands are refused rather than leave some readable. Move secrets out of the project (and '
             'out of the folders granted to it) or open a smaller folder as the project.')
     return sorted(found)

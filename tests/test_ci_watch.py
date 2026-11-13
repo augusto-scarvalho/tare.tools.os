@@ -1451,6 +1451,17 @@ def test_the_sandbox_probe_exits_3_with_its_json_on_a_host_without_the_sandbox(t
     assert not list(tmp_path.iterdir())
 
 
+def test_the_sandbox_probe_builds_its_linked_projects_and_removes_them_on_this_platform(tmp_path):
+    import runpy
+    from pathlib import Path
+    probe = runpy.run_path(str(Path(ci_watch.__file__).parents[1]/'scripts'/'ops'/'sandbox_probe.py'))
+    roots = probe['projects'](tmp_path/'storage', tmp_path/'outside')  # pnpm's links: junctions on Windows, else symlinks
+    pnpm = next(root for root in roots if (root/'node_modules'/'.pnpm').is_dir())
+    assert (pnpm/'node_modules'/'pkg'/'index.js').is_file()  # through the link
+    probe['remove'](tmp_path/'storage')  # each link first, then the rest
+    assert not (tmp_path/'storage').exists()
+
+
 OPEN_PR = {'number': 7, 'url': 'https://github.com/me/os/pull/7', 'title': 'Touch the sandbox', 'headRefName': 'feature'}
 
 

@@ -94,7 +94,63 @@ def test_verifier_runtime_includes_the_virtual_environments_site_packages(tmp_pa
     (environment/'Scripts').mkdir(parents=True)
     (environment/'pyvenv.cfg').write_text('home = fixture\n')
     python = environment/'Scripts/python.exe'; python.write_bytes(b'fixture; not executed')
-    assert protection.verifier_runtime(python) == environment
+    assert protection.verifier_runtime(python) == {environment}
+
+
+@pytest.mark.parametrize('platform', ['win32', 'linux'])
+def test_a_linked_program_keeps_its_path_on_posix_and_is_resolved_on_windows(tmp_path, monkeypatch, platform):
+    # A Linux virtual environment's python is a link to the base interpreter: resolving it runs the check without the
+    # environment. A folder link stands in for it here, since Windows makes one without privilege.
+    from test_sandbox_secrets import folder_link
+    base = tmp_path/'base'/'bin'; base.mkdir(parents=True)
+    (base/'python').write_bytes(b'fixture; not executed')
+    environment = tmp_path/'project-env'; environment.mkdir()
+    (environment/'pyvenv.cfg').write_text('home = fixture\n')
+    folder_link(base, environment/'bin')
+    python = environment/'bin'/'python'
+    monkeypatch.setattr(protection, 'sys', SimpleNamespace(platform=platform))
+    kept = str(python) if platform == 'linux' else str((base/'python').resolve())
+    assert protection.prepared_checks({'check': [str(python), '-q']}) == {'check': [kept, '-q']}
+    assert protection.sandbox_verifiers({'check': {'argv': [str(python)]}}, tmp_path)['check']['argv'] == [kept]
+    # Both installations are readable on POSIX: the link's environment and the target's own folder.
+    assert protection.verifier_runtime(python) == {base.resolve(), *([environment] if platform == 'linux' else [])}
+    with pytest.raises(FileNotFoundError):
+        protection.prepared_checks({'check': [str(environment/'bin'/'missing')]})
+
+
+@pytest.mark.parametrize('platform', ['win32', 'linux'])
+def test_a_linked_executable_is_a_command_input_only_on_posix(host, platform):
+    link = host.runtime/'python3'
+    try:
+        link.symlink_to(host.executable)
+    except OSError:
+        pytest.skip('this host does not permit file symlinks')
+    mediator = host.build()
+    protection.sys.platform = platform  # after binding: the factory refuses another platform before it binds
+    facts = host.facts(args=[str(link), '-c', 'print(1)'])
+    if platform == 'win32':
+        with pytest.raises(ActionRefused, match='identity is unavailable'):
+            mediator.execute(facts, host.effect)
+    else:  # its target's path and digest are what the review saw
+        mediator.execute(facts, host.effect)
+        assert host.effects == ['effect']
+    mediator.close()
+
+
+def test_a_binding_holds_secrets_open_on_windows_only(host, monkeypatch):
+    # bubblewrap masks a secret's own entry, so a rename carries the mask along; Hold uses Windows handles.
+    (host.root/'api').mkdir(); (host.root/'api'/'.env').write_text('FAKE_SECRET_FIXTURE')
+    held = []
+    monkeypatch.setattr(protection.sandbox_secrets, 'Hold',
+                        lambda paths: held.append(list(paths)) or SimpleNamespace(close=lambda: None))
+    for platform in ('win32', 'linux'):
+        protection.sys.platform = 'win32'  # the factory refuses another platform before it binds
+        bind = protection.factory(host.config, host.deployment, host.custody, 'Run the owned offline check once.',
+                                  'invocation')
+        protection.sys.platform = platform
+        bind(session_id='session', binding=host.binding, control=host.control, config=host.config,
+             custody=host.custody, scratch=host.custody/'scratch', capabilities=host.capabilities).close()
+    assert held == [[str(host.root.resolve()/'api'/'.env')], []]
 
 
 @pytest.mark.parametrize('private,always',[(True,False),(True,True),(False,False)])
@@ -462,6 +518,37 @@ def test_denied_secrets_and_connections_in_one_check_are_one_limitation():
     assert diagnostic.startswith('ISOLATION_SECRET_DENIED: ') and 'a secret file or a network connection' in diagnostic
     assert 'silently enable host networking' in diagnostic
     assert protection.verification_limitation({**value, 'output': pytest_report(WSAEACCES, DOTENV, ASSERTION)}) is None
+
+
+# The Linux sandbox (bubblewrap) gives these errors (measured 2026-11-13): an outside address is unreachable, a host
+# name does not resolve, a masked secret is EACCES. It has its own loopback, so a refused connection is not its alone.
+def linux_error(error):
+    return WSAEACCES.replace('PermissionError: [WinError 10013] An attempt was made to access a socket in a way '
+                             'forbidden by its access permissions', error)
+
+
+UNREACHABLE = linux_error('OSError: [Errno 101] Network is unreachable')
+NO_NAME = linux_error('socket.gaierror: [Errno -3] Temporary failure in name resolution')
+REFUSED = linux_error('ConnectionRefusedError: [Errno 111] Connection refused')
+
+
+@pytest.mark.parametrize('output,code', [
+    (pytest_report(UNREACHABLE), 'ISOLATION_NETWORK_DENIED'),
+    (pytest_report(NO_NAME, UNREACHABLE), 'ISOLATION_NETWORK_DENIED'),
+    (pytest_report(denied_read("'/home/u/project/.env'")), 'ISOLATION_SECRET_DENIED'),
+    (pytest_report(UNREACHABLE, denied_read("'/home/u/project/.env'")), 'ISOLATION_SECRET_DENIED'),
+    (pytest_report(REFUSED), None),  # the test's own server, or a service the sandbox cannot reach: red, it asks
+    (pytest_report(UNREACHABLE, ASSERTION), None),
+    (pytest_report(WSAEACCES), None),  # Windows' errors are not this sandbox's
+    ('asyncio socket.py in _fallback_socketpair in accept Timeout', None)])  # MXC's socket pair hang only
+def test_the_linux_sandbox_has_its_own_errors_and_wording(output, code):
+    value = {'returncode': 1, 'output': output, 'process': {'confinement': {'backend': 'linux-bwrap'}}}
+    diagnostic = protection.verification_limitation(value) or ''
+    assert diagnostic.split(':')[0] == (code or '')
+    if code == 'ISOLATION_NETWORK_DENIED':
+        assert 'its own loopback' in diagnostic and 'loopback included' not in diagnostic
+        windows = {**value, 'process': {'confinement': {'backend': 'windows-mxc'}}}
+        assert protection.verification_limitation(windows) is None  # and MXC's table is unchanged
 
 
 def test_cancelled_control_sends_no_native_request_and_runs_no_effect(host):

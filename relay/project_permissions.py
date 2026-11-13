@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+import sys
 
 from compute_plane.native_journal import custody_lock, regular, save_json
 from tare_tools_agent_runtime import ConversationRejected
@@ -225,7 +226,8 @@ def check_isolation(defaults, protection, saved=False, read_only=None):
                 if defaults.get('checks_outside_sandbox') else '; in this read-only project tare asks you first.'),
                 'A local implementer is refused on this system: a local model runs only where its checks are isolated.',
                 *([LOCAL_WORK_ASKED] if defaults.get('checks_outside_sandbox') else [])]
-    return ['Checks: in the Windows sandbox, in every mode: no network, the project and its runtimes read only, '
+    return ['Checks: in the '+('Linux' if sys.platform == 'linux' else 'Windows')+' sandbox, in every mode: no '
+            'network, the project and its runtimes read only, '
             'writes only to the edit paths and scratch, secret files denied. No model reviews them: tare registered '
             'them, no model typed them.',
             'Checks the sandbox blocks: ' + ('run outside it without asking (saved for this project; clear "Run '

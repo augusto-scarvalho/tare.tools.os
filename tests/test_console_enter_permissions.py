@@ -188,13 +188,15 @@ def test_local_only_dialog_for_an_audit_that_did_not_accept_starts_on_do_not_app
 
 @pytest.mark.parametrize('keys,choice', [(('enter',), 'deny'), (('shift+tab', 'shift+tab', 'enter'), 'once'),
                                          (('shift+tab', 'enter'), 'project')])
-def test_a_check_the_sandbox_blocked_asks_before_running_outside_it_and_starts_on_do_not_run(tmp_path, keys, choice):
+def test_a_check_the_sandbox_blocked_asks_before_running_outside_it_and_starts_on_do_not_run(tmp_path, monkeypatch, keys,
+                                                                                           choice):
     import json
     from types import SimpleNamespace
     from textual.widgets import Button, Static
     from relay import conversation_permissions as permissions
     from relay.project_permissions import permissions_view
     from relay.turn_engine import checks_outside_sandbox
+    monkeypatch.setattr(permissions, 'sys', SimpleNamespace(platform='win32'))  # its network wording
     project, session = tmp_path/'project', tmp_path/'session'
     project.mkdir(); (session/'execution-permission').mkdir(parents=True)
     argv = ['C:/venv/python.exe', '-m', 'pytest', '-q']

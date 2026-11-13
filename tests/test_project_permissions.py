@@ -270,9 +270,11 @@ def test_panel_says_when_the_local_judge_reviews_and_what_happens_when_it_cannot
 
 @pytest.mark.parametrize('available', [True, False])
 def test_the_panel_says_where_checks_run_whatever_the_system_commands_line(tmp_path, monkeypatch, available):
-    from relay import command_protection
+    from types import SimpleNamespace
+    from relay import command_protection, project_permissions
     from relay.turn_engine import set_checks_outside_sandbox, set_project_permission_mode
     monkeypatch.setattr(command_protection, 'sandbox_available', lambda: available)
+    monkeypatch.setattr(project_permissions, 'sys', SimpleNamespace(platform='win32'))
     root=tmp_path/'project';root.mkdir()
     def text(**kw):
         return permissions_view(tmp_path/'preferences',root,tmp_path/'control',
@@ -281,6 +283,9 @@ def test_the_panel_says_where_checks_run_whatever_the_system_commands_line(tmp_p
     assert 'Configured checks run programs' not in plain and 'System commands: Disabled' in plain
     if available:
         assert 'Checks: in the Windows sandbox, in every mode: no network' in plain
+        project_permissions.sys.platform = 'linux'
+        assert 'Checks: in the Linux sandbox, in every mode: no network' in text()
+        project_permissions.sys.platform = 'win32'
         assert 'Checks the sandbox blocks: tare asks you before running one outside it' in plain
         assert "does not apply to checks of a local model's work" not in plain
         set_checks_outside_sandbox(root,True)

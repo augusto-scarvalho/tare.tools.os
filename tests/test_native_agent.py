@@ -469,7 +469,9 @@ def test_without_protection_a_sessions_verify_runs_through_the_sandboxed_checks_
         assert seen == []
         return
     verifiers, argv = seen
-    assert verifiers['unit']['argv'][0] == str(Path(sys.executable).resolve()) and argv == tuple(verifiers['unit']['argv'])
+    # POSIX keeps a linked interpreter's path (a virtual environment's python is a link); Windows resolves it.
+    program = str(Path(sys.executable).resolve()) if sys.platform == 'win32' else os.path.abspath(sys.executable)
+    assert verifiers['unit']['argv'][0] == program and argv == tuple(verifiers['unit']['argv'])
     saved = json.loads((custody/'native-agent.json').read_text())['config']['verifiers']
     assert saved == config['verifiers']  # the session's saved checks are unchanged
 
