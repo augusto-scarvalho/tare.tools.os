@@ -240,6 +240,32 @@ def test_no_adapter_preserves_the_ordinary_result_handler_path():
 
 
 
+@pytest.mark.parametrize('answer', ['machine', 'human', 'human_after_change'])
+def test_a_late_human_answer_gets_a_fresh_window_for_the_same_command_only(answer):
+    facts, control, current, claims, effects, issued, mediator, effect = setup()
+    original = mediator()
+    window, assessed = [200], []
+    class Broker:
+        def assess(self, action, public, live):
+            assessed.append(action.action_sha256)
+            if answer != 'machine':  # the user answered after the window; the host forgets it (command_protection)
+                window[0] = 300
+            if answer == 'human_after_change':
+                current[0] = 'e'*64  # the executable changed while the user read the question
+            return ActionDecision(True, 'fixture')
+    host = mediator(broker=Broker(),
+                    snapshot_factory=lambda f, c: replace(original.snapshot_factory(f, c), deadline=window[0]))
+    if answer == 'human_after_change':
+        with pytest.raises(ActionRefused, match='changed while it was assessed'):
+            host.execute(facts, effect)
+        assert not issued and not claims and not effects
+        return
+    assert host.execute(facts, effect) == {'exit_code': 0} and effects == ['once']
+    fresh = host.snapshot_factory(facts, control)
+    assert issued == [fresh.action_sha256] and fresh.deadline == window[0]
+    assert (issued == assessed) is (answer == 'machine')  # a machine review keeps its window and its exact action
+
+
 def test_mandatory_external_review_cannot_be_lost_before_an_effect():
     facts,control,current,claims,effects,issued,mediator,effect=setup()
     class RequiresReview:

@@ -92,6 +92,12 @@ needs it and it is unavailable, tare asks for approval (or honors YOLO); it does
 load another model over an active GPU lease. Bulk hosted-Jev optimizations remain off
 in local-only mode; their existing deterministic/explorer fallback handles the work.
 
+**Run this command?** waits for your answer: it does not expire, and while it is open the turn's
+time stops (the implementer's and the conversation's) and so does the elapsed time shown. Only your
+answer or cancelling the turn closes it. After **Allow for this task**, tare checks that the command,
+its folder, inputs and context are still exactly what you were shown and runs it within a fresh short
+review window (60 seconds by default); anything changed, and it does not run.
+
 From a source install, run `tare PATH` in the activated environment; its history
 goes to `.reconciliation` next to the clone unless `TARE_STORAGE_ROOT` is set.
 

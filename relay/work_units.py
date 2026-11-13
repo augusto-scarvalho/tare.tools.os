@@ -1198,13 +1198,15 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                         outcome=run_session(None,None,session_path,resume=True,follow_up=note,
                             message_id='folder-granted-'+uuid.uuid4().hex, invocation_limits=selected_limits,
                             **({'receive_message':receive_advice} if handoff is not None else {}),
-                            **({'cancellation': control.cancellation} if control is not None else {}))
+                            **({'cancellation': control.cancellation, 'parent_clock': control.monotonic}
+                               if control is not None else {}))
                         row['resumed_session']=str(session_path)
                     else:
                         outcome = run_session(child, deployment, session_path, instruction,
                                               limits=selected_limits, delegated_leaf=True,
                                               **({'receive_message':receive_advice} if handoff is not None else {}),
-                                              **({'cancellation': control.cancellation} if control is not None else {}))
+                                              **({'cancellation': control.cancellation, 'parent_clock': control.monotonic}
+                                                 if control is not None else {}))
                     keep_tree=False
                 if selected('money'):
                     from .native_spend import outcome_commitment

@@ -26,6 +26,7 @@ class ProjectPermissions:
             self._command_permission_panel=None
             try:answer(root,request['id'],choice or 'deny')
             except (ValueError,OSError) as error:
+                self._command_permission_seen=None  # the question does not expire: show it again while it waits
                 if self.busy and not self.cancel_requested:self.notify(str(error),severity='warning')
         self.push_screen(self._command_permission_panel,decided)
 
