@@ -91,6 +91,14 @@ Give the assistant a URL in an ordinary conversation. The coordinator can use
 model or a delegated researcher. Returned text includes the source URL, title,
 content hash, fetch time and actual access errors. Long pages have line ranges.
 
+`read_url`, and the host's reading of the sources a researcher cites, reach only public web addresses.
+`localhost`, private and link-local addresses (including `169.254.169.254`), `100.64.0.0/10` (Tailscale),
+unique-local IPv6, multicast and reserved ranges, and names ending in `.local`, `.internal`, `.localhost` or
+`.ts.net` are refused, in any notation. The reader checks every connection it opens, so a redirect or a name
+that resolves to such an address is refused too. A refused read says so and is not cached. Your own dev server
+(`http://localhost:3000`) cannot be read this way; system proxies are not used for these reads. Text in a URL
+still reaches the public host it names.
+
 Ask a question that needs source discovery or comparison and the coordinator can
 use `research`. This is a separate internet role. The repository explorer still
 investigates project files; neither role replaces the planner or delivery audit.

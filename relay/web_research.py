@@ -2,9 +2,11 @@
 from copy import deepcopy
 import hashlib
 import importlib.util
+import ipaddress
 import json
 import os
 from pathlib import Path
+import socket
 import sys
 import time
 from urllib.parse import urlsplit, urlunsplit
@@ -26,6 +28,60 @@ def url(value):
     if parts.scheme not in {'http', 'https'} or not parts.hostname or parts.username or parts.password:
         raise ValueError('Use an HTTP or HTTPS URL without embedded credentials.')
     return urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, ''))
+
+
+PUBLIC_ONLY = 'tare reads only public web addresses, never this machine, its local network or Tailscale.'
+LOCAL_NAMES = ('.localhost', '.local', '.internal', '.ts.net', '.home.arpa', '.lan')
+NAT64, GLOBAL_UNICAST_V6 = ipaddress.ip_network('64:ff9b::/96'), ipaddress.ip_network('2000::/3')
+
+
+def public(address):
+    """Only a global unicast address; anything that does not parse is refused. is_global already refuses
+    loopback, RFC 1918, link-local, 100.64.0.0/10, reserved and (3.12.4+) IPv4-mapped forms of those, but it
+    accepts multicast and IPv4-compatible or site-local IPv6."""
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    if ip.version == 6 and (ip.ipv4_mapped is not None or ip in NAT64):
+        ip = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)  # the IPv4 address it reaches
+    return ip.is_global and not ip.is_multicast and (ip.version == 4 or ip in GLOBAL_UNICAST_V6)
+
+
+def refusal(address):
+    """Why this URL is refused before any DNS query, or None. A name that resolves to a non-public address is
+    refused later, when the worker connects (guard_sockets)."""
+    try:
+        host = (urlsplit(address).hostname or '').encode('idna').decode('ascii').rstrip('.')
+    except UnicodeError:
+        host = ''
+    try:  # inet_aton reads every IPv4 form a resolver accepts: 2130706433, 0x7f000001, 0177.0.0.1, 127.1
+        literal = host if ':' in host else socket.inet_ntoa(socket.inet_aton(host))
+    except OSError:
+        literal = None
+    allowed = public(literal) if literal else '.' in host and not host.endswith(LOCAL_NAMES)
+    return None if allowed else 'Refused '+(host or 'this host')+': '+PUBLIC_ONLY
+
+
+def guard_sockets():
+    """Fail closed for every connection this worker process opens unless the numeric address it actually
+    dials is public. Redirects, every resolver path, each of several A/AAAA records and DNS rebinding all end
+    in this connect, after resolution, so it is the check nothing can route around. Proxies (which would
+    resolve the destination themselves) and libcurl (which opens sockets outside Python) are turned off."""
+    refused = []
+    def check(connect):
+        def guarded(sock, address):
+            if not (isinstance(address, tuple) and public(address[0])):
+                refused.append(address)
+                raise PermissionError('Refused a non-public address: '+PUBLIC_ONLY)
+            return connect(sock, address)
+        return guarded
+    socket.socket.connect, socket.socket.connect_ex = check(socket.socket.connect), check(socket.socket.connect_ex)
+    for name in [n for n in os.environ if n.lower().endswith('_proxy')]:
+        del os.environ[name]
+    os.environ['no_proxy'] = '*'  # also keeps urllib from reading the Windows registry proxy
+    sys.modules['pycurl'] = None  # Trafilatura prefers pycurl when it is installed
+    return refused
 
 
 def key(value):
@@ -91,6 +147,9 @@ def read_page(address, control, *, directory):
     """The existing Trafilatura reader in a supervised worker: timeout, cancellation and bounded output."""
     from compute_plane.managed_process import run_pipe_process
     address = url(address)
+    refused = refusal(address)
+    if refused:
+        return {'url': address, 'status': 'REFUSED', 'error': refused}
     roots = [str(Path(__file__).resolve().parents[1])]
     for name in ('compute_plane', 'tare_tools_agent_runtime', 'trafilatura'):
         spec = importlib.util.find_spec(name)
@@ -111,8 +170,13 @@ def read_page(address, control, *, directory):
 
 
 def read_worker(address):
+    refused = guard_sockets()
     from .web_reader import WebReader
     doc = WebReader.fetch_clean_markdown(url(address))
+    if refused:  # even when another DNS record or a later fallback answered
+        sys.stdout.buffer.write(encode({'url': address, 'status': 'REFUSED', 'error': 'Refused: this URL, a redirect '
+            'or its DNS records lead to a non-public address. '+PUBLIC_ONLY}).encode('utf-8')+b'\n')
+        return
     raw = (doc.markdown or '').encode()
     text = raw[:MAX_TEXT].decode('utf-8', 'ignore')
     value = {'url': address, 'final_url': doc.final_url, 'title': (doc.title or '')[:512],
