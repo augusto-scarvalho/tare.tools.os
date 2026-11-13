@@ -1,6 +1,7 @@
 """Checks run in the Windows sandbox by default, whatever the project's mode (owner, 2026-11-13). The launcher is
 replaced as in test_command_protection; the real sandbox is proven by the probe harness, not here."""
 import asyncio  # noqa: F401  Winsock starts here, before the host fixture points SystemRoot at a stand-in runtime
+import errno
 import json
 import subprocess
 import sys
@@ -481,27 +482,85 @@ def test_a_local_implementer_is_refused_where_no_sandbox_isolates_its_checks(tmp
         with pytest.raises(ValueError, match='does not run a local model as implementer on this system') as error:
             session({'role': role}, deployment, tmp_path)
         assert 'hosted implementer' in str(error.value) and 'Windows 11' in str(error.value) and calls == []
-        assert 'bubblewrap' not in str(error.value)  # what Linux needs is said once Linux has a sandbox
+        assert 'bubblewrap' not in str(error.value)  # no reason from the Kernel here (the next tests have one)
     else:
         assert session({'role': role}, deployment, tmp_path) == 'ran'
 
 
-def test_without_flatbuffers_or_windows_the_probe_says_no_sandbox(monkeypatch):
-    # CI's Linux shards pretend to be Windows elsewhere: the probe itself must not reach ctypes off Windows. Linux has
-    # no sandbox yet even where bubblewrap works: its binding is in place, dormant until the probe asks the Kernel.
+def test_linux_has_the_sandbox_exactly_where_the_kernels_bubblewrap_launch_works(monkeypatch):
+    # CI's Linux shards pretend to be Windows elsewhere: the probe itself must not reach ctypes off Windows.
+    def refused():
+        raise OSError('bwrap_missing')
     monkeypatch.setattr('compute_plane.linux_bwrap.require_support', lambda: None)
     monkeypatch.setattr(protection, 'sys', SimpleNamespace(platform='linux'))
-    assert protection.probe_sandbox() is False
+    assert protection.probe_sandbox() is True and protection.no_sandbox_why() == ''
+    for failure in (refused, lambda: 1/0):  # any failure is no sandbox, never a weaker one
+        monkeypatch.setattr('compute_plane.linux_bwrap.require_support', failure)
+        assert protection.probe_sandbox() is False and protection.no_sandbox_error
+    protection.sys.platform = 'darwin'
+    assert protection.probe_sandbox() is False and protection.no_sandbox_why() == ''
 
 
-@pytest.mark.parametrize('code', ['bwrap_scope_changed', 'bwrap_denied_path_changed'])
-def test_a_launch_bubblewrap_refuses_is_the_sandbox_refusing_the_check_never_a_run_outside(host, monkeypatch, code):
+GUIDE = ' How to set it up: https://github.com/augusto-scarvalho/tare.tools.os/blob/main/docs/guides/LINUX_SANDBOX.md'
+INSTALL = ' Install the packages bubblewrap (0.8 or newer) and util-linux (for prlimit).'
+
+
+@pytest.mark.local_implementer_rule
+@pytest.mark.parametrize('error, why', [
+    ('bwrap_missing', 'bubblewrap is not installed.' + INSTALL),
+    ('bwrap_prlimit_missing', 'prlimit is not installed.' + INSTALL),
+    ('bwrap_too_old: bubblewrap 0.6.1; 0.8 or newer is required', 'This bubblewrap is too old (bubblewrap 0.6.1).'
+     + INSTALL),
+    ('bwrap_userns_refused: kernel.apparmor_restrict_unprivileged_userns=1; kernel.unprivileged_userns_clone=1; '
+     'user.max_user_namespaces=63238; bwrap: setting up uid map: Permission denied',
+     'This system does not let bubblewrap create its sandbox. The setting '
+     'kernel.apparmor_restrict_unprivileged_userns=1 refuses it. An administrator can allow it for bubblewrap alone. '
+     'tare does not change system settings.'),
+    ('bwrap_userns_refused: no userns sysctl; bwrap: No permissions to create new namespace',
+     'This system does not let bubblewrap create its sandbox. An administrator can allow it for bubblewrap alone. '
+     'tare does not change system settings.'),
+    ('bwrap_launch_failed: exit 1: bwrap: Can\'t mount proc on /newroot/proc: Operation not permitted',
+     'bubblewrap could not start the sandbox: bwrap_launch_failed: exit 1: bwrap: Can\'t mount proc on '
+     '/newroot/proc: Operation not permitted.')],
+    ids=['missing', 'no-prlimit', 'too-old', 'apparmor', 'userns-refused', 'launch-failed'])
+def test_a_linux_host_without_the_sandbox_is_told_why_where_it_decides(tmp_path, monkeypatch, error, why):
+    from relay.project_permissions import check_isolation
+    def refused():
+        raise OSError(error)
+    monkeypatch.setattr('compute_plane.linux_bwrap.require_support', refused)
+    monkeypatch.setattr(protection, 'sys', SimpleNamespace(platform='linux'))
+    monkeypatch.setattr(protection, 'sandbox_available', protection.probe_sandbox)
+    assert protection.probe_sandbox() is False and protection.no_sandbox_error == error
+    assert protection.no_sandbox_why() == why + GUIDE
+    # The refusal of a local implementer, after its earlier words, and the permissions panel, below its checks line.
+    with pytest.raises(ValueError) as refusal:
+        execution_scope.unsandboxed_local(LOCAL)
+    assert str(refusal.value) == execution_scope.LOCAL_UNSANDBOXED + ' Why there is no sandbox: ' + why + GUIDE
+    lines = check_isolation({'mode': 'edit'}, {})
+    assert lines[0].startswith('Checks: not isolated') and lines[1] == 'Why there is no sandbox: ' + why + GUIDE
+
+
+@pytest.mark.parametrize('where, error, code', [
     # A granted folder's real path or a masked secret moved since binding: the Kernel's profile refuses to launch.
+    ('launch', ValueError('bwrap_scope_changed'), 'bwrap_scope_changed'),
+    ('launch', ValueError('bwrap_denied_path_changed'), 'bwrap_denied_path_changed'),
+    # The Kernel keeps only an OSError's type: Popen's, or one from the check's mediation, keeps its text here.
+    ('launch', OSError(errno.E2BIG, 'Argument list too long'), r'\[Errno 7\] Argument list too long'),
+    ('mediation', OSError(errno.EACCES, 'Permission denied'), r'\[Errno 13\] Permission denied')],
+    ids=['scope-changed', 'denied-path-changed', 'popen-oserror', 'mediation-oserror'])
+def test_a_check_bubblewrap_refuses_says_why_and_never_runs_outside(host, monkeypatch, where, error, code):
     from relay.windows_isolation import windows_isolation_factory
     unprotected(host, monkeypatch)
     class Refusing:
         def __init__(self, policy, *, cwd, environment): pass
-        def __call__(self, argv, **options): raise ValueError(code)
+        def __call__(self, argv, **options):
+            if where == 'launch':
+                raise error
+            pytest.fail('A check refused in its mediation is not launched.')
+    def refused(path):
+        raise error
+    if where == 'mediation':
+        monkeypatch.setattr(protection, 'names_file', refused)  # reading the check's arguments as command inputs
     monkeypatch.setattr('compute_plane.linux_bwrap.LinuxBwrapProfile', Refusing)
     monkeypatch.setattr(protection, 'windows_isolation_factory', windows_isolation_factory)  # the real composition
     monkeypatch.setattr(work_units, 'managed_check', lambda *a, **kw: pytest.fail('Nothing runs outside.'))
@@ -510,3 +569,14 @@ def test_a_launch_bubblewrap_refuses_is_the_sandbox_refusing_the_check_never_a_r
         {'tests': PASS}, outside=lambda *a: pytest.fail('A refused launch is not a question.'))
     with pytest.raises(ValueError, match=f'^Sandboxed verification was refused: tests: {code}$'):
         run(PASS)
+
+
+def test_an_argument_longer_than_a_file_name_is_no_command_input(tmp_path):
+    # `python -c '<code>'` with more than 255 bytes of code: on Linux its stat raises ENAMETOOLONG, which refused the
+    # check (the sandbox probe's io_uring and task-limit cases, 2026-11-13). Any other error still refuses it.
+    assert protection.names_file(tmp_path/('x'*300)) is False
+    def stat(code):
+        raise OSError(code, 'fixture')
+    assert protection.names_file(SimpleNamespace(is_file=lambda: stat(errno.ENAMETOOLONG))) is False
+    with pytest.raises(PermissionError):
+        protection.names_file(SimpleNamespace(is_file=lambda: stat(errno.EACCES)))

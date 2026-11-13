@@ -134,7 +134,8 @@ defaults.
 
 ## Checks run in the sandbox
 
-Every check tare runs for a model's work runs in the Windows sandbox, in every mode
+Every check tare runs for a model's work runs in the Windows sandbox (on Linux, in
+bubblewrap: [the Linux sandbox](LINUX_SANDBOX.md)), in every mode
 (**Read only** and **Edit files** included), not only with an **Action review**: the
 coordinator's `check`, an implementer's or auditor's `verify`, the checks of a unit
 before and after its implementer, the session's own checks before a change is
@@ -203,9 +204,11 @@ or nested repositories, folders more than 32 levels deep, a check program that i
 not found) gets the same question for each check, with that reason, rather than
 losing its checks or running them outside silently.
 
-Where the system has no sandbox (Linux, macOS, Windows without the process sandbox),
-checks of a hosted model run as before, as you, and each receipt says **not
-isolated: no sandbox on this system**; so does **Effective permissions**. In a
+Where the system has no sandbox (macOS, Windows without the process sandbox, Linux
+where bubblewrap cannot start its sandbox), checks of a hosted model run as before,
+as you, and each receipt says **not isolated: no sandbox on this system**; so does
+**Effective permissions**, and on Linux it adds **Why there is no sandbox:** with
+what is missing ([the Linux sandbox](LINUX_SANDBOX.md)). In a
 **Read only** project tare asks before running a check there. A local model is not
 used as implementer on such a system: it runs only where its checks are isolated.
 

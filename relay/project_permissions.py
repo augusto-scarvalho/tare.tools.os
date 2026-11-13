@@ -216,14 +216,16 @@ def check_isolation(defaults, protection, saved=False, read_only=None):
     `read_only`: the viewed draft's own role when there is one, so a concurrent save does not change what it shows."""
     if protection:
         return ['Checks: in the Windows sandbox, under this project\'s command protection.']
-    from .command_protection import sandbox_available
+    from .command_protection import no_sandbox_why, sandbox_available
     if not sandbox_available():
         read_only = defaults['mode'] == 'read' if read_only is None else read_only
+        why = no_sandbox_why()  # Linux: what is missing, from the Kernel's support query
         return ['Checks: not isolated: no sandbox on this system. They run as you, with network access and your '
                 'files in reach' + ('; in a read-only project tare asks you first.' if saved else
                 '.' if not read_only else '; in this read-only project they run '
                 'without asking, as you chose (clear "Run checks the sandbox blocks outside it" above to be asked).'
                 if defaults.get('checks_outside_sandbox') else '; in this read-only project tare asks you first.'),
+                *(['Why there is no sandbox: ' + why] if why else []),
                 'A local implementer is refused on this system: a local model runs only where its checks are isolated.',
                 *([LOCAL_WORK_ASKED] if defaults.get('checks_outside_sandbox') else [])]
     return ['Checks: in the '+('Linux' if sys.platform == 'linux' else 'Windows')+' sandbox, in every mode: no '
