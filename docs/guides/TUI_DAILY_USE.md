@@ -69,7 +69,7 @@ preferences and conversation prompts are not replaced by these switches.
 | `--prefer_api` | Prefer available inference APIs for planner and auditors; fall back to other allowed connections. |
 | `--prefer_subscription` | Prefer available subscriptions (CLIs, the OpenCode subscription) for planner and auditors; fall back to other allowed connections. |
 | `--prefer_local` | Keep coordinator, explorer, implementer and researcher on local inference; use qualified external planner and auditors. Hosted Jev stays available. |
-| `--disable_judge` | Disable hosted Jev and the local judge. Protected commands require human approval when necessary; YOLO skips those questions. Checks, final audits, sandbox and native Codex Auto-review remain. |
+| `--disable_judge` | Disable hosted Jev and the local judge. A protected command then asks you first, except in **Edit + system commands** (YOLO), where it runs with no model review and no question. The sandbox, the fixed checks and final audits still apply, and so does native Codex Auto-review when the project's command review is Codex or both. `/permissions` shows which of these applies. |
 
 ```powershell
 tare --subscription_only
@@ -94,13 +94,14 @@ in local-only mode; their existing deterministic/explorer fallback handles the w
 
 **Run this command?** waits for your answer: it does not expire, and while it is open the turn's
 time stops (the implementer's and the conversation's) and so does the elapsed time shown. Only your
-answer or cancelling the turn closes it. After **Allow for this task**, tare checks that the command,
+answer or cancelling the turn closes it. After **Allow this command**, tare checks that the command,
 its folder, inputs and context are still exactly what you were shown and runs it within a fresh short
-review window (60 seconds by default); anything changed, and it does not run. A yes also covers that
-exact command when the same session runs it again in this task, such as the checks tare reruns before
-applying a change; tare asks again when anything differs (the command, its folder, the files it names
-or the plan lets the session change, its environment, the request or the sandbox), when another session
-runs it, when the plan lets the session change a whole folder, and after a no.
+review window (60 seconds by default); anything changed, and it does not run. A yes covers that one
+command, so tare asks again for the next one. It also covers that exact command when the same session
+runs it again in this task, such as the checks tare reruns before applying a change; tare asks again
+when anything differs (the command, its folder, the files it names or the plan lets the session change,
+its environment, the request or the sandbox), when another session runs it, when the plan lets the
+session change a whole folder, and after a no.
 
 From a source install, run `tare PATH` in the activated environment; its history
 goes to `.reconciliation` next to the clone unless `TARE_STORAGE_ROOT` is set.

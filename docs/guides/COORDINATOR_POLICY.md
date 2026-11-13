@@ -38,8 +38,9 @@ role. `prefer_local` keeps execution local and planning/auditing external.
 Inherited restrictions are intersected; a fallback does not widen them. Pro stays
 opt-in and exclusive to the planner. JEV and search APIs keep their exceptions;
 model inference used in research remains subject to the work policy.
-`local_only` admits only the local judge; `disable_judge` keeps the human flow,
-unless YOLO was authorized beforehand.
+`local_only` admits only the local judge; `disable_judge` asks you about each protected
+command, unless the project is in YOLO (Edit + system commands), where no model reviews it
+and nothing asks; Codex review, when selected, still runs.
 
 `--coordinator` requires exactly one model and one level. It does not choose the planner
 or the auditor. Opus 5.5, GPT-6.1 Sol and Gemini 3.8 use high on eligible connections;

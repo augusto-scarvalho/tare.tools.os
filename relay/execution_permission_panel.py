@@ -57,7 +57,7 @@ class ExecutionPermissionPanel(SupportPanel):
                         yield Button('Implement, always allow edits here', id='permission-project')
                     yield Button('Change the plan', id='permission-change')
                 else:
-                    yield Button('Allow for this task', id='permission-once', classes='panel-primary')
+                    yield Button('Allow this command' if command else 'Allow for this task', id='permission-once', classes='panel-primary')
                     if not command:yield Button('Always allow in this project', id='permission-project')
                 yield Button('Deny', id='permission-deny')
 

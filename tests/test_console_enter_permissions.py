@@ -54,7 +54,8 @@ def test_explicit_newlines_stay_in_draft_and_modal_enter_does_not_send(tmp_path)
             answers=[]
             app.push_screen(ExecutionPermissionPanel({'objective':'Implement the saved task.',
                 'project':str(tmp_path),'paths':['new.py'],'checks':{}}),answers.append)
-            await pilot.pause();await pilot.press('enter');await pilot.pause()
+            await pilot.pause();assert str(app.screen.query_one('#permission-once').label)=='Allow for this task'
+            await pilot.press('enter');await pilot.pause()
             assert answers==['once'] and not backend.launches and prompt.text=='a\nb\nc'
     asyncio.run(scenario())
 

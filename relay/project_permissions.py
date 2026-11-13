@@ -199,7 +199,7 @@ def profile_values(defaults):
             defaults['mode'] == 'commands' and 'command_protection' not in defaults, list(defaults['write_paths']))
 
 
-def permissions_view(directory, project, control_root, *, session=None, pending=None):
+def permissions_view(directory, project, control_root, *, session=None, pending=None, judges_off=False):
     project = str(Path(project).resolve())
     defaults, revision = read_defaults(directory, project, control_root)
     nested, nested_enabled, nested_error = {}, defaults.get('project_admission', {}).get('nested', True), None
@@ -264,17 +264,35 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
             tools += ['verify'] if role == 'implementer' else []
         title = ('Next message · current unstarted conversation settings' if pending is not None else
                  'Stored defaults · applied to new conversations')
+    # With the automatic judges off, a protected command is asked of the user, or in YOLO (Edit + system commands)
+    # runs without a question; only the Codex native review can still look at it (command_protection.Broker.assess).
+    unreviewed, review_text = '', ''
+    if protection and judges_off:
+        from .turn_engine import project_permission_mode
+        yolo = project_permission_mode(project) == 'commands'
+        manual = ('none while judges are off; the sandbox and fixed checks still apply' if yolo else
+                  'you approve each command; judges are off')
+        review_text = {
+            'tare': manual,
+            'codex': 'codex on every command; no Jev or Tare model review while judges are off',
+            'both': 'codex on every command'+('' if yolo else ', after you approve it')+
+                    '; no Jev or Tare model review while judges are off',
+            'auto': 'codex when the execution connection is Codex, otherwise '+manual}[protection['review']]
+        if protection['review'] == 'tare':
+            unreviewed = ('Sandboxed, not reviewed' if yolo else 'Sandboxed, you approve each command'
+                          )+' (automatic judges are off in this TUI)'
     effective = [title, 'Project: '+project, 'Role: '+role, 'Tools: '+(', '.join(tools) or 'None'),
                  'Editable paths: '+(', '.join(paths) or 'None'),
-                 'System commands: '+('Protected noninteractive commands' if protection else
+                 'System commands: '+(unreviewed or 'Protected noninteractive commands' if protection else
                      'Enabled' if terminal and any(t.startswith('terminal_') for t in tools) else 'Disabled'),
                  'Configured checks: '+(', '.join(checks) or 'None in this scope')]
     if protection:
-        if protection.get('classifier')=='jev':
+        if protection.get('classifier')=='jev' and not judges_off:
             effective += ['Classifier: Jev  Review policy: '+protection.get('review_policy','always')]
-        effective += ['Command review: '+protection['review']+'  Isolation: '+protection['backend'],
-                      'Review calls: up to '+str(protection['max_reviews'])+' per request; native usage may be unknown.',
-                      'Protected commands use the declared Windows profile. Interactive terminal is unavailable in this mode.']
+        effective += ['Command review: '+(review_text or protection['review'])+'  Isolation: '+protection['backend']]
+        if not unreviewed:
+            effective += ['Review calls: up to '+str(protection['max_reviews'])+' per request; native usage may be unknown.']
+        effective += ['Protected commands use the declared Windows profile. Interactive terminal is unavailable in this mode.']
     else:
         effective.append('Configured checks run programs. Edit paths do not restrict command filesystem or network access.')
     if not session:

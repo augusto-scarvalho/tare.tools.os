@@ -71,7 +71,7 @@ de modelo e os prompts das conversas não são substituídos por essas opções.
 | `--prefer_api` | Prefere as APIs de inferência disponíveis para o planejador e os auditores; recorre a outras conexões permitidas. |
 | `--prefer_subscription` | Prefere as assinaturas disponíveis (CLIs, a assinatura do OpenCode) para o planejador e os auditores; recorre a outras conexões permitidas. |
 | `--prefer_local` | Mantém coordenador, explorador, implementador e pesquisador na inferência local; usa planejador e auditores externos qualificados. O Jev hospedado continua disponível. |
-| `--disable_judge` | Desliga o Jev hospedado e o juiz local. Comandos protegidos exigem aprovação humana quando necessário; o YOLO pula essas perguntas. Verificações, auditorias finais, sandbox e o Auto-review nativo do Codex continuam. |
+| `--disable_judge` | Desliga o Jev hospedado e o juiz local. Um comando protegido então pergunta a você antes, exceto em **Edit + system commands** (YOLO), onde ele roda sem revisão de modelo e sem pergunta. O sandbox, as verificações fixas e as auditorias finais continuam, e o Auto-review nativo do Codex também quando a revisão de comandos do projeto é Codex ou ambos. O `/permissions` mostra qual caso vale. |
 
 ```powershell
 tare --subscription_only
@@ -96,14 +96,14 @@ no modo local-only; o fallback determinístico/explorador já existente cuida do
 
 **Run this command?** espera a sua resposta: a pergunta não expira e, enquanto ela está aberta, o tempo
 do turno para (o do implementador e o da conversa), assim como o tempo decorrido mostrado. Só a sua
-resposta ou o cancelamento do turno a fecham. Depois de **Allow for this task**, o tare confere se o
+resposta ou o cancelamento do turno a fecham. Depois de **Allow this command**, o tare confere se o
 comando, a pasta, as entradas e o contexto ainda são exatamente os que você viu e o executa dentro de
-uma nova janela curta de revisão (60 segundos por padrão); se algo mudou, ele não roda. Um sim também
-vale para esse mesmo comando quando a mesma sessão o roda de novo nesta tarefa, como as verificações
-que o tare repete antes de aplicar a mudança; o tare pergunta de novo quando algo muda (o comando, a
-pasta, os arquivos que ele cita ou que o plano deixa a sessão alterar, o ambiente, o pedido ou a
-sandbox), quando outra sessão o roda, quando o plano deixa a sessão alterar uma pasta inteira e depois
-de um não.
+uma nova janela curta de revisão (60 segundos por padrão); se algo mudou, ele não roda. Um sim vale
+para aquele comando, então o tare pergunta de novo no próximo. Ele também vale para esse mesmo comando
+quando a mesma sessão o roda de novo nesta tarefa, como as verificações que o tare repete antes de
+aplicar a mudança; o tare pergunta de novo quando algo muda (o comando, a pasta, os arquivos que ele
+cita ou que o plano deixa a sessão alterar, o ambiente, o pedido ou a sandbox), quando outra sessão o
+roda, quando o plano deixa a sessão alterar uma pasta inteira e depois de um não.
 
 Numa instalação a partir dos fontes, rode `tare PATH` no ambiente ativado; o histórico dela
 fica em `.reconciliation` ao lado do clone, a menos que `TARE_STORAGE_ROOT` esteja definido.
