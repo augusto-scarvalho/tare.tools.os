@@ -143,7 +143,7 @@ def research_tools(tools, root, state):
     return ScopedResearchTools(tools,root,state)
 
 
-def read_page(address, control, *, directory):
+def read_page(address, control, *, directory, limit=MAX_TEXT):
     """The existing Trafilatura reader in a supervised worker: timeout, cancellation and bounded output."""
     from compute_plane.managed_process import run_pipe_process
     address = url(address)
@@ -156,10 +156,10 @@ def read_page(address, control, *, directory):
         if spec and spec.origin:
             roots.append(str(Path(spec.origin).resolve().parent.parent))
     program = ('import sys; sys.path[:0] = ' + repr(list(dict.fromkeys(roots)))
-               + '; from relay.web_research import read_worker; read_worker(sys.argv[1])')
-    physical, raw, _ = run_pipe_process([sys.executable, '-I', '-B', '-X', 'utf8', '-c', program, address],
+               + '; from relay.web_research import read_worker; read_worker(*sys.argv[1:])')
+    physical, raw, _ = run_pipe_process([sys.executable, '-I', '-B', '-X', 'utf8', '-c', program, address, str(limit)],
         cwd=directory, timeout=min(30, control.remaining_seconds()), cancelled=control.should_stop,
-        max_output=512*1024)
+        max_output=max(512*1024, 2*limit))
     if (not physical.get('cleanup_verified') or physical.get('exit_code') != 0
             or any(physical.get(k) for k in ('timeout', 'cancelled', 'output_limit'))):
         return {'url': address, 'status': 'UNAVAILABLE', 'error':
@@ -169,7 +169,25 @@ def read_page(address, control, *, directory):
     return value
 
 
-def read_worker(address):
+def document(address, limit=1024*1024):
+    """read_page for tare's other readers (links in a serve request, /research, research flows) as the
+    WebDocument they expect. The limit is above each caller's own cut (research keeps 200,000 bytes), so the
+    caller still decides and reports truncation."""
+    from types import SimpleNamespace
+    from .web_reader import WebDocument
+    try:
+        value = read_page(address, SimpleNamespace(remaining_seconds=lambda: 30, should_stop=lambda: False),
+                          directory=None, limit=limit)
+    except (ValueError, OSError) as exc:  # not an HTTP(S) URL tare reads, or the worker could not run
+        value = {'status': 'ERROR', 'error': str(exc)[:400]}
+    text = value.get('text') or ''
+    return WebDocument(url=address, title=value.get('title') or address, markdown=text, raw_size_bytes=len(text),
+        clean_size_bytes=len(text), reduction_pct=0.0, method=value.get('method') or 'none',
+        status=value.get('status', 'ERROR'), error=value.get('error'), final_url=value.get('final_url'))
+
+
+def read_worker(address, limit=MAX_TEXT):
+    limit = int(limit)
     refused = guard_sockets()
     from .web_reader import WebReader
     doc = WebReader.fetch_clean_markdown(url(address))
@@ -178,10 +196,10 @@ def read_worker(address):
             'or its DNS records lead to a non-public address. '+PUBLIC_ONLY}).encode('utf-8')+b'\n')
         return
     raw = (doc.markdown or '').encode()
-    text = raw[:MAX_TEXT].decode('utf-8', 'ignore')
+    text = raw[:limit].decode('utf-8', 'ignore')
     value = {'url': address, 'final_url': doc.final_url, 'title': (doc.title or '')[:512],
         'status': doc.status, 'error': doc.error, 'method': doc.method, 'text': text,
-        'sha256': hashlib.sha256(text.encode()).hexdigest(), 'truncated': len(raw) > MAX_TEXT,
+        'sha256': hashlib.sha256(text.encode()).hexdigest(), 'truncated': len(raw) > limit,
         'hash_basis': 'UTF-8 cleaned page text, capped at 64 KiB; not original HTTP response bytes.',
         'fetched_at': time.time(), 'untrusted': True}
     sys.stdout.buffer.write(encode(value).encode('utf-8')+b'\n')

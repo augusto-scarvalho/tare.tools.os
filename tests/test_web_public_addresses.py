@@ -1,5 +1,8 @@
 """tare's own reader reaches only public addresses: non-public literals and names are refused before any DNS
-query, and the worker refuses every non-public connection, whatever name, record, rebinding or redirect led to it."""
+query, and the worker refuses every non-public connection, whatever name, record, rebinding or redirect led to it.
+The same worker reads links in a serve request, /research pages and research-flow sources."""
+import contextlib
+import io
 import ipaddress
 import json
 import os
@@ -64,7 +67,8 @@ def internet(monkeypatch):
                 self.end_headers()
                 return
             body = ('<html><head><title>Public</title></head><body><article><p>'
-                    + 'Public page text for the reader. ' * 20 + '</p></article></body></html>').encode()
+                    + 'Public page text for the reader. ' * 20 + '</p><p>A page-chosen link: <a href='
+                    '"http://internal.public.example/admin">the admin page</a>.</p></article></body></html>').encode()
             self.send_response(200)
             self.send_header('Content-Type', 'text/html; charset=utf-8')
             self.send_header('Content-Length', str(len(body)))
@@ -126,3 +130,54 @@ def test_worker_refuses_every_non_public_connection(internet, capsys, name, answ
         assert 'Public page text for the reader.' in value['text']
     else:
         assert value['error'].endswith(web.PUBLIC_ONLY) and 'text' not in value
+
+
+@pytest.fixture
+def reader(internet, monkeypatch):
+    """read_page's worker, run in this process on the fixture internet: document() is exercised end to end."""
+    def run(argv, **kwargs):
+        out = io.TextIOWrapper(io.BytesIO(), encoding='utf-8')
+        with contextlib.redirect_stdout(out):
+            web.read_worker(*argv[-2:])
+        out.flush()
+        return {'cleanup_verified': True, 'exit_code': 0}, out.buffer.getvalue(), b''
+    monkeypatch.setattr('compute_plane.managed_process.run_pipe_process', run)
+    internet.records.update({'public.example': [[PUBLIC_IP]], 'internal.public.example': [['10.0.0.5']]})
+    internet.redirects['/hop'] = 'http://169.254.169.254/latest/meta-data/'
+    yield internet
+    assert set(internet.dialled) <= {PUBLIC_IP}  # nothing non-public was ever dialled
+
+
+def test_serve_research_reads_public_pages_and_refuses_private_links_and_results(reader, tmp_path):
+    from relay import research, turn_engine
+    # Links mode: the user's page is read; the private link it carries (depth 1, allowed domain) is refused.
+    pages = research.collect(tmp_path, ['http://public.example/page'], domains=['public.example'],
+                             max_pages=5, max_depth=1, max_bytes=200000)
+    assert [(p['url'], p['status']) for p in pages] == [
+        ('http://public.example/page', 'OK'), ('http://internal.public.example/admin', 'REFUSED')]
+    # Free search: a search result at a private address keeps only its snippet.
+    read = turn_engine.with_snippets([{'href': 'http://public.example/page', 'title': 'P', 'body': 'p'},
+                                      {'href': 'http://169.254.169.254/latest/meta-data/', 'title': 'M', 'body': 'm'}])
+    assert 'Public page text for the reader.' in read('http://public.example/page').markdown
+    assert read('http://169.254.169.254/latest/meta-data/').markdown == 'Search result: M\nm\n\n'
+
+
+def test_links_in_a_serve_request_read_only_public_addresses(reader):
+    from relay import turn_engine
+    shown = []
+    context = turn_engine.read_pages('compare http://public.example/page, http://localhost:3000/docs and '
+                                     'http://public.example/hop', shown.append)
+    assert 'Content of http://public.example/page ' in context and 'Public page text for the reader.' in context
+    assert 'localhost:3000' not in context and '/hop' not in context
+    assert ''.join(shown).count(' ✗ tare reads only public web addresses') == 2
+
+
+def test_research_flow_collects_public_sources_and_refuses_private_ones(reader, tmp_path, monkeypatch):
+    from relay import native_agent, research_flow as flow
+    root = tmp_path/'project'
+    root.mkdir()
+    monkeypatch.setattr(native_agent, 'run_session', lambda *a, **k: {'status': 'FAILED'})
+    flow.create(tmp_path/'flow', root, 'q', ['http://public.example/page', 'http://192.168.0.1/admin'],
+                {'id': 'fixture'}, unlimited=True)
+    sources = {p['url']: p['status'] for p in flow.execute(tmp_path/'flow')['sources']}
+    assert sources == {'http://public.example/page': 'OK', 'http://192.168.0.1/admin': 'REFUSED'}

@@ -1,6 +1,7 @@
 """Mass web research: deterministic collection, local map/reduce, frontier receives one envelope.
 
-Collection uses relay.web_reader (Trafilatura first). Map and reduce run on the local
+Collection uses relay.web_reader (Trafilatura first) in the guarded worker of relay.web_research, which reads
+only public addresses. Map and reduce run on the local
 OpenAI-compatible backend, serial under the shared explorer lock. No page text, corpus
 or intermediate facts leave this module; callers cite `W-` refs and read them back.
 """
@@ -69,8 +70,8 @@ def normalize(url):
 def collect(job, seeds, *, domains, max_pages, max_depth, max_bytes, fetch=None, workers=8):
     """Breadth-first crawl into corpus/<sha>.md and manifest.jsonl. No model involved."""
     if fetch is None:
-        from relay.web_reader import WebReader
-        fetch = WebReader.fetch_clean_markdown
+        from .web_research import document  # the guarded worker: public addresses only, every redirect checked
+        fetch = document
     corpus = Path(job) / 'corpus'
     corpus.mkdir(parents=True, exist_ok=True)
     seen, frontier, pages = set(), [(normalize(u), 0) for u in seeds], []
