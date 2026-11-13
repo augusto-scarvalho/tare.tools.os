@@ -90,6 +90,13 @@ other connections use Jev and Tare MXC, with an additional Tare review only when
 Jev requests one. Configure the Jev key in Setup, Helpers. This is action approval;
 the independent Work auditor still checks the delivery separately.
 
+Whatever the review, a protected command cannot read the project's secrets: `.env`
+files (not `.env.example` and other samples), `.ssh`, `.aws`, `.npmrc`, `.pypirc`
+and similar credential files and folders, at any depth and in granted folders. It
+gets `Permission denied`, so a test that reads `.env` fails there. A project with
+more than 32 of them refuses protected commands until you move some out
+([Conversation roles](CONVERSATION_ROLES.md) says what you see and the limits).
+
 For delegated implementation and named checks, the current saved project review
 policy applies even in an older conversation. The coordinator's saved prompt,
 tools, history and edit scope stay unchanged. Direct saved agent sessions and

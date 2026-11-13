@@ -19,6 +19,7 @@ from .action_control import ActionDecision, ActionPolicy, ActionReviewBroker
 from .action_mediation import CommandActionMediator
 from .action_model_assessment import TareActionClassifier, TareActionReviewer, TareJevActionClassifier, JEV_MODEL
 from .command_permission import UNREVIEWED, unreviewed as allowed_this_turn, yolo
+from . import sandbox_secrets
 from .windows_isolation import windows_isolation_factory
 from .worker_wait import steady
 
@@ -233,8 +234,8 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
             # project remains outside the command write boundary; application
             # still rejects unplanned source changes after independent review.
             write.append(str(root))
-        denied_names=('.git','.codex','.aws','.env','.ssh','.npmrc','.pypirc') if jev else ('.git','.codex','.aws')
-        denied=[str(root/p) for p in denied_names if (root/p).exists()]
+        # Every classifier: secrets at any depth of the project and its granted folders, found once per binding.
+        denied=sandbox_secrets.find([root,*references],git=not (host_checks or staged_effects))
         if (host_checks or staged_effects) and (root/'.git').exists():
             # Exact host verifiers and private staged workers can inspect Git
             # metadata, with no metadata write grant. This admits status/diff
@@ -247,7 +248,6 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
             read.extend((str(root/'.git'),str(metadata)))
             if (metadata/'commondir').is_file():
                 read.append(str((metadata/(metadata/'commondir').read_text().strip()).resolve(strict=True)))
-            denied=[p for p in denied if p!=str(root/'.git')]
             # Git discovers this worktree from cwd. A global GIT_WORK_TREE also
             # reaches test fixtures' init/clone commands and changes their roots.
             environment['GIT_OPTIONAL_LOCKS']='0'

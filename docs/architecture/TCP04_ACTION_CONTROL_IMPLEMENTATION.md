@@ -60,9 +60,9 @@ still govern execution. Choice scores are recorded observations, not calibrated
 probabilities of safety. Unknown runtime internals/dependencies are explicit.
 
 The child uses a separate `command-tmp` directory; the native capability owner's
-`scratch/effect-receipts` remains outside child read/write scopes. Jev profiles
-also deny existing project `.env`, `.ssh`, `.npmrc` and `.pypirc` paths before
-source disclosure. This bounded profile does not discover all possible secrets.
+`scratch/effect-receipts` remains outside child read/write scopes. Every profile
+denies the project's secrets before source disclosure; see the deny list below.
+It matches names and does not discover all possible secrets.
 
 Qualification includes offline contract/composition tests and sixteen synthetic
 public cases through the real Jev service, with zero effects in that campaign.
@@ -94,8 +94,20 @@ decision and native approval; failure does not choose an unreviewed path.
 
 The local composer uses the existing mediator, owner permit, durable claim and
 Windows process supervisor. The declared runtime/project read scopes, configured
-write paths, separate command temporary directory and denied network are applied by MXC. Existing
-project .git/.codex/.aws paths are denied to this initial command profile. Other
+write paths, separate command temporary directory and denied network are applied by MXC.
+Deny list (`relay/sandbox_secrets.py`), whatever the classifier: at any depth of the project and of its granted
+folders, `.env` and `.env.*` (not `.env.example`, `.sample`, `.template`, `.dist` or `.defaults`), `.ssh`,
+`.aws`, `.codex`, `.npmrc`, `.pypirc`, `.netrc`, `.git-credentials`, `.pgpass`, `.gnupg`, `.kube`, `.azure` and
+`.docker/config.json`, plus the root `.git` and nested `.git` folders except for host checks and private staged
+candidates, which read Git metadata. The walk skips `.git`, `node_modules`, `__pycache__` and folders holding
+`pyvenv.cfg` or `CACHEDIR.TAG`, follows no link and stops at 100,000 entries or 32 levels; reaching a bound, or
+finding more than the 32 paths PSEC's deny group holds, refuses the binding with a message rather than leave a
+secret readable. The list is built once per binding and sorted (it enters the policy digest), so a secret created
+later is not denied. Only hidden names are listed: a denied file in ripgrep's file list (`id_rsa`) would refuse
+the whole `search`. MXC denies paths: a denied file cannot be read, copied, linked, renamed or deleted, and a
+denied folder cannot be listed, but their names and sizes stay visible in the parent's listing, and a command
+that may edit a folder between a write scope and a nested secret can rename that folder and read the secret
+there (probed 2026-11-13); a secret directly in a write scope's root cannot be moved that way. Other
 runtime/profile needs are admitted separately; no generic third-party guarantee
 or hard disk quota is claimed. Protected checks use their frozen executable path.
 No enumerate-only scope is granted: PSEC's `fs_enumerate` admits listing of a folder's whole subtree, so the

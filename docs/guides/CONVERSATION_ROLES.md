@@ -106,6 +106,24 @@ this never enables host networking or waives required tests. Like a timeout,
 an inconclusive session check settles nothing: a change whose own checks pass
 is then applied only when its unit's tests cover every changed file.
 
+The sandbox also denies the project's secrets, at any depth and in folders granted
+to the project: `.env` and `.env.*` files (samples such as `.env.example` stay
+readable), `.ssh`, `.aws`, `.codex`, `.npmrc`, `.pypirc`, `.netrc` and similar
+credential files and folders, and Git folders except in host checks and private
+candidates, which read them.
+tare finds them when the command or check starts; a secret created later is not
+covered. A command that names one is refused; a program that opens one gets
+`Permission denied` (`Access is denied` in `cmd` and PowerShell), and `git status`
+warns that it could not open a denied folder. A test that reads `.env` therefore
+fails in the sandbox, and tare reports that failure as a failing check, not as a
+sandbox limitation: give the test its own settings or a sample file. A project
+with more than 32 such paths, or too large to search (100,000 files and folders,
+32 levels; dependencies, virtual environments and caches are skipped), refuses
+protected commands with a message that says so: move secrets out of the project
+or open a smaller folder. Their names stay visible in listings, and a command
+written to evade the rule can still read a nested secret by first renaming a
+folder above it that it may edit; review of the command remains the guard there.
+
 F3 includes the host-applied files, recorded candidate checks and their observed
 freshness. Existing file/turn preview and explicit undo use the same hashed
 snapshots. Undo never overwrites a later external edit or calls a model.
