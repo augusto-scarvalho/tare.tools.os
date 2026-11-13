@@ -89,7 +89,10 @@ allowed connection; its original history and cache prefix stay intact.
 
 With `--local_only` a conversation can plan, implement, check and audit a change on
 the local model alone (`tare models --role planner --local_only` lists the local
-planners). The planner runs at `xhigh`, the local model's lowest level at or above
+planners). It implements only where the project's checks run in the sandbox, that is
+with an Action review chosen in `/permissions` (Edit + system commands, on Windows);
+without one, tare says so before planning a delivery and starts no implementer.
+The planner runs at `xhigh`, the local model's lowest level at or above
 high. The local auditor (Qwen3.8) and the local implementer are the same model
 family, so the audit is not independent: the audit, its receipt and the delivery result carry the label
 **same-family audit, not independent**. When that audit accepts, tare asks

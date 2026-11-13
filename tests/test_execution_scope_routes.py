@@ -183,6 +183,22 @@ def test_local_initial_routing_uses_only_the_resident_judge(monkeypatch):
     assert len(calls)==1 and selected['native_auto_selection']['decision']['source']=='local_judge'
 
 
+@pytest.mark.parametrize('system',['nt','posix'])
+def test_no_local_only_implementer_session_starts_where_its_checks_are_not_sandboxed(setup,monkeypatch,system):
+    """The backstop for every implementer session (/session tasks, Work, resumes); conversations refuse earlier."""
+    import os
+    config,custody,_=setup
+    monkeypatch.setattr(scope,'os',SimpleNamespace(name=system,environ=os.environ))
+    client=Client(steps=[('tare_deliver',{'summary':'Done.'})])
+    with scope.activated(scope.Scope(only='local')):
+        with pytest.raises(ValueError) as refused:
+            native_agent.run_session(config,deployment(),custody,'Change a.py.',client=client,local_counter=client)
+    assert str(refused.value)==(scope.LOCAL_ONLY_UNSANDBOXED if system=='nt' else scope.LOCAL_ONLY_NO_SANDBOX)
+    assert not client.calls and not custody.exists()
+    with scope.activated(scope.Scope(prefer='local')):  # other modes: unchanged
+        assert scope.local_only_unsandboxed({}) is None
+
+
 def test_excluded_resume_does_not_rewrite_history_or_spend_a_model_call(setup):
     config,custody,_=setup
     client=Client(steps=[('tare_deliver',{'summary':'Done.'})])

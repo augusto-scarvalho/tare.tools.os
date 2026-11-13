@@ -313,6 +313,11 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
                      'local models do not get it') if terminal and any(t.startswith('terminal_') for t in tools)
                      else 'Disabled'),
                  'Configured checks: '+(', '.join(checks) or 'None in this scope')]
+    if local_only:  # ponytail: interim, goes with execution_scope.local_only_unsandboxed
+        effective.append('Local-only mode: tare implements only with an Action review, which runs the checks in the '
+                         'sandbox; '+('there is no sandbox on this system, so nothing is implemented' if os.name != 'nt'
+                                      else 'this project has one' if protection else
+                                      'this project has none, so nothing is implemented until you choose one'))
     if protection:
         effective += local
         if protection.get('classifier')=='jev' and not judges_off and not local:

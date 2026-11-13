@@ -90,7 +90,10 @@ de inferência. Uma conversa salva fixada numa conexão excluída precisa contin
 conexão permitida; o histórico original e o prefixo de cache dela ficam intactos.
 
 Com `--local_only` uma conversa pode planejar, implementar, verificar e auditar uma mudança só com o
-modelo local (`tare models --role planner --local_only` lista os planejadores locais). O planejador
+modelo local (`tare models --role planner --local_only` lista os planejadores locais). Ele só implementa
+onde as verificações do projeto rodam no sandbox, isto é, com uma revisão de ações (Action review)
+escolhida em `/permissions` (Edit + system commands, no Windows); sem ela, o tare avisa antes de planejar
+uma entrega e não inicia nenhum implementador. O planejador
 roda em `xhigh`, o menor nível do modelo local igual ou acima de alto. O auditor local (Qwen3.8) e o
 implementador local são da mesma família de modelos, então a auditoria não é independente: a
 auditoria, o recibo dela e o resultado da entrega levam o rótulo **same-family audit, not
