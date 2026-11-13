@@ -227,26 +227,46 @@ APPLY_QUESTION = ('Local-only mode: the auditor accepted this change, but it is 
                   'implementer, so the audit is not independent. Apply the change to the project?')
 NOT_CONFIRMED = ('The user did not confirm applying a change whose audit was not independent '
                  '(same-family audit, local-only mode). The candidate remains unapplied.')
+APPLY_UNACCEPTED_QUESTION = ('Local-only mode: the auditor did NOT accept this change. It left the open items below, '
+    'and it is the same model family as the implementer, so its audit is not independent either. The checks passed. '
+    'Apply the change anyway?')
+NOT_APPLIED_UNACCEPTED = ('The user chose not to apply a change that the same-family audit did not accept '
+                          '(local-only mode). The candidate remains unapplied.')
+USER_APPLIES = 'APPLY_WITHOUT_ACCEPTED_AUDIT'  # host-set only: run_unit applies a not-accepted review on this alone
+OPEN_ITEMS, OPEN_ITEM_CHARS = 10, 500
 
 
 def confirm_apply(root, state, task, changed, review, effect_id, control, directory):
-    """--local_only: before applying a candidate that a same-family auditor accepted, ask the user. Without a TUI
-    (tare serve, headless) nobody can confirm, and outside local-only mode (a conversation reopened without it) the
-    rule is independence, so nothing is applied, as when no independent auditor exists."""
+    """--local_only: before applying a candidate that a same-family auditor accepted, or that it left with open items
+    only (no findings, checks passed), ask the user. Without a TUI (tare serve, headless) nobody can confirm, and
+    outside local-only mode (a conversation reopened without it) the rule is independence, so nothing is applied:
+    an ACCEPT is refused as when no independent auditor exists, a not-accepted review stays as it was."""
     from .conversation_review import NO_AUDITOR
     from .execution_scope import current
+    accepted = review['verdict'] == 'ACCEPT'
+    if not accepted and (review['verdict'] != 'INCONCLUSIVE' or review.get('findings') or not review.get('remaining')):
+        return review  # findings go to the correction path; nobody is asked to apply over them or without items
     refused = {'verdict': 'INCONCLUSIVE', 'audit_label': review['audit_label'],
                **({'actor': review['actor']} if review.get('actor') else {})}
     if directory is None or current().only != 'local':
-        return {**refused, 'reason': NO_AUDITOR}
+        return {**refused, 'reason': NO_AUDITOR} if accepted else review
     unit = task['plan']['unit']
     folder = regular(Path(root)/'execution-permission')
     folder.mkdir(exist_ok=True)
+    items = [str(item)[:OPEN_ITEM_CHARS] for item in review.get('remaining', [])]
     request = {'schema': SCHEMA, 'kind': 'audit', 'session': state['session_id'], 'effect': effect_id,
         'task': task['id'], 'plan': task['plan']['sha256'],
         'project': str(Path(state['config']['repositories'][unit['repository']]).resolve()),
-        'paths': sorted(changed), 'checks': {}, 'tests': [], 'objective': APPLY_QUESTION, 'status': 'WAITING',
+        'paths': sorted(changed), 'checks': {}, 'tests': [],
+        'objective': APPLY_QUESTION if accepted else APPLY_UNACCEPTED_QUESTION, 'status': 'WAITING',
         'audit': {'label': review['audit_label'], 'verdict': review['verdict'], 'route': review.get('route'),
-                  'summary': str(review.get('summary', ''))[:2000]}}
+                  'summary': str(review.get('summary', ''))[:2000],
+                  **({} if accepted else {'open_items': items[:OPEN_ITEMS], 'open_items_total': len(items)})}}
+    while len(json.dumps(request, ensure_ascii=False).encode()) > 30000 and request['audit'].get('open_items'):
+        request['audit']['open_items'].pop()  # the TUI reads at most 32 KiB; the receipt keeps every item
+    if not accepted and not request['audit']['open_items']:
+        return review  # the user must see the open items before applying over them
     value = wait_for_answer(folder, request, control)
-    return review if value and value['choice'] == 'once' else {**refused, 'reason': NOT_CONFIRMED}
+    if not value or value['choice'] != 'once':
+        return {**refused, 'reason': NOT_CONFIRMED} if accepted else {**review, 'reason': NOT_APPLIED_UNACCEPTED}
+    return review if accepted else {**review, 'user_decision': USER_APPLIES}

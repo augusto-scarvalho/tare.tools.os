@@ -96,7 +96,14 @@ implementador local são da mesma família de modelos, então a auditoria não �
 auditoria, o recibo dela e o resultado da entrega levam o rótulo **same-family audit, not
 independent**. Quando essa auditoria aceita, o tare pergunta **Apply this change?**, mostrando os
 arquivos e o resumo da auditoria. **Apply the change** aplica; **Do not apply** (ou Escape) deixa o
-candidato sem aplicar, como acontece quando não há auditor. Enquanto a pergunta está aberta, o tempo
+candidato sem aplicar, como acontece quando não há auditor. Quando a auditoria não aceita mas não
+aponta defeito, só itens em aberto (por exemplo um critério que ninguém consegue comprovar aqui), e as
+verificações passaram, a mesma pergunta diz que o auditor **não** aceitou e lista esses itens; ela
+começa em **Do not apply**, e **Apply anyway** aplica a mudança como decisão sua, registrada assim: o
+tare nunca a chama de auditada ou aceita. Uma auditoria que aponta defeitos (findings) não pergunta
+nada: o implementador os corrige, como sempre. Se o auditor local responder ACCEPT ainda listando
+itens em aberto, o tare lê isso como não aceito (com findings, como revisão; senão, como itens em
+aberto) e diz isso no início do resumo da auditoria. Enquanto a pergunta está aberta, o tempo
 do turno para. Onde ninguém pode responder (`tare serve`, execuções sem interface, Works) a mudança
 não é aplicada: "No independent auditor is available. The candidate remains unapplied." Fora do
 `--local_only` (inclusive com `--prefer_local`) o planejamento e a auditoria continuam com modelos

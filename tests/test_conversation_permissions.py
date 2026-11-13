@@ -586,6 +586,52 @@ def test_local_only_asks_before_applying_a_same_family_audit_and_a_no_keeps_the_
         assert 'did not confirm' in output['reason']
 
 
+UNACCEPTED = {'verdict': 'INCONCLUSIVE', 'summary': 'Criteria 1 and 2 hold.', 'findings': [], 'sources': [],
+              'remaining': ['Running hello.py was not evidenced.', 'CI remains a separate gate.'],
+              'route': 'local-qwen', 'actor': {'role': 'auditor', 'model': 'qwen38-gsq', 'route': 'local-qwen'},
+              'audit_label': 'same-family audit, not independent'}
+
+
+@pytest.mark.parametrize('choice', ['once', 'deny', 'findings'])
+def test_local_only_lets_the_user_decide_on_a_same_family_audit_that_left_only_open_items(host, tmp_path, monkeypatch, choice):
+    from relay import conversation_review, execution_scope as scope
+    tools, control, root, _ = host
+    intake(host); task = planned(host)
+    tools.state.update(session_id='parent')
+    tools.permission_directory = tmp_path/'prefs'
+    go_straight_on(tools.permission_directory, root)
+    review = deepcopy(UNACCEPTED)
+    if choice == 'findings':
+        review.update(verdict='REVISE', findings=[{'claim': 'a.py prints the old text.', 'sources': []}])
+    monkeypatch.setattr(conversation_review, 'review', lambda *a, **kw: deepcopy(review))
+    audits = []
+    def run_unit(custody, state, args, stop, review=None, **kwargs):  # the gate itself: test_implement_unit
+        audit = review('tree', state['deployment'], task['plan']['unit'], {'a.py': b'value = 2\n'}, {})
+        audits.append(audit)
+        applied = audit['verdict'] == 'ACCEPT' or audit.get('user_decision') == 'APPLY_WITHOUT_ACCEPTED_AUDIT'
+        return {'verdict': 'VERIFIED' if applied else 'NOT_REVIEWED', 'applied': applied, 'audit': audit, 'files': ['a.py']}
+    monkeypatch.setattr(work_units, 'run_unit', run_unit)
+    with scope.activated(scope.Scope(only='local')), permission_worker(control) as pool:
+        running = pool.submit(tools.execute, effect('implement', {}, 'execution-1'), control)
+        if choice == 'findings':  # the ordinary correction path: nobody is asked to apply over findings
+            output = json.loads(running.result(timeout=3).output_json)
+            assert audits[0] == review and not output['applied'] and not permissions.pending(tools.root)
+            return
+        request = wait_request(tools.root)
+        assert request['objective'] == permissions.APPLY_UNACCEPTED_QUESTION and 'did NOT accept' in request['objective']
+        assert request['audit']['verdict'] == 'INCONCLUSIVE' and request['audit']['open_items'] == UNACCEPTED['remaining']
+        assert request['audit']['open_items_total'] == 2 and not running.done() and audits == []
+        permissions.answer(tools.root, request['id'], choice, project=root, directory=tools.permission_directory,
+                           control_root=relay_mesh.RELAY_ROOT)
+        output = json.loads(running.result(timeout=3).output_json)
+    assert output['audit']['verdict'] == 'INCONCLUSIVE' and output['audit']['remaining'] == UNACCEPTED['remaining']
+    if choice == 'once':  # applied by the user's decision; the auditor's verdict is never rewritten as ACCEPT
+        assert output['applied'] and output['audit']['user_decision'] == 'APPLY_WITHOUT_ACCEPTED_AUDIT'
+    else:
+        assert not output['applied'] and 'user_decision' not in output['audit']
+        assert output['reason'] == ('Audit (same-family audit, not independent) incomplete: '+permissions.NOT_APPLIED_UNACCEPTED)
+
+
 def test_without_a_tui_or_outside_local_only_a_same_family_audit_applies_nothing(host, tmp_path, monkeypatch):
     from types import SimpleNamespace
     from relay import conversation_review, execution_scope as scope, turn_engine
@@ -598,6 +644,9 @@ def test_without_a_tui_or_outside_local_only_a_same_family_audit_applies_nothing
     for result in (headless, outside):
         assert result == {'verdict': 'INCONCLUSIVE', 'audit_label': SAME_FAMILY['audit_label'], 'actor': SAME_FAMILY['actor'],
                           'reason': 'No independent auditor is available. The candidate remains unapplied.'}
+    with scope.activated(scope.Scope(only='local')):  # a not-accepted review simply stays as it was
+        assert permissions.confirm_apply(tools.root, tools.state, task, {'a.py': b''}, UNACCEPTED, 'e', control, None) == UNACCEPTED
+    assert permissions.confirm_apply(tools.root, tools.state, task, {'a.py': b''}, UNACCEPTED, 'e', control, tmp_path) == UNACCEPTED
     assert not permissions.pending(tools.root)
     # Only a conversation with its TUI asks routing for a same-family auditor; headless keeps today's refusal.
     seen = []

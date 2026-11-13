@@ -107,8 +107,10 @@ Rules that come with it:
   owner's choice of the mode, not a claim that it clears the floors above. Its
   audit of a Qwen-family implementer shares the author's bias domain, so it is
   labelled **same-family audit, not independent**, and the change is applied
-  only after the user confirms it in the TUI. Without a TUI (`tare serve`,
-  headless, Work runs) nobody can confirm, and the candidate stays unapplied.
+  only after the user confirms it in the TUI: after an ACCEPT, or, when the audit
+  left only open items (no findings) and the checks passed, as the user's own
+  decision that no audit accepted. Without a TUI (`tare serve`, headless, Work
+  runs) nobody can confirm, and the candidate stays unapplied.
 
 ## 4. The `research` pipeline
 

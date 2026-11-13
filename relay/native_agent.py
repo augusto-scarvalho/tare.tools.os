@@ -59,8 +59,11 @@ def configuration(value):
     if (value.get('schema') != 'tare.tools/native-agent-config/1' or set(value) - {
             'schema', 'role', 'repositories', 'writable', 'verifiers', 'index_states',
             'context_policy', 'specgraph_edit_context', 'typed_output', 'input_artifacts', 'capabilities', 'terminal', 'project_graph',
-            'folder_access', 'instruction_repositories', 'command_protection', 'command_context', 'command_runtimes', 'project_admission', 'shared_context', 'delegated_verifiers'}):
+            'folder_access', 'instruction_repositories', 'command_protection', 'command_context', 'command_runtimes', 'project_admission', 'shared_context', 'delegated_verifiers',
+            'same_family_audit'}):
         raise ValueError('explicit_native_agent_configuration_required')
+    if 'same_family_audit' in value and (value['same_family_audit'] is not True or value.get('role') != 'auditor'):
+        raise ValueError('same_family_audit is set only by the local-only conversation review, for an auditor.')
     access = value.get('folder_access')
     if access is not None and (not isinstance(access, dict) or set(access) != {'grants'}
                                or not isinstance(access['grants'], str) or not Path(access['grants']).is_absolute()):
@@ -844,7 +847,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 from .native_artifacts import schema, validator
                 artifact_options = {'delivery_schema_json': encode(schema(config['role'])),
                     'validate_delivery': validator(config['role'], tools, config['repositories'],
-                        versioned_targets=bool(state.get('delegated_leaf') and config['role']=='planner'))}
+                        versioned_targets=bool(state.get('delegated_leaf') and config['role']=='planner'),
+                        same_family_audit=config.get('same_family_audit') is True)}
             if (config['role'] in {'explorer', 'auditor', 'planner'} or state.get('conversation')
                     or state.get('delegated_leaf') and config['role']=='implementer'):
                 from .challenger import local

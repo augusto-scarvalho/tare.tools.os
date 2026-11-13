@@ -71,7 +71,8 @@ class ProjectPermissions:
                     changes=panel.changes)
                 if request.get('kind') == 'audit':
                     self.set_status('Not applied · the candidate is kept' if choice == 'deny' else
-                                    'Applying the change you confirmed')
+                                    'Applying the change you confirmed' if request['audit']['verdict'] == 'ACCEPT' else
+                                    'Applying the change by your decision · no audit accepted it')
                 else:
                     self.set_status('Permission denied.' if choice == 'deny' else
                                     'Plan sent back for changes · nothing was implemented' if choice == 'change' else

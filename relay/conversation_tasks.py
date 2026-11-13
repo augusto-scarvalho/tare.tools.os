@@ -277,7 +277,7 @@ def delivery_view(value, *, config=None, unit=None):
     result['files_scope'] = 'project' if value.get('applied') else 'unapplied candidate, not project files'
     if unit and BACKLOG_CHECK in unit.get('verifiers', []):
         result['project_graph_binding'] = graph_binding(config or {})
-    if (value.get('audit') or {}).get('verdict') == 'INCONCLUSIVE':
+    if (value.get('audit') or {}).get('verdict') == 'INCONCLUSIVE' and not value.get('applied'):  # applied: the user's decision
         audit = value['audit']
         result['reason'] = ('Audit ('+audit['audit_label']+') incomplete: ' if audit.get('audit_label') else 'Independent audit incomplete: ')+str(
             audit.get('failure_code') or audit.get('reason') or 'No accepted verdict')
@@ -1444,12 +1444,14 @@ class ConversationTools:
                 def audit(tree, producer, unit, changed, checks):
                     task['stage'] = 'AUDITING'; save(self.root, value)
                     result = review(self, task, tree, producer, unit, changed, checks, control)
-                    if result.get('verdict') == 'ACCEPT' and result.get('audit_label'):
+                    # The checks passed (run_unit reviews only then). A same-family ACCEPT, or a completed one that
+                    # left only open items, is the user's decision; findings take the ordinary correction path.
+                    if result.get('audit_label') and (result.get('verdict') == 'ACCEPT' or uncovered_review(result)):
                         from .conversation_permissions import confirm_apply
                         result = confirm_apply(self.root, self.state, task, changed, result, request.effect_id,
                                                control, self.permission_directory)
                     return result
-                from .conversation_review import available, packet_preflight, resume_tree
+                from .conversation_review import available, packet_preflight, resume_tree, uncovered_review
                 audit.preflight = lambda producer: available(producer, self)
                 audit.packet_preflight = packet_preflight
                 audit.resume_tree = lambda: resume_tree(self, task)

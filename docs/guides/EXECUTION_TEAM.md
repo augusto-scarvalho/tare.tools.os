@@ -33,7 +33,9 @@ is not enabled by the reasoning floor.
 
 In `--local_only` mode an audit by the implementer's own model family is recorded
 with the label **same-family audit, not independent**, in the review, its receipt
-and the delivery result, and the change is applied only after you confirm it.
+and the delivery result, and the change is applied only after you confirm it. If
+that audit did not accept and you applied the change anyway, the delivery records
+it as your decision (`user_decision`), with the audit's own verdict and open items.
 
 On Claude API connections, the level is sent through `output_config.effort`,
 independently of the thinking configuration, as defined in the

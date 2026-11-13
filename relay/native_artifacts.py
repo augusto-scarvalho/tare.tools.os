@@ -129,8 +129,20 @@ def validate(role, value):
     return result
 
 
-def validator(role, tools, roots, *, versioned_targets=False):
+NOT_ACCEPTED = ('tare read this review as not accepted: the auditor answered ACCEPT while listing open findings or '
+                'remaining items. ')
+
+
+def validator(role, tools, roots, *, versioned_targets=False, same_family_audit=False):
+    """same_family_audit: only the local-only conversation review of a same-family candidate sets it (config).
+    There an ACCEPT that lists open items is read as not accepted (REVISE with findings, else INCONCLUSIVE), its
+    items kept, instead of discarding the whole review; validate() and every other auditor keep refusing it."""
     def check(value):
+        if (same_family_audit and role == 'auditor' and isinstance(value, dict) and value.get('verdict') == 'ACCEPT'
+                and (value.get('findings') or value.get('remaining'))):
+            value['verdict'] = 'REVISE' if value.get('findings') else 'INCONCLUSIVE'
+            if isinstance(value.get('summary'), str):
+                value['summary'] = NOT_ACCEPTED + value['summary']
         reads = tools.observations()['reads']
         def observed(source):
             return reads.get(f"{source.get('repository')}:{source.get('path')}") if isinstance(source, dict) else None

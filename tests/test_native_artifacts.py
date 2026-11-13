@@ -96,6 +96,33 @@ def test_false_source_and_invalid_review_never_become_an_artifact(setup,fault):
     assert result['status']=='BLOCKED' and not (custody/'artifact.json').exists()
 
 
+@pytest.mark.parametrize('open_items,read_as',[('remaining','INCONCLUSIVE'),('findings','REVISE'),('both','REVISE')])
+@pytest.mark.parametrize('same_family',[False,True])
+def test_only_the_same_family_local_only_audit_reads_accept_with_open_items_as_not_accepted(setup,open_items,read_as,same_family):
+    config,custody,root=setup;config.update(role='auditor',typed_output=True,writable={},verifiers={})
+    if same_family:config['same_family_audit']=True  # set only by conversation_review for that route
+    value=payload('auditor',root)
+    if open_items in ('remaining','both'):value['remaining']=['Running the script was not evidenced.']
+    if open_items in ('findings','both'):value['findings']=[{'claim':'a.py still prints the old text.','sources':value['sources']}]
+    result=run(config,custody,Client(steps=[('read',{'repository':'repo','path':'a.py'}),('tare_deliver',value)]))
+    if not same_family:  # every other auditor: today's refusal, the Kernel offers no correction for it
+        assert result['status']=='BLOCKED' and result['failure_code']=='INVALID_DELIVERY'
+        assert result['delivery_validation']['issues']==[{'code':'native_artifact_accept_with_open_findings','field':'delivery'}]
+        assert not (custody/'artifact.json').exists()
+        return
+    saved=json.loads((custody/'artifact.json').read_text())['payload']
+    assert result['status']=='PROPOSED' and saved['verdict']==read_as!='ACCEPT'
+    assert saved['summary']==native_artifacts.NOT_ACCEPTED+'Observed proposal'
+    assert (saved['findings'],saved['remaining'])==(value['findings'],value['remaining'])
+
+
+def test_same_family_reading_is_an_auditor_setting_only(setup):
+    config,custody,root=setup;config.update(role='implementer',same_family_audit=True)
+    with pytest.raises(ValueError,match='same_family_audit is set only'):native_agent.configuration(config)
+    config.update(role='auditor',same_family_audit='yes')
+    with pytest.raises(ValueError,match='same_family_audit is set only'):native_agent.configuration(config)
+
+
 @pytest.mark.parametrize('fault',['wrong-hash','unread'])
 def test_auditor_can_correct_citations_once_with_existing_reads_and_call_budget(setup,fault):
     from copy import deepcopy

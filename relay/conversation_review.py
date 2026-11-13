@@ -1018,7 +1018,9 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
             'writable': {}, 'verifiers': {}, 'capabilities': ['read', 'list', 'search'],
             'instruction_repositories': ['candidate'], 'specgraph_edit_context': False,
             # Use this auditor model's fractions. One summary shares its call/time budget.
-            'context_policy': contract['policy']}
+            'context_policy': contract['policy'],
+            # Local-only, same family: an ACCEPT with open items is read as not accepted, never discarded.
+            **({'same_family_audit': True} if label else {})}
         if owner.state['config'].get('project_admission'):
             config['project_admission'] = owner.state['config']['project_admission']
         if owner.state['config'].get('folder_access'):

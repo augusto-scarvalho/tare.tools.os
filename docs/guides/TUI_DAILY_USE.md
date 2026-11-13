@@ -95,7 +95,15 @@ family, so the audit is not independent: the audit, its receipt and the delivery
 **same-family audit, not independent**. When that audit accepts, tare asks
 **Apply this change?**, showing the files and the audit's summary. **Apply the
 change** applies it; **Do not apply** (or Escape) leaves the candidate unapplied,
-as an unavailable auditor does. While the question is open the turn's time stops.
+as an unavailable auditor does. When the audit does not accept but names no defect,
+only open items (for example a criterion nobody can evidence here), and the checks
+passed, the same question says the auditor did **not** accept and lists those
+items; it starts on **Do not apply**, and **Apply anyway** applies the change as
+your decision, recorded as such: tare never calls it audited or accepted. An audit
+that names defects (findings) asks nothing: the implementer corrects them, as
+usual. If the local auditor answers ACCEPT while still listing open items, tare
+reads it as not accepted (with findings as a revision, otherwise as open items)
+and says so at the start of the audit's summary. While the question is open the turn's time stops.
 Where nobody can answer (`tare serve`, headless runs, Work runs) the change is not
 applied: "No independent auditor is available. The candidate remains unapplied."
 Outside `--local_only` (including `--prefer_local`) planning and auditing stay with

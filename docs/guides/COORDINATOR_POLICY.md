@@ -41,8 +41,13 @@ choice of that mode, not a quality claim. With no explicit level it plans at
 `xhigh`, its lowest registered level at or above high, and audits at the level
 nearest above the `auditor_effort` default. Its audit of a Qwen-family
 implementer is not independent: tare labels it **same-family audit, not
-independent** and, in the TUI, asks **Apply this change?** before applying.
-Without a TUI the candidate stays unapplied, as when no independent auditor exists.
+independent** and, in the TUI, asks **Apply this change?** before applying. When
+that audit does not accept but leaves only open items (no findings) after the
+checks passed, the same question says so, lists the items and starts on **Do not
+apply**; a yes is recorded as the user's decision, never as an accepted audit.
+Findings take the usual correction path. An ACCEPT that still lists open items is
+read as not accepted on this path only; every other auditor's such delivery stays
+invalid. Without a TUI the candidate stays unapplied, as when no independent auditor exists.
 Inherited restrictions are intersected; a fallback does not widen them. Pro stays
 opt-in and exclusive to the planner. JEV and search APIs keep their exceptions;
 model inference used in research remains subject to the work policy.

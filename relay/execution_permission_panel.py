@@ -41,8 +41,13 @@ class ExecutionPermissionPanel(SupportPanel):
                     yield Static(plan+'\n', markup=False)
                 if audit:
                     review=value['audit']
+                    items=review.get('open_items') or []
+                    hidden=review.get('open_items_total',len(items))-len(items)
                     yield Static('Project: '+value['project']+'\n\nFiles:\n'+'\n'.join(value['paths'])+
                         '\n\nAudit ('+review['label']+'): '+review['verdict']+' by '+str(review.get('route'))+
+                        ('' if review['verdict']=='ACCEPT' else ' (not accepted)\n\nOpen items the auditor left:\n'+
+                         ''.join('- '+str(item)+'\n' for item in items)+
+                         (f'({hidden} more in the audit receipt)\n' if hidden>0 else ''))+
                         ('\n'+review['summary'] if review.get('summary') else '')+
                         '\n\nThe checks passed. Not applying keeps the candidate unapplied.', markup=False)
                 elif command:
@@ -66,7 +71,9 @@ class ExecutionPermissionPanel(SupportPanel):
                             max_length=480, id='permission-changes')
             with Horizontal(classes='permission-buttons'):
                 if audit:
-                    yield Button('Apply the change', id='permission-once', classes='panel-primary')
+                    accepted=value['audit']['verdict']=='ACCEPT'  # no audit accepted it: nothing invites the yes
+                    yield Button('Apply the change' if accepted else 'Apply anyway', id='permission-once',
+                                 classes='panel-primary' if accepted else '')
                 elif plan is not None:
                     yield Button('Implement this plan', id='permission-once', classes='panel-primary')
                     if not value.get('files_allowed'):
@@ -79,7 +86,9 @@ class ExecutionPermissionPanel(SupportPanel):
                 yield Button('Do not apply' if audit else 'Deny', id='permission-deny')
 
     def on_mount(self):
-        self.query_one('#permission-once', Button).focus()
+        # A change no audit accepted starts on the safe answer.
+        unaccepted=self.request.get('kind')=='audit' and self.request['audit']['verdict']!='ACCEPT'
+        self.query_one('#permission-deny' if unaccepted else '#permission-once', Button).focus()
 
     def on_input_submitted(self, event):
         event.stop()
