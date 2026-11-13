@@ -109,6 +109,10 @@ def verifier_runtime(executable):
             roots.add(folder.parent)  # the interpreter needs its own Lib/site-packages as well
         else:
             roots.add(folder)
+            # POSIX: <prefix>/bin's programs load from <prefix>/lib (a Python's standard library, a virtual
+            # environment's base among them; npm). Not all of <prefix>: in ~/.local that would show ~/.local/share.
+            if sys.platform!='win32' and folder.name=='bin' and (folder.parent/'lib').is_dir():
+                roots.add(folder.parent/'lib')
     return roots
 
 
@@ -215,7 +219,9 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
             options.pop('jev_model',None)
         if disabled:options={**options,'judge_override':'disabled'}
         jev=not disabled and options.get('classifier') in ('jev','local')
-    if sys.platform!='win32':
+    if checks_only and sys.platform=='linux':
+        options['backend']='bwrap'  # bubblewrap; each receipt names it
+    elif sys.platform!='win32':
         raise ValueError('Protected commands currently require Windows; no unisolated fallback.')
     if config.get('terminal') or len(config['repositories'])!=1:
         raise ValueError('Protected commands require one project and no interactive terminal.')
@@ -274,11 +280,15 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         environment['TMPDIR']=str(test_scratch)
         environment['PYTEST_ADDOPTS']=shlex.join(['-o','cache_dir='+str(test_scratch/'cache'),
                                                '--basetemp='+str(test_scratch/'tests')])
-        # Both Windows backends deny loopback, where socket.socketpair (and so asyncio) would wait forever; this
-        # sitecustomize gives Python an AF_UNIX pair instead. Codex's launcher passes the same environment on.
-        environment.update(PYTHONPATH=str(SANDBOX_PYTHON),TARE_SANDBOX_SOCKETPAIR='1')
+        # Linux (bubblewrap): these scratch folders and HOME are bound read-write at their own paths, over the
+        # sandbox's own empty /tmp when they are in /tmp. Its loopback works: no shim there.
+        windows=sys.platform=='win32'
+        if windows:
+            # Both Windows backends deny loopback, where socket.socketpair (and so asyncio) would wait forever; this
+            # sitecustomize gives Python an AF_UNIX pair instead. Codex's launcher passes the same environment on.
+            environment.update(PYTHONPATH=str(SANDBOX_PYTHON),TARE_SANDBOX_SOCKETPAIR='1')
         runtime_roots={str(Path(sys.base_prefix).resolve()),str(Path(sys.prefix).resolve())}
-        if not any(SANDBOX_PYTHON.is_relative_to(p) for p in runtime_roots):
+        if windows and not any(SANDBOX_PYTHON.is_relative_to(p) for p in runtime_roots):
             runtime_roots.add(str(SANDBOX_PYTHON))  # a source checkout; a release has it inside its venv
         runtime_roots.update(str(r) for row in config.get('verifiers',{}).values()
             if Path(row['argv'][0]).is_absolute() for r in verifier_runtime(row['argv'][0]))
@@ -295,7 +305,10 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         search_executable=host_executable('rg') if 'search' in capabilities.names else None
         if search_executable:
             runtime_roots.update(map(str, verifier_runtime(search_executable)))
-        read=[os.environ['SystemRoot'],*sorted(runtime_roots)]
+        if not windows:
+            from compute_plane import linux_bwrap
+        # Linux: the system folders bubblewrap binds are named in the policy, so its digest names everything bound.
+        read=[*([os.environ['SystemRoot']] if windows else linux_bwrap.SYSTEM_ROOTS),*sorted(runtime_roots)]
         references=[]
         if config.get('folder_access'):
             from .folder_access import folder, granted
@@ -315,7 +328,7 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         # Every classifier: secrets at any depth of the project and its granted folders, found once per binding.
         modules=[]
         denied=sandbox_secrets.find([root,*references],git=not (host_checks or staged_effects),modules=modules)
-        if not any(map(sandbox_secrets.linked,modules)):
+        if windows and not any(map(sandbox_secrets.linked,modules)):
             # Node resolves each module's real path, and on Windows that lstat()s the drive root, which this sandbox
             # denies (no enumerate scope, below): no script loads. These flags keep the path Node was given (Node's
             # CLI docs; NODE_OPTIONS takes both since Node 12). Linked packages (pnpm, npm link, workspaces) would then
@@ -342,10 +355,15 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         # No enumerate-only scope: PSEC's fs_enumerate admits listing of the whole subtree, so the volume
         # root's lets a command list every folder on the drive (probed 2026-11-13). Ancestors stay
         # stat-able without it; only the volume root's own metadata is then denied.
-        policy=MxcPolicy(tuple(read),tuple(dict.fromkeys(write)),tuple(denied),registry_read=True)
+        if windows:
+            policy=MxcPolicy(tuple(read),tuple(dict.fromkeys(write)),tuple(denied),registry_read=True)
+            profile_identity='windows-mxc/1:'+policy_sha256(policy)
+        else:  # the same secrets, masked; MAX_DENIED keeps one rule on both platforms
+            policy=linux_bwrap.BwrapPolicy(tuple(read),tuple(dict.fromkeys(write)),tuple(denied))
+            profile_identity='linux-bwrap/1:'+linux_bwrap.policy_sha256(policy)
         # MXC denies a path: renaming a writable folder above a nested secret would carry the secret out of the rule.
         # bubblewrap masks the entry itself, and a rename carries the mask along: nothing to hold (and Hold is Windows').
-        held=sandbox_secrets.Hold(sandbox_secrets.movable(denied,write) if sys.platform=='win32' else [])
+        held=sandbox_secrets.Hold(sandbox_secrets.movable(denied,write) if windows else [])
         deadline_cache={};issued={};observed={};routine_ports={}
 
         def sources(argv):
@@ -362,7 +380,7 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
                 if candidate.is_file() and any(candidate.resolve().is_relative_to(p.resolve()) for p in admitted):
                     files.append(candidate)
             if any(path.resolve().is_relative_to(Path(p).resolve()) for path in files for p in policy.denied):
-                raise ActionRefused('Command input is denied by the selected Windows profile.')
+                raise ActionRefused('Command input is denied by the sandbox.')
             rows=[];total=0
             for path in dict.fromkeys(files):
                 size=path.stat().st_size;total+=size
@@ -385,7 +403,7 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
             return ActionSnapshot(binding.work_id,session['session_id'],facts.effect_id,binding.binding_id,
                 binding.fence,facts.operation,facts.repository,facts.cwd,facts.environment_sha256,
                 context_sha,source,policy_identity,facts.grant_sha256,
-                'windows-mxc/1:'+policy_sha256(policy),deadline,argv=facts.argv,payload_json=facts.payload_json)
+                profile_identity,deadline,argv=facts.argv,payload_json=facts.payload_json)
 
         def classifier_facts(action):
             if sources(action.argv)!=action.source_sha256:
@@ -791,7 +809,8 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
             stopped = next((label for key, label in (('cancelled', 'cancelled'),
                 ('timeout', 'timed out'), ('output_limit', 'exceeded its output limit'))
                 if process.get(key)), None)
-            reason = stopped or value.get('reason') or value.get('error_type') or result.status
+            reason = (stopped or value.get('reason') or getattr(port, 'launch_refused', None)  # windows_isolation
+                      or value.get('error_type') or result.status)
             if stopped == 'timed out' and not protected:  # the sandbox may be why: unjudged, and the user is asked
                 done = subprocess.CompletedProcess(argv, 1, '', '')
                 done.execution_limitation = SANDBOX_TIMEOUT_LINUX if sys.platform == 'linux' else SANDBOX_TIMEOUT

@@ -487,6 +487,26 @@ def test_a_local_implementer_is_refused_where_no_sandbox_isolates_its_checks(tmp
 
 
 def test_without_flatbuffers_or_windows_the_probe_says_no_sandbox(monkeypatch):
-    # CI's Linux shards pretend to be Windows elsewhere: the probe itself must not reach ctypes off Windows.
+    # CI's Linux shards pretend to be Windows elsewhere: the probe itself must not reach ctypes off Windows. Linux has
+    # no sandbox yet even where bubblewrap works: its binding is in place, dormant until the probe asks the Kernel.
+    monkeypatch.setattr('compute_plane.linux_bwrap.require_support', lambda: None)
     monkeypatch.setattr(protection, 'sys', SimpleNamespace(platform='linux'))
     assert protection.probe_sandbox() is False
+
+
+@pytest.mark.parametrize('code', ['bwrap_scope_changed', 'bwrap_denied_path_changed'])
+def test_a_launch_bubblewrap_refuses_is_the_sandbox_refusing_the_check_never_a_run_outside(host, monkeypatch, code):
+    # A granted folder's real path or a masked secret moved since binding: the Kernel's profile refuses to launch.
+    from relay.windows_isolation import windows_isolation_factory
+    unprotected(host, monkeypatch)
+    class Refusing:
+        def __init__(self, policy, *, cwd, environment): pass
+        def __call__(self, argv, **options): raise ValueError(code)
+    monkeypatch.setattr('compute_plane.linux_bwrap.LinuxBwrapProfile', Refusing)
+    monkeypatch.setattr(protection, 'windows_isolation_factory', windows_isolation_factory)  # the real composition
+    monkeypatch.setattr(work_units, 'managed_check', lambda *a, **kw: pytest.fail('Nothing runs outside.'))
+    protection.sys.platform = 'linux'
+    run = protection.conversation_verifier(host.control, host.custody, host.config, {}, host.root, UNIT,
+        {'tests': PASS}, outside=lambda *a: pytest.fail('A refused launch is not a question.'))
+    with pytest.raises(ValueError, match=f'^Sandboxed verification was refused: tests: {code}$'):
+        run(PASS)

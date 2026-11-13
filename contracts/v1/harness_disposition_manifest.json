@@ -3931,8 +3931,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 3089,
-      "sha256": "e6b9aea894ec8fc41bc600814302cb213e580691acaec1b5d90a2588d1352725"
+      "size_bytes": 3832,
+      "sha256": "8fa61db2765da2c492279a9deceab78db5f36a045d400c9b8a74525da6932ea5"
     },
     {
       "name": "command_protection.py",
@@ -3941,8 +3941,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 72998,
-      "sha256": "e69b5d822645878bf8a7f7158a026314cb6d9906e29a38be626b3f0f9326d761"
+      "size_bytes": 74409,
+      "sha256": "b38c9cdc2472c566601299a2cfa400ed33645cccd05c2cacfe77a02d3c9c37c4"
     },
     {
       "name": "test_selection_pilot.py",
