@@ -345,6 +345,11 @@ def permissions_view(directory, project, control_root, *, session=None, pending=
                      'local models do not get it') if terminal and any(t.startswith('terminal_') for t in tools)
                      else 'Disabled'),
                  'Configured checks: '+(', '.join(checks) or 'None in this scope')]
+    if local_only:  # execution_scope.local_only_unsandboxed: a local implementer only where its checks are isolated
+        from .command_protection import sandbox_available
+        effective.append('Local-only mode: the local model implements only where its checks run in the sandbox; '+(
+            'they do here, in every mode' if sandbox_available() else
+            'there is no sandbox on this system, so nothing is implemented'))
     if protection:
         effective += local
         if protection.get('classifier')=='jev' and not judges_off and not local:

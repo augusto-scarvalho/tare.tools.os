@@ -47,9 +47,30 @@ def test_a_policy_effort_maps_to_a_level_the_local_profile_declares():
     local = select('qwen38-gsq')  # declares low, medium and xhigh
     with pytest.raises(ValueError, match='Unsupported local reasoning level: high'):
         with_effort(local, 'high')  # an explicit choice is not moved
-    assert [reasoning(with_effort(local, e, at_least=True)) for e in ('medium', 'high', 'max')] == ['medium', 'xhigh', 'xhigh']
+    assert [reasoning(with_effort(local, e, at_least=True)) for e in ('medium', 'high')] == ['medium', 'xhigh']
+    with pytest.raises(ValueError, match='declares no reasoning level at or above max .it declares low, medium, xhigh.'):
+        with_effort(local, 'max', at_least=True)  # never a lower level than the policy asks
     hosted = select('claude-api-opus-5-5')
     assert with_effort(hosted, 'high', at_least=True) == with_effort(hosted, 'high')
+
+
+@pytest.mark.parametrize('kind,policy', [('classifier', 'low'), ('reviewer', 'high')])
+def test_the_action_reviewers_levels_are_ones_the_deployment_declares(kind, policy):
+    """command_protection's review ports ask declared_effort for their level (low to classify, high to review)."""
+    from relay.execution_team import reasoning
+    from relay.model_choices import declared_effort, reasoning_parameters
+    from relay.native_catalog import select
+    def port_level(deployment):  # what command_protection.factory's port() sends
+        value = json.loads(json.dumps(deployment))
+        value['native_profile']['parameters_json'] = json.dumps(reasoning_parameters(value, declared_effort(value, policy)))
+        return reasoning(value)
+    assert port_level(select('qwen38-gsq')) == ('low' if kind == 'classifier' else 'xhigh')
+    for hosted in ('claude-api-opus-5-5', 'openai-api'):  # exactly today's level
+        assert declared_effort(select(hosted), policy) == policy and port_level(select(hosted)) == policy
+    narrow = select('qwen38-gsq'); narrow['native_reasoning_levels'] = ['low', 'medium']
+    if kind == 'reviewer':
+        with pytest.raises(ValueError, match='declares no reasoning level at or above high .it declares low, medium.'):
+            declared_effort(narrow, policy)
 
 
 def test_unsupported_connection_keeps_its_exact_parameters_without_adding_a_frontier_call():

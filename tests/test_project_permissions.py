@@ -251,7 +251,18 @@ def test_panel_says_when_the_local_judge_reviews_and_what_happens_when_it_cannot
     assert 'When it is not: tare asks once' in text('both',local_only=True)
     assert '(when the execution connection is not Codex)' in text('auto',local_only=True)
     assert 'local judge' not in text('codex',local_only=True)  # Codex reviews; no local judge
-    assert text('tare',local_only=True,judges_off=True)==text('tare',judges_off=True)  # judges off: #134's text
+    implements=[line for line in text('tare',local_only=True,judges_off=True).splitlines() if line.startswith('Local-only mode:')]
+    assert implements==['Local-only mode: the local model implements only where its checks run in the sandbox; '
+                        'there is no sandbox on this system, so nothing is implemented']  # the suite has none
+    assert text('tare',local_only=True,judges_off=True).replace('\n'+implements[0],'')==text('tare',judges_off=True)  # judges off: #134's text
+    bare=lambda **kw:permissions_view(tmp_path/'preferences',root,tmp_path/'control',
+        pending=Selection(str(root),role='implementer',write_paths=['.']),**kw)['effective_text']
+    from relay import command_protection
+    with pytest.MonkeyPatch.context() as patch:  # Windows 11 with the sandbox: no Action review needed
+        patch.setattr(command_protection,'sandbox_available',lambda:True)
+        assert 'Local-only mode: the local model implements only where its checks run in the sandbox; they do here, ' \
+               'in every mode' in bare(local_only=True)
+    assert 'Local-only mode:' not in bare() and 'Local-only mode:' not in text('tare')
     assert text('tare')==text('tare',local_only=False)
     set_project_permission_mode(root,'edit')
     assert 'When it is not: tare asks you about each command' in text('tare',local_only=True)

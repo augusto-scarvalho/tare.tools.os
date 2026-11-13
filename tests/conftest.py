@@ -54,6 +54,7 @@ def disable_installed_flow_assessor(monkeypatch, tmp_path_factory, request):
     # a local model on loopback. The tests of that rule mark themselves.
     if not request.node.get_closest_marker('local_implementer_rule'):
         monkeypatch.setattr('relay.execution_scope.unsandboxed_local', lambda deployment: None)
+        monkeypatch.setattr('relay.execution_scope.local_only_unsandboxed', lambda: None)
     # Storage cleanup removes other tools' files (Codex logs, caches): a test sees only an empty home, and the
     # operator's automatic-cleanup choice never reaches it.
     tools = state_dir('tools')

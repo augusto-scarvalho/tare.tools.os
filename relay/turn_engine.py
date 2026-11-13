@@ -1347,14 +1347,12 @@ def helper_dispatch(trace, outcome):
 
 
 def with_effort(deployment, effort, *, at_least=False):
-    """Apply the picker-owned reasoning mapping without changing the saved deployment. at_least (a policy default
-    such as auditor_effort, not a user's choice): a local profile, which declares its own levels (low, medium,
-    xhigh) and refuses others, takes its lowest level above this one, else its highest."""
+    """Apply the picker-owned reasoning mapping without changing the saved deployment. at_least: a policy default
+    such as auditor_effort, not a user's choice (model_choices.declared_effort)."""
     from .native_generation import deployment_profile
-    from .model_choices import EFFORTS, local, reasoning_parameters
-    levels = deployment.get('native_reasoning_levels') or []
-    if at_least and local(deployment) and levels and effort in EFFORTS and effort not in levels:
-        effort = next((level for level in EFFORTS[EFFORTS.index(effort):] if level in levels), levels[-1])
+    from .model_choices import declared_effort, reasoning_parameters
+    if at_least:
+        effort = declared_effort(deployment, effort)
     value = deepcopy(deployment)
     profile = value['native_profile']
     original = json.loads(profile.get('parameters_json') or '{}')

@@ -371,6 +371,14 @@ def unsandboxed_local(deployment):
         if not sandbox_available():raise ValueError(LOCAL_UNSANDBOXED)
 
 
+def local_only_unsandboxed():
+    """Under --local_only the implementer is a local model: unsandboxed_local's refusal where no sandbox isolates its
+    checks, said before a delivery is planned or started rather than when its implementer starts; else None."""
+    if current().only!='local':return None
+    from .command_protection import sandbox_available
+    return None if sandbox_available() else LOCAL_UNSANDBOXED
+
+
 def session_role(function):
     @wraps(function)
     def run(config,deployment,custody,*args,**kwargs):

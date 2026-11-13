@@ -565,6 +565,7 @@ def test_local_only_asks_before_applying_a_same_family_audit_and_a_no_keeps_the_
         return {'verdict': 'VERIFIED' if applied[-1] else 'NOT_REVIEWED', 'applied': applied[-1],
                 'audit': audit, 'files': ['a.py']}
     monkeypatch.setattr(work_units, 'run_unit', run_unit)
+    # the local-implementer rule has its own tests (conftest leaves it out unless a test is marked)
     with scope.activated(scope.Scope(only='local')), permission_worker(control) as pool:
         running = pool.submit(tools.execute, effect('implement', {}, 'execution-1'), control)
         request = wait_request(tools.root)
@@ -611,6 +612,7 @@ def test_local_only_lets_the_user_decide_on_a_same_family_audit_that_left_only_o
         applied = audit['verdict'] == 'ACCEPT' or audit.get('user_decision') == 'APPLY_WITHOUT_ACCEPTED_AUDIT'
         return {'verdict': 'VERIFIED' if applied else 'NOT_REVIEWED', 'applied': applied, 'audit': audit, 'files': ['a.py']}
     monkeypatch.setattr(work_units, 'run_unit', run_unit)
+    # the local-implementer rule has its own tests (conftest leaves it out unless a test is marked)
     with scope.activated(scope.Scope(only='local')), permission_worker(control) as pool:
         running = pool.submit(tools.execute, effect('implement', {}, 'execution-1'), control)
         if choice == 'findings':  # the ordinary correction path: nobody is asked to apply over findings
@@ -655,6 +657,63 @@ def test_without_a_tui_or_outside_local_only_a_same_family_audit_applies_nothing
     conversation_review.available({}, SimpleNamespace(permission_directory=tmp_path))
     conversation_review.available({})
     assert seen == [False, True, False]
+
+
+@pytest.mark.local_implementer_rule
+def test_local_only_where_no_sandbox_exists_refuses_before_planning_or_implementing(host, tmp_path, monkeypatch):
+    from relay import execution_scope as scope
+    tools, control, root, seen = host  # the suite has no sandbox (conftest): as on Linux or older Windows
+    tools.permission_directory = tmp_path/'prefs'
+    monkeypatch.setattr(work_units, 'run_unit', lambda *a, **kw: pytest.fail('No implementer may start.'))
+    intake(host)
+    with scope.activated(scope.Scope(only='local')):
+        # Before the planner, so nobody approves a plan that cannot be implemented here.
+        planning = tools.execute(effect('delegate_plan', {'instruction': 'Plan it.'}, 'plan'), control)
+        assert planning.status == 'refused' and json.loads(planning.output_json)['reason'] == scope.LOCAL_UNSANDBOXED
+        assert seen == []
+        planned(host); tools.state.update(session_id='parent')
+        for key, args in (('implement', {}), ('recheck', {'recheck_candidate': True})):
+            result = tools.execute(effect('implement', args, key), control)
+            assert result.status == 'refused' and json.loads(result.output_json)['reason'] == scope.LOCAL_UNSANDBOXED
+        assert not (tools.root/'execution-permission').exists() and not (tools.root/'units').exists()
+    for mode in (scope.Scope(), scope.Scope(prefer='local'), scope.Scope(only='subscription')):  # the route decides
+        with scope.activated(mode):
+            assert scope.local_only_unsandboxed() is None
+    planning = tools.execute(effect('delegate_plan', {'instruction': 'Plan it.'}, 'plan-again'), control)
+    assert planning.status == 'succeeded' and seen == ['delegate_plan']
+
+
+@pytest.mark.local_implementer_rule
+def test_local_only_still_plans_a_plan_only_demand_without_a_sandbox(host, monkeypatch):
+    from relay import execution_scope as scope
+    tools, control, _, seen = host
+    intake(host, intent='plan')
+    with scope.activated(scope.Scope(only='local')):
+        assert tools.execute(effect('delegate_plan', {'instruction': 'Plan it.'}), control).status == 'succeeded'
+        assert seen == ['delegate_plan']  # planning is read-only
+
+
+@pytest.mark.local_implementer_rule
+@pytest.mark.parametrize('review', [None, 'tare'])
+def test_local_only_implements_where_the_sandbox_exists_with_or_without_an_action_review(host, tmp_path, monkeypatch,
+                                                                                       review):
+    from relay import command_protection, execution_scope as scope
+    monkeypatch.setattr(command_protection, 'sandbox_available', lambda: True)  # Windows 11 with the sandbox
+    tools, control, root, _ = host
+    intake(host); planned(host)
+    tools.state.update(session_id='parent')
+    tools.permission_directory = tmp_path/'prefs'
+    defaults, revision = read_defaults(tools.permission_directory, root, relay_mesh.RELAY_ROOT)
+    save_defaults(tools.permission_directory, root, relay_mesh.RELAY_ROOT, {**defaults, 'show_plan': False,
+        'write_paths': ['.'], **({'mode': 'commands', 'command_protection': {'review': review, 'backend': 'mxc'}}
+                                 if review else {'mode': 'edit'})}, revision)  # /permissions
+    workers = []
+    monkeypatch.setattr(work_units, 'run_unit', lambda custody, state, *a, **kw: workers.append(
+        state['config'].get('command_protection')) or {'verdict': 'VERIFIED', 'applied': True, 'files': ['a.py']})
+    with scope.activated(scope.Scope(only='local')):
+        result = tools.execute(effect('implement', {}, 'execution-1'), control)
+    # No Action review: the checks run in the sandbox by default (command_protection.conversation_verifier).
+    assert result.status == 'succeeded' and len(workers) == 1 and bool(workers[0]) is bool(review)
 
 
 def test_one_approval_covers_the_tasks_corrections_but_not_a_new_plan(host, tmp_path):

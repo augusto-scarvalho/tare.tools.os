@@ -183,6 +183,21 @@ def test_local_initial_routing_uses_only_the_resident_judge(monkeypatch):
     assert len(calls)==1 and selected['native_auto_selection']['decision']['source']=='local_judge'
 
 
+@pytest.mark.local_implementer_rule
+@pytest.mark.parametrize('only',['','local'])
+def test_no_local_implementer_session_starts_where_its_checks_are_not_sandboxed(setup,only):
+    """The backstop for every implementer session (/session tasks, Work, resumes), in any mode: this suite has no
+    sandbox (conftest). Conversations in local-only mode refuse earlier, before planning."""
+    config,custody,_=setup
+    client=Client(steps=[('tare_deliver',{'summary':'Done.'})])
+    with scope.activated(scope.Scope(only=only)):
+        with pytest.raises(ValueError) as refused:
+            native_agent.run_session(config,deployment(endpoint='http://127.0.0.1:8080'),custody,'Change a.py.',
+                                     client=client,local_counter=client)
+    assert str(refused.value)==scope.LOCAL_UNSANDBOXED
+    assert not client.calls and not custody.exists()
+
+
 def test_excluded_resume_does_not_rewrite_history_or_spend_a_model_call(setup):
     config,custody,_=setup
     client=Client(steps=[('tare_deliver',{'summary':'Done.'})])

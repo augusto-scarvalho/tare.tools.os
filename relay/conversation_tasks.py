@@ -1220,6 +1220,10 @@ class ConversationTools:
                     raise ValueError('The current goal already has a saved plan. Failed checks are correction '
                         'feedback, not permission to spend on planning again. Use demand relation=correct and '
                         'implement with the saved plan. A genuinely revised demand must be recorded first.')
+                # Said before planning, so nobody approves a plan that cannot be implemented; a plan-only demand plans.
+                from .execution_scope import local_only_unsandboxed
+                if task['intent'] == 'deliver' and (refusal := local_only_unsandboxed()):
+                    raise ValueError(refusal)
                 result = self.tools.execute(request, control)
                 if result.status != 'succeeded': return result
                 output = object_json(result.output_json)
@@ -1278,6 +1282,10 @@ class ConversationTools:
                         raise ValueError('Files changed since review. Inspect the change and continue with relation=correct or revise.')
                     return EffectResult(request.effect_id, 'succeeded', encode(delivery_view(
                         task['delivery'], config=self.state['config'], unit=plan['unit'])), True)
+                # Every implementer start below: a new attempt, recheck_candidate, /retry_delivery, a waiting worker.
+                from .execution_scope import local_only_unsandboxed
+                if refusal := local_only_unsandboxed():
+                    raise ValueError(refusal)
                 previous = task.get('delivery') or {}
                 preserved = retained_candidate(task)
                 if preserved:

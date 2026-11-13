@@ -35,6 +35,10 @@ they do not introduce a default allowlist. An explicit empty list is an error.
 `*_only` restricts all work to the chosen family. `prefer_api` and `prefer_cli`
 keep the per-role priority, but their lists filter the family in every
 role. `prefer_local` keeps execution local and planning/auditing external.
+A local implementer runs only where its checks run in the sandbox: on Windows with
+the process sandbox they do in every mode, with or without an Action review; where
+there is none, tare refuses a local implementer in any mode, and `local_only`
+says so before planning a delivery.
 `local_only` is the one mode where the local model also plans and audits
 (`local_only_roles` in `relay/role_deployments.json`): the owner's admission by
 choice of that mode, not a quality claim. With no explicit level it plans at

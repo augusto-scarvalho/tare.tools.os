@@ -370,10 +370,10 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
             return facts
 
         def port(kind):
-            from .model_choices import reasoning_parameters
+            from .model_choices import declared_effort, reasoning_parameters
             selected=deepcopy(deployment)
             selected['native_profile']['parameters_json']=json.dumps(
-                reasoning_parameters(selected,'low' if kind=='classifier' else 'high'))
+                reasoning_parameters(selected,declared_effort(selected,'low' if kind=='classifier' else 'high')))
             cls=TareActionClassifier if kind=='classifier' else TareActionReviewer
             return cls(selected,journal_factory=lambda:journal,custody_factory=nullcontext,
                        disclosure_check=lambda request:request.public_context==context,
