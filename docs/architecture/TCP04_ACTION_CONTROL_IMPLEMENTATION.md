@@ -105,9 +105,16 @@ finding more than the 32 paths PSEC's deny group holds, refuses the binding with
 secret readable. The list is built once per binding and sorted (it enters the policy digest), so a secret created
 later is not denied. Only hidden names are listed: a denied file in ripgrep's file list (`id_rsa`) would refuse
 the whole `search`. MXC denies paths: a denied file cannot be read, copied, linked, renamed or deleted, and a
-denied folder cannot be listed, but their names and sizes stay visible in the parent's listing, and a command
-that may edit a folder between a write scope and a nested secret can rename that folder and read the secret
-there (probed 2026-11-13); a secret directly in a write scope's root cannot be moved that way. Other
+denied folder cannot be listed, but their names and sizes stay visible in the parent's listing. Because the rule
+follows the path, renaming a folder between a write scope and a nested secret would carry the secret out of it
+(probed 2026-11-13). So the host holds every such secret open, with no access and every sharing mode, for the life
+of the binding (`Hold`, released by the mediator's `close` or when collected, never inherited): Windows refuses to
+rename or move a folder below which something is open, and every variant probed in the sandbox (`os.rename`,
+`MoveFileEx`, POSIX `FileRenameInfoEx`, `cmd move`/`ren`, `Move-Item`, a `\\?\` or 8.3 path, a grandparent,
+another write scope) then failed with access denied; copying the folder (`robocopy /MOVE` too) leaves the secret
+behind and a junction cannot be created. A secret directly in a write scope's root, or in a read-only scope,
+needs no handle: those folders cannot be renamed from inside. If a handle cannot be opened the binding is
+refused. The user cannot rename, move or delete those folders either while the binding lives. Other
 runtime/profile needs are admitted separately; no generic third-party guarantee
 or hard disk quota is claimed. Protected checks use their frozen executable path.
 No enumerate-only scope is granted: PSEC's `fs_enumerate` admits listing of a folder's whole subtree, so the

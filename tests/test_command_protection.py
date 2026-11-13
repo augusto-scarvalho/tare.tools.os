@@ -656,15 +656,27 @@ def test_secrets_are_denied_at_any_depth_without_a_classifier(host, monkeypatch)
     def capture(**kwargs):
         captured.append(kwargs);return original(**kwargs)
     monkeypatch.setattr(protection,'windows_isolation_factory',capture)
+    holds=[]
+    class Hold:  # the real one opens Windows handles (tests/test_sandbox_secrets.py)
+        def __init__(self,paths):self.paths,self.closed=list(paths),False;holds.append(self)
+        def close(self):self.closed=True
+    monkeypatch.setattr(protection.sandbox_secrets,'Hold',Hold)
     for name in ('.env','services/api/.env','services/api/.env.example','pkg/.npmrc','.git/config','src/app.py'):
         path=host.root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text('FAKE_SECRET_FIXTURE')
     mediator=host.build()  # Codex review: neither Jev nor the local classifier
     assert list(captured[-1]['policy'].denied)==sorted(str(host.root/p) for p in
         ('.env','.git','pkg/.npmrc','services/api/.env'))
+    # The project is writable: what a renamed folder could carry off is held, not what sits in the project's root.
+    assert holds[-1].paths==[str(host.root/'pkg/.npmrc'),str(host.root/'services/api/.env')] and not holds[-1].closed
     with pytest.raises(ActionRefused,match='denied'):
         mediator.execute(host.facts(args=[str(host.executable),str(host.root/'services/api/.env')]),host.effect)
     assert host.effects==host.native==[]
     mediator.close()
+    assert holds[-1].closed
+    def unavailable(paths):raise ValueError('tare could not hold it')
+    monkeypatch.setattr(protection.sandbox_secrets,'Hold',unavailable)
+    with pytest.raises(ValueError,match='could not hold'):host.build()
+    monkeypatch.setattr(protection.sandbox_secrets,'Hold',Hold)
     for n in range(29):  # with the four above, one more than the sandbox can deny
         (host.root/f'p{n:02d}').mkdir();(host.root/f'p{n:02d}/.env').write_text('FAKE_SECRET_FIXTURE')
     with pytest.raises(ValueError,match='33 secret files or folders'):

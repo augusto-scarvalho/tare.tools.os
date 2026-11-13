@@ -120,9 +120,11 @@ sandbox limitation: give the test its own settings or a sample file. A project
 with more than 32 such paths, or too large to search (100,000 files and folders,
 32 levels; dependencies, virtual environments and caches are skipped), refuses
 protected commands with a message that says so: move secrets out of the project
-or open a smaller folder. Their names stay visible in listings, and a command
-written to evade the rule can still read a nested secret by first renaming a
-folder above it that it may edit; review of the command remains the guard there.
+or open a smaller folder. Their names stay visible in listings. Windows applies
+the rule to the path, so while a protected command or check runs, tare keeps each
+nested secret in an editable folder open: no folder above it can be renamed or
+moved to carry the secret out of the rule. You cannot rename, move or delete
+those folders yourself until that command's session or check ends.
 
 F3 includes the host-applied files, recorded candidate checks and their observed
 freshness. Existing file/turn preview and explicit undo use the same hashed

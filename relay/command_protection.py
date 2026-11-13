@@ -257,6 +257,8 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         # root's lets a command list every folder on the drive (probed 2026-11-13). Ancestors stay
         # stat-able without it; only the volume root's own metadata is then denied.
         policy=MxcPolicy(tuple(read),tuple(dict.fromkeys(write)),tuple(denied),registry_read=True)
+        # MXC denies a path: renaming a writable folder above a nested secret would carry the secret out of the rule.
+        held=sandbox_secrets.Hold(sandbox_secrets.movable(denied,write))
         deadline_cache={};issued={};observed={};routine_ports={}
 
         def sources(argv):
@@ -511,7 +513,7 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         # after any wait for the user (the session's own clock may have stopped meanwhile).
         mediator=CommandActionMediator(Broker(),snapshot,lambda a,c:context,authorize,guard,
             lambda:steady(control),result_handler=result,reviewed_execution=gate)
-        mediator.close=weakref.finalize(mediator,test_directory.cleanup)
+        mediator.close=weakref.finalize(mediator,lambda:(held.close(),test_directory.cleanup()))
         cli_options=({'codex_executable':pinned_cli['executable'],'codex_sha256':options['codex_sha256']}
                      if options['backend']=='codex' else {})
         from .work_units import VERIFY_SECONDS

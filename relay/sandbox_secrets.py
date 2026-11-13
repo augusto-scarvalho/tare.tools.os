@@ -1,11 +1,14 @@
 """The secret files and folders a protected command must not read, found once when its Windows sandbox is bound.
 
-Stdlib only, so its tests run without the Kernel's FlatBuffers. A secret created after binding is not covered, and
-MXC denies a path, not a file: a command that may edit a folder between a write scope and a nested secret can rename
-that folder and read the secret at its new path (probed 2026-11-13); the secret itself cannot be renamed or deleted.
+Stdlib only, so its tests run without the Kernel's FlatBuffers. A secret created after binding is not covered.
+MXC denies a path, not a file: a command that could rename a folder between a write scope and a nested secret would
+read the secret at its new path (probed 2026-11-13), so the host holds such secrets open while the binding lives.
 """
+import ctypes
 import os
+from pathlib import Path
 import stat
+import weakref
 
 # Named alone, these hold credentials (compared case-insensitively). `.env.*` is a secret too, except the samples.
 # Only hidden names: ripgrep's file list skips them, while a listed denied file (`id_rsa`, `_netrc`) would get the
@@ -71,3 +74,34 @@ def find(roots, *, git):
             'protected commands are refused rather than leave some readable. Move secrets out of the project (and '
             'out of the folders granted to it) or open a smaller folder as the project.')
     return sorted(found)
+
+
+def movable(denied, write):
+    """The denied paths a command could carry off by renaming a folder above them: those whose folder lies strictly
+    inside a write scope (a scope's own folder can only be renamed from a scope above it, which this checks too)."""
+    scopes = [Path(p) for p in write]
+    return [p for p in denied if any(scope in Path(p).parent.parents for scope in scopes)]
+
+
+class Hold:
+    """Keeps `paths` open until close() or collection. Windows refuses to rename or move a folder below which something
+    is open, whoever asks, so the folders above each path stay where MXC's path rule expects them (probed 2026-11-13:
+    every rename and move variant failed). A handle with no access and every sharing mode neither reads the path nor
+    keeps anyone from editing, renaming or deleting it. It is not inheritable and dies with this process."""
+
+    def __init__(self, paths):
+        self.paths, handles = list(paths), []
+        if self.paths:  # Windows only, as MXC is
+            kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+            kernel32.CreateFileW.restype = ctypes.c_void_p
+        self.close = weakref.finalize(self, lambda: [kernel32.CloseHandle(ctypes.c_void_p(h)) for h in handles])
+        for path in self.paths:
+            # No access, share read/write/delete, open existing, a folder too, the link itself rather than its target.
+            handle = kernel32.CreateFileW(ctypes.c_wchar_p(path), 0, 7, None, 3, 0x02000000 | 0x00200000, None)
+            if handle in (None, ctypes.c_void_p(-1).value):
+                reason = ctypes.FormatError(ctypes.get_last_error())
+                self.close()
+                raise ValueError(f'tare could not hold {path} open ({reason}) to keep the folders above it in place, '
+                    'so protected commands are refused rather than leave it readable through a renamed folder. Try '
+                    'again, or move the secret out of the project.')
+            handles.append(handle)

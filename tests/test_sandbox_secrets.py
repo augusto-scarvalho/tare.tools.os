@@ -88,3 +88,49 @@ def test_a_walk_cut_short_refuses_rather_than_claim_protection(tmp_path, monkeyp
     monkeypatch.setattr(sandbox_secrets, 'MAX_DEPTH', 2)
     with pytest.raises(ValueError, match='more than 2 levels deep'):
         sandbox_secrets.find([tmp_path], git=False)
+
+
+def test_only_secrets_a_command_could_move_by_renaming_a_folder_are_held(tmp_path):
+    root, reference = tmp_path/'project', tmp_path/'granted'
+    denied = [str(p) for p in (root/'.env', root/'.git', root/'api/.env', root/'api/deep/.ssh', reference/'x/.env')]
+    # The project's own folder cannot be renamed from inside; a granted folder is read-only.
+    assert sandbox_secrets.movable(denied, [str(root)]) == [str(root/'api/.env'), str(root/'api/deep/.ssh')]
+    assert sandbox_secrets.movable(denied, [str(root/'api')]) == [str(root/'api/deep/.ssh')]
+    assert sandbox_secrets.movable(denied, [str(root/'api'), str(root)]) == denied[2:4]  # a scope inside another
+    assert sandbox_secrets.movable(denied, []) == []
+    assert sandbox_secrets.Hold([]).paths == []  # nothing to hold opens nothing, on any platform
+
+
+def rename(source, target):
+    """Another process's attempt; the folder is put back when it moves."""
+    import subprocess
+    done = subprocess.run([sys.executable, '-c', 'import os, sys; os.rename(sys.argv[1], sys.argv[2])',
+                           str(source), str(target)], capture_output=True, text=True)
+    if done.returncode == 0:
+        os.rename(target, source)
+    return done.returncode == 0
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows handles')
+def test_a_held_secret_keeps_every_folder_above_it_in_place_until_released(tmp_path):
+    import gc
+    tree(tmp_path, ['a/b/.env'], ['a/b/c/.ssh'])
+    held = sandbox_secrets.Hold([str(tmp_path/'a/b/.env'), str(tmp_path/'a/b/c/.ssh')])
+    assert not rename(tmp_path/'a/b', tmp_path/'a/moved') and not rename(tmp_path/'a', tmp_path/'moved')
+    assert not rename(tmp_path/'a/b/c', tmp_path/'a/b/moved')  # held through the folder itself
+    assert rename(tmp_path/'a/b/.env', tmp_path/'a/b/renamed')  # the secret itself stays the user's to change
+    (tmp_path/'a/b/.env').write_text('edited'); (tmp_path/'a/b/new.txt').write_text('sibling')
+    held.close()
+    assert rename(tmp_path/'a/b', tmp_path/'a/moved')
+    held = sandbox_secrets.Hold([str(tmp_path/'a/b/.env')])
+    assert not rename(tmp_path/'a', tmp_path/'moved')
+    del held; gc.collect()  # a binding dropped without close releases them too
+    assert rename(tmp_path/'a', tmp_path/'moved')
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows handles')
+def test_a_secret_that_cannot_be_held_refuses_the_binding_and_releases_the_rest(tmp_path):
+    tree(tmp_path, ['a/b/.env'])
+    with pytest.raises(ValueError, match=r'could not hold .*missing.*protected commands are refused'):
+        sandbox_secrets.Hold([str(tmp_path/'a/b/.env'), str(tmp_path/'a/missing/.env')])
+    assert rename(tmp_path/'a/b', tmp_path/'a/moved')

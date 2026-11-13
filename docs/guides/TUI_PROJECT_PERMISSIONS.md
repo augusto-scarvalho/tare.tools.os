@@ -93,7 +93,10 @@ the independent Work auditor still checks the delivery separately.
 Whatever the review, a protected command cannot read the project's secrets: `.env`
 files (not `.env.example` and other samples), `.ssh`, `.aws`, `.npmrc`, `.pypirc`
 and similar credential files and folders, at any depth and in granted folders. It
-gets `Permission denied`, so a test that reads `.env` fails there. A project with
+gets `Permission denied`, so a test that reads `.env` fails there. While such a
+command runs, you cannot rename, move or delete the folders above one that lies
+inside an editable folder (`services` and `services/api` for `services/api/.env`
+when the whole project is editable). A project with
 more than 32 of them refuses protected commands until you move some out
 ([Conversation roles](CONVERSATION_ROLES.md) says what you see and the limits).
 
