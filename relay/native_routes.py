@@ -38,19 +38,43 @@ def ranked(role, producer=None, *, check_resources=False):
     with for_role(role):return _ranked(role,producer,check_resources=check_resources)
 
 
+def proven(row, cache):
+    """Whether a pin-only row answered once on this machine: its setup holds a successful proof (tare setup --prove)
+    under the row's catalogue name, the name prove() records for this route, and the route serves its vendor's own
+    model (vendor_models.origin_line). A reseller's or a local model has no line and stays pin-only, proof or not; an
+    inline row has no name tare setup --prove reaches. The setup is read once per `cache` (admission's)."""
+    name = row.get('native_catalog')
+    if not name:
+        return False
+    if ('proofs',) not in cache:
+        from .environment import read
+        proofs = read().get('proofs')
+        cache[('proofs',)] = proofs if isinstance(proofs, dict) else {}
+    record = cache[('proofs',)].get(name)
+    if not isinstance(record, dict) or record.get('ok') is not True:
+        return False
+    from .vendor_models import origin_line
+    try:
+        profile = native_catalog.select(name)['native_profile']
+        return bool(origin_line(profile['model'], profile['endpoint']))
+    except (ValueError, KeyError, TypeError, OSError):
+        return False
+
+
 def admission(row, role, author=None, credentials=None):
     """(deployment, auditor identity, reason) of one role-table row under the rules that come before the routing
     profile and any live probe; reason None when they admit it. `author`: the producer's identity, for a review role
-    (None checks no independence). `credentials`: a cache shared across rows. The matrix of /routes reads it too
-    (environment.auto_routes), so what it shows cannot drift from what ranks."""
+    (None checks no independence). `credentials`: a cache shared across rows (credentials, logins, this machine's
+    proofs). The matrix of /routes reads it too (environment.auto_routes), so what it shows cannot drift from what
+    ranks."""
     from .work_audit import identity
     from .execution_scope import constrained, current, same_family_admitted
     credentials = {} if credentials is None else credentials
     if role not in roles(row, current()):
         return None, None, 'ROLE_NOT_CONFIGURED'
-    if row.get('qualified') is False:
+    if row.get('qualified') is False and not proven(row, credentials):
         # Registered from a provider's metadata: an exact pin reaches it, automatic selection waits for a live
-        # qualification through tare.
+        # qualification through tare: one answer here (tare setup --prove NAME) for a vendor's own model.
         return None, None, 'NOT_QUALIFIED_PIN_ONLY'
     if row.get('runner') != 'native-http':
         return None, None, 'RUNNER_NOT_SUPPORTED_BY_NATIVE_WORK' if role == 'auditor' else 'RUNNER_NOT_SUPPORTED_BY_NATIVE_FLOW'

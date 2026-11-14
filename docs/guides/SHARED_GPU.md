@@ -130,6 +130,9 @@ undoes a broader "off". The **Models per role** tab of `/routes` edits it ([belo
 - **Rules come first.** A provider declined in setup, a route not yet proven here (`NOT_QUALIFIED_PIN_ONLY`), an
   older model (`OLDER_MODEL`), an auditor of the same family, a missing credential or a spent quota keep their own
   reasons. An "on" entry never makes such a route usable.
+- **A proof lifts `NOT_QUALIFIED_PIN_ONLY` for a known line.** Once `tare setup --prove ROUTE` has answered on this
+  machine, that route, if its endpoint serves its vendor's own model (it has a line), is used automatically for the
+  roles its row lists; proving a model's CLI route does not lift its API route, and a route with no line stays pin-only.
 - **A skipped route says why:** `SWITCHED_OFF_FOR_ROLE` and the entry, in tare auto's skipped routes, in a role
   table's candidates and in "No route can start", with how to switch it on (`tare setup --auto ROLE:ENTRY=on`) or
   pin it, so the coordinator can tell you. A role left with no route behaves as when none is available: no auditor
