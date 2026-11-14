@@ -173,7 +173,10 @@ def test_enter_on_manual_work_id_inspects_literal_recipe_without_dispatch(tmp_pa
             field.focus()
             await pilot.press('enter')
             await app.workers.wait_for_complete()
-            await pilot.pause()
+            for _ in range(100):  # the report is mounted after the worker's result reaches the app: wait for it
+                await pilot.pause(0.05)
+                if app.query('.owner-report'):
+                    break
             assert backend.inspected == ['unlisted-work'] and not backend.launches
             reports = list(app.query('.owner-report'))
             assert reports and isinstance(reports[-1], SelectableMessage)
