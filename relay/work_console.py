@@ -123,7 +123,12 @@ def render(action, result):
             for route in routing['routes']:
                 lines.append('  '+route['deployment']['id']+': '+reason(route))
         if routing.get('selection'):
+            # A configured-list candidate (native_routes._reviewers) saves no cross_vendor: the route of the same
+            # deployment in this record says it; without one the candidate stays as saved.
+            vendors = {route['deployment']['id']: route.get('cross_vendor') for route in routing.get('routes', [])}
             for candidate in routing['selection']['candidates']:
+                if 'cross_vendor' not in candidate:
+                    candidate = {**candidate, 'cross_vendor': vendors.get(candidate.get('selected_deployment', candidate['deployment']))}
                 lines.append('  Candidate '+candidate['deployment']+': '+reason(candidate))
         if receipt.get('audit'):
             audit = receipt['audit']

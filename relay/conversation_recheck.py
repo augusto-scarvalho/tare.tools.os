@@ -67,9 +67,15 @@ def recheck(tools, control, root, invocation_id, journal, *, recheck_only=True, 
     if not output.get('applied'):
         return NativeOutcome('blocked','HOST_RECHECK_NOT_DELIVERED',calls,
             'Candidate not applied. Inspect the check or audit finding below.\n'+result.output_json)
-    return NativeOutcome('proposed','HOST_RECHECK_COMPLETED',calls,
-        'Saved candidate passed checks and '+('audit ('+output['audit']['independence']+')'
-        if (output.get('audit') or {}).get('independence') else 'independent audit')+' and was applied.\n'+result.output_json)
+    from .conversation_review import label_of
+    from .conversation_permissions import USER_APPLIES
+    audit=output.get('audit') or {}
+    label=label_of(audit)
+    if audit.get('user_decision')==USER_APPLIES:  # the user applied it over a review that did not accept it
+        done='passed checks and was applied by the user\'s decision; its audit'+(' ('+label+')' if label else '')+' did not accept it'
+    else:
+        done='passed checks and '+('audit ('+label+')' if label else 'independent audit')+' and was applied'
+    return NativeOutcome('proposed','HOST_RECHECK_COMPLETED',calls,'Saved candidate '+done+'.\n'+result.output_json)
 
 
 RETRY_SCHEMA = 'tare.tools/conversation-retry/1'

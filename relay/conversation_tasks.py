@@ -267,14 +267,15 @@ def delivery_view(value, *, config=None, unit=None):
                                   'reason', 'files', 'route', 'checks', 'suite',
                                   'checks_before', 'checks_after', 'review_edits', 'source_state', 'implementer_report',
                                   'verification', 'summary', 'remaining', 'next', 'folder_access_request','last_attempt','implementation_stop') if k in value}
-    from .conversation_review import labelled
+    from .conversation_review import label_of, labelled
     from .work_units import AUDIT_INCOMPLETE, AUDIT_REFUSED
     value = {**value, 'audit': labelled(value['audit'])} if value.get('audit') else value  # also a saved delivery
     if value.get('audit'):
         result['audit'] = {k: v for k, v in value['audit'].items() if k != 'session'}
-        if value['audit'].get('independence') and result.get('reason') in (AUDIT_REFUSED, AUDIT_INCOMPLETE):
+        label = label_of(value['audit'])
+        if label and result.get('reason') in (AUDIT_REFUSED, AUDIT_INCOMPLETE):
             # The saved reason stays the refusal counter's key (work_units.audit_refusal); only its wording changes.
-            result['reason'] = result['reason'].replace('The independent audit', 'The audit ('+value['audit']['independence']+')')
+            result['reason'] = result['reason'].replace('The independent audit', 'The audit ('+label+')')
     if result.get('last_attempt'):
         result['last_attempt']={k:v for k,v in result['last_attempt'].items() if k in {'verdict','reason','route','files'}}
     result['candidate_preserved'] = bool(value.get('candidate') or value.get('worker'))
@@ -285,7 +286,7 @@ def delivery_view(value, *, config=None, unit=None):
         result['project_graph_binding'] = graph_binding(config or {})
     if (value.get('audit') or {}).get('verdict') == 'INCONCLUSIVE' and not value.get('applied'):  # applied: the user's decision
         audit = value['audit']
-        label = audit.get('audit_label') or audit.get('independence')  # same family, or same vendor
+        label = label_of(audit)  # same family, or same vendor
         result['reason'] = ('Audit ('+label+') incomplete: ' if label else 'Independent audit incomplete: ')+str(
             audit.get('failure_code') or audit.get('reason') or 'No accepted verdict')
         result['next'] = 'Explain the concrete audit failure and stop. The candidate was not applied. '
@@ -333,7 +334,7 @@ def delivery_view(value, *, config=None, unit=None):
     if missing:
         result.update(missing_target_paths=missing,
             required_action={'tool': 'delegate_plan', 'arguments': {'instruction': SCOPE_REPAIR+needed_scope(
-                missing, (value.get('audit') or {}).get('independence'))}},
+                missing, label_of(value.get('audit')))}},
             next='Ask the separate planner now to add these files to the saved plan, then implement on the preserved '
                  'candidate; the user approves the new files when implementation starts. Do not open another task.')
     return result
@@ -454,8 +455,9 @@ def retained_delivery(output):
         'source_state','candidate','worker','folder_access_request','implementer_report','implementation_stop',
         'scope_needed') if k in output}
     if output.get('audit'):
+        # The labels are kept as well: confirm_apply's refusal has no review session to classify again (labelled).
         result['audit']={k:output['audit'][k] for k in ('verdict','route','session','reason','failure_code','budget','actor',
-            'requires_candidate_revision','diff_projection','delivery_validation','provider_error')
+            'requires_candidate_revision','diff_projection','delivery_validation','provider_error','audit_label','independence')
                          if k in output['audit']}
     return result
 
@@ -612,14 +614,14 @@ def needed_scope(paths, label=None):
 def require_retained_scope(plan, previous):
     """Ask the planner to reconcile omitted outputs and audit-required files; never widen its scope here."""
     from .conversation_permissions import paths_allowed
-    from .conversation_review import labelled
+    from .conversation_review import label_of, labelled
     missing = lambda paths: [p for p in paths or [] if not paths_allowed([p], plan['unit']['target_paths'])]
     omitted = missing(previous.get('files'))
     needed = [p for p in missing(previous.get('scope_needed')) if p not in omitted]
     if omitted or needed:
         error = ScopeRepair(' '.join(filter(None, [
             omitted and 'The revised plan omits retained candidate outputs: '+', '.join(omitted)+'.',
-            needed and needed_scope(needed, labelled(previous.get('audit') or {}).get('independence'))]))+
+            needed and needed_scope(needed, label_of(labelled(previous.get('audit'))))]))+
             ' Preserve the candidate and reconcile these paths with the recorded goal before implementation.')
         error.missing_target_paths = omitted + needed
         raise error
@@ -1462,7 +1464,7 @@ class ConversationTools:
                         # The implementer's brief has no review session to classify: the label travels in the feedback.
                         execution_unit['review_feedback'] = encode({k: feedback[k] for k in (
                             'verdict','reason','failure_code','requires_candidate_revision','diff_projection',
-                            'summary', 'findings', 'remaining', 'independence') if k in feedback})
+                            'summary', 'findings', 'remaining', 'audit_label', 'independence') if k in feedback})
                 from .work_forms import record_plan
                 record_plan(self.root, state['config'], {'units': [execution_unit], 'criteria': execution_unit['criteria']})
                 task.update(stage='IMPLEMENTING', attempt_invocation=self.invocation_id, attempt_effect=request.effect_id,

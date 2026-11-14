@@ -683,10 +683,11 @@ def available(producer, owner=None):
 
 
 def labelled(result):
-    """`result` (a review result, or a saved delivery's audit) with `independence` set to the same-vendor label when its
-    review was by an auditor of the implementer's vendor. Who produced and who audited are read from the identities the
-    host recorded in that review's request (host_execution_selection), so a review saved before the label existed is
-    classified too; a result without its review session (no auditor ran) is returned unchanged."""
+    """`result` (a review result, or a saved delivery's audit) classified by who produced and who audited, read from the
+    identities the host recorded in that review's request (host_execution_selection): a same-family review (admitted
+    only under --local_only) gets its `audit_label`, as a fresh one does, so the user is asked before applying it
+    (confirm_apply); a same-vendor one gets `independence`. A review saved before either label is classified too; a
+    result without its review session (no auditor ran) is returned unchanged."""
     from types import SimpleNamespace
     from .landing_policy import SAME_VENDOR_AUDIT, independence
     from .native_agent import read_json
@@ -701,9 +702,17 @@ def labelled(result):
         return result
     if not all([*vars(implementer).values(), *vars(auditor).values()]):
         return result  # an unknown identity establishes nothing
-    if independence(implementer, auditor) != 'SAME_VENDOR_NOT_INDEPENDENT':
-        return result
-    return {**result, 'independence': SAME_VENDOR_AUDIT}
+    kind = independence(implementer, auditor)
+    if kind == 'AUDITOR_NOT_INDEPENDENT':
+        return {**result, 'audit_label': NOT_INDEPENDENT}
+    if kind == 'SAME_VENDOR_NOT_INDEPENDENT':
+        return {**result, 'independence': SAME_VENDOR_AUDIT}
+    return result
+
+
+def label_of(audit):
+    """The words a review carries for an auditor that is not independent (same family, or same vendor), or None."""
+    return (audit or {}).get('audit_label') or (audit or {}).get('independence')
 
 
 def same_family(producer, auditor):

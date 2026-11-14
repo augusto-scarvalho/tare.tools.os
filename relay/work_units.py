@@ -628,8 +628,9 @@ def brief(unit, commands, note, *, references=(), executables=(), host_review=Fa
                   'within the given paths; do not expand them. The separate planner\'s advice '
                   '(claims to verify against sources):', unit['planner_advice']]
     if unit.get('review_feedback'):
+        from .conversation_review import label_of
         try:
-            label = json.loads(unit['review_feedback']).get('independence')
+            label = label_of(json.loads(unit['review_feedback']))
         except (ValueError, AttributeError):
             label = None
         lines += ['', ('Previous review ('+label+')' if label else 'Previous independent review')+' of this retained candidate. Correct demonstrated defects '
@@ -1381,7 +1382,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     else:
                         allowed, why = suite_allows(verification_config, unit, repository, tree, changed, suite_before)
                         if review is not None and changed_files(tree, base) != changed:
-                            label = (result.get('audit') or {}).get('independence')
+                            from .conversation_review import label_of
+                            label = label_of(result.get('audit'))
                             allowed, why = False, 'The candidate changed after '+('review ('+label+')' if label else 'independent review')+'.'
                         baseline_metadata=row.get('host_baseline_metadata')
                         if baseline_metadata:

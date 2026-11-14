@@ -225,16 +225,24 @@ def test_a_remapped_owner_list_keeps_its_same_vendor_route_without_another_vendo
         'claude-fable-5-1-cli']  # as on origin/main
 
 
-def same_vendor_review(job):
-    """Record in a review's request, as the host does, a Fable implementer and an Opus auditor; its session path."""
+def same_vendor_review(job, implementer=FABLE, auditor='claude-api-opus-5-5'):
+    """Record in a review's request, as the host does, who implemented and who audited; its session path."""
     from relay.conversation_review import execution_selection
     path = Path(job)/'input'/'request.json'
     data = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
-    data['host_execution_selection'] = execution_selection(native_catalog.select(FABLE),
-                                                           native_catalog.select('claude-api-opus-5-5'))
+    data['host_execution_selection'] = execution_selection(native_catalog.select(implementer),
+                                                           native_catalog.select(auditor))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
     return str(Path(job)/'session')
+
+
+def same_family_review(job):
+    """A review by an auditor of the implementer's own model, as only --local_only admits."""
+    return same_vendor_review(job, 'claude-api-opus-5-5', 'claude-api-opus-5-5')
+
+
+SAME_FAMILY = 'same-family audit, not independent'
 
 
 def claims_independence(value):
@@ -255,10 +263,12 @@ def test_a_saved_same_vendor_delivery_keeps_its_label(tmp_path, reason, audit):
     assert result['reason'] == getattr(work_units, reason)  # the saved reason is still the refusal counter's key
 
 
-def test_a_resumed_same_vendor_review_keeps_its_label(reviewed, monkeypatch):
+def interrupted_review(reviewed, monkeypatch, record):
+    """A review interrupted mid-call whose request `record` fills with who implemented and who audited, ready to be
+    resumed by the user's next message (test_saved_audit_resume): (owner, task, tree, control, job, saved receipt)."""
     import test_conversation_review_recovery as fixtures
     from compute_plane.native_models import NativeHttpClient, NativeTransportInterrupted
-    from relay import conversation_review, native_agent
+    from relay import native_agent
     from test_conversation_tasks import user_reply
     from test_native_agent import Client
     from test_saved_audit_resume import RUN_SESSION
@@ -284,7 +294,7 @@ def test_a_resumed_same_vendor_review_keeps_its_label(reviewed, monkeypatch):
     first = run('ACCEPT')
     assert first['reason'] == 'UNFINISHED_INVOCATION'
     job = Path(first['session']).parent
-    same_vendor_review(job)  # a review interrupted before this change: its request names both identities
+    record(job)
     previous = json.loads((job/'receipt.json').read_text())
     run.task['delivery'] = {'audit': first}
     run.task['attempt_input'] = owner.input_id()
@@ -293,7 +303,13 @@ def test_a_resumed_same_vendor_review_keeps_its_label(reviewed, monkeypatch):
     owner.state['limits']['max_model_calls'] = 30
     monkeypatch.setattr(native_agent, 'run_session', lambda config, dep, session, **kw: RUN_SESSION(
         config, dep, session, client=clients[0], local_counter=clients[0], **kw))
-    result = conversation_review.resume_review(owner, run.task, job, previous, tree, run.task['plan']['unit'],
+    return owner, run.task, tree, control, job, previous
+
+
+def test_a_resumed_same_vendor_review_keeps_its_label(reviewed, monkeypatch):
+    from relay import conversation_review
+    owner, task, tree, control, job, previous = interrupted_review(reviewed, monkeypatch, same_vendor_review)
+    result = conversation_review.resume_review(owner, task, job, previous, tree, task['plan']['unit'],
                                                {'a.py': b'value = 2\n'}, control)
     assert result['verdict'] == 'ACCEPT' and result['independence'] == SAME_VENDOR_AUDIT
     assert json.loads((job/'receipt.json').read_text())['result']['independence'] == SAME_VENDOR_AUDIT
@@ -310,16 +326,84 @@ def test_a_same_vendor_accept_saved_before_the_change_is_labelled_when_reused(re
     assert {k: v for k, v in again.items() if k != 'independence'} == first
 
 
-def test_the_correction_brief_names_a_same_vendor_review():
+def test_an_interrupted_same_family_audit_resumed_to_accept_still_asks_before_applying(reviewed, monkeypatch, tmp_path):
+    from relay import conversation_review, execution_scope as scope, relay_mesh
+    from relay import conversation_permissions as permissions
+    from test_conversation_permissions import permission_worker, wait_request
+    from test_native_agent import deployment
+    owner, task, tree, control, job, _ = interrupted_review(reviewed, monkeypatch, same_family_review)
+    # The conversation's own entry: the user's new message continues the interrupted review (resume_review).
+    resumed = conversation_review.review(owner, task, tree, deployment(), task['plan']['unit'],
+                                         {'a.py': b'value = 2\n'}, {'after': 'passed'}, control)
+    assert resumed['verdict'] == 'ACCEPT' and resumed['audit_label'] == SAME_FAMILY  # as a fresh one: the gate's key
+    owner.state.update(session_id='parent')
+    with scope.activated(scope.Scope(only='local')), permission_worker(control) as pool:  # what conversation_tasks runs
+        asked = pool.submit(permissions.confirm_apply, owner.root, owner.state, task, {'a.py': b'value = 2\n'},
+                            resumed, 'resume-effect', control, tmp_path/'prefs')
+        request = wait_request(owner.root)
+        assert request['kind'] == 'audit' and request['audit'] == {**request['audit'], 'label': SAME_FAMILY,
+                                                                   'verdict': 'ACCEPT'}
+        permissions.answer(owner.root, request['id'], 'deny', project=tree, directory=tmp_path/'prefs',
+                           control_root=relay_mesh.RELAY_ROOT)
+        assert asked.result(timeout=3)['reason'] == permissions.NOT_CONFIRMED
+
+
+def test_a_same_family_accept_reused_from_its_receipt_keeps_its_label(reviewed):
+    _, run, *_ = reviewed
+    first = run('ACCEPT')
+    assert 'audit_label' not in first  # the fixture's identities are unknown
+    same_family_review(Path(first['session']).parent)
+    again = run('ACCEPT')  # reused, no second auditor call
+    assert again['verdict'] == 'ACCEPT' and again['audit_label'] == SAME_FAMILY and 'independence' not in again
+
+
+def test_a_saved_same_family_delivery_keeps_its_label(tmp_path):
+    from relay import conversation_permissions as permissions, conversation_tasks
+    session = same_family_review(tmp_path/'reviews'/'job')
+    for audit, reason in [({'verdict': 'INCONCLUSIVE', 'reason': 'DEADLINE', 'session': session}, 'DEADLINE'),
+                          # confirm_apply's refusal keeps no session: its label is the only record of who audited
+                          ({'verdict': 'INCONCLUSIVE', 'audit_label': SAME_FAMILY, 'reason': permissions.NOT_CONFIRMED},
+                           permissions.NOT_CONFIRMED)]:
+        result = {'verdict': 'NOT_REVIEWED', 'reason': 'x', 'audit': audit}
+        shown = conversation_tasks.delivery_view(conversation_tasks.retained_delivery(result))
+        assert shown['reason'] == f'Audit ({SAME_FAMILY}) incomplete: {reason}', shown['reason']
+        assert shown['audit']['audit_label'] == SAME_FAMILY
+
+
+@pytest.mark.parametrize('label', [SAME_VENDOR_AUDIT, SAME_FAMILY])
+def test_the_correction_brief_names_a_review_that_is_not_independent(label):
     from compute_plane.native_models import encode
     from relay.work_units import brief
+    key = 'independence' if label == SAME_VENDOR_AUDIT else 'audit_label'
     unit = {'title': 'Fix', 'target_paths': ['a.py'], 'criteria': ['Two'],
-            'review_feedback': encode({'verdict': 'REVISE', 'findings': [], 'independence': SAME_VENDOR_AUDIT})}
+            'review_feedback': encode({'verdict': 'REVISE', 'findings': [], key: label})}
     shown = brief(unit, ['tests'], '')
-    assert f'Previous review ({SAME_VENDOR_AUDIT}) of this retained candidate' in shown
+    assert f'Previous review ({label}) of this retained candidate' in shown
     assert 'Previous independent review' not in shown
     unit['review_feedback'] = encode({'verdict': 'REVISE', 'findings': []})
     assert 'Previous independent review of this retained candidate' in brief(unit, ['tests'], '')
+
+
+@pytest.mark.parametrize('audit,said', [
+    ({'verdict': 'ACCEPT'}, 'Saved candidate passed checks and independent audit and was applied.'),
+    ({'verdict': 'ACCEPT', 'independence': SAME_VENDOR_AUDIT},
+     f'Saved candidate passed checks and audit ({SAME_VENDOR_AUDIT}) and was applied.'),
+    ({'verdict': 'ACCEPT', 'audit_label': SAME_FAMILY},
+     f'Saved candidate passed checks and audit ({SAME_FAMILY}) and was applied.'),
+    ({'verdict': 'INCONCLUSIVE', 'audit_label': SAME_FAMILY, 'user_decision': 'APPLY_WITHOUT_ACCEPTED_AUDIT'},
+     f"Saved candidate passed checks and was applied by the user's decision; its audit ({SAME_FAMILY}) did not accept it.")])
+def test_a_recheck_says_who_audited_the_change_it_applied(host, monkeypatch, audit, said):
+    from tare_tools_agent_runtime import ConversationLog, EffectResult
+    from relay import conversation_recheck, conversation_tasks as tasks
+    from test_conversation_tasks import intake, planned
+    tools, control, *_ = host
+    intake(host); planned(host)
+    value = tasks.load(tools.root); tasks.current(value)['delivery'] = {'candidate': {'patch': 'retained', 'sha256': 'a'*64}}
+    tasks.save(tools.root, value)
+    monkeypatch.setattr(tools, 'execute', lambda request, control: EffectResult(request.effect_id, 'succeeded',
+                        json.dumps({'applied': True, 'audit': audit}), True))
+    outcome = conversation_recheck.recheck(tools, control, tools.root, 'labelled', ConversationLog())
+    assert outcome.status == 'proposed' and outcome.output.split('\n')[0] == said
 
 
 def test_a_work_saved_before_the_rule_reads_its_same_vendor_route_as_such():
@@ -327,12 +411,19 @@ def test_a_work_saved_before_the_rule_reads_its_same_vendor_route_as_such():
     routing = {'status': 'READY', 'reason': 'AUTO_CROSS_VENDOR_THEN_COST_AND_CONFIGURED_ORDER', 'routes': [
         {'deployment': {'id': 'claude-api-opus-5-5'}, 'reason': 'AUTO_SELECTED_INDEPENDENT', 'cross_vendor': False},
         {'deployment': {'id': 'openai-api'}, 'reason': 'AUTO_SELECTED_INDEPENDENT', 'cross_vendor': True}],
-        'selection': {'candidates': [{'deployment': 'claude-api-opus-5-5', 'cross_vendor': False,
-                                      'reason': 'CONFIGURED_INDEPENDENT_NATIVE_ROUTE'}]}}
+        # As origin/main's native_routes._reviewers saved a configured list: no cross_vendor on the candidates.
+        'selection': {'candidates': [{'deployment': 'claude-api-opus-5-5', 'eligible': True, 'position': 1,
+                                      'reason': 'OPERATOR_SELECTED_INDEPENDENT'},
+                                     {'deployment': 'openai-api', 'eligible': True, 'position': 2,
+                                      'reason': 'OPERATOR_SELECTED_INDEPENDENT'},
+                                     {'deployment': 'elsewhere', 'eligible': True, 'position': 3,
+                                      'reason': 'OPERATOR_SELECTED_INDEPENDENT'}]}}
     shown = render('run', {'work_id': 'one', 'status': 'RUNNING', 'stage': 'code_audit',
                            'audit_routing': routing}).splitlines()
     assert f'  claude-api-opus-5-5: SAME_VENDOR_NOT_INDEPENDENT · {SAME_VENDOR_AUDIT}' in shown
     assert f'  Candidate claude-api-opus-5-5: SAME_VENDOR_NOT_INDEPENDENT · {SAME_VENDOR_AUDIT}' in shown
     assert '  openai-api: AUTO_SELECTED_INDEPENDENT' in shown  # another vendor: unchanged
+    assert '  Candidate openai-api: OPERATOR_SELECTED_INDEPENDENT' in shown
+    assert '  Candidate elsewhere: OPERATOR_SELECTED_INDEPENDENT' in shown  # no route of its own: as saved
     assert work_audit.route_reason({'reason': 'OPERATOR_SELECTED_INDEPENDENT', 'cross_vendor': False}) == (
         'SAME_VENDOR_NOT_INDEPENDENT')  # what a resumed Work's code_audit stage re-emits
