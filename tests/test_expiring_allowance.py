@@ -213,6 +213,80 @@ def test_tare_auto_tries_the_route_in_surplus_first_inside_its_tier_and_never_ch
     assert turn_engine.choose(tiers, start=1)[:2] == (1, 'agy-c')
 
 
+# A unit a conversation delegates (work_units.routes), owner 2026-11-14: any account's route; --prefer_* first, then the
+# allowance that lapses, then tare's implementer ladder; --*_only, the routing profile and pins limit it.
+
+OPENROUTER = {'id': 'openrouter-deepseek', 'native_credential_env': 'OPENROUTER_API_KEY',
+              'native_profile': {'endpoint': 'https://openrouter.ai/api/v1', 'model': 'deepseek/v4', 'protocol': 'openai-chat'}}
+MUSE = {'id': 'openrouter-muse', 'native_credential_env': 'OPENROUTER_API_KEY',
+        'native_profile': {'endpoint': 'https://openrouter.ai/api/v1', 'model': 'meta/muse', 'protocol': 'openai-chat'}}
+LADDER = ['cheap', 'openrouter-deepseek', 'claude-fable-5-2', 'api']  # local, OpenRouter credit, Claude plan, Claude API
+
+
+@pytest.fixture
+def unit(monkeypatch):
+    """The real availability gate and scope over routes of four accounts; the catalog, the GPU probe and the keys are
+    fixtures. Returns the names routes() yields for an OpenRouter coordinator's unit under a scope."""
+    from relay import work_units
+    found = {d['id']: d for d in (CHEAP, OPENROUTER, cli(), API_KEY, MUSE)}
+    monkeypatch.setattr(native_catalog, 'select', lambda name: copy.deepcopy(found[name]))
+    monkeypatch.setattr(turn_engine, 'policy', lambda: {'implementer': [['cheap'], ['openrouter-deepseek'], ['claude-fable-5-2', 'api']]})
+    monkeypatch.setattr(turn_engine, 'local_gpu_busy', lambda deployment: None)  # the GPU is free
+    monkeypatch.setattr(turn_engine, 'avoid_local_gpu', lambda: False)
+    for key in ('OPENROUTER_API_KEY', 'ANTHROPIC_API_KEY'):
+        monkeypatch.setenv(key, 'fixture')  # present, never used: nothing is called
+
+    def names(scope=execution_scope.Scope(), **arguments):
+        with execution_scope.activated(scope):
+            return [name for name, _ in work_units.routes(copy.deepcopy(MUSE), **arguments)]
+    return names
+
+
+def lapsing_credit():
+    tomorrow = datetime.fromtimestamp(time.time() + DAY, timezone.utc).day  # renews within a day, all of it left
+    provider_spend.declare('anthropic-api', 100, renews=(tomorrow, 100))
+
+
+def test_a_hosted_conversations_unit_takes_the_whole_ladder_cheapest_first_with_nothing_in_surplus(unit):
+    assert unit() == LADDER  # the local model first while its GPU is free
+    assert unit(allow_parent=True) == [*LADDER, 'openrouter-muse']  # the conversation's own model after the ladder
+    assert unit(chosen='claude-fable-5-2') == ['claude-fable-5-2']  # a route on another account, as the coordinator chose
+
+
+def test_a_route_in_surplus_on_another_account_goes_first_the_larger_lead_first(unit):
+    save(reading('claude', bucket('week', 0.23, DAY)))  # lead 0.09
+    assert unit() == ['claude-fable-5-2', 'cheap', 'openrouter-deepseek', 'api']
+    lapsing_credit()  # lead about 0.97
+    assert unit() == ['api', 'claude-fable-5-2', 'cheap', 'openrouter-deepseek']
+
+
+@pytest.mark.parametrize('only,expected', [('subscription', ['claude-fable-5-2']), ('api', ['api', 'openrouter-deepseek']),
+                                           ('local', ['cheap'])])
+def test_an_only_flag_keeps_the_unit_on_its_kind_also_when_another_kind_is_in_surplus(unit, only, expected):
+    save(reading('claude', bucket('week', 0.23, DAY)))
+    lapsing_credit()
+    assert unit(execution_scope.Scope(only=only)) == expected
+    assert unit(execution_scope.Scope(only=only), allow_parent=True) == expected + (['openrouter-muse'] if only == 'api' else [])
+
+
+def test_a_prefer_flag_puts_its_kind_first_then_the_lapsing_allowance_then_the_ladder(unit):
+    lapsing_credit()
+    assert unit(execution_scope.Scope(prefer='subscription')) == ['claude-fable-5-2', 'api', 'cheap', 'openrouter-deepseek']
+    save(reading('claude', bucket('week', 0.23, DAY)))
+    assert unit(execution_scope.Scope(prefer='api')) == ['api', 'openrouter-deepseek', 'claude-fable-5-2', 'cheap']
+    assert unit(execution_scope.Scope(prefer='local')) == ['cheap']  # it keeps execution roles on local models
+
+
+def test_a_route_off_for_implementer_is_never_yielded_in_surplus_or_not(unit):
+    from relay import environment
+    environment.save({'routing_profile': {'off': {'implementer': ['api', 'cheap']}}})  # the routes' own ids
+    assert unit() == ['openrouter-deepseek', 'claude-fable-5-2']
+    lapsing_credit()
+    assert unit() == ['openrouter-deepseek', 'claude-fable-5-2']
+    refused = []
+    assert unit(chosen='api', refused=refused) == [] and refused[0].startswith('SWITCHED_OFF_FOR_ROLE: api')
+
+
 def test_claudes_session_window_counts_as_its_5_hours_and_a_lead_under_one_percent_is_none():
     # Found by the cross-vendor review: Claude names its 5 h window 'session', and the week alone promoted the route.
     save(reading('claude', bucket('week', 0.23, DAY), bucket('session', 0.10, 4 * 3600)))

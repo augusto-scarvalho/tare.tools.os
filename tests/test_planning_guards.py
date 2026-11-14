@@ -45,7 +45,6 @@ def test_api_effort_uses_the_same_frozen_mapping_as_the_picker(planner, monkeypa
     parent, state, candidate = planner
     candidate.clear(); candidate.update(native_catalog.bundled(name))
     before = deepcopy(candidate)
-    state['planning']['other_providers'] = True
     calls = []
     stub_child(monkeypatch, candidate, calls)
     control = execution()
@@ -61,7 +60,6 @@ def test_unsupported_api_effort_is_refused_before_spending(planner, monkeypatch)
     candidate.clear(); candidate.update(native_catalog.bundled('claude-api'))
     candidate['native_profile']['endpoint'] = 'https://unqualified.example/v1'
     candidate.pop('native_reasoning_levels', None)
-    state['planning']['other_providers'] = True
     calls = []
     stub_child(monkeypatch, candidate, calls)
     control = execution()

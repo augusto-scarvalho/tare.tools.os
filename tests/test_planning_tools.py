@@ -33,7 +33,7 @@ def planner(tmp_path, monkeypatch):
     params = json.loads(candidate['native_profile']['parameters_json'])
     params['chat_template_kwargs']['reasoning_effort'] = 'high'
     candidate['native_profile']['parameters_json'] = encode(params)
-    state = {'deployment': deployment(), 'planning': {'routes': {'worker': candidate}, 'other_providers': False},
+    state = {'deployment': deployment(), 'planning': {'routes': {'worker': candidate}},
         'limits': {'max_model_calls': 10}, 'deadline_utc': None,
         'config': {'repositories': {'repo': str(source)}, 'writable': {'repo': ['a.py']},
                    'verifiers': {}, 'capabilities': ['read', 'edit', 'terminal'],
@@ -57,11 +57,11 @@ def execution():
 
 
 def test_required_planner_uses_role_routes_instead_of_coordinator(tmp_path, monkeypatch):
-    parent=deployment(); candidate=dict(deployment(),id='frontier-planner')
+    candidate=dict(deployment(),id='frontier-planner')
     monkeypatch.setattr(turn_engine,'policy',lambda:{'planner':['configured-planner']})
     monkeypatch.setattr('relay.native_catalog.select',lambda name:deepcopy(candidate))
-    result=planning_tools.snapshot(parent,required=True)
-    assert list(result['routes'])==['configured-planner'] and result['other_providers']
+    result=planning_tools.snapshot()
+    assert list(result['routes'])==['configured-planner']
     assert result['routes']['configured-planner']['id']!='session-planner'
 
 
@@ -73,9 +73,9 @@ def test_exact_planner_pin_is_the_only_offered_route(monkeypatch):
     monkeypatch.setattr(execution_scope, 'current', lambda: scope)
     monkeypatch.setattr(execution_scope, 'pinned', lambda role: deepcopy(candidate))
     monkeypatch.setattr(turn_engine, 'policy', lambda: pytest.fail('A pin must not expose the unfiltered route menu.'))
-    result = planning_tools.snapshot(deployment(), required=True)
+    result = planning_tools.snapshot()
     assert result['routes'] == {'codex-cli': candidate}
-    assert result['route_order'] == ['codex-cli'] and result['other_providers']
+    assert result['route_order'] == ['codex-cli']
 
 
 def test_delivery_diagnostics_reach_the_coordinator(planner, monkeypatch):
@@ -92,9 +92,9 @@ def test_delivery_diagnostics_reach_the_coordinator(planner, monkeypatch):
 def test_legacy_coordinator_fallback_is_repaired_without_rewriting_frozen_tools(planner,monkeypatch):
     parent,state,candidate=planner
     state.update(conversation_flow=True,conversation_tool_specs='original cached tool schema')
-    state['planning']={'routes':{'session-planner':deployment()},'other_providers':False}
+    state['planning']={'routes':{'session-planner':deployment()}}
     monkeypatch.setattr(planning_tools,'snapshot',lambda *a,**kw:
-        {'routes':{'frontier':candidate},'route_order':['frontier'],'other_providers':True})
+        {'routes':{'frontier':candidate},'route_order':['frontier']})
     monkeypatch.setattr(turn_engine,'available',lambda name:(deepcopy(candidate),None))
     tool=wrap(parent,state,execution())
     assert tool.choose({'route':'session-planner'})[0]=='frontier'
@@ -341,7 +341,7 @@ def test_conversation_planner_receives_actual_check_names_separately_from_coordi
         assert 'host_contracts' not in mission
 
 
-@pytest.mark.parametrize('cause', ['budget', 'cancelled', 'binding', 'arguments', 'provider'])
+@pytest.mark.parametrize('cause', ['budget', 'cancelled', 'binding', 'arguments'])
 def test_refusal_never_starts_a_child(planner, monkeypatch, cause):
     parent, state, candidate = planner
     calls = []
@@ -352,8 +352,7 @@ def test_refusal_never_starts_a_child(planner, monkeypatch, cause):
     if cause == 'budget': state['limits']['max_model_calls'] = 3
     elif cause == 'cancelled': control.cancellation.cancel()
     elif cause == 'binding': req = replace(req, session_id='other')
-    elif cause == 'arguments': req = request({'instruction': 'x'*9000})
-    else: state['deployment']['id'] = 'another-provider'
+    else: req = request({'instruction': 'x'*9000})  # arguments
     assert wrap(parent, state, control).execute(req, control).status == 'refused'
     assert calls == [] and not (parent/'planning').exists()
 
@@ -373,15 +372,24 @@ def test_interruption_reserves_calls_and_does_not_repeat_paid_planning(planner, 
     assert again['status'] == 'INTERRUPTED' and calls == [1]
 
 
-def test_other_provider_requires_owner_setting(planner, monkeypatch):
+def test_a_planner_on_another_account_runs_and_the_flags_still_limit_it(planner, monkeypatch):
+    # Owner, 2026-11-14: the conversation's account no longer limits its planner (an OpenRouter coordinator, a planner
+    # on another API account); --*_only, the routing profile and pins do.
+    from relay import execution_scope, native_routes
     parent, state, candidate = planner
-    state['deployment']['id'] = 'another-provider'
-    state['planning']['other_providers'] = True
+    state['deployment'] = {'id': 'openrouter-muse', 'native_credential_env': 'OPENROUTER_API_KEY',
+                           'native_profile': {'protocol': 'openai-chat', 'endpoint': 'https://openrouter.ai/api/v1'}}
     calls = []
     stub_child(monkeypatch, candidate, calls)
     control = execution()
     assert json.loads(wrap(parent, state, control).execute(request(), control).output_json)['status'] == 'PLANNED'
     assert len(calls) == 1
+    monkeypatch.setattr(native_routes, 'ranked', lambda role, producer=None, **kw: ([], {'candidates': []}))
+    with execution_scope.activated(execution_scope.Scope(only='api')):
+        assert wrap(parent, state, control).choose({})[0] == 'worker'
+    with execution_scope.activated(execution_scope.Scope(only='subscription')):
+        with pytest.raises(ValueError, match='No configured planner'):
+            wrap(parent, state, control).choose({})
 
 
 def test_all_children_share_calls_and_appear_in_usage_once(tmp_path):
@@ -516,7 +524,7 @@ def test_configured_planner_records_decision_and_reasoning_sent(planner, monkeyp
 def test_unavailable_first_planner_is_a_recorded_skip(planner, monkeypatch):
     parent, state, candidate = planner
     state['planning'] = {'routes': {'gone': deepcopy(candidate), 'worker': candidate},
-                         'route_order': ['gone', 'worker'], 'other_providers': False}
+                         'route_order': ['gone', 'worker']}
     calls = []
     stub_child(monkeypatch, candidate, calls)
     monkeypatch.setattr(turn_engine, 'available',

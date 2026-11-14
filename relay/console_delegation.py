@@ -74,9 +74,6 @@ class DelegationPanel(SupportPanel):
                 yield Button('Choose planner model…', id='delegation-planner-model-choose')
                 yield Static('Plan review: checking available reviewers…', id='delegation-plan-reviewer', markup=False)
                 yield Button('Review settings…', id='delegation-review-settings')
-                yield Static('Allow delegated planners and implementers to use other providers or allowances '
-                             '(may spend a separate API balance or subscription quota)', classes='delegation-label')
-                yield Switch(self.trials['child_routes_any'], id='delegation-child_routes_any')
                 yield Static('Assisted exploration', classes='delegation-label')
                 yield Static('Allow new native conversations and Work reviews to delegate read-only investigation.', classes='delegation-label')
                 yield Switch(self.value['enabled'], id='delegation-enabled')
@@ -171,7 +168,6 @@ class DelegationPanel(SupportPanel):
                 value['max_usd'] = self.query_one('#delegation-max_usd', Input).value
                 trials = {'decider': self.query_one('#delegation-decider', Select).value,
                           'planner_child': self.query_one('#delegation-planner_child', Switch).value,
-                          'child_routes_any': self.query_one('#delegation-child_routes_any', Switch).value,
                           **{key: self.query_one('#delegation-'+key, Switch).value for key, _ in EXPERIMENT_SWITCHES}}
                 from .delegation import configure, save_experiments, validate
                 validate(value)  # Bad exploration fields must not partly save a new planner.
