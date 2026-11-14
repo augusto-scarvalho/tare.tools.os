@@ -456,6 +456,19 @@ def verdict(before, after, changed, protected, retry):
     return 'NOT_VERIFIED', 'the checks fail after the change'
 
 
+def lapsing_outside(ladder):
+    """The implementer routes the ladder lacks whose allowance lapses in surplus: tare's ladder has no Claude API
+    route, so a monthly Anthropic credit would lapse without a unit ever using it. They are the role selection's own
+    candidates, so only routes it admits on this machine (set up, qualified or proven, on in the routing profile)."""
+    from .native_routes import ranked
+    try:
+        rows, selection = ranked('implementer')
+    except (ValueError, OSError, KeyError, TypeError):
+        return []
+    marked = {c['deployment'] for c in selection['candidates'] if c.get('expiring')}
+    return [row['id'] for row in rows if row['id'] in marked and row['id'] not in ladder]
+
+
 def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None):
     """The implementer routes to try, whichever account the conversation runs on (owner, 2026-11-14): the routes of
     the kind --prefer_* names first, then those whose allowance lapses in surplus (larger lead first), then tare's
@@ -476,7 +489,8 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
         deployment=pin_selection('implementer',chosen,effort)
         yield deployment['native_model_choice']['connection'],deployment
         return  # Never reconstruct from a name under the parent's coordinator role.
-    allowed = surplus_first([name for tier in execution_tiers(policy()['implementer']) for name in tier])
+    ladder = [name for tier in execution_tiers(policy()['implementer']) for name in tier]
+    allowed = surplus_first(ladder + lapsing_outside(ladder))
     if temporary.prefer:
         def other(name):
             try:
