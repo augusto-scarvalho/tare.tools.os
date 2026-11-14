@@ -47,6 +47,7 @@ def record(deployment, calls, now=None):
     """Add to the ledger the dollars of these calls ({'call_id', 'cost'}), with no marker: the caller knows they are
     new (a side call with no session of its own, like the heads-up writer's). The number of rows added."""
     from .opencode import subscription
+    from .provider_prices import is_reference
     name, rows = account(deployment), []
     plan = 'opencode-sub' if subscription(deployment) else None
     now = time.time() if now is None else now
@@ -63,7 +64,9 @@ def record(deployment, calls, now=None):
         # OpenCode's subscription charges nothing; each reply says how much of the plan's allowance it used.
         allowance = amount((cost.get('opencode') or {}).get('allowance')) if plan else 0.0
         if name and usd > 0:
-            rows.append(json.dumps({**row, 'account': name, 'usd': usd}))
+            # Valued at a models.dev reference price, not a tariff: it counts down all the same, and says so.
+            rows.append(json.dumps({**row, 'account': name, 'usd': usd,
+                                    **({'reference': True} if is_reference(cost.get('tariff')) else {})}))
         elif allowance > 0:
             rows.append(json.dumps({**row, 'account': plan, 'allowance': allowance}))
     if rows:
@@ -73,15 +76,16 @@ def record(deployment, calls, now=None):
     return len(rows)
 
 
-def spent(name, since, field='usd'):
-    """Dollars tare recorded for this account from `since` on (field 'allowance': of OpenCode's plan allowance)."""
+def spent(name, since, field='usd', reference=False):
+    """Dollars tare recorded for this account from `since` on (field 'allowance': of OpenCode's plan allowance;
+    `reference`: only those valued at a models.dev reference price)."""
     total = 0.0
     try:
         with open(folder()/'provider-spend.jsonl', encoding='utf-8') as ledger:
             for line in ledger:
                 try:
                     row = json.loads(line)
-                    if row['account'] == name and row['at'] >= since:
+                    if row['account'] == name and row['at'] >= since and (not reference or row.get('reference')):
                         total += float(row[field])
                 except (ValueError, KeyError, TypeError):
                     continue  # a torn line is not a charge
@@ -118,5 +122,7 @@ def remaining(name):
     balance = declared().get(name)
     if balance is None:
         return None
+    reference = spent(name, balance['at'], reference=True)
     return {'currency': 'USD', 'total': balance['usd'], 'declared_at': balance['at'],
-            'remaining': round(balance['usd'] - spent(name, balance['at']), 6)}
+            'remaining': round(balance['usd'] - spent(name, balance['at']), 6),
+            **({'at_reference_prices': reference} if reference else {})}

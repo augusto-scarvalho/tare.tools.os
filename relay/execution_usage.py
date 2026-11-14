@@ -156,6 +156,7 @@ def _aggregate(entries: Iterable[dict[str, Any]]) -> dict[str, Any]:
             unpriced_or_partial_calls += 1
 
     known_cost_by_currency = {k: str(currency_sums[k]) for k in sorted(currency_sums)}
+    from .provider_prices import reference_totals
 
     attributions = [
         {"session_id": s, "stage": stg, "source": src}
@@ -190,6 +191,7 @@ def _aggregate(entries: Iterable[dict[str, Any]]) -> dict[str, Any]:
         "tokens": tokens,
         "known_cost_by_currency": known_cost_by_currency,
         "unpriced_or_partial_calls": unpriced_or_partial_calls,
+        **reference_totals(active_calls),  # none without a call valued at a models.dev reference price
         "unknown_session_ids": sorted(unknown_sessions),
         "attributions": attributions,
         "outcomes": outcomes,

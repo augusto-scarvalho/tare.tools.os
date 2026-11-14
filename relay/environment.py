@@ -530,10 +530,13 @@ def cost_line(deployment):
         return 'one minimal call on the local GPU: ' + ('the model is loaded' if gpu.get('resident') else
             'the gateway may first load the model (slow)' if gpu.get('loading_required') else 'its state is unknown')
     from .provider_prices import quote
-    rates = [Decimal(v) for v in (quote(deployment, live=True).get('rates') or {}).values() if v is not None]
+    price = quote(deployment, live=True)
+    rates = [Decimal(v) for v in (price.get('rates') or {}).values() if v is not None]
     if not rates:
         return 'one minimal call (about 40 tokens) at an unknown price: no tariff is known for this route'
-    return f'one minimal call (about 40 tokens): under US$ {max(rates)*40/1000000:.6f}'
+    return f'one minimal call (about 40 tokens): under US$ {max(rates)*40/1000000:.6f}' + (
+        f" (at a models.dev reference price read {price['effective_at']}, not a confirmed tariff)"
+        if price.get('basis') == 'reference' else '')
 
 
 def prove(name, confirm):
@@ -669,6 +672,11 @@ def main(argv=None):
         if args.refresh:
             for gateway in list((value.get('local_models') or {}).get('gateways') or []):
                 value = add_gateway(value, gateway['origin'])
+            try:  # the models.dev reference prices, if not read today; no model call, no key sent
+                from .provider_prices import refresh_reading
+                refresh_reading()
+            except Exception:  # optional: the last good reading stays, or none (no reference price, as before)
+                pass
         if args.credential:
             value = store_credential(value, args.credential, sys.stdin)
         if args.old_models:

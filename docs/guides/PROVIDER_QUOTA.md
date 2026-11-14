@@ -106,6 +106,9 @@ the charge of each of its calls to `<storage>/serve/provider-spend.jsonl` when i
 `<storage>/serve/provider-balance.json`.
 
 - It counts tare's use only. If the same key is used elsewhere, or you add credit, state the balance again.
+- The API routes carry no tariff of their own: their calls are valued at the models.dev reference price
+  ([HTTP providers, Prices](HTTP_API_PROVIDERS.md#prices)), which can be wrong, and the balance is only as exact as
+  it. The row then says how much of the use since the statement was valued that way.
 - A call whose cost is unknown (no price for that model) adds nothing, so the figure can only be too high.
 - Single text calls outside a session (a flow assessment, a title) are not added yet.
 - Routing does not act on a stated balance: at zero the row says "none left" and the provider's own refusal is

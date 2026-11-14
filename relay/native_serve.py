@@ -514,6 +514,11 @@ def discover_clis():
         print('tare serve: ' + (line or 'vendor CLIs unchanged'), flush=True)
     except Exception as exc:  # discovery is optional; the local and API routes keep working
         print(f'tare serve: CLI discovery failed: {type(exc).__name__}: {str(exc)[:200]}', flush=True)
+    try:  # the models.dev reference prices, at most once a day; no model call, no key sent
+        from .provider_prices import refresh_reading
+        refresh_reading()
+    except Exception:  # optional: the last good reading stays, or none (no reference price, as before)
+        pass
     try:  # what each provider has left, so a spent plan is not chosen; no model call
         from . import provider_quota
         provider_quota.refresh()

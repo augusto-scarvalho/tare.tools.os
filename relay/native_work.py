@@ -141,8 +141,11 @@ def implement_native(*, worktree, descriptor, node, session_id, control, journal
         tool_specs_json=tools.tool_specs_json)
     from .native_spend import compose, settings
     from compute_plane.native_journal import NativeJournal
-    spend_policy, tariff = settings(spend_configuration or {})
-    model = compose(adapter, spend_configuration or {}, NativeJournal(scratch/'spend.jsonl') if spend_policy else None,
+    # The profile lets a route without a tariff of its own take its reference price (native_spend.settings).
+    spend_configuration = {**(spend_configuration or {}), 'native_profile': {
+        k: getattr(profile, k, None) for k in ('protocol', 'model', 'endpoint', 'context_window', 'parameters_json')}}
+    spend_policy, tariff = settings(spend_configuration)
+    model = compose(adapter, spend_configuration, NativeJournal(scratch/'spend.jsonl') if spend_policy else None,
                     external_committed=exploration_tools.spend_committed if exploration_tools else None)
     if exploration_tools:
         from .delegation_tools import SharedModel

@@ -40,7 +40,8 @@ not part of this conversation and implementation selector.
 Fable 5.2, GPT-6.1 Terra, Gemini 4 Carbon and Gemini 4 Hydrogen were added from the same catalogs on
 2026-11-13. They can be chosen and pinned to a role, but no automatic role picks them until they are qualified
 through tare (`"qualified": false` in `relay/role_deployments.json`). Gemini 4 Hydrogen's model page also lists
-`xhigh`; this compatibility protocol offers low to high. Like the other first-party API profiles, they carry no price.
+`xhigh`; this compatibility protocol offers low to high. Like the other first-party API profiles, they carry no
+tariff of their own: their price is a reference price (see [Prices](#prices)).
 
 **Pro** uses the same model with `reasoning.mode: "pro"` in the Responses API,
 as described in the [OpenAI documentation](https://developers.openai.com/api/docs/guides/reasoning#reasoning-mode).
@@ -96,6 +97,50 @@ The selector offers the reasoning levels each profile declares: OpenAI sends
 opening/configuring. The reply test is under **Advanced**: **Check test cost**
 shows the cost and **Run reply test** requires an explicit operator action.
 Gemini HTTP uses exactly `gemini-4-argon`, never an AGY low/medium/high ID.
+
+## Prices
+
+None of these profiles, nor the Bedrock ones, carries a tariff of its own. Their price is a **reference price**
+from [models.dev](https://models.dev): an open price list kept by its community and published by the OpenCode team
+as one keyless file, `https://models.dev/api.json`, in US dollars per million tokens. It is not a price the provider
+confirmed to tare, and it can be wrong or late. Wherever tare uses it, the cap and the count are only as exact as it
+is: if the reference is 10% low, a spending cap lets about 10% more through and a stated balance
+(`tare quota --set`, [Provider quota](PROVIDER_QUOTA.md)) counts down 10% too slowly.
+
+- **What uses it.** A spending cap reserves each call against it, the cost recorded after the call is valued at
+  it, and a stated balance counts down by that cost. Without it these routes are refused under a cap and their
+  cost is unknown, as before.
+- **How it is shown.** Never as a tariff: the tariff's source reads `models.dev reference price (not a confirmed
+  tariff) for <provider>/<model>` and its date is the day tare first read that price. `/usage`, `tare quota`,
+  `tare profiles list` (`reference_price`), `tare profiles prices` (`basis: reference`), the route facts
+  (`REFERENCE_PRICE`) and the cost shown before `tare setup --prove` all say so. A delivery comparison never picks
+  a winner on a reference price (`COST_REFERENCE_PRICE`), so no route order changes on it.
+- **Which price.** The entry of the route's model, under exactly the id the route sends, at the provider it is on:
+  `anthropic`, `openai` or `google` for the three APIs (by endpoint), `amazon-bedrock` for Bedrock by the full wire
+  id, regional prefix included (`us.anthropic.claude-fable-5-2` and `global.anthropic.claude-fable-5-2` differ).
+  A model models.dev does not list there stays unknown and is refused under a cap; a price is never taken from an
+  earlier version or from another provider's entry. models.dev's Bedrock entries do not name an AWS region.
+- **Order.** The route's own tariff (`native_usage_tariff`) first; then the cost the provider reports for each call
+  (OpenRouter and OpenCode, which never take a reference); then the reference; else unknown. A price snapshot
+  (`tare profiles prices`, the challenger's) still puts tare's own Bedrock table, while it is valid, and the AWS
+  price list before the reference. The subscription CLIs (Codex, Claude Code, AGY) and local models never take one.
+- **Context tiers.** Where models.dev prices tokens higher above a context size and the profile's window reaches
+  it, every call is priced at that higher tier: an upper bound. Claude Haiku 5.5 costs five times more above
+  100 000 tokens and `claude-api` has a 131 072-token window, so its calls are valued at the higher price even when
+  they are smaller. A route whose window stays below every tier (the 131 072-token OpenAI profiles against GPT's
+  272 000) gets the base price.
+- **Modes.** A profile that asks for a mode with its own price (`service_tier` such as `priority` or `flex`,
+  `speed: fast`) gets no reference. The Pro profiles (`reasoning.mode: "pro"`) take the model's price: models.dev
+  gives that mode none of its own.
+- **Missing parts.** A cache price models.dev does not give stays unknown, never zero: a call that used it is
+  partly priced, and under a cap a layout that needs it (Bedrock's cache writes) is refused.
+
+tare reads the file at most once a day, when the TUI starts, when `tare serve` starts (unless `--no-discovery`)
+and on `tare setup --refresh`; only when a key of one of these providers is set and `tare setup` has not turned
+them off. It sends a plain GET with a generic user agent and nothing else. It keeps the four providers' prices in
+`<storage>/serve/reference-prices.json` (`tare.tools/reference-prices/1`) with the time of the reading. A failed,
+empty or reshaped reading keeps the last good one; with none, nothing changes. `tare models` never reads it from
+the network.
 
 ## Verification
 

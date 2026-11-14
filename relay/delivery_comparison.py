@@ -184,6 +184,13 @@ def compare(path):
             if (usage['unpriced_or_partial_calls'] or usage['unknown_session_ids'] or
                     set(amounts) - {'USD'} or 'USD' not in amounts):
                 issues.append('COST_INCOMPLETE:'+trial['case'])
+            from .provider_prices import REFERENCE, is_reference
+            costs = [c.get('cost', {}) for entry in entries for c in (entry.get('usage') or {}).get('calls', [])]
+            sources = sorted({cost.get('source', cost['tariff']['source'] if is_reference(cost.get('tariff'))
+                                       else 'configured_tariff_or_unknown') for cost in costs})
+            # A models.dev reference may cap spend, but never picks a winner: no route order changes on it.
+            if any(str(s).startswith(REFERENCE) for s in sources):
+                issues.append('COST_REFERENCE_PRICE:'+trial['case'])
             additional = trial.get('additional_cost_usd')
             if additional is None:
                 issues.append('ADDITIONAL_COST_UNKNOWN:'+trial['case'])
@@ -196,8 +203,7 @@ def compare(path):
             rows.append({'case': trial['case'], 'verdict': verdict,
                 'verdict_source': trial.get('verdict_source'), 'known_cost_usd': str(cost),
                 'seconds': elapsed, 'generation_intents': usage['generation_intents'],
-                'cost_sources': sorted({c.get('cost', {}).get('source', 'configured_tariff_or_unknown')
-                    for entry in entries for c in (entry.get('usage') or {}).get('calls', [])}),
+                'cost_sources': sources,
                 'retry_intents': usage['retry_intents'], 'summary_intents': usage['summary_intents'],
                 'sessions': [{'stage': e['stage'], 'source': e['source'], 'profile': e['profile'],
                               'invocations': len(e['attempts'])} for e in entries]})

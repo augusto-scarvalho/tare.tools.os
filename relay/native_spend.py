@@ -53,7 +53,13 @@ class SpendPolicy:
 
 
 def settings(deployment, *, configured=False):
-    tariff = UsageTariff(**deployment['native_usage_tariff']) if deployment.get('native_usage_tariff') is not None else None
+    """(policy, tariff): the route's own tariff, else its models.dev reference price (a pay-per-token API route
+    with a reading; its source says it is a reference), else None."""
+    own = deployment.get('native_usage_tariff')
+    if own is None and deployment.get('native_profile'):
+        from .provider_prices import reference
+        own = reference(deployment['native_profile'])
+    tariff = UsageTariff(**own) if own is not None else None
     policy = SpendPolicy(**deployment['native_spend_policy']) if deployment.get('native_spend_policy') is not None else None
     if policy and (tariff is None or policy.currency != tariff.currency
                    or deployment.get('native_usage_contract') is None):

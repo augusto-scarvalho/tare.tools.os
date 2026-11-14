@@ -210,7 +210,9 @@ def render(value):
             f"  Legacy input/output tokens: {total([r['input_tokens'] for r in legacy]) if legacy else 'Unknown / absent'}/"
             f"{total([r['output_tokens'] for r in legacy]) if legacy else 'Unknown / absent'}",
             f"  Native recorded charges: {native['known_cost_by_currency'] or 'Unknown'}; "
-            f"unpriced calls: {native['unpriced_or_partial_calls']}",
+            f"unpriced calls: {native['unpriced_or_partial_calls']}"
+            + (f"; {native['reference_priced_calls']} call(s) at models.dev reference prices, not confirmed tariffs"
+               if native.get('reference_priced_calls') else ''),
             f"  Legacy review calls: {total([r['calls'] for r in legacy if r['stage'] in {'plan', 'audit'}])}; "
             'full delivery price: Unknown' if legacy else '  Full delivery price: Unknown when stages or prices are missing'])
         for run in row['runs']:
