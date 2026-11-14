@@ -91,11 +91,13 @@ share). A model that appears later follows the default, and an update of tare's 
 now the default is the routes each role uses today, so the profile can only switch routes off; an "on" entry
 undoes a broader "off". A screen for it in `/routes` comes next.
 
-- **Only automatic routing reads it.** tare auto's tiers, the role tables, the planner, auditor, vision,
-  researcher and heads-up lists all skip a route that is off, and so does a saved `routing.json`: the order file
-  does not switch a route back on. A model you pick, a role pin (`--implementer`, `--auditor`, ...),
-  `--coordinator`, a route the coordinator names for a unit, plan or search, and the explorers of `/delegation`
-  still reach it.
+- **Only your own choices pass it.** A model you pick, a role pin (`--implementer`, `--auditor`, ...),
+  `--coordinator`, and the explorer and overflow explorer you set in `/delegation` still reach a route that is
+  off. Everything else skips it: tare auto's tiers, the role tables, the planner, auditor, vision, researcher and
+  heads-up lists, a saved `routing.json` (the order file does not switch a route back on), and a route the
+  coordinator names for a unit's implementer, a plan or a search. The coordinator is a model, so its choice is not
+  yours: the route does not run, and the coordinator is told which route is off for which role and that you can
+  switch it on (`tare setup --auto ROLE:ROUTE=on`) or pin it. A pin of that route wins, since the pin is yours.
 - **Rules come first.** A provider declined in setup, a route not yet proven here (`NOT_QUALIFIED_PIN_ONLY`), an
   older model (`OLDER_MODEL`), an auditor of the same family, a missing credential or a spent quota keep their own
   reasons. An "on" entry never makes such a route usable.

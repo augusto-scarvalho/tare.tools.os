@@ -1,12 +1,18 @@
 """The routing profile (`routing_profile` in environment.json): which routes automatic routing may use, per role."""
 import copy
+from dataclasses import replace
 import json
 
 import pytest
 
-from relay import environment, native_catalog, native_routes, turn_engine, work_units
+from relay import environment, execution_scope, native_agent, native_catalog, native_routes, research_cli, turn_engine
+from relay import work_units
 from relay.scheduling_diagnostics import UnschedulableError
 from test_cross_vendor_auditors import install, pool  # noqa: F401
+from test_implement_unit import repository
+from test_native_agent import deployment, setup  # noqa: F401
+from test_planning_tools import execution, planner, request, stub_child, wrap  # noqa: F401
+from test_research_tools import effect, host, report  # noqa: F401
 
 
 def saved(off=None, on=None, **extra):
@@ -92,11 +98,10 @@ def test_a_pin_and_an_explicit_choice_still_reach_a_route_switched_off(pool, mon
     install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
     saved(off={'implementer': ['claude/opus@claude-code'], 'auditor': ['claude/opus@claude-code']})
     assert 'claude-opus-5-5-cli' not in ranked('implementer')[0]
-    # Explicit: the picker's concrete route, a unit's chosen route, and availability itself.
+    # Explicit: the picker's concrete route, and availability itself.
     chosen = native_catalog.select('claude-opus-5-5-cli')
     assert turn_engine.resolve_auto(chosen) is chosen
     assert turn_engine.available('claude-opus-5-5-cli')[0] is not None
-    assert [n for n, _ in work_units.routes(chosen, chosen='claude-opus-5-5-cli')][0] == 'claude-opus-5-5-cli'
     # A pin for this launch.
     monkeypatch.setenv('TARE_SESSION_SCOPE', json.dumps({'pins': [['implementer', 'anthropic/claude-opus-5-5-cli@high'],
                                                                   ['auditor', 'anthropic/claude-opus-5-5-cli@high']]}))
@@ -198,3 +203,87 @@ def test_the_cli_sets_shows_and_resets_and_the_file_holds_only_differences(pool,
                 ['--auto', 'auditor:claude/opus=off'], ['--auto-show', 'nobody']):
         assert environment.main(bad) == 1
         assert 'tare setup:' in capsys.readouterr().err
+
+
+def pin(monkeypatch, role, raw):
+    monkeypatch.setattr(execution_scope, 'current', lambda: replace(execution_scope.Scope(), pins=((role, raw),)))
+
+
+OFF_UNIT = ('SWITCHED_OFF_FOR_ROLE: claude-opus-5-5-cli is switched off for implementer in the routing profile '
+            '(claude/opus@claude-code); the user can switch it on (tare setup --auto implementer:claude-opus-5-5-cli=on) '
+            'or pin it')
+
+
+def test_a_unit_route_the_coordinator_names_runs_only_when_on_or_pinned(pool, monkeypatch):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+    parent = native_catalog.select('claude-opus-5-5-cli')
+    saved(off={'implementer': ['claude/opus@claude-code']})
+    refused = []
+    assert list(work_units.routes(parent, chosen='claude-opus-5-5-cli', refused=refused)) == []
+    assert refused == [OFF_UNIT]
+    # The user's pin of that route is the user's choice: it runs.
+    monkeypatch.setenv('TARE_SESSION_SCOPE', json.dumps({'pins': [['implementer', 'anthropic/claude-opus-5-5-cli@high']]}))
+    assert [n for n, _ in work_units.routes(parent, chosen='claude-opus-5-5-cli')] == ['claude-opus-5-5-cli']
+    monkeypatch.delenv('TARE_SESSION_SCOPE')
+    environment.save({})  # on again: it runs as before
+    assert [n for n, _ in work_units.routes(parent, chosen='claude-opus-5-5-cli')][0] == 'claude-opus-5-5-cli'
+
+
+def test_a_unit_on_an_off_route_starts_nothing_and_tells_the_coordinator_why(setup, tmp_path, monkeypatch):
+    config, custody, root = setup
+    repository(root)
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
+    monkeypatch.setattr(turn_engine, 'policy', lambda: {'implementer': [['child-route']]})
+    monkeypatch.setattr(turn_engine, 'available', lambda name: (deployment(), None))
+    called = []
+    monkeypatch.setattr(native_agent, 'run_session', lambda *a, **kw: called.append(1))
+    saved(off={'implementer': ['child-route']})
+    custody.mkdir(parents=True, exist_ok=True)
+    result = work_units.run_unit(custody, {'config': config, 'deployment': deployment()},
+                                 {'title': 'Set the value', 'target_paths': ['a.py'], 'criteria': ['a.py holds 2'],
+                                  'verifiers': ['unit'], 'route': 'child-route'}, lambda: False)
+    assert result['verdict'] == 'INCONCLUSIVE' and not called
+    assert result['reason'].startswith('SWITCHED_OFF_FOR_ROLE: child-route is switched off for implementer')
+    assert 'tare setup --auto implementer:child-route=on' in result['reason']
+
+
+def test_a_planner_the_coordinator_names_runs_only_when_on_or_pinned(planner, monkeypatch):
+    parent, state, candidate = planner
+    calls = []
+    stub_child(monkeypatch, candidate, calls)
+    saved(off={'planner': ['worker']})
+    tool = wrap(parent, state, execution())
+    with pytest.raises(ValueError, match=r'^SWITCHED_OFF_FOR_ROLE: worker is switched off for planner .*'
+                                         r'tare setup --auto planner:worker=on'):
+        tool.choose({'route': 'worker'})
+    refused = tool.execute(request({'instruction': 'Plan.', 'route': 'worker'}), execution())
+    assert refused.status == 'refused' and 'SWITCHED_OFF_FOR_ROLE: worker' in refused.output_json
+    assert calls == [] and not (parent/'planning').exists()
+    # The user's pin of that route runs it; with the route on, the coordinator's choice runs as before.
+    pin(monkeypatch, 'planner', 'openai/worker@high')
+    monkeypatch.setattr(execution_scope, 'pinned', lambda role: dict(copy.deepcopy(candidate),
+                                                                    native_model_choice={'connection': 'worker'}))
+    assert tool.choose({'route': 'worker'})[0] == 'worker'
+    monkeypatch.setattr(execution_scope, 'current', lambda: execution_scope.Scope())
+    environment.save({})
+    assert tool.choose({'route': 'worker'})[0] == 'worker'
+
+
+def test_a_research_route_the_coordinator_names_runs_only_when_on_or_pinned(host, monkeypatch):
+    tools, control, _ = host
+    called = []
+    monkeypatch.setattr(research_cli, 'research', lambda deployment, *a, **k: called.append(deployment['id']) or {
+        'status': 'COMPLETED', 'report': report(), 'calls_used': 1, 'usage': None})
+    saved(off={'researcher': ['gpt/luna@codex']})
+    refused = json.loads(tools.execute(effect('research', {'question': 'TTL?', 'route': 'luna'}), control).output_json)
+    assert refused['status'] == 'UNAVAILABLE' and called == []
+    assert refused['details'][0]['route'] == 'luna'
+    assert refused['details'][0]['reason'].startswith('SWITCHED_OFF_FOR_ROLE: luna is switched off for researcher')
+    pin(monkeypatch, 'researcher', 'openai/luna@medium')
+    monkeypatch.setattr(research_cli, 'effort', lambda deployment: 'medium')
+    pinned = json.loads(tools.execute(effect('research', {'question': 'TTL?', 'route': 'luna'}, 'pinned'), control).output_json)
+    assert pinned['status'] == 'COMPLETED' and called == ['luna']
+    monkeypatch.setattr(execution_scope, 'current', lambda: execution_scope.Scope())
+    environment.save({})
+    on = json.loads(tools.execute(effect('research', {'question': 'TTL now?', 'route': 'luna'}, 'on'), control).output_json)
+    assert on['status'] == 'COMPLETED' and called == ['luna', 'luna']

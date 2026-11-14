@@ -181,8 +181,8 @@ class ResearchTools:
             deployment = frozen['routes'][name]
             if not allows(deployment)[0] or usage_limited(deployment):
                 blocked = 'DISABLED_OR_USAGE_LIMITED', 'Disabled or quota-limited.'
-            elif not args.get('route') and switched_off('researcher', deployment, name):
-                blocked = 'SWITCHED_OFF_FOR_ROLE', 'Switched off for the researcher role (tare setup --auto).'
+            elif not current().pin('researcher') and (off := switched_off('researcher', deployment, name)):
+                blocked = 'SWITCHED_OFF_FOR_ROLE', 'SWITCHED_OFF_FOR_ROLE: ' + off  # a route the coordinator names too
             else:
                 blocked = None
             if blocked:

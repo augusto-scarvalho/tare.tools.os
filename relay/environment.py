@@ -126,7 +126,8 @@ def decides(name):
 # comes next). tare's default is today's role rows (relay/role_deployments.json and the routing policy's lists); the
 # profile keeps only the owner's differences, so it can only switch routes off, and an "on" entry only undoes a
 # broader "off". Rules above it (setup, qualification, older models, independence, credentials, quota) keep their
-# own reasons, and an explicit choice, a pin or --coordinator never asks it. Grammar: docs/guides/SHARED_GPU.md.
+# own reasons. Only the user's own choices pass it: a pick, a pin, --coordinator, the explorers of /delegation; a route
+# a model names (the coordinator's unit, planner or research route) does not. Grammar: docs/guides/SHARED_GPU.md.
 PROFILE_ROLES = ('implementer', 'explorer', 'planner', 'plan-auditor', 'auditor', 'researcher', 'vision', 'heads_up')
 RANKED_ROLES = PROFILE_ROLES[:5]  # the roles relay/role_deployments.json ranks (native_routes.ranked)
 SOURCES = ('claude-code', 'codex', 'agy', 'opencode-sub', 'opencode-api', 'api', 'openrouter', 'bedrock', 'local')
@@ -232,12 +233,15 @@ def profile_state(role, deployment, *names, value=None):
 
 
 def switched_off(role, deployment, *names, value=None):
-    """An Unavailable (SWITCHED_OFF_FOR_ROLE) when the routing profile switches this route off for automatic `role`
-    routing, else None. Only automatic paths ask, after their rules."""
+    """An Unavailable (SWITCHED_OFF_FOR_ROLE) when the routing profile switches this route off for `role`, else None.
+    Every choice but the user's own asks it, after its rules: automatic routing and a route a model names (the
+    coordinator's unit, planner or research route). A pick, a pin or --coordinator never asks."""
     state = profile_state(role, deployment, *names, value=value)
     if state and state[0] == 'off':
         from .scheduling_diagnostics import Unavailable
-        return Unavailable(f'switched off for {role} by {state[1]} (tare setup --auto)', 'SWITCHED_OFF_FOR_ROLE')
+        name = next((n for n in names if n), deployment.get('id'))
+        return Unavailable(f'{name} is switched off for {role} in the routing profile ({state[1]}); the user can switch '
+                           f'it on (tare setup --auto {role}:{name}=on) or pin it', 'SWITCHED_OFF_FOR_ROLE')
     return None
 
 
