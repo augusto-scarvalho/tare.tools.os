@@ -29,6 +29,8 @@ CODEX = {'id': 'codex-direct', 'native_profile': {'endpoint': 'https://chatgpt.c
 
 @pytest.fixture(autouse=True)
 def storage(tmp_path, monkeypatch):
+    global NOW  # each test's own start: in a whole-suite run the import is minutes (or over an hour) before the test,
+    NOW = time.time()  # and a reading stamped then is stale to the 60 s guard and to the one-hour limit
     monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path))
     return tmp_path
 
@@ -285,3 +287,6 @@ def test_a_demand_in_the_tui_starts_one_quota_refresh_and_a_second_one_right_aft
             return first, len(calls)
     assert asyncio.run(scenario(False)) == (0, 0)  # tests and non-interactive entries never run the vendors' CLIs
     assert asyncio.run(scenario(True)) == (1, 1)  # one for the first demand; the reading is under a minute old for the second
+    monkeypatch.setattr(provider_quota, 'refresh', lambda: calls.append(1))  # a reading that fails saves nothing:
+    calls.clear(); provider_quota.cache_path().unlink()
+    assert asyncio.run(scenario(True)) == (1, 1)  # the attempt itself counts for the minute
