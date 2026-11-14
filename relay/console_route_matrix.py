@@ -346,7 +346,9 @@ class RouteMatrix(Vertical):
             lead += (', but not used automatically now: ' if own == 'on' else '; not usable now either: ') + reasons + \
                 ' (a tick does not override this rule)'
         return f'{title} {self.glyph(row, where)}: {lead}. ' + '; '.join(
-            f'{n} {self.state(r)}, {now}' for n, r, now, _ in routes)
+            f'{n} {self.state(r)}, {now}' + (f' (prove it once: tare setup --prove {n})'
+                                            if now == 'NOT_QUALIFIED_PIN_ONLY' and k[0] else '')
+            for n, r, now, k in routes)
 
     def targets(self, rule):
         """The role's cells `rule` covers (a line on a source, a vendor's lines, a source, a route id), for make()."""
