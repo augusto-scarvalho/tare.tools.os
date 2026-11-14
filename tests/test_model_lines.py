@@ -7,9 +7,12 @@ from relay import model_choices, native_catalog
 ALL = ['low', 'medium', 'high', 'xhigh', 'max']
 LMH = ['low', 'medium', 'high']
 # What the picker showed for every shipped deployment and CLI template before model_lines.json (key, label, group,
-# connection, efforts, default effort): printed by this file's __main__ run with relay/ at origin/main 8628d8cd.
+# connection, efforts, default effort): printed by this file's __main__ run with relay/ at origin/main 8628d8cd. The
+# two agy-claude rows came later, with their templates: Anthropic's models, under Anthropic, through AGY.
 BEFORE = {
-    'agy-cli': ['gemini-3.8-flash', 'Gemini 3.8 Flash', 'Google', 'AGY CLI', ['low', 'medium', 'high'], 'high'],
+    'agy-claude-opus-5-5-cli': ['claude-opus-5-5', 'Claude Opus 5.5', 'Anthropic', 'AGY CLI', ['low', 'medium', 'high'], 'high'],
+    'agy-claude-sonnet-5-5-cli': ['claude-sonnet-5-5', 'Claude Sonnet 5.5', 'Anthropic', 'AGY CLI', ['low', 'medium', 'high'], 'high'],
+    'agy-cli':['gemini-3.8-flash', 'Gemini 3.8 Flash', 'Google', 'AGY CLI', ['low', 'medium', 'high'], 'high'],
     'agy-gemini-4-argon-cli': ['gemini-4-argon', 'Gemini 4 Argon', 'Google', 'AGY CLI', ['low', 'medium', 'high'], 'high'],
     'agy-gemini-4-hydrogen-cli': ['gemini-4-hydrogen', 'Gemini 4 Hydrogen', 'Google', 'AGY CLI', ['low', 'medium', 'high'], 'high'],
     'bedrock-glm': ['zai.glm-5', 'GLM-5', 'AWS Bedrock', 'AWS Bedrock', ['high'], 'high'],
@@ -76,6 +79,8 @@ BEFORE = {
 }
 # Through shipped connections (key, label, group, connection, efforts): versions that do not exist yet, and AGY's
 # Claude ids, labelled from the table alone; AGY's own ids give its efforts, the Codex template's catalogue Codex's.
+# AGY's Claude ids are grouped under their author, Anthropic (they were under Google, AGY's vendor, until the
+# agy-claude templates).
 NEW = {
     ('claude-cli', 'claude-fable-5-3'): ['claude-fable-5-3', 'Claude Fable 5.3', 'Anthropic', 'Claude CLI', ALL],
     ('claude-api', 'claude-fable-5-3'): ['claude-fable-5-3', 'Claude Fable 5.3', 'Anthropic', 'Claude API', ALL],
@@ -85,9 +90,9 @@ NEW = {
     ('agy-cli', 'gemini-4.1-argon-low', 'gemini-4.1-argon-medium', 'gemini-4.1-argon-high'):
         ['gemini-4.1-argon', 'Gemini 4.1 Argon', 'Google', 'AGY CLI', LMH],
     ('agy-cli', 'claude-opus-5-5-low', 'claude-opus-5-5-medium', 'claude-opus-5-5-high'):
-        ['claude-opus-5-5', 'Claude Opus 5.5', 'Google', 'AGY CLI', LMH],
+        ['claude-opus-5-5', 'Claude Opus 5.5', 'Anthropic', 'AGY CLI', LMH],
     ('agy-cli', 'claude-sonnet-5-5-low', 'claude-sonnet-5-5-medium', 'claude-sonnet-5-5-high'):
-        ['claude-sonnet-5-5', 'Claude Sonnet 5.5', 'Google', 'AGY CLI', LMH],
+        ['claude-sonnet-5-5', 'Claude Sonnet 5.5', 'Anthropic', 'AGY CLI', LMH],
 }
 # Ids with no line (an unknown line, a non-chat model, a dated snapshot, AGY's other vendors) fall back as an unknown
 # model did before model_lines.json: these rows were printed by the same __main__ run at origin/main 8628d8cd.

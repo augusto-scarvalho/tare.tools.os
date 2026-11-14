@@ -194,6 +194,8 @@ def test_saving_planner_or_routes_preserves_the_review_mode(pool, mode):
 NEW_ROUTES = {'claude-fable-5-2-cli': ('cli://claude', 'claude-fable-5-2', 'Anthropic'),
               'codex-cli-gpt-6-1-terra': ('cli://codex', 'gpt-6.1-terra', 'OpenAI'),
               'agy-gemini-4-hydrogen-cli': ('cli://agy', 'gemini-4-hydrogen-high', 'Google'),
+              'agy-claude-opus-5-5-cli': ('cli://agy', 'claude-opus-5-5-high', 'Anthropic'),
+              'agy-claude-sonnet-5-5-cli': ('cli://agy', 'claude-sonnet-5-5-high', 'Anthropic'),
               'claude-api-fable-5-2': (None, None, 'Anthropic'), 'openai-api-gpt-6-1-terra': (None, None, 'OpenAI'),
               'gemini-api-4-carbon': (None, None, 'Google'), 'gemini-api-4-hydrogen': (None, None, 'Google')}
 
@@ -219,9 +221,22 @@ def test_new_models_have_an_author_take_a_pin_and_wait_for_qualification_before_
             n: 'NOT_QUALIFIED_PIN_ONLY' if role in table[n]['roles'] else 'ROLE_NOT_CONFIGURED' for n in NEW_ROUTES}
     # Their own line still may not review their work.
     for producer, peer in (('claude-api-fable-5-2', 'claude-api-fable-5-1'), ('openai-api-gpt-6-1-terra', 'openai-api'),
-                           ('gemini-api-4-hydrogen', 'gemini-api'), ('gemini-api-4-carbon', 'gemini-api')):
+                           ('gemini-api-4-hydrogen', 'gemini-api'), ('gemini-api-4-carbon', 'gemini-api'),
+                           ('agy-claude-opus-5-5-cli', 'claude-api-opus-5-5')):
         _, selection = native_routes.ranked('auditor', native_catalog.select(producer))
         assert next(c for c in selection['candidates'] if c['deployment'] == peer)['reason'] == 'AUDITOR_NOT_INDEPENDENT'
+
+
+def test_claude_opus_on_agy_audits_other_vendors_never_claude_opus():
+    shipped = {name: value for name, value, _ in native_catalog.offline_deployments(include_unconfigured=True)}
+    recorded = shipped['agy-claude-opus-5-5-cli']
+    derived = copy.deepcopy(recorded)  # its low level, as a pin realizes it: the line's identity, no record
+    derived['native_profile']['model'] = derived['model'] = 'claude-opus-5-5-low'
+    for auditor in (recorded, derived):
+        for producer, independent in (('claude-opus-5-5-cli', False), ('claude-cli', False), ('codex-cli', True),
+                                      ('agy-gemini-4-hydrogen-cli', True)):
+            (row,) = work_audit.prepare(shipped[producer], [auditor], 'optional')['routes']
+            assert (row['eligible'], row['cross_vendor']) == (independent, independent), (producer, auditor['model'])
 
 
 def test_review_priority_is_bounded_operator_policy_not_a_quality_score():

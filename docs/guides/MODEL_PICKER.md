@@ -99,6 +99,20 @@ automatic role picks them until they are qualified through tare (`"qualified": f
 `relay/role_deployments.json`). Hydrogen shares the `google/gemini` lineage, Fable 5.2 `anthropic/fable` and
 Terra `openai/gpt`, so none reviews work of its own line.
 
+### Claude Opus 5.5 and Sonnet 5.5 on AGY
+
+AGY also serves Anthropic's Claude Opus 5.5 and Claude Sonnet 5.5 (`agy models` on 2026-11-13 lists
+`claude-opus-5-5-low|medium|high` and `claude-sonnet-5-5-low|medium|high`). Discovery offers
+`agy-claude-opus-5-5-cli` and `agy-claude-sonnet-5-5-cli`; the picker shows each as one more connection, **AGY CLI**,
+of **Claude Opus 5.5** and **Claude Sonnet 5.5**, under Anthropic, with low, medium and high (Default **high**). A
+level selects AGY's id for it. They spend AGY's allowance (its "Claude and GPT models" group in `tare quota`), not the
+Claude subscription's, so they are a fallback when that one is spent. Their author is Anthropic: Opus on AGY shares
+`anthropic/opus` with Opus on Claude Code and cannot review its work (nor Sonnet Sonnet's), while it can review GPT
+or Gemini work. A pin names the connection, which is Google's: `google/agy-claude-opus-5-5-cli@high`. They have the
+roles of `claude-opus-5-5-cli` and `claude-sonnet-5-5-cli` with `"qualified": false`: chosen or pinned only, never
+by an automatic role. One minimal call each answered on 2026-11-14 (AGY 1.5.8, high), and AGY reported the
+requested model.
+
 ### Claude Haiku 5.5 candidate
 
 Claude Code 2.1.293 or later is required. Discovery offers

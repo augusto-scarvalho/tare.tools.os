@@ -61,6 +61,9 @@ def describe(name, value):
             supported = [r['effort'] for r in record.get('supported_reasoning_levels', [])
                          if r.get('effort') in EFFORTS]
         elif endpoint == 'cli://agy':
+            # AGY also serves Anthropic's lines: the group is the model's author, the connection says AGY.
+            from .vendor_models import origin_line
+            group = (origin_line(model, endpoint) or {'vendor': group})['vendor']
             mapping = value.get('native_reasoning_models', {effort: model})
             supported = [e for e in EFFORTS[:3] if e in mapping]
             if model.endswith(('-low', '-medium', '-high')):

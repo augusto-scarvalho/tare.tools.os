@@ -1,4 +1,60 @@
 {
+ "agy-claude-opus-5-5-cli": {
+  "id": "agy-claude-opus-5-5-cli",
+  "model": "claude-opus-5-5-high",
+  "native_cli": {
+   "version": "1.2.7"
+  },
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_execution_limits": {
+   "max_model_calls": 16,
+   "max_seconds": 900,
+   "request_seconds": 300
+  },
+  "native_profile": {
+   "context_window": 200000,
+   "endpoint": "cli://agy",
+   "model": "claude-opus-5-5-high",
+   "output_tokens": 16384,
+   "parameters_json": "{\"effort\":\"high\"}",
+   "protocol": "vendor-cli",
+   "source": "Exact model IDs from agy models (AGY 1.5.8) 2026-11-13; Anthropic's model on AGY's allowance; existing conservative AGY transport limits, not a capacity or quality measurement"
+  },
+  "native_reasoning_models": {
+   "high": "claude-opus-5-5-high",
+   "low": "claude-opus-5-5-low",
+   "medium": "claude-opus-5-5-medium"
+  },
+  "runner": "native-http"
+ },
+ "agy-claude-sonnet-5-5-cli": {
+  "id": "agy-claude-sonnet-5-5-cli",
+  "model": "claude-sonnet-5-5-high",
+  "native_cli": {
+   "version": "1.2.7"
+  },
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_execution_limits": {
+   "max_model_calls": 16,
+   "max_seconds": 900,
+   "request_seconds": 300
+  },
+  "native_profile": {
+   "context_window": 200000,
+   "endpoint": "cli://agy",
+   "model": "claude-sonnet-5-5-high",
+   "output_tokens": 16384,
+   "parameters_json": "{\"effort\":\"high\"}",
+   "protocol": "vendor-cli",
+   "source": "Exact model IDs from agy models (AGY 1.5.8) 2026-11-13; Anthropic's model on AGY's allowance; existing conservative AGY transport limits, not a capacity or quality measurement"
+  },
+  "native_reasoning_models": {
+   "high": "claude-sonnet-5-5-high",
+   "low": "claude-sonnet-5-5-low",
+   "medium": "claude-sonnet-5-5-medium"
+  },
+  "runner": "native-http"
+ },
  "agy-cli": {
   "id": "agy-cli",
   "model": "gemini-3.8-flash-high",

@@ -21,8 +21,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns temporary inference restrictions.",
-      "size_bytes": 4714,
-      "sha256": "69de008d9544e970c80fa2b93b003e4679c089d0794e025a2bff22fa28fadcb7"
+      "size_bytes": 4873,
+      "sha256": "a052b9df4a39882522382cb3293da75dba507a89244617349cb836587936aa6b"
     },
     {
       "name": "coordinator_policy.py",
@@ -3361,8 +3361,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator model selection; Runtime retains session execution.",
-      "size_bytes": 31390,
-      "sha256": "973691956aaccd5932921e5c6316ee67728fd5b2a887aebad022c61702b3094d"
+      "size_bytes": 31630,
+      "sha256": "748c3aa26cb252ea65c93d84315d819774335e169d93a5653253baeef51fa846"
     },
     {
       "name": "model_picker.py",
