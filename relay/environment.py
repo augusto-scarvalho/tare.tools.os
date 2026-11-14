@@ -1,6 +1,8 @@
 """What this machine's owner chose to use and not to use: local model gateways, vendor CLIs, API providers and
 decision models (D15). One file per machine, beside local-gpu.json, so every frontend and storage root sees the
 same choices. No file, or a category left undecided, keeps today's behaviour: every route tare finds."""
+from contextlib import contextmanager
+from contextvars import ContextVar
 import json
 import os
 from pathlib import Path
@@ -207,7 +209,10 @@ def id_rule(text):
     """(specificity, rule) of a route-id entry. A route with a line is named by MODEL@SOURCE, so the id of one reads
     as its version on its source (7, key). Any other id names exactly the route it resolves to here (8, its id:
     local-qwen and qwen38-gsq are one route), never another route of the same model; an id this machine cannot
-    resolve names itself."""
+    resolve names itself. Inside `resolving(ids)`, an id resolved beforehand is read from there."""
+    known = _RESOLVED.get()
+    if known is not None and text in known:
+        return known[text]
     from .cli_discovery import TEMPLATES
     from .native_catalog import select
     try:
@@ -216,6 +221,25 @@ def id_rule(text):
         deployment = json.loads(TEMPLATES.read_text(encoding='utf-8')).get(text)
     key = route_key(deployment) if deployment else None
     return (7, key) if key and key[0] else (8, (deployment or {}).get('id') or text)
+
+
+_RESOLVED = ContextVar('tare_resolved_route_ids', default=None)
+
+
+def resolved_ids(texts):
+    """{text: id_rule(text)} of route-id entries, resolved now: a caller that may not read files later (the /routes
+    matrix on its UI thread) resolves them in a worker thread and reads them inside `resolving`."""
+    return {text: id_rule(text) for text in texts if isinstance(text, str) and '@' not in text}
+
+
+@contextmanager
+def resolving(ids):
+    """While inside (this context only), id_rule reads the ids resolved beforehand instead of the catalogue."""
+    token = _RESOLVED.set(ids)
+    try:
+        yield
+    finally:
+        _RESOLVED.reset(token)
 
 
 def rule_of(text):

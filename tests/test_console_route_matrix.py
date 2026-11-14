@@ -2,6 +2,8 @@
 import asyncio
 import json
 from pathlib import Path
+import threading
+import traceback
 from types import SimpleNamespace
 
 from textual.widgets import Button, OptionList, Select, Static, TabbedContent, TextArea
@@ -433,29 +435,93 @@ def test_an_inline_table_row_named_like_a_catalogue_route_is_shown_and_ticked_as
     journey(tmp_path, steps)
 
 
-def test_a_cell_no_entry_can_name_is_not_switched_and_bulk_actions_skip_it(pool, tmp_path, monkeypatch):
+def colliding_muse(tmp_path, monkeypatch, alone=False):
+    """A role table with an inline OpenRouter Muse row named `openai-api` (no line), which the profile reads as the
+    catalogue's GPT-6.1 Sol on the API; `alone`: the only OpenRouter route of the table."""
     table = json.loads((Path(native_routes.__file__).with_name('role_deployments.json')).read_text(encoding='utf-8'))
     muse = next(r for r in table['deployments'] if r.get('native_catalog') == 'openrouter-muse-wonder')
     deployment = native_catalog.select('openrouter-muse-wonder')
-    table['deployments'] = [r for r in table['deployments'] if 'openai-api' not in (r['id'], r.get('native_catalog'))]
+    table['deployments'] = [r for r in table['deployments'] if 'openai-api' not in (r['id'], r.get('native_catalog'))
+                            and not (alone and str(r.get('native_catalog', r['id'])).startswith('openrouter-'))]
     table['deployments'].append({**{k: v for k, v in muse.items() if k != 'native_catalog'}, 'id': 'openai-api',
                                  'native_profile': deployment['native_profile'],
-                                 'native_credential_env': deployment['native_credential_env']})  # no line
+                                 'native_credential_env': deployment['native_credential_env']})
     (tmp_path/'roles.json').write_text(json.dumps(table), encoding='utf-8')
     monkeypatch.setenv('TARE_ROLE_DEPLOYMENTS', str(tmp_path/'roles.json'))
 
+
+def test_a_cell_no_entry_can_name_is_not_switched(pool, tmp_path, monkeypatch):
+    colliding_muse(tmp_path, monkeypatch)
+
     async def steps(app, pilot, panel, cell, status):
-        assert await cell('openai-api', 'openrouter') == ' ?'  # the profile reads `openai-api` as GPT-6.1 Sol
+        assert await cell('openai-api', 'openrouter') == '[x]?'  # the profile reads `openai-api` as GPT-6.1 Sol
         assert ('meta/muse-wonder on OpenRouter (openai-api): cannot be switched here: its id is also the catalogue '
-                'name of gpt/sol-6.1@api, so no entry names it; rename the inline row.') in status()
+                'name of gpt/sol-6.1@api, so no entry names it; rename the inline row. Broader entries make it on.'
+                ) in status()
         assert not panel.query_one(RouteMatrix).dirty()
         await saved(pilot, panel)
         assert 'Nothing to save' in status() and stored() is None
-        panel.query_one('#matrix-bulk', Select).value = 'scope:*@openrouter=off'
+    journey(tmp_path, steps)
+
+
+def test_a_broad_entry_still_switches_a_cell_no_entry_can_name(pool, tmp_path, monkeypatch):
+    colliding_muse(tmp_path, monkeypatch, alone=True)
+
+    async def steps(app, pilot, panel, cell, status):
+        bulk, table = panel.query_one('#matrix-bulk', Select), panel.query_one('#matrix-table')
+        assert set(cells(panel, where='openrouter')) == {('openai-api', 'openrouter')}  # the source's only cell
+        bulk.value = 'scope:*@openrouter=off'
         await pilot.pause()
-        assert 'Skipped 1 cell(s) that no entry can name.' in status()
+        assert str(table.get_cell('openai-api', 'openrouter')) == '[ ]?' and 'stay' not in status()
         await saved(pilot, panel)
         assert stored() == {'off': {'auditor': ['*@openrouter']}}
+        bulk.value = 'scope:*@openrouter=off'  # from `*@openrouter` off: it stays
+        await pilot.pause()
+        assert str(table.get_cell('openai-api', 'openrouter')) == '[ ]?'
+        await saved(pilot, panel)
+        assert 'Nothing to save' in status() and stored() == {'off': {'auditor': ['*@openrouter']}}
+        bulk.value = 'scope:*@openrouter=on'  # the entry goes and the route reads on again
+        await pilot.pause()
+        assert str(table.get_cell('openai-api', 'openrouter')) == '[x]?'
+        await saved(pilot, panel)
+        assert stored() is None
+        panel.query_one(RouteMatrix).bulk('scope:*@*=off')
+        await pilot.pause()
+        bulk.value = 'scope:*@openrouter=on'  # only an entry of its own would switch it on under `*@*`
+        await pilot.pause()
+        assert str(table.get_cell('openai-api', 'openrouter')) == '[ ]?'
+        assert ('1 cell(s) that no entry can name stay off: only an entry of their own would switch them.'
+                in status())
+    journey(tmp_path, steps)
+
+
+def test_the_tab_reads_no_file_on_its_ui_thread(pool, tmp_path, monkeypatch):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+    assert environment.main(['--auto', 'auditor:openrouter-muse-wonder=off',  # routes with no line, by their id
+                             '--auto', 'auditor:opencode-sub-gemini-4-argon=off']) == 0  # (this one outlives the edits)
+    calls = []
+    for module, name in ((native_catalog, 'select'), (native_catalog, 'local_gateway'), (work_audit, 'identity')):
+        def spy(*args, real=getattr(module, name), name=name, **kwargs):
+            if any(frame.filename.endswith('console_route_matrix.py') for frame in traceback.extract_stack()):
+                calls.append((name, threading.get_ident()))  # a read on the tab's behalf
+            return real(*args, **kwargs)
+        monkeypatch.setattr(module, name, spy)
+
+    async def steps(app, pilot, panel, cell, status):
+        loop, tabs = threading.get_ident(), panel.query_one('#routes-tabs', TabbedContent)
+        calls.clear()
+        tabs.active = 'routes-order'
+        await pilot.pause()
+        tabs.active = 'routes-matrix'  # reopening reads the rows again
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert await cell('openrouter-muse-wonder', 'openrouter') == '[x]'  # an id cell
+        assert await cell('claude/opus', 'claude-code') == '[ ]'  # a line cell
+        panel.query_one('#matrix-bulk', Select).value = 'scope:*@openrouter=off'
+        await pilot.pause()
+        await saved(pilot, panel)
+        assert calls and not [call for call in calls if call[1] == loop], calls
     journey(tmp_path, steps)
 
 
