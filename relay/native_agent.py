@@ -1202,8 +1202,10 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 recovery = read_json(root/'source-recovery.json', 65536)
                 result['source_recovery'] = {k: recovery[k] for k in
                     ('policy', 'id', 'state', 'reason', 'source')}
+            from .provider_prices import reference_totals
             result['cost'] = {'known_by_currency': usage['known_cost_by_currency'],
-                              'unpriced_or_partial_calls': usage['unpriced_or_partial_calls'], 'scope': usage['scope']}
+                              'unpriced_or_partial_calls': usage['unpriced_or_partial_calls'], 'scope': usage['scope'],
+                              **reference_totals(usage['calls'])}  # a models.dev reference says so
             if exploration_tools:
                 from .delegation import summary as delegation_summary
                 result['delegation'] = delegation_summary(root)

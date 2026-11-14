@@ -83,7 +83,8 @@ Local seconds and subscription calls reserve the configured ceilings; they are
 not billed GPU time or provider quota units. Different models on the same endpoint
 share a resource-pool identity. An observed quota/rate limit pauses that pool's
 challengers for 15 minutes, followed by fresh admission. Unknown quota requires
-the explicit bounded-probe checkbox. API spending requires a complete tariff;
+the explicit bounded-probe checkbox. API spending requires a complete tariff, or a
+complete models.dev reference price ([HTTP providers, Prices](HTTP_API_PROVIDERS.md#prices));
 missing/conditional prices stop dispatch. A private paid gateway can explicitly
 set `accounting: "usd"` instead of the private-endpoint local default.
 

@@ -521,7 +521,6 @@ class ExplorationTools:
         parent_spend, _ = settings(self.state['deployment'])
         if variant['accounting'] == 'usd' and resources.spend_capped():
             from .challenger_variants import price
-            price(deployment)
             if parent_spend:
                 if parent_spend.currency != 'USD':
                     raise ValueError('Auxiliary currency differs from the enclosing spend allowance.')
@@ -530,6 +529,7 @@ class ExplorationTools:
             if usd <= 0:
                 raise ValueError('No exploration USD allowance remains.')
             deployment['native_spend_policy'] = dict(max_amount=str(usd), currency='USD', allow_estimated_counts=True)
+            price(deployment)  # after the policy: price() refuses a metered explorer without one
         else:
             usd = Decimal(0)
         folder = self.location(request, index)

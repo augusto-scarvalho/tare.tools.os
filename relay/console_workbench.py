@@ -51,6 +51,8 @@ def heads_up_rows(session):
     dollars = (f"USD {u['usd']}" if u['usd_unknown'] < u['calls'] else 'Unknown')
     if u['usd_unknown'] and u['usd_unknown'] < u['calls']:
         dollars += f"; {u['usd_unknown']} call(s) without a known price"
+    if u.get('reference_read'):
+        dollars += f"; at models.dev reference prices read {', '.join(u['reference_read'])}, not confirmed tariffs"
     body = (f"Side agent notes after finished turns, separate from the session totals above.\n"
             f"Turns with a writer: {u['turns']}; writer calls: {u['calls']}\nTokens: {tokens}\n"
             f"Time: {u['ms'] / 1000:.1f} s\nKnown cost: {dollars}")
@@ -102,6 +104,9 @@ def usage_rows(report):
         lines.append('Known model cost: '+', '.join(f'{currency} {amount}' for currency, amount in sorted(costs.items())))
     else:
         lines.append('Known model cost: Unknown')
+    if report.get('reference_priced_calls'):
+        lines.append(f"  {report['reference_priced_calls']} call(s) valued at models.dev reference prices read "
+                     f"{', '.join(report['reference_prices_read'])}: not confirmed tariffs")
     estimates = report.get('provider_estimates_by_currency')
     if isinstance(estimates, dict) and estimates:
         lines.append('Provider estimate (not billed): '+', '.join(f'{currency} {amount}' for currency, amount in sorted(estimates.items())))
@@ -507,6 +512,11 @@ class ConversationWorkbench:
         except Exception:  # optional: /guidance keeps the last reading and says when it was taken
             pass
         self.call_from_thread(self.guidance_landed)
+        try:  # the models.dev reference prices, at most once a day; no model call, no key sent
+            from .provider_prices import refresh_reading
+            refresh_reading()
+        except Exception:  # optional: the last good reading stays, or none (no reference price, as before)
+            pass
         try:  # what each provider has left, so a spent plan is not chosen; no model call
             from . import provider_quota
             provider_quota.refresh()

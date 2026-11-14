@@ -27,6 +27,9 @@ def _stage(identity, label, *, status=None, model=None, calls=None, tokens=None,
     lines.append('Known model cost: '+(f'{currency} {amount}' if amount is not None and currency else 'Unknown'))
     if amount is not None and currency:
         lines.append('Cost coverage: '+('Complete' if cost.get('complete') is True else 'Partial'))
+        from .provider_prices import is_reference, reference_note
+        if is_reference(cost.get('tariff')):
+            lines.append('Cost basis: '+reference_note(cost['tariff']))
     lines.extend(extra)
     if type(elapsed) in (int, float) and elapsed >= 0:
         lines.append(f'Recorded duration: {elapsed} ms')
