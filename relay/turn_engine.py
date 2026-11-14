@@ -560,7 +560,7 @@ def resolve_auto(deployment, start=0, request=None, role='implementer'):
     """Resolve tare auto once. A supplied initial request permits bounded hosted advice; legacy callers
     and successor routing keep deterministic selection. Save the choice for the existing fallback ladder.
     `role`: the role the route will run in, whose routing profile entries decide (tare auto's tiers are the
-    implementer's; /research reads the researcher's)."""
+    implementer's; a conversation reads the coordinator's, /research the researcher's)."""
     from .execution_scope import current, pinned, ROLE
     if current().pin(ROLE.get()):
         if start:

@@ -12,14 +12,18 @@ from textual.widgets import Button, DataTable, Input, OptionList, Select, Static
 
 from . import environment as env
 
-ROLES = {'implementer': 'Implementer', 'explorer': 'Explorer', 'planner': 'Planner', 'plan-auditor': 'Plan auditor',
-         'auditor': 'Auditor', 'researcher': 'Researcher', 'vision': 'Vision', 'heads_up': 'Heads-up'}
+ROLES = {'coordinator': 'Coordinator', 'implementer': 'Implementer', 'explorer': 'Explorer', 'planner': 'Planner',
+         'plan-auditor': 'Plan auditor', 'auditor': 'Auditor', 'researcher': 'Researcher', 'vision': 'Vision',
+         'heads_up': 'Heads-up'}
+CHOICES = {**ROLES, 'coordinator': 'Coordinator · the model you talk to, when tare auto starts the conversation'}
 VENDORS = {'claude': 'Anthropic', 'gpt': 'OpenAI', 'gemini': 'Google'}
 SOURCE_LABELS = {'claude-code': 'Claude Code', 'codex': 'Codex', 'agy': 'AGY', 'opencode-sub': 'OpenCode sub',
                  'opencode-api': 'OpenCode API', 'api': 'Vendor API', 'openrouter': 'OpenRouter', 'bedrock': 'Bedrock',
                  'local': 'Local', 'other-api': 'Other API'}
 PAY_PER_TOKEN = ('opencode-api', 'api', 'openrouter', 'bedrock', 'other-api')
-NO_ROUTE = {'implementer': 'tare auto has no route (tare_auto_no_route_available)',
+NO_ROUTE = {'coordinator': 'tare auto cannot start a conversation; it stops before any model call with '
+                           '"tare_auto_no_route_available: No route can start." (pick a model to talk to one)',
+            'implementer': 'tare auto has no route (tare_auto_no_route_available)',
             'explorer': 'only the explorers set in /delegation run; without them a session does not delegate',
             'planner': 'a plan stops before any model call (No eligible planner)',
             'plan-auditor': 'a planner reviews its own plan, and a plan stops when its planner is off for plan-auditor',
@@ -107,8 +111,8 @@ class RouteMatrix(Vertical):
     DEFAULT_CSS = '''
     RouteMatrix { height: 1fr; }
     RouteMatrix .matrix-bar { height: 1; margin-bottom: 1; }
-    RouteMatrix #matrix-role { width: 22; }
-    RouteMatrix #matrix-search { width: 1fr; margin-left: 1; }
+    RouteMatrix #matrix-role { width: 1fr; }  /* the Coordinator entry reads in full on a wide screen */
+    RouteMatrix #matrix-search { width: 28; margin-left: 1; }
     RouteMatrix Matrix { height: 1fr; }
     RouteMatrix .matrix-note { height: auto; color: $text-muted; }
     RouteMatrix OptionList { height: auto; max-height: 5; }
@@ -119,10 +123,10 @@ class RouteMatrix(Vertical):
 
     def compose(self):
         self.value = self.routes = self.saved = None
-        self.role, self.warned, self.labels = 'implementer', False, {}
+        self.role, self.warned, self.labels = 'coordinator', False, {}  # what a user meets first
         self.message, self.extra, self.identities, self.warnings = 'Reading the routes…', [], {}, []
         with Horizontal(classes='matrix-bar'):
-            yield Select([(label, role) for role, label in ROLES.items()], value=self.role, allow_blank=False,
+            yield Select([(label, role) for role, label in CHOICES.items()], value=self.role, allow_blank=False,
                          id='matrix-role')
             yield Input(placeholder='Search models', id='matrix-search')
         yield Matrix(cursor_type='cell', fixed_columns=1, zebra_stripes=True, id='matrix-table')
@@ -206,7 +210,7 @@ class RouteMatrix(Vertical):
                     table.add_row(Text(' ' + self.labels.get(row, row)), *[''] * len(sources), key=row)
         table.move_cursor(row=keep.row, column=keep.column, animate=False)
         families = sorted({row.split('/')[0] for row, _ in self.cells[self.role] if '/' in row})
-        others = [r for r in env.PROFILE_ROLES if r != self.role]
+        others = [r for r in ROLES if r != self.role]
         self.query_one('#matrix-bulk', Select).set_options([(Text(label), action) for label, action in (
             [(f'{VENDORS.get(f, f)}: every model {want}', f'scope:{f}/*@*={want}')
              for f in families for want in ('off', 'on')]

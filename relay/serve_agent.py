@@ -370,7 +370,9 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
             if not decided():  # once per chat, on its first turn
                 emit('_tare: this machine is not set up yet, so tare uses every route it finds (local first). '
                      '`tare setup` in a terminal, or /setup here, shows what it found._\n\n')
-            tier, name, deployment, skipped = engine.initial_choice(tiers, requests[-1])
+            # Every session of a chat is a conversation (run_session(conversation=True), or a continuation of one):
+            # the routing profile's coordinator entries decide its route.
+            tier, name, deployment, skipped = engine.initial_choice(tiers, requests[-1], role='coordinator')
             if deployment is None:
                 return 'tare: no route is available right now: ' + json.dumps(skipped)
             emit(f'_tare · {name}_\n\n')
@@ -390,12 +392,12 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
             session = Path(current['session'])
             # A fresh session (a fork, a mode change, a retry) is a new start: the routing profile decides again; a
             # resumed one continues on the route it started on.
-            off = deployment is not None and refusal('implementer', deployment, current['route'])
+            off = deployment is not None and refusal('coordinator', deployment, current['route'])
             if deployment is None:  # the route went away: continue on the next available one
                 session, result = escalate(state, root, current['tier'], instruction, emit, emit_text, activity,
                                            why=reason, same_tier_ok=True, mode=mode)
             elif off and state.get('fork'):  # fork onto the next route that is on, from what the client shows
-                tier, name, deployment, skipped = engine.choose(tiers, current['tier'])
+                tier, name, deployment, skipped = engine.choose(tiers, current['tier'], role='coordinator')
                 if deployment is None:
                     return 'tare: no route is available right now: ' + json.dumps(skipped)
                 session, result = fresh(state, root, instruction, deployment, emit, emit_text, activity, mode=mode,
@@ -442,7 +444,7 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
             result = next_result or result
         if (result or {}).get('status') == 'PROPOSED':  # a completed turn that only announced the work goes up once
             current = state['sessions'][-1]
-            if engine.choose(tiers, current['tier'] + 1)[2] is not None:
+            if engine.choose(tiers, current['tier'] + 1, role='coordinator')[2] is not None:
                 verdict = engine.unanswered(requests[-1], (result or {}).get('output'),
                                             {'source': 'serve', 'chat': key, 'turn': state['turns'],
                                              'route': current['route']})
@@ -601,7 +603,7 @@ def escalate(state, root, start_tier, text, emit, emit_text, activity, *, why, s
     from .native_continuity import preview, save_request
     tiers = engine.policy()['implementer']
     current = state['sessions'][-1]
-    tier, name, deployment, skipped = engine.choose(tiers, start_tier)
+    tier, name, deployment, skipped = engine.choose(tiers, start_tier, role='coordinator')
     if deployment is None or (name == current['route'] and not same_tier_ok):
         emit(f'\n_tare: no further route available ({why})._\n')
         return Path(current['session']), None

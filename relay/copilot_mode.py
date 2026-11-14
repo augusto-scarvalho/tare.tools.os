@@ -32,7 +32,9 @@ _turns, _chats, _guard = {}, {}, threading.Lock()
 
 
 def routes(start=0):
-    """(tier, name, deployment) of the policy's available routes that carry client tools, from tier `start`."""
+    """(tier, name, deployment) of the policy's available routes that carry client tools, from tier `start`. The
+    route is the model the user talks to, as in a tare serve chat (a conversation): the routing profile's
+    coordinator entries decide it."""
     from .execution_scope import refusal
     for tier, names in enumerate(engine.policy()['implementer']):
         if tier < start:
@@ -40,7 +42,7 @@ def routes(start=0):
         for name in names:
             deployment, _ = engine.available(name)
             if deployment is not None and deployment['native_profile']['protocol'] == 'openai-chat' and \
-                    not refusal('implementer', deployment, name):
+                    not refusal('coordinator', deployment, name):
                 yield tier, name, deployment
 
 
@@ -66,7 +68,7 @@ def turn_for(messages, root):
         from .execution_scope import admit
         if turn is None or turn['requests'] != len(requests):
             tier, name, deployment = route_from(chat['floor'])
-            admit(deployment, 'implementer')  # the routing profile's backstop: a new message is a new start
+            admit(deployment, 'coordinator')  # the routing profile's backstop: a new message is a new start
             start, why = engine.snapshot(root)
             turn = _turns[key] = {'requests': len(requests), 'route': name, 'tier': tier, 'start': start, 'why': why,
                                   'request': requests[-1] if requests else '',
@@ -79,7 +81,7 @@ def turn_for(messages, root):
             from .environment import profile
             deployment = engine.available(turn['route'])[0] if profile()[0] else None
             if deployment is not None:
-                admit(deployment, 'implementer')
+                admit(deployment, 'coordinator')
             turn['admitted'] = requests[-1] if requests else ''
     return turn
 

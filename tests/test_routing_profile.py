@@ -504,17 +504,42 @@ def test_a_fork_or_mode_change_onto_a_route_now_off_starts_on_the_next_one(runti
     monkeypatch.setattr('relay.native_continuity.preview', lambda source, project: {'text': 'BRIEF'})
     serve_agent.run_turn(copilot(project, 'first'), lambda text: None)
     assert state['calls'][-1]['route'] == 'local-a'
-    saved(off={'implementer': ['local-a']})
-    # The same session goes on: it started while its route was on.
-    serve_agent.run_turn(copilot(project, 'first', 'second'), lambda text: None)
-    assert state['calls'][-1]['resume'] is True and state['calls'][-1]['custody'] == state['calls'][0]['custody']
-    # A mode change starts a fresh session: a new start, on the next route that is on.
-    serve_agent.run_turn(copilot(project, 'first', 'second', '/read-only look again'), lambda text: None)
-    assert state['calls'][-1]['route'] == 'local-b' and 'resume' not in state['calls'][-1]
-    # A fork (an edited earlier message) too, from what the client shows.
+    # Every session of a chat is a conversation: the coordinator's entries decide, the implementer's do not.
     saved(off={'implementer': ['local-a', 'local-b']})
+    serve_agent.run_turn(copilot(project, 'first', '/read-only look'), lambda text: None)
+    assert state['calls'][-1]['route'] == 'local-a' and 'resume' not in state['calls'][-1]  # a mode change, same route
+    saved(off={'coordinator': ['local-a']})
+    # The same session goes on: it started while its route was on.
+    serve_agent.run_turn(copilot(project, 'first', '/read-only look', 'second'), lambda text: None)
+    assert state['calls'][-1]['resume'] is True and state['calls'][-1]['custody'] == state['calls'][1]['custody']
+    # A mode change starts a fresh session: a new start, on the next route that is on.
+    serve_agent.run_turn(copilot(project, 'first', '/read-only look', 'second', '/accept-edits go on'), lambda text: None)
+    assert state['calls'][-1]['route'] == 'local-b' and 'resume' not in state['calls'][-1]
+    # A follow-up whose session spent its budget goes on in a fresh one: on the next route that is on.
+    real = native_agent.run_session
+
+    def spent(*a, **k):
+        if k.get('resume'):
+            raise ValueError('Session budget exhausted.')
+        return real(*a, **k)
+    monkeypatch.setattr(native_agent, 'run_session', spent)
+    saved(off={'implementer': ['local-b']})  # not the coordinator's: the same route, renewed
+    serve_agent.run_turn(copilot(project, 'first', '/read-only look', 'second', '/accept-edits go on', 'third'),
+                         lambda text: None)
+    assert state['calls'][-1]['route'] == 'local-b' and 'resume' not in state['calls'][-1]
+    saved(off={'coordinator': ['local-a', 'local-b']})
+    serve_agent.run_turn(copilot(project, 'first', '/read-only look', 'second', '/accept-edits go on', 'third',
+                                 'fourth'), lambda text: None)
+    assert state['calls'][-1]['route'] == 'cheap' and 'resume' not in state['calls'][-1]
+    monkeypatch.setattr(native_agent, 'run_session', real)
+    # A fork (an edited earlier message) too, from what the client shows.
+    saved(off={'implementer': ['cheap']})  # not the coordinator's: the fork stays on its route
     serve_agent.run_turn(copilot(project, 'first', 'second, but differently'), lambda text: None)
     assert state['calls'][-1]['route'] == 'cheap'
+    assert state['calls'][-1]['instruction'].startswith('Conversation so far')
+    saved(off={'coordinator': ['local-a', 'local-b', 'cheap']})
+    serve_agent.run_turn(copilot(project, 'first', 'second, differently again'), lambda text: None)
+    assert state['calls'][-1]['route'] == 'middle'
     assert state['calls'][-1]['instruction'].startswith('Conversation so far')
 
 
@@ -604,7 +629,7 @@ def test_a_session_started_by_a_path_with_no_gate_is_refused(setup):
 
 
 def test_only_the_users_choice_of_this_route_for_this_role_passes_the_backstop(monkeypatch):
-    saved(off={'implementer': ['*@*'], 'auditor': ['*@*'], 'plan-auditor': ['*@*']})
+    saved(off={'implementer': ['*@*'], 'auditor': ['*@*'], 'plan-auditor': ['*@*'], 'coordinator': ['*@*']})
     route = native_catalog.select('claude-api-opus-5-5')
     other = native_catalog.select('claude-api-sonnet-5-5')
 
@@ -619,18 +644,26 @@ def test_only_the_users_choice_of_this_route_for_this_role_passes_the_backstop(m
     # The picker's choice (user_choice) is for one role and one route.
     with execution_scope.user_choice('implementer', route):
         assert not refused('implementer') and refused('auditor') and refused('implementer', other)
+        assert refused('coordinator')  # picked for implementer: not the conversation's choice
     # A pin of this route for this role; an auditor pin also covers plan reviews; another role or route does not.
     pin(monkeypatch, 'implementer', 'anthropic/claude-api-opus-5-5@high')
     assert not refused('implementer') and refused('auditor') and refused('implementer', other)
-    assert not refused('coordinator')  # a conversation on tare auto: the implementer's entries, and its pin
+    assert not refused('coordinator')  # an implementer pin covers a conversation on tare auto (its tiers are that route)
+    assert refused('coordinator', other)
     pin(monkeypatch, 'auditor', 'anthropic/claude-api-opus-5-5@high')
-    assert not refused('auditor') and not refused('plan-auditor') and refused('implementer')
-    # --coordinator: the conversation's model, a launch flag; a conversation otherwise reads the implementer entries.
+    assert not refused('auditor') and not refused('plan-auditor') and refused('implementer') and refused('coordinator')
+    # --coordinator: the conversation's model, a launch flag; a conversation otherwise reads the coordinator entries.
     monkeypatch.setattr(execution_scope, 'current', lambda: execution_scope.Scope())
     assert refused('coordinator')
     monkeypatch.setattr(execution_scope, 'current', lambda: execution_scope.Scope(
         coordinator='anthropic/claude-api-opus-5-5@high'))
     assert not refused('coordinator') and refused('coordinator', other) and refused('implementer')
+    # Only the implementer's entries off: a conversation starts; only the coordinator's: an implementer starts.
+    monkeypatch.setattr(execution_scope, 'current', lambda: execution_scope.Scope())
+    saved(off={'implementer': ['*@*']})
+    assert not refused('coordinator') and refused('implementer')
+    saved(off={'coordinator': ['*@*']})
+    assert refused('coordinator') and not refused('implementer')
     # A role the profile does not know is not its to refuse.
     assert not refused('editorial-reviewer')
 
@@ -641,8 +674,11 @@ def test_a_resumed_session_goes_on_and_a_new_one_on_an_off_route_is_refused(tmp_
     config = {'role': 'implementer'}
     with pytest.raises(ValueError, match='SWITCHED_OFF_FOR_ROLE'):  # a fork, a mode change, a retry: new sessions
         run(config, deployment(), tmp_path/'new', 'Go.')
-    with pytest.raises(ValueError, match='SWITCHED_OFF_FOR_ROLE'):  # a conversation: tare auto's implementer tiers
-        run(config, deployment(), tmp_path/'chat', 'Go.', conversation=True)
+    assert run(config, deployment(), tmp_path/'chat', 'Go.', conversation=True) == 'started'  # a conversation:
+    saved(off={'coordinator': ['fixture']})  # the coordinator's entries decide it
+    with pytest.raises(ValueError, match='SWITCHED_OFF_FOR_ROLE: fixture is switched off for coordinator'):
+        run(config, deployment(), tmp_path/'chat-off', 'Go.', conversation=True)
+    saved(off={'implementer': ['fixture']})
     (tmp_path/'saved').mkdir()
     (tmp_path/'saved'/'native-agent.json').write_text(json.dumps({'config': config, 'deployment': deployment()}))
     assert run(None, None, tmp_path/'saved', resume=True, follow_up='More.', message_id='m') == 'started'
@@ -657,7 +693,7 @@ def test_a_resumed_session_goes_on_and_a_new_one_on_an_off_route_is_refused(tmp_
 
 def test_a_provider_switch_starts_only_when_the_user_chose_its_route(tmp_path):
     from relay import native_continuity
-    saved(off={'implementer': ['fixture']})
+    saved(off={'coordinator': ['fixture']})  # a conversation's switch: the coordinator's entries
     run = execution_scope.session_role(lambda config, deployment, custody, *a, **k: 'started')
     source = tmp_path/'conversation'
     source.mkdir()
@@ -668,6 +704,8 @@ def test_a_provider_switch_starts_only_when_the_user_chose_its_route(tmp_path):
         run(None, None, tmp_path/'escalated')
     native_continuity.save_request(tmp_path/'picked', view, 'BRIEF', deployment(), chosen=True)  # the TUI's switch
     assert run(None, None, tmp_path/'picked') == 'started'
+    saved(off={'implementer': ['fixture']})  # only the implementer's: tare auto's next tier starts
+    assert run(None, None, tmp_path/'escalated') == 'started'
 
 
 def test_the_routes_the_user_names_are_marked_for_their_own_role(tmp_path, monkeypatch):
@@ -819,10 +857,16 @@ def test_an_edited_copilot_message_is_admitted_again(tmp_path, monkeypatch):  # 
     monkeypatch.setattr(turn_engine, 'snapshot', lambda root: (None, 'test'))
     monkeypatch.setattr(copilot_mode, '_turns', {})
     monkeypatch.setattr(copilot_mode, '_chats', {})
+    # The route of a new message is the model the user talks to: the coordinator's entries decide it.
+    saved(off={'implementer': ['local']})
+    assert [name for _, name, _ in copilot_mode.routes()] == ['local']
+    saved(off={'coordinator': ['local']})
+    assert list(copilot_mode.routes()) == []
+    environment.save({})
     project = tmp_path/'project'
     project.mkdir()
     turn = copilot_mode.turn_for(copilot(project, 'one', 'two'), project)
-    saved(off={'implementer': ['local']})
+    saved(off={'coordinator': ['local']})
     assert copilot_mode.turn_for(copilot(project, 'one', 'two'), project) is turn  # a tool round: not again
     with pytest.raises(ValueError, match='^SWITCHED_OFF_FOR_ROLE: '):  # the same count, another message
         copilot_mode.turn_for(copilot(project, 'one', 'two, edited'), project)
@@ -832,10 +876,12 @@ def test_an_edited_copilot_message_is_admitted_again(tmp_path, monkeypatch):  # 
     # A chat with no request text to compare (only client context) is admitted on every request.
     monkeypatch.setattr(copilot_mode, 'user_requests', lambda messages: [])
     bare = copilot_mode.turn_for([], project)
-    saved(off={'implementer': ['local']})
+    saved(off={'coordinator': ['local']})
     with pytest.raises(ValueError, match='^SWITCHED_OFF_FOR_ROLE: '):
         copilot_mode.turn_for([], project)
     assert bare['route'] == 'local'
+    saved(off={'implementer': ['local']})
+    assert copilot_mode.turn_for([], project) is bare
 
 
 def test_a_researcher_pin_wins_where_research_skips_a_route(monkeypatch):  # round three, 4
@@ -853,3 +899,73 @@ def test_a_researcher_pin_wins_where_research_skips_a_route(monkeypatch):  # rou
     assert turn_engine.choose([['codex-cli-gpt-6-luna']], role='researcher')[1] == 'codex-cli-gpt-6-luna'  # summary
     pin(monkeypatch, 'implementer', 'openai/codex-cli-gpt-6-luna@medium')  # a pin for another role does not count
     assert turn_engine.choose([['codex-cli-gpt-6-luna']], role='researcher')[1] is None
+
+
+# The conversation's own role (coordinator): a route off only for implementer no longer keeps tare auto from talking
+# with it, and a route off for coordinator is never the conversation tare auto starts.
+
+def conversation(tmp_path, monkeypatch, name='tare-auto'):
+    """The route a conversation the TUI starts (native_agent.main --conversation) runs on, past the backstop."""
+    started = []
+    monkeypatch.setattr(native_agent, 'run_session', execution_scope.session_role(
+        lambda config, deployment, custody, *a, **k: started.append(deployment['id']) or {
+            'status': 'PROPOSED', 'output': 'ok', 'authority': 'NONE', 'model_calls': 0}))
+    session = tmp_path/f'chat-{len(list(tmp_path.glob("chat-*")))}'
+    assert native_agent.main(['--root', str(tmp_path), '--instruction', 'Inspect', '--no-context', '--session',
+                              str(session), '--conversation', '--deployment', name]) == 0
+    return started[-1]
+
+
+def test_a_route_off_only_for_implementer_still_starts_a_conversation_but_no_unit(tiers, tmp_path, monkeypatch):
+    saved(off={'implementer': ['claude/sonnet@api']})
+    assert conversation(tmp_path, monkeypatch) == 'claude-api-sonnet-5-5'  # tare auto's first tier
+    refused = []  # a unit the conversation delegates does not run on it
+    assert list(work_units.routes(tiers['claude-api-sonnet-5-5'], chosen='claude-api-sonnet-5-5', refused=refused)) == []
+    assert refused[0].startswith('SWITCHED_OFF_FOR_ROLE: claude-api-sonnet-5-5 is switched off for implementer')
+
+
+def test_a_route_off_for_coordinator_is_never_started_for_a_conversation_automatically(tiers, tmp_path, monkeypatch):
+    saved(off={'coordinator': ['claude/sonnet@api']})
+    assert conversation(tmp_path, monkeypatch) == 'openai-api'  # tare auto starts it on the next route
+    # A start of a conversation on it that nobody marked is refused where it starts, before any model call.
+    run = execution_scope.session_role(lambda *a, **k: pytest.fail('a model call'))
+    with pytest.raises(ValueError, match='^SWITCHED_OFF_FOR_ROLE: claude-api-sonnet-5-5 is switched off for '
+                                         'coordinator .*tare setup --auto coordinator:claude/sonnet-5.5@api=on'):
+        run({'role': 'implementer'}, tiers['claude-api-sonnet-5-5'], tmp_path/'unmarked', 'Go.', conversation=True)
+    # The picker's choice of it is the user's; a unit may still run on it as implementer.
+    assert conversation(tmp_path, monkeypatch, 'claude-api-sonnet-5-5') == 'claude-api-sonnet-5-5'
+    assert [n for n, _ in work_units.routes(tiers['claude-api-sonnet-5-5'], chosen='claude-api-sonnet-5-5')] == [
+        'claude-api-sonnet-5-5']
+    # tare auto's escalation of a conversation (the TUI's) asks for the coordinator: past the route that is off.
+    blocked = {**tiers['claude-api-sonnet-5-5'], 'native_auto_selection': {'tier': 0}}
+    saved(off={'coordinator': ['gpt/sol@api']})
+    assert turn_engine.next_auto(blocked, role='coordinator')['id'] == 'gemini-api'
+    assert turn_engine.next_auto(blocked)['id'] == 'openai-api'  # an implementer session's: the implementer's
+
+
+def test_the_tui_escalation_of_a_conversation_asks_for_the_coordinator(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from relay.console_models import ConversationModels
+    asked = []
+    monkeypatch.setattr(turn_engine, 'next_auto', lambda saved, role='implementer': asked.append(role))
+    said = []
+    console = SimpleNamespace(busy=False, say=said.append, selection=lambda: SimpleNamespace(local_models=True))
+    for flow in (True, False):  # a conversation (session_role's test), then an implementer session
+        (tmp_path/'native-agent.json').write_text(json.dumps({'config': {'role': 'implementer'}, 'conversation_flow': flow,
+                                                               'deployment': {'native_auto_selection': {'tier': 0}}}))
+        ConversationModels.auto_escalate(console, tmp_path)
+    assert asked == ['coordinator', 'implementer'] and said == ['tare auto: no further route is available.'] * 2
+
+
+def test_auto_show_coordinator_lists_tare_autos_tiers_as_a_conversation_reads_them(capsys):
+    assert environment.main(['--auto', 'coordinator:claude/sonnet@claude-code=off', '--auto-show', 'coordinator',
+                             '--json']) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown['routing_profile'] == {'off': {'coordinator': ['claude/sonnet@claude-code']}}
+    rows = shown['roles']['coordinator']
+    assert [r['route'] for r in rows] == list(dict.fromkeys(n for tier in turn_engine.policy()['implementer'] for n in tier))
+    assert next(r for r in rows if r['route'] == 'claude-sonnet-5-5-cli')['profile'] == 'off (claude/sonnet@claude-code)'
+    assert environment.main(['--auto-show', 'coordinator']) == 0
+    assert capsys.readouterr().out.startswith('coordinator: the routes automatic routing considers')
+    assert environment.main(['--auto-reset', 'coordinator']) == 0
+    assert 'routing_profile' not in json.loads(environment.store().read_text(encoding='utf-8'))

@@ -91,6 +91,13 @@ share). A model that appears later follows the default, and an update of tare's 
 now the default is the routes each role uses today, so the profile can only switch routes off; an "on" entry
 undoes a broader "off". The **Models per role** tab of `/routes` edits it ([below](#the-models-per-role-tab-of-routes)).
 
+The conversation has a role of its own, `coordinator`: the model you talk to when tare auto starts or moves a
+conversation (the TUI's, a `tare serve` chat, `tare-copilot`). The implementer entries no longer decide
+conversations; they decide implementer sessions and the units a conversation delegates. Before this, unticking a
+route for implementer also kept tare auto from opening a conversation with it; if you relied on that, switch it off
+for coordinator as well (`tare setup --auto coordinator:PATTERN=off`, or Coordinator in the tab and "Copy from
+Implementer", one step). With no coordinator entries, a conversation is routed as with no profile.
+
 - **Only your own choices pass it.** These still start a route that is off:
   - the model you pick (the picker's concrete model for a conversation or a flow, or a route you name with
     `--deployment` or `--native-deployment`), for the role it runs in;
@@ -136,7 +143,8 @@ undoes a broader "off". The **Models per role** tab of `/routes` edits it ([belo
 - **A skipped route says why:** `SWITCHED_OFF_FOR_ROLE` and the entry, in tare auto's skipped routes, in a role
   table's candidates and in "No route can start", with how to switch it on (`tare setup --auto ROLE:ENTRY=on`) or
   pin it, so the coordinator can tell you. A role left with no route behaves as when none is available: no auditor
-  means the change is not audited, no implementer means `tare_auto_no_route_available`, and a plan whose planner
+  means the change is not audited, no coordinator means tare auto cannot start a conversation and no implementer
+  that it cannot start an implementer session (both `tare_auto_no_route_available`), and a plan whose planner
   is off for `plan-auditor`, with no independent reviewer left, is blocked before any model call
   (`ROUTE_BLOCKED`, "No eligible plan-auditor").
 
@@ -174,8 +182,11 @@ resembles:
 - The most specific entry wins: a route id, then a version, a line, a vendor, `*`; at each of these a named
   source beats `*`. When "on" and "off" tie, "off" wins. Two entries tare reads the same
   (`claude/fable-05.2@api` and `claude/fable-5.2@api`) are one: setting one replaces the other.
-- Roles: `implementer` (tare auto's tiers, the conversation tare auto starts, Work units), `explorer`, `planner`,
-  `plan-auditor`, `auditor`, `researcher`, `vision`, `heads_up`.
+- Roles: `coordinator` (the conversation tare auto starts or moves: the TUI's, `tare serve` chats and their forks,
+  mode changes and escalations, `tare-copilot`), `implementer` (tare auto's tiers for an implementer session, the
+  role table, Work units and the units a conversation delegates, the fallback to the conversation's own model
+  included), `explorer`, `planner`, `plan-auditor`, `auditor`, `researcher`, `vision`, `heads_up`. An implementer
+  pin still covers a conversation on tare auto (its tiers are then that one route).
 - An entry tare cannot read is ignored and named by `tare setup`; it never stops routing.
 
 ```
@@ -201,7 +212,8 @@ auditor: the routes automatic routing considers (tare setup --auto auditor:PATTE
 
 ### The Models per role tab of `/routes`
 
-The second tab of `/routes` edits the same profile. Pick a role; each row is a model line by its name (Claude
+The second tab of `/routes` edits the same profile. Pick a role (it opens on Coordinator, "the model you talk to,
+when tare auto starts the conversation"); each row is a model line by its name (Claude
 Fable), grouped by vendor, and a route with no line is a row of its own under Other, by its catalogue label or id;
 each column is a source (Claude Code, Codex, AGY, OpenCode sub, OpenCode API, Vendor API, OpenRouter, Bedrock,
 Local, Other API) that has a route for that role here. Vendor API is the model owner's own API (Anthropic for
@@ -213,7 +225,8 @@ equivalent `tare setup --auto` commands write.
 
 The rows, like `--auto-show`, are the routes the role's automatic path considers, each checked as the paths that
 reach it check it, under that role (so `--prefer_local` and the other launch restrictions read as at run time), and
-read again each time the tab is shown or the Order tab saves: implementer and planner their list in the Order tab
+read again each time the tab is shown or the Order tab saves: coordinator tare auto's tiers (the Order tab's
+Implementer list), each by availability as a conversation's tare auto takes it; implementer and planner their list in the Order tab
 (availability) and their role table (the rules that rank it, qualification and older models included); explorer its
 role table; auditor and plan-auditor your auditor routes when "Use my auditor routes" is chosen in the Order tab,
 and their role table otherwise, never both; researcher its list (availability and the research tool's own
@@ -241,7 +254,9 @@ another path refuses it.
   Afterwards every cell of the vendor or source reads as asked.
 - The status line says only what the ticks show, for the role shown and for every role with unsaved edits, whichever
   role is shown. From the ticks alone: no route ticked on for a role, and what then happens ("No route is ticked on
-  for Auditor: the change is not audited"); and, judged by the rule every audit selection uses
+  for Auditor: the change is not audited"; for Coordinator, tare auto cannot start a conversation and stops before
+  any model call with "tare_auto_no_route_available: No route can start.", while the model you pick still starts
+  one); and, judged by the rule every audit selection uses
   (`landing_policy.independence`), an implementer ticked on that every auditor ticked on would be refused for, of
   its own model or line ("No auditor ticked on may audit implementer X (same model or line): its changes are not
   audited."), or that only auditors of its own vendor would audit ("Every auditor ticked on for X is of the same
