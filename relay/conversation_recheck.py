@@ -68,7 +68,8 @@ def recheck(tools, control, root, invocation_id, journal, *, recheck_only=True, 
         return NativeOutcome('blocked','HOST_RECHECK_NOT_DELIVERED',calls,
             'Candidate not applied. Inspect the check or audit finding below.\n'+result.output_json)
     return NativeOutcome('proposed','HOST_RECHECK_COMPLETED',calls,
-        'Saved candidate passed checks and independent audit and was applied.\n'+result.output_json)
+        'Saved candidate passed checks and '+('audit ('+output['audit']['independence']+')'
+        if (output.get('audit') or {}).get('independence') else 'independent audit')+' and was applied.\n'+result.output_json)
 
 
 RETRY_SCHEMA = 'tare.tools/conversation-retry/1'

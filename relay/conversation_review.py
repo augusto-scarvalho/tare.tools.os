@@ -624,6 +624,7 @@ def resume_review(owner, task, job, previous, tree, unit, changed, control):
     row['calls_used']=count_calls(job/'session')
     result.update(route=previous['route'],session=str(job/'session'),
                   actor={'role':'auditor','model':state['deployment']['native_profile']['model'],'route':previous['route']})
+    result=labelled(result)
     row.update(status='FINISHED',result=result)
     save_json(job/'receipt.json',row,max_bytes=MAX_RECEIPT_BYTES)
     return result
@@ -681,6 +682,30 @@ def available(producer, owner=None):
         return pick_auditors(producer, rules['auditor'] if rules.get('auditor_selection') == 'configured' else None)
 
 
+def labelled(result):
+    """`result` (a review result, or a saved delivery's audit) with `independence` set to the same-vendor label when its
+    review was by an auditor of the implementer's vendor. Who produced and who audited are read from the identities the
+    host recorded in that review's request (host_execution_selection), so a review saved before the label existed is
+    classified too; a result without its review session (no auditor ran) is returned unchanged."""
+    from types import SimpleNamespace
+    from .landing_policy import SAME_VENDOR_AUDIT, independence
+    from .native_agent import read_json
+    if not isinstance(result, dict) or not result.get('session'):
+        return result
+    try:
+        chosen = read_json(regular(Path(result['session']).parent/'input'/'request.json'),
+                           MAX_RECEIPT_BYTES)['host_execution_selection']
+        implementer, auditor = (SimpleNamespace(**{k: chosen[role][k] for k in ('model_id', 'bias_domain', 'vendor')})
+                                for role in ('implementer', 'auditor'))
+    except (OSError, ValueError, KeyError, TypeError):
+        return result
+    if not all([*vars(implementer).values(), *vars(auditor).values()]):
+        return result  # an unknown identity establishes nothing
+    if independence(implementer, auditor) != 'SAME_VENDOR_NOT_INDEPENDENT':
+        return result
+    return {**result, 'independence': SAME_VENDOR_AUDIT}
+
+
 def same_family(producer, auditor):
     """The auditor shares the implementer's model or bias domain. An unknown identity cannot be selected
     (pick_auditors refuses it) and leaves an earlier retried route as it was."""
@@ -725,6 +750,11 @@ def packet_preflight(tree,changed):
 
 
 def review(owner, task, tree, producer, unit, changed, checks, control, *, _unavailable=()):
+    """The candidate's audit: fresh, resumed or reused from a saved receipt, always classified (labelled)."""
+    return labelled(_review(owner, task, tree, producer, unit, changed, checks, control, _unavailable=_unavailable))
+
+
+def _review(owner, task, tree, producer, unit, changed, checks, control, *, _unavailable=()):
     from .blocker_rubric import BLOCKER_RUBRIC
     from .challenger import git
     from .delegation import child_calls
@@ -897,11 +927,6 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
     label = NOT_INDEPENDENT if (admitted or pinned) and same_family(producer, candidates[0][1]) else None
     if label and not admitted:
         return {'verdict': 'INCONCLUSIVE', 'reason': NO_AUDITOR}  # a local-only review retried outside that mode
-    # A same-vendor auditor's verdict counts as any other's (no audit_label, which asks the user); it is only named.
-    from .landing_policy import SAME_VENDOR_AUDIT
-    from .work_audit import independence
-    vendor = ({'independence': SAME_VENDOR_AUDIT}
-              if independence(producer, candidates[0][1]) == 'SAME_VENDOR_NOT_INDEPENDENT' else {})
     from . import execution_resources as resources
     calls = resources.child_calls(audit_call_budget(len(changed), len(diff.splitlines())))
     maximum = owner.state['limits']['max_model_calls']
@@ -924,7 +949,11 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
     if parent_spend:
         _, tariff = settings(deployment)
         if tariff is None or tariff.currency != parent_spend.currency or owner.parent_model is None:
-            return {'verdict': 'INCONCLUSIVE', 'reason': 'The independent auditor needs a tariff matching the shared spend limit.'}
+            from .landing_policy import SAME_VENDOR_AUDIT
+            from .work_audit import independence
+            who = ('auditor ('+SAME_VENDOR_AUDIT+')' if independence(producer, deployment) == 'SAME_VENDOR_NOT_INDEPENDENT'
+                   else 'independent auditor')  # no review record yet: the two deployments in hand decide
+            return {'verdict': 'INCONCLUSIVE', 'reason': 'The '+who+' needs a tariff matching the shared spend limit.'}
         allowance = owner.parent_model.report()['remaining_amount']
         if Decimal(allowance) <= 0:
             return {'verdict': 'INCONCLUSIVE', 'reason': 'No shared spend allowance remains for review.'}
@@ -935,7 +964,7 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
            'deployment': deployment,
            'request_sha256': identity, 'invocation': owner.invocation_id,
            'calls_reserved': calls, 'amount_committed': allowance, 'context_contract': contract,
-           **({'audit_label': label} if label else {}), **vendor}
+           **({'audit_label': label} if label else {})}
     if coverage_previous:
         row.update(coverage_continuation_of=identity,**({'coverage_read_before':coverage_reads} if coverage_reads is not None else {}))
     save_json(path, row, max_bytes=MAX_RECEIPT_BYTES)  # durable intent, not evidence of dispatch
@@ -1118,8 +1147,9 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
         result=apply_satellite_obligations(result,satellites)
         result.update(route=name, session=str(job/'session'),
                       actor={'role':'auditor','model':deployment['native_profile']['model'],'route':name},
-                      **({'audit_label': label} if label else {}), **vendor)
-        result = context_failure(job, row, result)
+                      **({'audit_label': label} if label else {}))
+        # A same-vendor auditor's verdict counts as any other's (no audit_label, which asks the user); it is named.
+        result = labelled(context_failure(job, row, result))
         row.update(status='FINISHED', result=result)
         save_json(path, row, max_bytes=MAX_RECEIPT_BYTES)
         if quota_before_review(job, result):

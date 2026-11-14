@@ -267,8 +267,14 @@ def delivery_view(value, *, config=None, unit=None):
                                   'reason', 'files', 'route', 'checks', 'suite',
                                   'checks_before', 'checks_after', 'review_edits', 'source_state', 'implementer_report',
                                   'verification', 'summary', 'remaining', 'next', 'folder_access_request','last_attempt','implementation_stop') if k in value}
+    from .conversation_review import labelled
+    from .work_units import AUDIT_INCOMPLETE, AUDIT_REFUSED
+    value = {**value, 'audit': labelled(value['audit'])} if value.get('audit') else value  # also a saved delivery
     if value.get('audit'):
         result['audit'] = {k: v for k, v in value['audit'].items() if k != 'session'}
+        if value['audit'].get('independence') and result.get('reason') in (AUDIT_REFUSED, AUDIT_INCOMPLETE):
+            # The saved reason stays the refusal counter's key (work_units.audit_refusal); only its wording changes.
+            result['reason'] = result['reason'].replace('The independent audit', 'The audit ('+value['audit']['independence']+')')
     if result.get('last_attempt'):
         result['last_attempt']={k:v for k,v in result['last_attempt'].items() if k in {'verdict','reason','route','files'}}
     result['candidate_preserved'] = bool(value.get('candidate') or value.get('worker'))
@@ -326,7 +332,8 @@ def delivery_view(value, *, config=None, unit=None):
                if not value.get('applied') and not (unit and paths_allowed([p], unit['target_paths']))]
     if missing:
         result.update(missing_target_paths=missing,
-            required_action={'tool': 'delegate_plan', 'arguments': {'instruction': SCOPE_REPAIR+needed_scope(missing)}},
+            required_action={'tool': 'delegate_plan', 'arguments': {'instruction': SCOPE_REPAIR+needed_scope(
+                missing, (value.get('audit') or {}).get('independence'))}},
             next='Ask the separate planner now to add these files to the saved plan, then implement on the preserved '
                  'candidate; the user approves the new files when implementation starts. Do not open another task.')
     return result
@@ -598,20 +605,21 @@ def audit_scope(output, unit):
             if not paths_allowed([path], unit['target_paths'])]
 
 
-def needed_scope(paths):
-    return 'The independent audit requires changing files outside the plan: '+', '.join(paths)+'.'
+def needed_scope(paths, label=None):
+    return (('The audit ('+label+')') if label else 'The independent audit')+' requires changing files outside the plan: '+', '.join(paths)+'.'
 
 
 def require_retained_scope(plan, previous):
     """Ask the planner to reconcile omitted outputs and audit-required files; never widen its scope here."""
     from .conversation_permissions import paths_allowed
+    from .conversation_review import labelled
     missing = lambda paths: [p for p in paths or [] if not paths_allowed([p], plan['unit']['target_paths'])]
     omitted = missing(previous.get('files'))
     needed = [p for p in missing(previous.get('scope_needed')) if p not in omitted]
     if omitted or needed:
         error = ScopeRepair(' '.join(filter(None, [
             omitted and 'The revised plan omits retained candidate outputs: '+', '.join(omitted)+'.',
-            needed and needed_scope(needed)]))+
+            needed and needed_scope(needed, labelled(previous.get('audit') or {}).get('independence'))]))+
             ' Preserve the candidate and reconcile these paths with the recorded goal before implementation.')
         error.missing_target_paths = omitted + needed
         raise error
@@ -1448,11 +1456,13 @@ class ConversationTools:
                                 execution_unit['previous_candidate_changes'] = patch.read_text(encoding='utf-8', errors='replace')
                     # Saved delivery projections may omit the actionable summary/remaining fields.
                     # The bound review receipt is the source for correction feedback too.
-                    feedback = prior_audit if record else previous_result.get('audit') or {}
+                    from .conversation_review import labelled
+                    feedback = labelled(prior_audit if record else previous_result.get('audit') or {})
                     if feedback.get('verdict') in {'REVISE','INCONCLUSIVE'}:
+                        # The implementer's brief has no review session to classify: the label travels in the feedback.
                         execution_unit['review_feedback'] = encode({k: feedback[k] for k in (
                             'verdict','reason','failure_code','requires_candidate_revision','diff_projection',
-                            'summary', 'findings', 'remaining') if k in feedback})
+                            'summary', 'findings', 'remaining', 'independence') if k in feedback})
                 from .work_forms import record_plan
                 record_plan(self.root, state['config'], {'units': [execution_unit], 'criteria': execution_unit['criteria']})
                 task.update(stage='IMPLEMENTING', attempt_invocation=self.invocation_id, attempt_effect=request.effect_id,

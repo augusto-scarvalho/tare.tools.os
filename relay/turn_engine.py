@@ -1433,9 +1433,14 @@ def _pick_auditors(implementer, names, *, probe=True, role='auditor'):
             continue
         found.append((kind != 'INDEPENDENT', name, deployment))
     found.sort(key=lambda item: item[0])
+    if not found and remap_required:
+        return _pick_auditors(implementer,None,probe=probe,role=role)
     if remap_required and all(same_vendor for same_vendor, _, _ in found):
-        # Nothing of another vendor left in the owner's list: the remapped automatic choice may have one.
-        return _pick_auditors(implementer,None,probe=probe,role=role) or [item[1:] for item in found]
+        # The automatic choice replaces what is left of the owner's list only to bring in another vendor.
+        from .work_audit import independence as standing
+        remapped = _pick_auditors(implementer,None,probe=probe,role=role)
+        if any(standing(implementer, deployment) == 'INDEPENDENT' for _, deployment in remapped):
+            return remapped
     return [item[1:] for item in found]
 
 

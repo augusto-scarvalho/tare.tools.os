@@ -31,6 +31,15 @@ def independence(implementer, auditor):
         return None
 
 
+def route_reason(route):
+    """A saved route's or candidate's reason as the vendor rule names it: one of the auditor's own vendor saved before
+    that rule (cross_vendor false, an INDEPENDENT reason) reads SAME_VENDOR_NOT_INDEPENDENT. Saved records stay as they are."""
+    if route.get('cross_vendor') is False and route.get('reason') in (
+            'AUTO_SELECTED_INDEPENDENT', 'OPERATOR_SELECTED_INDEPENDENT', 'CONFIGURED_INDEPENDENT_NATIVE_ROUTE'):
+        return 'SAME_VENDOR_NOT_INDEPENDENT'
+    return route.get('reason')
+
+
 def prepare(implementer, deployments, mode):
     from .landing_policy import AUDIT_MODES
     if mode not in AUDIT_MODES:
@@ -110,7 +119,7 @@ def run(train, origin, candidate, receipt, stage, cancellation):
         if not work_control.checkpoint(train, origin, receipt, stage, cancellation,
                                        custody=session if (session/'native-agent.json').exists() else None):
             return False
-        stage('code_audit', deployment=deployment['id'], reason=route['reason'], session=str(session))
+        stage('code_audit', deployment=deployment['id'], reason=route_reason(route), session=str(session))
         config = {'schema':'tare.tools/native-agent-config/1','role':'auditor','typed_output':True,
             'repositories':{'candidate':str(worktree.resolve()),'review':str(inputs.resolve())},
             'writable':{},'capabilities':['read','list','search'],'specgraph_edit_context':False,

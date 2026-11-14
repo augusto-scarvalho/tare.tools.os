@@ -1,11 +1,15 @@
 """An independent auditor is one of another vendor; a same-vendor audit runs and counts, labelled (owner, 2026-11-14)."""
 import json
+from pathlib import Path
 
 import pytest
 
 from relay import native_catalog, native_routes, turn_engine, work_audit
 from relay.landing_policy import SAME_VENDOR_AUDIT, SAME_VENDOR_REVIEW, independence
-from test_cross_vendor_auditors import install, pool  # noqa: F401  (pool is a fixture)
+from test_conversation_review_recovery import reviewed  # noqa: F401  (fixtures)
+from test_conversation_tasks import host  # noqa: F401
+from test_cross_vendor_auditors import install, pool  # noqa: F401
+from test_native_agent import setup  # noqa: F401
 
 FABLE = 'claude-api-fable-5-1'
 
@@ -207,3 +211,128 @@ def test_a_work_run_shows_a_same_vendor_audit_that_counted():
         'admission': {'verdict': 'ADMITTED', 'reason_codes': [], 'audit': {'counted': True, 'cross_vendor': False}}})
     assert f'Auditor: claude-api-opus-5-5 · ACCEPT · {SAME_VENDOR_AUDIT}' in shown
     assert f'Audit counted: True · {SAME_VENDOR_AUDIT}' in shown and 'Independent audit counted' not in shown
+
+
+def test_a_remapped_owner_list_keeps_its_same_vendor_route_without_another_vendor(pool, monkeypatch):
+    install(pool, 'claude-fable-5-1-cli', 'cli://claude', 'claude-fable-5-1')
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+    monkeypatch.setattr(native_routes, 'credential_available', only())  # no route of another vendor
+    monkeypatch.setattr(turn_engine, 'available', lambda name, **kw: (native_catalog.select(name), None))
+    monkeypatch.setenv('TARE_SESSION_SCOPE', json.dumps({'prefer': 'subscription'}))  # sets the owner's API route aside
+    sonnet = native_catalog.select('claude-api-sonnet-5-5')
+    assert native_routes.reviewers(sonnet)[0][0]['id'] == 'claude-opus-5-5-cli'  # what the automatic choice would take
+    assert [name for name, _ in turn_engine.pick_auditors(sonnet, ['openai-api', 'claude-fable-5-1-cli'])] == [
+        'claude-fable-5-1-cli']  # as on origin/main
+
+
+def same_vendor_review(job):
+    """Record in a review's request, as the host does, a Fable implementer and an Opus auditor; its session path."""
+    from relay.conversation_review import execution_selection
+    path = Path(job)/'input'/'request.json'
+    data = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+    data['host_execution_selection'] = execution_selection(native_catalog.select(FABLE),
+                                                           native_catalog.select('claude-api-opus-5-5'))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
+    return str(Path(job)/'session')
+
+
+def claims_independence(value):
+    """Whether any text in `value` calls something independent, other than the label's own "not independent"."""
+    return 'independent' in json.dumps(value).lower().replace('not independent', '')
+
+
+@pytest.mark.parametrize('reason,audit', [('AUDIT_INCOMPLETE', {'verdict': 'INCONCLUSIVE', 'reason': 'DEADLINE'}),
+                                          ('AUDIT_REFUSED', {'verdict': 'REVISE', 'summary': 'Off by one'})])
+def test_a_saved_same_vendor_delivery_keeps_its_label(tmp_path, reason, audit):
+    from relay import conversation_tasks, work_units
+    session = same_vendor_review(tmp_path/'reviews'/'job')
+    result = {'verdict': 'NOT_REVIEWED', 'reason': getattr(work_units, reason),
+              'audit': {**audit, 'session': session, 'independence': SAME_VENDOR_AUDIT}}
+    shown = conversation_tasks.delivery_view(conversation_tasks.retained_delivery(result))
+    assert shown['audit']['independence'] == SAME_VENDOR_AUDIT and SAME_VENDOR_AUDIT in shown['reason']
+    assert not claims_independence(shown), shown
+    assert result['reason'] == getattr(work_units, reason)  # the saved reason is still the refusal counter's key
+
+
+def test_a_resumed_same_vendor_review_keeps_its_label(reviewed, monkeypatch):
+    import test_conversation_review_recovery as fixtures
+    from compute_plane.native_models import NativeHttpClient, NativeTransportInterrupted
+    from relay import conversation_review, native_agent
+    from test_conversation_tasks import user_reply
+    from test_native_agent import Client
+    from test_saved_audit_resume import RUN_SESSION
+    owner_host, run, *_ = reviewed
+    owner, control, tree, *_ = owner_host
+    clients = []
+
+    class Interrupted(Client, NativeHttpClient):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.interrupted = False
+            clients.append(self)
+
+        def post_observed(self, path, body, execution):
+            if path.endswith('/chat/completions') and self.generations == 2 and not self.interrupted:
+                self.interrupted = True
+                raise NativeTransportInterrupted('HTTP_INCOMPLETE_STREAM', {'started': True, 'cleanup_verified': True,
+                    'remote_stop': 'unknown', 'http_attempts_upper_bound': 1})
+            return self.post(path, body, execution), {'started': True, 'cleanup_verified': True}
+    monkeypatch.setattr(fixtures, 'Client', Interrupted)
+    run.task['attempt_input'] = 'prior-worker-input'
+    user_reply(owner_host, 'Review this retained candidate without another worker.')
+    first = run('ACCEPT')
+    assert first['reason'] == 'UNFINISHED_INVOCATION'
+    job = Path(first['session']).parent
+    same_vendor_review(job)  # a review interrupted before this change: its request names both identities
+    previous = json.loads((job/'receipt.json').read_text())
+    run.task['delivery'] = {'audit': first}
+    run.task['attempt_input'] = owner.input_id()
+    user_reply(owner_host, 'Continue the saved audit only.')
+    owner.invocation_id = 'explicit-audit-resume'
+    owner.state['limits']['max_model_calls'] = 30
+    monkeypatch.setattr(native_agent, 'run_session', lambda config, dep, session, **kw: RUN_SESSION(
+        config, dep, session, client=clients[0], local_counter=clients[0], **kw))
+    result = conversation_review.resume_review(owner, run.task, job, previous, tree, run.task['plan']['unit'],
+                                               {'a.py': b'value = 2\n'}, control)
+    assert result['verdict'] == 'ACCEPT' and result['independence'] == SAME_VENDOR_AUDIT
+    assert json.loads((job/'receipt.json').read_text())['result']['independence'] == SAME_VENDOR_AUDIT
+    assert not claims_independence({k: result[k] for k in ('verdict', 'independence')})
+
+
+def test_a_same_vendor_accept_saved_before_the_change_is_labelled_when_reused(reviewed):
+    _, run, *_ = reviewed
+    first = run('ACCEPT')
+    assert 'independence' not in first  # the fixture's identities are unknown
+    same_vendor_review(Path(first['session']).parent)  # as a review saved before the label: identities, no label
+    again = run('ACCEPT')  # reused from its receipt: no second auditor call (run checks it)
+    assert again['verdict'] == 'ACCEPT' and again['independence'] == SAME_VENDOR_AUDIT
+    assert {k: v for k, v in again.items() if k != 'independence'} == first
+
+
+def test_the_correction_brief_names_a_same_vendor_review():
+    from compute_plane.native_models import encode
+    from relay.work_units import brief
+    unit = {'title': 'Fix', 'target_paths': ['a.py'], 'criteria': ['Two'],
+            'review_feedback': encode({'verdict': 'REVISE', 'findings': [], 'independence': SAME_VENDOR_AUDIT})}
+    shown = brief(unit, ['tests'], '')
+    assert f'Previous review ({SAME_VENDOR_AUDIT}) of this retained candidate' in shown
+    assert 'Previous independent review' not in shown
+    unit['review_feedback'] = encode({'verdict': 'REVISE', 'findings': []})
+    assert 'Previous independent review of this retained candidate' in brief(unit, ['tests'], '')
+
+
+def test_a_work_saved_before_the_rule_reads_its_same_vendor_route_as_such():
+    from relay.work_console import render
+    routing = {'status': 'READY', 'reason': 'AUTO_CROSS_VENDOR_THEN_COST_AND_CONFIGURED_ORDER', 'routes': [
+        {'deployment': {'id': 'claude-api-opus-5-5'}, 'reason': 'AUTO_SELECTED_INDEPENDENT', 'cross_vendor': False},
+        {'deployment': {'id': 'openai-api'}, 'reason': 'AUTO_SELECTED_INDEPENDENT', 'cross_vendor': True}],
+        'selection': {'candidates': [{'deployment': 'claude-api-opus-5-5', 'cross_vendor': False,
+                                      'reason': 'CONFIGURED_INDEPENDENT_NATIVE_ROUTE'}]}}
+    shown = render('run', {'work_id': 'one', 'status': 'RUNNING', 'stage': 'code_audit',
+                           'audit_routing': routing}).splitlines()
+    assert f'  claude-api-opus-5-5: SAME_VENDOR_NOT_INDEPENDENT · {SAME_VENDOR_AUDIT}' in shown
+    assert f'  Candidate claude-api-opus-5-5: SAME_VENDOR_NOT_INDEPENDENT · {SAME_VENDOR_AUDIT}' in shown
+    assert '  openai-api: AUTO_SELECTED_INDEPENDENT' in shown  # another vendor: unchanged
+    assert work_audit.route_reason({'reason': 'OPERATOR_SELECTED_INDEPENDENT', 'cross_vendor': False}) == (
+        'SAME_VENDOR_NOT_INDEPENDENT')  # what a resumed Work's code_audit stage re-emits

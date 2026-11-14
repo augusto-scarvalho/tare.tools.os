@@ -111,15 +111,20 @@ def render(action, result):
             for stage in receipt.get('stages', []):
                 if stage['stage'] == 'implement' and stage.get('reason'):
                     lines.append('Reason: ' + stage['reason'])
+        from .landing_policy import SAME_VENDOR_AUDIT
+        from .work_audit import route_reason
+
+        def reason(row):  # a route saved before the vendor rule reads as the rule names it now
+            named = route_reason(row)
+            return named+(' · '+SAME_VENDOR_AUDIT if named == 'SAME_VENDOR_NOT_INDEPENDENT' else '')
         routing = receipt.get('audit_routing') or {}
         if routing:
             lines.append('Code audit: '+routing['status']+' · '+routing['reason'])
             for route in routing['routes']:
-                lines.append('  '+route['deployment']['id']+': '+route['reason'])
+                lines.append('  '+route['deployment']['id']+': '+reason(route))
         if routing.get('selection'):
             for candidate in routing['selection']['candidates']:
-                lines.append('  Candidate '+candidate['deployment']+': '+candidate['reason'])
-        from .landing_policy import SAME_VENDOR_AUDIT
+                lines.append('  Candidate '+candidate['deployment']+': '+reason(candidate))
         if receipt.get('audit'):
             audit = receipt['audit']
             lines.append('Auditor: '+audit['deployment']+' · '+str(audit.get('verdict') or audit.get('reason') or audit['result']['status'])
