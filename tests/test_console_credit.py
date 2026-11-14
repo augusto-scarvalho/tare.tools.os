@@ -164,10 +164,14 @@ def test_the_start_up_reading_needs_the_choice_and_a_last_attempt_over_12_hours_
     assert console_credit.sync_if_due(NOW) and len(calls) == 2
     write_json_atomic(console_credit.path(), {'at': NOW - 3600, 'ok': True})
     assert console_credit.sync_if_due(NOW) is None and len(calls) == 2
+    write_json_atomic(console_credit.path(), {'at': NOW - 1800, 'ok': False, 'reason': 'x'})
+    assert console_credit.sync_if_due(NOW) is None and len(calls) == 2  # a failure waits an hour, not half a day
+    write_json_atomic(console_credit.path(), {'at': NOW - 2*3600, 'ok': False, 'reason': 'x'})
+    assert console_credit.sync_if_due(NOW) and len(calls) == 3
     environment.main(['--console-credit', 'off'])
     assert 'console_credit' not in environment.read()
     write_json_atomic(console_credit.path(), {'at': NOW - 13*3600, 'ok': True})
-    assert console_credit.sync_if_due(NOW) is None and len(calls) == 2
+    assert console_credit.sync_if_due(NOW) is None and len(calls) == 3
 
 
 def test_tare_quota_sync_runs_one_reading_and_prints_it(monkeypatch, capsys):

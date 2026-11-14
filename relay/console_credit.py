@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 ACCOUNT = 'anthropic-api'
 BILLING = 'https://platform.claude.com/settings/billing'
 EVERY = 12 * 3600  # a reading opens a tab in the browser and spends a model call: not at each demand
+AFTER_FAILURE = 3600  # a failed one (the browser was closed) is tried again at a later start, not half a day on
 TOOLS = ','.join('mcp__claude-in-chrome__' + name for name in
                  ('tabs_context_mcp', 'tabs_create_mcp', 'navigate', 'get_page_text', 'tabs_close_mcp'))
 PROMPT = f"""Read the Claude Console's Billing page. Do not click anything and do not type anything.
@@ -126,9 +127,11 @@ def enabled():
 
 
 def sync_if_due(now=None):
-    """What the TUI does at start: sync() when the choice is on and the last attempt is over 12 hours old, else None."""
+    """What the TUI does at start: sync() when the choice is on and the last attempt is over 12 hours old (one hour when
+    it failed), else None."""
     now = time.time() if now is None else now
-    if not enabled() or now - (last() or {}).get('at', 0) < EVERY:
+    record = last() or {}
+    if not enabled() or now - record.get('at', 0) < (EVERY if record.get('ok') else AFTER_FAILURE):
         return None
     return sync(now)
 
