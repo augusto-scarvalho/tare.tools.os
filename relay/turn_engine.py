@@ -1100,16 +1100,22 @@ def route_effort(deployment):
 def ask_cli(prompt, *, images=(), search=False, timeout=240, trace=None):
     """One read-only, toolless-on-disk Codex CLI exchange on the cheapest route: (answer, route).
 
-    An optional `trace` dict receives the visited routes, known skips and the dispatched deployment."""
-    visited, skipped = [], []
+    An optional `trace` dict receives the visited routes, known skips and the dispatched deployment. It serves
+    /research's web search, so the routing profile's researcher entries decide whether a route may answer."""
+    from .environment import switched_off
+    visited, skipped, refused = [], [], None
     for name in HELPER_ROUTES:
         visited.append(name)
         deployment, _ = available(name)
-        if deployment is not None:
+        if deployment is None:
+            skipped.append((name, 'UNAVAILABLE'))
+            continue
+        refused = switched_off('researcher', deployment, name)
+        if not refused:
             break
-        skipped.append((name, 'UNAVAILABLE'))
+        skipped.append((name, 'SWITCHED_OFF_FOR_ROLE'))
     else:
-        raise RuntimeError('no Codex CLI route is available')
+        raise RuntimeError('no Codex CLI route is available' + (': SWITCHED_OFF_FOR_ROLE: ' + refused if refused else ''))
     with tempfile.TemporaryDirectory(prefix='tare-serve-cli-') as folder:
         answer = Path(folder)/'answer.txt'
         argv = [deployment['native_cli']['executable'], *(['--search'] if search else []), 'exec',
@@ -1284,7 +1290,7 @@ def read_links(question, urls, emit, *, mode, max_pages, max_depth, fetch=None):
     """Pages read locally (Trafilatura) and summarized by the first available route, citing URLs."""
     from .native_installation import storage_root
     from .research import research
-    tier, name, deployment, skipped = choose(policy()['implementer'])
+    tier, name, deployment, skipped = choose(policy()['implementer'], role='researcher')
     if deployment is None:
         return None, 'tare: no route is available for /research: ' + json.dumps(skipped)
     emit(f'_tare /research · reading {len(urls)} link(s) with {name}_\n\n')
@@ -1368,14 +1374,15 @@ def with_effort(deployment, effort, *, at_least=False):
     return value
 
 
-def pick_auditors(implementer, names, *, probe=True):
+def pick_auditors(implementer, names, *, probe=True, role='auditor'):
     from .execution_scope import for_role
-    with for_role('auditor'):return _pick_auditors(implementer,names,probe=probe)
+    with for_role('auditor'):return _pick_auditors(implementer,names,probe=probe,role=role)
 
 
-def _pick_auditors(implementer, names, *, probe=True):
+def _pick_auditors(implementer, names, *, probe=True, role='auditor'):
     """[(name, deployment)] of independent auditors: never the implementer's model or bias domain
-    (landing policy AUDITOR_NOT_INDEPENDENT); another vendor first (CROSS_VENDOR_AUDITOR_PREFERRED)."""
+    (landing policy AUDITOR_NOT_INDEPENDENT); another vendor first (CROSS_VENDOR_AUDITOR_PREFERRED). `role` is the
+    routing profile's: plan-auditor for a plan review, auditor for a change."""
     from .execution_scope import current
     if current().pin('auditor'):
         from .execution_scope import pinned
@@ -1384,7 +1391,7 @@ def _pick_auditors(implementer, names, *, probe=True):
     if names is None:
         from .native_routes import reviewers
         try:
-            selected, _ = reviewers(implementer,check_resources=probe)
+            selected, _ = reviewers(implementer,role=role,check_resources=probe)
         except (ValueError, KeyError, OSError):
             return []  # Unknown producer identity cannot establish independence.
         return [(value['id'], value) for value in selected]
@@ -1408,7 +1415,7 @@ def _pick_auditors(implementer, names, *, probe=True):
                 remap_required=True
                 continue  # The operator's temporary family override requires a new route.
         deployment, _ = available(name) if probe else available(name, probe=False)
-        if deployment is None or switched_off('auditor', deployment, name):
+        if deployment is None or switched_off(role, deployment, name):
             continue  # the owner's order list does not override the routing profile
         try:
             auditor = identity(deployment, 'auditor')
@@ -1419,7 +1426,7 @@ def _pick_auditors(implementer, names, *, probe=True):
         found.append((bool(author) and auditor.vendor == author.vendor, name, deployment))
     found.sort(key=lambda item: item[0])
     if not found and remap_required:
-        return _pick_auditors(implementer,None,probe=probe)
+        return _pick_auditors(implementer,None,probe=probe,role=role)
     return [item[1:] for item in found]
 
 

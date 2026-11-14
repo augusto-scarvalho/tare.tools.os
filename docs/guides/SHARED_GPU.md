@@ -95,9 +95,13 @@ undoes a broader "off". A screen for it in `/routes` comes next.
   `--coordinator`, and the explorer and overflow explorer you set in `/delegation` still reach a route that is
   off. Everything else skips it: tare auto's tiers, the role tables, the planner, auditor, vision, researcher and
   heads-up lists, a saved `routing.json` (the order file does not switch a route back on), and a route the
-  coordinator names for a unit's implementer, a plan or a search. The coordinator is a model, so its choice is not
-  yours: the route does not run, and the coordinator is told which route is off for which role and that you can
-  switch it on (`tare setup --auto ROLE:ROUTE=on`) or pin it. A pin of that route wins, since the pin is yours.
+  coordinator names for a unit's implementer, a plan or a search, or the conversation's own model when a unit falls
+  back to it (it was picked for the conversation, not as implementer). The coordinator is a model, so its choice is
+  not yours: the route does not run, and the coordinator is told which route is off for which role and how you can
+  switch it on (`tare setup --auto ROLE:claude/opus-5.5@claude-code=on`, the route's version on its source; a route
+  id for a model with no line) or pin it. A pin of that route wins, since the pin is yours. A plan review reads the
+  `plan-auditor` entries and a change audit the `auditor` ones, also with your own auditor list; `/research` reads
+  the `researcher` entries, for the summary of its links and for its Codex web search.
 - **Rules come first.** A provider declined in setup, a route not yet proven here (`NOT_QUALIFIED_PIN_ONLY`), an
   older model (`OLDER_MODEL`), an auditor of the same family, a missing credential or a spent quota keep their own
   reasons. An "on" entry never makes such a route usable.
@@ -113,16 +117,23 @@ An entry is a route id or `MODEL@SOURCE`:
 | `claude/fable-5.2@api` | only Claude Fable 5.2 there |
 | `claude/*@claude-code` | every Claude line on Claude Code |
 | `*@openrouter` | every route on OpenRouter |
-| `openrouter-muse-wonder` | one route, by the id `tare models` shows |
+| `openrouter-muse-wonder` | a model with no line, by the route id `tare models` shows, and any other route id of that model on that source |
 
 - `MODEL` is `*`, a vendor (`claude/*`), a line as `relay/model_lines.json` names it (`claude/opus`, `gpt/sol`,
-  `gemini/argon`) or a line and version (`gpt/sol-6.1`). A model with no line there (a reseller's own model, a
-  local model) is named by its route id or by `*@SOURCE`.
+  `gemini/argon`) or a line and version (`gpt/sol-6.1`; at most three parts of at most four digits). A model with
+  a line is named only this way, so one entry covers every route id of it on a source (`claude-cli` and
+  `claude-opus-5-5-cli` both run Claude Opus 5.5 on Claude Code): `tare setup --auto` refuses a route id for such a
+  route and prints the entry to use. A route id saved for one anyway is read as its version on its source, and
+  `tare setup` says so. A model with no line there (a reseller's own model, a local model) is named by its route
+  id or by `*@SOURCE`.
+- An alias is checked as itself and as the route it becomes: `local-default` (the fleet's default) and
+  `local-auto` (Swift Flash-Next on an idle host, else Qwen3.8) when they resolve; `auto` and tare auto through
+  each candidate they rank. An entry for `qwen38-gsq` also stops `local-default` when that is what it runs.
 - `SOURCE` is `*` or one of `claude-code`, `codex` (the Codex CLI and Codex Direct: one ChatGPT plan), `agy`,
   `opencode-sub`, `opencode-api`, `api` (the vendor's API, or another API paid per token), `openrouter`,
   `bedrock`, `local`.
-- The most specific entry wins: a route id, then a version, a line, a vendor, `*`; at each of these a named
-  source beats `*`. When "on" and "off" tie, "off" wins.
+- The most specific entry wins: a route id (of a model with no line), then a version, a line, a vendor, `*`; at
+  each of these a named source beats `*`. When "on" and "off" tie, "off" wins.
 - Roles: `implementer` (tare auto's tiers and Work units), `explorer`, `planner`, `plan-auditor`, `auditor`,
   `researcher`, `vision`, `heads_up`.
 - An entry tare cannot read is ignored and named by `tare setup`; it never stops routing.

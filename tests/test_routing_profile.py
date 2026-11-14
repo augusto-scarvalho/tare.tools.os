@@ -2,10 +2,12 @@
 import copy
 from dataclasses import replace
 import json
+from pathlib import Path
 
 import pytest
 
-from relay import environment, execution_scope, native_agent, native_catalog, native_routes, research_cli, turn_engine
+from relay import cli_discovery, environment, execution_scope, native_agent, native_catalog, native_routes, research_cli
+from relay import turn_engine
 from relay import work_units
 from relay.scheduling_diagnostics import UnschedulableError
 from test_cross_vendor_auditors import install, pool  # noqa: F401
@@ -210,7 +212,8 @@ def pin(monkeypatch, role, raw):
 
 
 OFF_UNIT = ('SWITCHED_OFF_FOR_ROLE: claude-opus-5-5-cli is switched off for implementer in the routing profile '
-            '(claude/opus@claude-code); the user can switch it on (tare setup --auto implementer:claude-opus-5-5-cli=on) '
+            '(claude/opus@claude-code); the user can switch it on '
+            '(tare setup --auto implementer:claude/opus-5.5@claude-code=on) '
             'or pin it')
 
 
@@ -287,3 +290,140 @@ def test_a_research_route_the_coordinator_names_runs_only_when_on_or_pinned(host
     environment.save({})
     on = json.loads(tools.execute(effect('research', {'question': 'TTL now?', 'route': 'luna'}, 'on'), control).output_json)
     assert on['status'] == 'COMPLETED' and called == ['luna', 'luna']
+
+
+# Review of 2026-11-14 (another vendor's model): four blocking defects and two minor ones.
+
+def test_with_every_implementer_off_a_unit_never_falls_back_to_the_sessions_model(pool, monkeypatch):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+    parent = native_catalog.select('claude-opus-5-5-cli')
+    saved(off={'implementer': ['*@*']})
+    refused = []
+    assert list(work_units.routes(parent, allow_parent=True, refused=refused)) == []
+    assert refused[0].startswith('SWITCHED_OFF_FOR_ROLE: claude-opus-5-5-cli is switched off for implementer')
+    # The user's pin for implementer on that route still wins.
+    monkeypatch.setenv('TARE_SESSION_SCOPE', json.dumps({'pins': [['implementer', 'anthropic/claude-opus-5-5-cli@high']]}))
+    assert [n for n, _ in work_units.routes(parent, allow_parent=True)] == ['claude-opus-5-5-cli']
+
+
+def test_a_configured_review_list_reads_the_profile_of_its_own_review_role(pool, monkeypatch):
+    for key in ('OPENAI_API_KEY', 'GEMINI_API_KEY'):
+        monkeypatch.setenv(key, 'fixture')  # present, never used: nothing is called
+    turn_engine.save_policy({'auditor': [['openai-api', 'gemini-api']]}, auditor_selection='configured')
+    producer = native_catalog.select('claude-api-opus-5-5')
+
+    def names(role):
+        return [d['id'] for d in native_routes.reviewers(producer, role, check_resources=False)[0]]
+    assert names('auditor') == names('plan-auditor') == ['openai-api', 'gemini-api']
+    saved(off={'plan-auditor': ['*@*']})
+    assert names('plan-auditor') == [] and names('auditor') == ['openai-api', 'gemini-api']
+    saved(off={'auditor': ['*@*']})
+    assert names('auditor') == [] and names('plan-auditor') == ['openai-api', 'gemini-api']
+
+
+def test_research_reads_the_researcher_profile_in_both_of_its_branches(monkeypatch):
+    helper = {'id': 'codex-cli-gpt-6-luna', 'native_cli': {'executable': 'codex'},
+              'native_profile': {'protocol': 'vendor-cli', 'endpoint': 'cli://codex', 'model': 'gpt-6-luna'}}
+    profiles = {'codex-cli-gpt-6-luna': helper, 'claude-api-sonnet-5-5': native_catalog.select('claude-api-sonnet-5-5')}
+    monkeypatch.setattr(turn_engine, 'policy', lambda: {**turn_engine.DEFAULT_POLICY,
+                                                        'implementer': [['claude-api-sonnet-5-5']]})
+    monkeypatch.setattr(turn_engine, 'available', lambda name: (copy.deepcopy(profiles[name]), None))
+    monkeypatch.setattr(turn_engine, 'search_links', lambda text: [])  # no results: the Codex web search answers
+    started = []
+
+    def run(argv, **kwargs):
+        started.append('codex')
+        Path(argv[argv.index('-o') + 1]).write_text('Answer.', encoding='utf-8')
+    monkeypatch.setattr(turn_engine.subprocess, 'run', run)
+
+    def research(*a, **k):
+        started.append('summary')
+        raise ValueError('fixture: nothing to read')
+    monkeypatch.setattr('relay.research.research', research)
+    saved(off={'researcher': ['*@*']})
+    record, answer = turn_engine.run_research('What changed?', lambda text: None)
+    assert record is None and 'web search is not available' in answer and 'SWITCHED_OFF_FOR_ROLE' in answer
+    record, answer = turn_engine.read_links('What changed?', ['https://docs.example/x'], lambda text: None,
+                                            mode='links', max_pages=1, max_depth=0)
+    assert record is None and 'no route is available for /research' in answer and 'SWITCHED_OFF_FOR_ROLE' in answer
+    assert started == []
+    # Only implementer entries off: research is unaffected.
+    saved(off={'implementer': ['*@*']})
+    emitted = []
+    turn_engine.read_links('What changed?', ['https://docs.example/x'], emitted.append, mode='links', max_pages=1,
+                           max_depth=0)
+    assert 'claude-api-sonnet-5-5' in ''.join(emitted)
+    assert turn_engine.run_research('What changed?', lambda text: None)[1] == 'Answer.'
+    assert started == ['summary', 'codex']
+
+
+def test_a_route_id_covers_every_route_of_its_model_on_its_source(capsys):
+    templates = json.loads(cli_discovery.TEMPLATES.read_text(encoding='utf-8'))
+    saved(off={'auditor': ['claude-opus-5-5-cli']})  # Claude Code's Opus 5.5 under one of its ids
+    for name in ('claude-cli', 'claude-opus-5-5-cli'):
+        assert environment.profile_state('auditor', templates[name], name) == ('off', 'claude-opus-5-5-cli')
+    assert any('claude-opus-5-5-cli runs a model line; read as claude/opus-5.5@claude-code' in p
+               for p in environment.profile()[1])
+    # The refusal the coordinator relays names the entry to use.
+    off = environment.switched_off('auditor', templates['claude-cli'], 'claude-cli')
+    assert 'tare setup --auto auditor:claude/opus-5.5@claude-code=on' in off
+    # tare setup refuses such an id and prints the equivalent entries.
+    assert environment.main(['--auto', 'auditor:claude-cli=on']) == 1
+    error = capsys.readouterr().err
+    assert 'auditor:claude/opus-5.5@claude-code=on' in error and 'auditor:claude/opus@claude-code=on' in error
+    # Switching the suggested entry on replaces the saved id instead of tying with it.
+    assert environment.main(['--auto', 'auditor:claude/opus-5.5@claude-code=on']) == 0
+    assert json.loads(environment.store().read_text(encoding='utf-8'))['routing_profile'] == {
+        'on': {'auditor': ['claude/opus-5.5@claude-code']}}
+    assert environment.profile_state('auditor', templates['claude-cli'], 'claude-cli')[0] == 'on'
+
+
+def test_an_alias_is_checked_as_the_route_it_resolves_to(pool, monkeypatch):
+    # local-default and local-auto resolve in available(); every path that gates asks after that.
+    saved(off={'implementer': ['qwen38-gsq', 'swift-next']})
+    for name in ('local-default', 'local-auto'):
+        tier, chosen, _, skipped = turn_engine.choose([[name]], probe=False)
+        assert chosen is None and skipped[0]['diagnostic']['code'] == 'SWITCHED_OFF_FOR_ROLE', name
+    # local-auto on an idle host realises Swift Flash-Next: an entry for that route covers it too.
+    monkeypatch.setattr('compute_plane.model_facts.read_json_observation', lambda url, timeout: {
+        'status': 'OBSERVED', 'value': {'model': 'swift-next', 'mode': 'solo'}})
+    saved(off={'implementer': ['swift-next']})
+    deployment, _ = turn_engine.available('local-auto', probe=False)
+    assert deployment['native_profile']['model'] == 'swift-next'
+    assert turn_engine.choose([['local-auto']], probe=False)[1] is None
+    assert turn_engine.choose([['local-default']], probe=False)[1] == 'local-default'  # qwen38-gsq stays on
+    # select('auto') takes the first ranked candidate: each was checked, under every id of its model.
+    install(pool, 'claude-cli', 'cli://claude', 'claude-opus-5-5')
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+    saved(off={'explorer': ['claude-cli']})
+    reasons = ranked('explorer')[1]
+    assert reasons['claude-cli'] == reasons['claude-opus-5-5-cli'] == 'SWITCHED_OFF_FOR_ROLE'
+    saved(off={'explorer': ['*@*']})
+    with pytest.raises(UnschedulableError, match='NO_ELIGIBLE_NATIVE_ROLE:explorer'):
+        native_catalog.select('auto', role='explorer')
+
+
+def test_a_version_too_long_to_read_is_a_malformed_entry():
+    huge = 'claude/fable-' + '9' * 5000 + '@api'
+    assert environment.entry(huge) is None
+    assert environment.entry('claude/fable-5.2.1@api') is not None and environment.entry('gpt/sol-1.2.3.4@api') is None
+    saved(off={'planner': [huge], 'auditor': ['claude/fable@api']})
+    fable = native_catalog.select('claude-api-fable-5-2')
+    assert environment.profile_state('auditor', fable) == ('off', 'claude/fable@api')
+    assert any('is not a route id or MODEL@SOURCE' in p for p in environment.profile()[1])
+
+
+def test_the_profile_is_parsed_once_per_version_of_the_file_and_a_rewrite_is_seen(monkeypatch):
+    saved(off={'auditor': ['claude/opus@api']})
+    parsed = []
+    real = environment._profile
+    monkeypatch.setattr(environment, '_profile', lambda value, role: parsed.append(role) or real(value, role))
+    opus = native_catalog.select('claude-api-opus-5-5')
+    for _ in range(5):
+        assert environment.profile_state('auditor', opus) == ('off', 'claude/opus@api')
+    assert parsed == ['auditor']  # one parse, of the role asked
+    # Another process rewrites the file (tare setup --auto there): the next decision reads it.
+    environment.store().write_text(json.dumps({'schema': environment.SCHEMA, 'routing_profile': {
+        'off': {'auditor': ['claude/opus-5.5@api']}}}), encoding='utf-8')
+    assert environment.profile_state('auditor', opus) == ('off', 'claude/opus-5.5@api')
+    assert parsed == ['auditor', 'auditor']

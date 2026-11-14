@@ -190,8 +190,7 @@ def _reviewers(producer, role='auditor', *, check_resources=True):
     from .execution_scope import current
     if current().changes(role) or rules.get('auditor_selection', 'cross_vendor_frontier') == 'cross_vendor_frontier':
         return ranked(role, producer, check_resources=check_resources)
-    chosen = (pick_auditors(producer, rules['auditor']) if check_resources
-              else pick_auditors(producer, rules['auditor'], probe=False))
+    chosen = pick_auditors(producer, rules['auditor'], probe=check_resources, role=role)
     author = identity(producer, 'implementer')
     return [deployment for _, deployment in chosen], {
         'schema': 'tare.tools/native-role-selection/1', 'role': role,

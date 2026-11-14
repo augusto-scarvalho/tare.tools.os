@@ -472,7 +472,8 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
     (owner, 2026-10-08): a local route whose GPU an image job holds is skipped, the coordinator's chosen one included,
     and the unit takes the next routes of the policy (the owner's <storage>/serve/routing.json, else tare's), leaving a
     local session's bill as the session itself would. A route the routing profile switches off for the implementer is
-    never run, the coordinator's chosen one included (only a pin is the user's own choice); `refused` collects why."""
+    never run, the coordinator's chosen one and the fallback to the session's own model included (only a pin is the
+    user's own choice); `refused` collects why."""
     from .delegation import experiments
     from .turn_engine import available, gpu_taken, policy, with_effort
     from .environment import switched_off
@@ -523,6 +524,11 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
     if parent_allowed and not found and not chosen:
         # Separate implementer role, same explicitly selected model/allowance.
         # Explicit route choices never silently fall back to this profile.
+        # The conversation's model was picked for the conversation, not as implementer: the profile still decides.
+        if off := switched_off('implementer', parent, parent['id']):
+            if refused is not None:
+                refused.append('SWITCHED_OFF_FOR_ROLE: ' + off)
+            return
         yield parent['id'], with_effort(parent, effort) if effort else parent
 
 
@@ -1021,7 +1027,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
     protected = [test_file(t) for t in unit.get('test_paths') or []]
     result = {'verdict': 'INCONCLUSIVE', 'reason': 'no implementer route is available'}
     producer=candidate_producer(custody,candidate['producer']) if candidate and candidate.get('review_only') else None
-    refused = []  # the coordinator's chosen route, switched off for the implementer by the routing profile
+    refused = []  # why the routing profile refused the coordinator's chosen route or the session's own model
     choices = [(worker['route'], worker['producer'])] if worker else [(producer['id'], producer)] if producer else routes(
         state.get('deployment') or {}, args.get('route'), args.get('effort'), refused=refused,
         **({'allow_parent': True} if state.get('conversation_flow') else {}))
