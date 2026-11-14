@@ -339,7 +339,9 @@ def spent_until(deployment, now=None):
     return max(found) if found else None
 
 
-LENGTHS = {'5 h': 5 * 3600, 'week': 7 * 86400}  # the windows tare can place in time
+# The windows tare can place in time. 'session' is Claude's own name for its 5 h window (`Current session: ...`).
+LENGTHS = {'5 h': 5 * 3600, 'session': 5 * 3600, 'week': 7 * 86400}
+LEAD = 0.01  # a smaller lead is no surplus: a window that has just renewed is not one
 # A reading older than this says too little of what is left now: on 2026-11-14 the saved one was two days old and still
 # showed 23% of a week the day's work had used. The TUI rereads at each demand; an older reading promotes nothing.
 FRESH = 3600
@@ -382,7 +384,7 @@ def surplus(deployment, now=None, cache=None):
             return None
         # ponytail: the reading is the last finished one; a refresh started by a TUI demand lands for the next one (tare serve and
         # tare agent refresh only where they already do)
-        if not found or round((worst := min(found, key=lambda row: row[0]))[0], 2) <= 0:  # under 1% is no surplus
+        if not found or (worst := min(found, key=lambda row: row[0]))[0] < LEAD:
             return None
         return {'lead': worst[0], 'remaining': worst[1]['remaining'], 'time_left': worst[2],
                 'resets_at': worst[1]['resets_at'], 'allowance': account + ' ' + worst[1]['label']}
@@ -391,7 +393,7 @@ def surplus(deployment, now=None, cache=None):
     if ('credit', name) not in cache:
         cache[('credit', name)] = provider_spend.remaining(name, now)
     credit = cache[('credit', name)]
-    if not credit or not (pace := credit_pace(credit, now)) or round(pace[0] - pace[1], 2) <= 0:
+    if not credit or not (pace := credit_pace(credit, now)) or pace[0] - pace[1] < LEAD:
         return None
     return {'lead': pace[0] - pace[1], 'remaining': pace[0], 'time_left': pace[1], 'resets_at': credit['renews_at'],
             'allowance': name + ' credit'}
@@ -400,7 +402,7 @@ def surplus(deployment, now=None, cache=None):
 def used_first(remaining, time_left, what='window'):
     """The mark `tare quota` puts on a line in surplus, or ''."""
     return (f" · in surplus: {remaining:.0%} left, {time_left:.0%} of the {what} left"
-            if round(remaining - time_left, 2) > 0 else '')
+            if remaining - time_left >= LEAD else '')
 
 
 def clock(epoch, now):

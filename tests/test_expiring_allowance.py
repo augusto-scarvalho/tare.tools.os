@@ -211,6 +211,16 @@ def test_tare_auto_tries_the_route_in_surplus_first_inside_its_tier_and_never_ch
     assert turn_engine.choose(tiers, start=1)[:2] == (1, 'agy-c')
 
 
+def test_claudes_session_window_counts_as_its_5_hours_and_a_lead_under_one_percent_is_none():
+    # Found by the cross-vendor review: Claude names its 5 h window 'session', and the week alone promoted the route.
+    save(reading('claude', bucket('week', 0.23, DAY), bucket('session', 0.10, 4 * 3600)))
+    assert provider_quota.surplus(cli(), NOW) is None  # 10% of the session left with 80% of it to run
+    save(reading('claude', bucket('week', 0.23, DAY), bucket('session', 0.90, 4 * 3600)))
+    assert provider_quota.surplus(cli(), NOW)['allowance'].endswith('week, all models')
+    save(reading('claude', bucket('week', 0.149, DAY)))  # a day is 14.3% of the week: a lead of 0.6 of a point
+    assert provider_quota.surplus(cli(), NOW) is None
+
+
 def test_a_reading_over_an_hour_old_promotes_nothing_and_is_not_marked():
     # 2026-11-14: the saved reading was two days old and still showed 23% of a week the day's work had used.
     save(reading('claude', bucket('week', 0.23, DAY)))
