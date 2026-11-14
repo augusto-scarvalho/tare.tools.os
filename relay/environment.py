@@ -326,17 +326,28 @@ def switched_off(role, deployment, *names, value=None):
 
 def auto_routes(role, value=None):
     """(name, route or None, now) of each route automatic `role` routing considers here, checked without a live probe:
-    `now` is 'usable' or why it cannot be used now (a rule). The routing profile does not change it."""
+    `now` is 'usable' or why it cannot be used now (a rule). The routing profile does not change it. The candidates are
+    what each role's automatic path reads: implementer and planner their routing list and role table; explorer its role
+    table; auditor and plan-auditor the owner's auditor list when "Use my auditor routes" is chosen and their role
+    table otherwise, never both (native_routes._reviewers); researcher its list, tare auto's tiers (the /research link
+    summary) and the Codex web search helper; vision and heads_up their list."""
     from .cli_discovery import TEMPLATES
     from .execution_scope import current
     from .native_catalog import select
     from .native_routes import configured, roles as table_roles
-    from .turn_engine import available, policy
+    from .turn_engine import HELPER_ROUTES, available, policy
     value = read() if value is None else value
     templates = json.loads(TEMPLATES.read_text(encoding='utf-8'))
+    rules = policy()
+    review = role in ('auditor', 'plan-auditor')
+    owner = review and not (current().changes(role) or rules.get('auditor_selection', 'cross_vendor_frontier')
+                            == 'cross_vendor_frontier')
     table = {row.get('native_catalog', row['id']): row for row in configured()['deployments']
-             if role in RANKED_ROLES and role in table_roles(row, current())}
-    listed = [n for item in policy().get(role) or [] for n in (item if isinstance(item, list) else [item])]
+             if role in RANKED_ROLES and not owner and role in table_roles(row, current())}
+    lists = (rules.get('auditor') if owner else None if review else rules.get(role)) or []
+    if role == 'researcher':
+        lists = [*lists, *rules.get('implementer', []), *HELPER_ROUTES]
+    listed = [n for item in lists for n in (item if isinstance(item, list) else [item])]
     for name in dict.fromkeys([*listed, *table]):
         deployment, why = available(name, probe=False)
         try:

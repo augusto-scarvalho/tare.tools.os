@@ -204,6 +204,12 @@ role here. Space, Enter or a click on the selected cell ticks it. Nothing is wri
 before it discards unsaved changes. The file Save writes is the one the equivalent `tare setup --auto` commands
 write.
 
+The rows, like `--auto-show`, are the routes the role's automatic path considers: implementer and planner their
+list in the Order tab and their role table; explorer its role table; auditor and plan-auditor your auditor routes
+when "Use my auditor routes" is chosen in the Order tab, and their role table otherwise, never both; researcher its
+list, the implementer tiers (the `/research` link summary) and the Codex web search helper; vision and heads-up
+their list.
+
 | Cell | Means |
 |---|---|
 | `[x]` | on |
@@ -218,11 +224,18 @@ write.
   and the status line names them before you save.
 - Bulk actions for the role: a vendor or a source on or off (`claude/*@*`, `*@openrouter`), subscriptions only
   (`opencode-api`, `api`, `openrouter`, `bedrock` and `other-api` off), copy another role's entries, and tare's
-  defaults for the role.
+  defaults for the role. "Off" is one broad entry, and the entries inside it go. "On" removes the entries inside
+  it, then writes an `on` for each line there that a broader entry still keeps off (after `*@api` off, "Anthropic:
+  every model on" writes `claude/opus@api` and the other Claude lines on the API), never one that changes nothing.
+  Afterwards every cell of the vendor or source that a tick decides reads as asked.
 - The status line always says when the edited profile leaves a role with no eligible route and what then happens,
-  and when an implementer has no independent auditor left on.
+  and when an implementer has no independent auditor left on: for the role shown and for every role with unsaved
+  edits, whichever role is shown.
+- Save writes only the roles edited in the tab, over the file as it is then, so an entry another shell saved for
+  another role stays. When a role edited here also changed in the file since the tab opened, nothing is written:
+  the status line says so, the edits stay on screen, and Reload reads the file again, dropping them.
 - Entries no cell can tick (`*@*`, a vendor, a version, a line on every source, a cell a rule decides, an entry tare
-  cannot read) are listed under the table; Enter or a click removes one.
+  cannot read) are listed under the table, as plain text; Enter or a click removes one.
 
 ## Reserving the GPU for a bench or a long run
 

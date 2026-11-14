@@ -33,10 +33,18 @@ def entries(value, side, role):
     return texts if isinstance(texts, list) else []
 
 
-def scope(value, role, pattern, want, sources):
-    """Make `pattern` (a line on a source, a vendor, a source, or a route with no line by its id) `want` for `role`,
-    keeping only differences from tare's default: drop the entries it covers, then write it only when what is left
-    disagrees ("on" only undoes a broader "off"). `sources`: {id: source} of the routes with no line."""
+def reads(value, role, route, key=None):
+    found = env.profile_state(role, route, value, key)
+    return 'off' if found and found[0] == 'off' else 'on'
+
+
+def make(value, role, pattern, want, cells, sources):
+    """Make every cell `pattern` targets read `want` for `role` (a cell: line@source or a route id, its [(route, key)],
+    whether a tick decides it), storing only differences from tare's default. The entries inside the target go;
+    "off" then writes `pattern` itself when a targeted route still reads on, and each cell a tick decides that still
+    disagrees, because of an entry outside the target, gets its own entry: its line on its source, then a version or a
+    route id. So an "on" is written only where something broader is off. `sources`: {id: source} of routes with no
+    line."""
     rule = env.rule_of(pattern)
 
     def covered(text):
@@ -47,9 +55,18 @@ def scope(value, role, pattern, want, sources):
             return rule[0] is None and rule[3] in ('*', sources.get(inner))
         return inner is not None and rule[3] in ('*', inner[3]) and all(w in (None, h) for w, h in zip(rule[:3], inner))
     value = env.edit_auto(value, role, lambda side, texts: [t for t in texts if not covered(t)])
-    key = (None, None, None, sources.get(rule)) if isinstance(rule, str) else rule
-    state = env.profile_state(role, {'id': rule}, value, key)
-    return value if (state[0] if state else 'on') == want else env.set_auto(value, f'{role}:{pattern}={want}')
+    if want == 'off' and any(reads(value, role, r) == 'on' for _, routes, _ in cells for r, _ in routes):
+        value = env.set_auto(value, f'{role}:{pattern}=off')
+    for name, routes, decided in cells:
+        if not decided:
+            continue
+        if '@' in name and reads(value, role, {}, env.rule_of(name)) != want:
+            value = env.set_auto(value, f'{role}:{name}={want}')
+        for route, key in routes:
+            if reads(value, role, route) != want:
+                own = env.key_label(key, bool(key[2])) if key[0] else route['id']
+                value = env.set_auto(value, f'{role}:{own}={want}')
+    return value
 
 
 def load():
@@ -74,6 +91,7 @@ class RouteMatrix(Vertical):
     RouteMatrix OptionList { height: auto; max-height: 5; }
     RouteMatrix #matrix-status { height: auto; max-height: 6; }
     RouteMatrix #matrix-bulk { width: 1fr; }
+    RouteMatrix #matrix-reload { display: none; }
     '''
 
     def compose(self):
@@ -91,6 +109,7 @@ class RouteMatrix(Vertical):
         yield Static(self.message, id='matrix-status', markup=False)
         with Horizontal(classes='panel-actions'):
             yield Select([], prompt='Bulk action…', id='matrix-bulk')
+            yield Button('Reload', id='matrix-reload')
             yield Button('Save', id='matrix-save', classes='panel-primary')
 
     def open(self):
@@ -107,15 +126,14 @@ class RouteMatrix(Vertical):
         for role, rows in routes.items():
             for name, route, now, key in rows:
                 row = f'{key[0]}/{key[1]}' if key[0] else route['id']
-                self.cells[role].setdefault((row, key[3]), []).append((name, route, now))
+                self.cells[role].setdefault((row, key[3]), []).append((name, route, now, key))
         self.carried = {cell for found in self.cells.values() for cell in found}
         self.message = ('This machine\'s setup cannot be read: ' + value['error'] + ' (tare setup --reset starts again)'
                         if 'error' in value else 'Space, Enter or a click on the selected cell ticks it. Save writes.')
         self.build()
 
     def state(self, route, key=None, role=None):
-        found = env.profile_state(role or self.role, route, self.value, key)
-        return 'off' if found and found[0] == 'off' else 'on'
+        return reads(self.value, role or self.role, route, key)
 
     def look(self, row, where):
         """(the line's or route's own state, whether a route of it differs, whether one is usable now), or None when
@@ -124,7 +142,7 @@ class RouteMatrix(Vertical):
         if not routes:
             return None
         own = self.state({}, (*row.split('/'), None, where)) if '/' in row else self.state(routes[0][1])
-        return own, any(self.state(r) != own for _, r, _ in routes), any(now == 'usable' for *_, now in routes)
+        return own, any(self.state(r) != own for _, r, _, _ in routes), any(now == 'usable' for _, _, now, _ in routes)
 
     def glyph(self, row, where):
         seen = self.look(row, where)
@@ -157,20 +175,20 @@ class RouteMatrix(Vertical):
             table.add_column(where, key=where, width=max(len(where), 5))
         for vendor, rows in groups:
             rows = [r for r in rows if query in r.lower() or query in vendor.lower()]
-            if rows:
-                table.add_row(vendor.upper(), *[''] * len(sources), key='#' + vendor)
+            if rows:  # names come from routes and files: plain text, never markup
+                table.add_row(Text(vendor.upper()), *[''] * len(sources), key='#' + vendor)
                 for row in rows:
-                    table.add_row(' ' + row, *[''] * len(sources), key=row)  # paint() draws the cells
+                    table.add_row(Text(' ' + row), *[''] * len(sources), key=row)  # paint() draws the cells
         families = sorted({row.split('/')[0] for row, _ in self.cells[self.role] if '/' in row})
         others = [r for r in env.PROFILE_ROLES if r != self.role]
-        self.query_one('#matrix-bulk', Select).set_options(
+        self.query_one('#matrix-bulk', Select).set_options([(Text(label), action) for label, action in (
             [(f'{VENDORS.get(f, f)}: every model {want}', f'scope:{f}/*@*={want}')
              for f in families for want in ('off', 'on')]
             + [(f'{where}: every model {want}', f'scope:*@{where}={want}')
                for where in sources for want in ('off', 'on')]
             + [('Subscriptions only: every pay-per-token source off', 'subscriptions')]
             + [(f'Copy from {ROLES[r]}', 'copy:' + r) for r in others]
-            + [(f"tare's defaults for {ROLES[self.role]}", 'reset')])
+            + [(f"tare's defaults for {ROLES[self.role]}", 'reset')])])
         self.paint()
 
     def paint(self):
@@ -189,8 +207,8 @@ class RouteMatrix(Vertical):
         label.display = bool(lines)
         extra = self.query_one(OptionList)
         extra.clear_options()
-        extra.add_options([f'{side:<3}  {text}' if isinstance(text, str) and env.rule_of(text) else
-                           f'{side:<3}  {text!r} (cannot be read; ignored)' for side, text in self.extra])
+        extra.add_options([Text(f'{side:<3}  {text}' if isinstance(text, str) and env.rule_of(text) else
+                                f'{side:<3}  {text!r} (cannot be read; ignored)') for side, text in self.extra])
         extra.display = bool(self.extra)
         self.warnings = self.safety()
         self.show()
@@ -222,12 +240,10 @@ class RouteMatrix(Vertical):
 
     def safety(self):
         """What the edited profile leaves: a role with no eligible route, an implementer with no independent auditor."""
-        saved = {'routing_profile': self.saved}
-        edited = [r for r in env.PROFILE_ROLES
-                  if any(entries(self.value, s, r) != entries(saved, s, r) for s in ('off', 'on'))]
-        lines = [f'{ROLES[r]}: no eligible route left; {NO_ROUTE[r]}.' for r in dict.fromkeys([self.role, *edited])
+        shown = [self.role, *self.edited()]  # whatever role is selected, an unsaved edit keeps its warning
+        lines = [f'{ROLES[r]}: no eligible route left; {NO_ROUTE[r]}.' for r in dict.fromkeys(shown)
                  if not self.eligible(r)]
-        if self.role in ('implementer', 'auditor'):
+        if {'implementer', 'auditor'} & set(shown):
             auditors = [self.identity(r, 'auditor') for r, _ in self.eligible('auditor')]
             for route, key in self.eligible('implementer'):
                 me = self.identity(route, 'implementer')  # an identity tare cannot read is no alarm either way
@@ -237,6 +253,12 @@ class RouteMatrix(Vertical):
                                  'auditor is off or unusable; its changes are not audited.')
                     break
         return lines
+
+    def edited(self, value=None, base=None):
+        """The roles whose entries in `value` (the edited profile) differ from `base` (the profile as loaded)."""
+        value = self.value if value is None else value
+        base = {'routing_profile': self.saved} if base is None else base
+        return [r for r in env.PROFILE_ROLES if any(entries(value, s, r) != entries(base, s, r) for s in ('off', 'on'))]
 
     def dirty(self):
         return self.value is not None and self.value.get('routing_profile') != self.saved
@@ -269,8 +291,27 @@ class RouteMatrix(Vertical):
             return f'{name}: ' + ('not offered for this role (tare\'s routes for it do not list it).'
                                   if (row, where) in self.carried else f'{where} does not carry it here.')
         return f'{name} {self.glyph(row, where)}: ' + '; '.join(
-            f'{n} {self.state(r)}, {now}' for n, r, now in self.cells[self.role][row, where]) + (
+            f'{n} {self.state(r)}, {now}' for n, r, now, _ in self.cells[self.role][row, where]) + (
             '' if seen[2] else '. A rule above the profile decides it: a tick cannot change it.')
+
+    def targets(self, rule):
+        """The role's cells `rule` covers (a line on a source, a vendor's lines, a source, a route id), for make()."""
+        found = []
+        for (row, where), routes in self.cells[self.role].items():
+            name = f'{row}@{where}' if '/' in row else row
+            if isinstance(rule, str):
+                hit = row == rule
+            elif rule[0]:  # a vendor or a line: routes with a line only
+                hit = '/' in row and rule[3] in ('*', where) and all(
+                    w in (None, h) for w, h in zip(rule[:3], env.rule_of(name)))
+            else:  # *@SOURCE or *@*
+                hit = rule[3] in ('*', where)
+            if hit:
+                found.append((name, [(r, k) for _, r, _, k in routes], any(now == 'usable' for _, _, now, _ in routes)))
+        return found
+
+    def make(self, value, pattern, want):
+        return make(value, self.role, pattern, want, self.targets(env.rule_of(pattern)), self.sources)
 
     def toggle(self, row, where):
         seen = self.look(row, where)
@@ -278,17 +319,17 @@ class RouteMatrix(Vertical):
             return self.show(self.describe(row, where))
         pattern = f'{row}@{where}' if '/' in row else row
         want = 'off' if seen[0] == 'on' else 'on'
-        self.edit(lambda v: scope(v, self.role, pattern, want, self.sources), f'{pattern}: {want}.', pattern)
+        self.edit(lambda v: self.make(v, pattern, want), f'{pattern}: {want}.', pattern)
 
     def bulk(self, action):
         role = self.role
         if action.startswith('scope:'):
             pattern, _, want = action.removeprefix('scope:').rpartition('=')
-            self.edit(lambda v: scope(v, role, pattern, want, self.sources), f'{pattern}: {want}.', pattern)
+            self.edit(lambda v: self.make(v, pattern, want), f'{pattern}: {want}.', pattern)
         elif action == 'subscriptions':
             def off(value):
                 for where in PAY_PER_TOKEN:
-                    value = scope(value, role, f'*@{where}', 'off', self.sources)
+                    value = self.make(value, f'*@{where}', 'off')
                 return value
             self.edit(off, 'Every pay-per-token source is off.')
         elif action.startswith('copy:'):
@@ -341,28 +382,45 @@ class RouteMatrix(Vertical):
 
     async def on_button_pressed(self, event):
         event.stop()  # the order tab's handler resets its routes for any other button
-        if event.button.id != 'matrix-save' or self.value is None:
+        if self.value is None:
             return
-        if not self.dirty():
+        if event.button.id == 'matrix-reload':
+            value = await asyncio.to_thread(env.read)
+            if self.is_mounted:
+                self.value, self.saved, self.warned = value, copy.deepcopy(value.get('routing_profile')), False
+                event.button.display = False
+                self.paint()
+                self.show('Read the saved profile again; the edits made here are gone.')
+            return
+        if event.button.id != 'matrix-save':
+            return
+        roles = self.edited()
+        if not roles:
             return self.show('Nothing to save.')
-        profile = copy.deepcopy(self.value.get('routing_profile'))
+        mine, base = copy.deepcopy(self.value), {'routing_profile': copy.deepcopy(self.saved)}
 
-        def write():  # over the file as it is now: only the profile is this tab's
+        def write():
+            """Only the roles edited here, over the file as it is now; none when one of them changed there meanwhile."""
             value = env.read()
             if 'error' in value:
                 raise ValueError(value['error'] + ' (tare setup --reset starts again)')
-            if profile:
-                value['routing_profile'] = profile
-            else:
-                value.pop('routing_profile', None)
-            return env.save(value)
+            changed = [r for r in roles if r in self.edited(value, base)]
+            if changed:
+                return None, changed
+            for role in roles:
+                value = env.edit_auto(value, role, lambda side, _, role=role: list(entries(mine, side, role)))
+            return env.save(value), []
         try:
-            value = await asyncio.to_thread(write)
+            value, changed = await asyncio.to_thread(write)
+            message = ('Not saved: the entries of ' + ', '.join(ROLES[r] for r in changed) + ' changed outside this '
+                       'screen since it opened. Reload reads them again and drops the edits made here.' if changed else
+                       'Saved. New starts use it; tare serve and tare setup read the same file.')
         except (ValueError, OSError) as exc:
-            value, message = None, f'Not saved: {exc}'
-        if self.is_mounted and value is None:
-            self.show(message)
-        elif self.is_mounted:
+            value, changed, message = None, [], f'Not saved: {exc}'
+        if not self.is_mounted:
+            return
+        self.query_one('#matrix-reload', Button).display = bool(changed)
+        if value is not None:
             self.value, self.saved, self.warned = value, copy.deepcopy(value.get('routing_profile')), False
             self.paint()
-            self.show('Saved. New starts use it; tare serve and tare setup read the same file.')
+        self.show(message)
