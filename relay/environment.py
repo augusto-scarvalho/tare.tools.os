@@ -363,24 +363,25 @@ def auto_routes(role):
     api_routes, credentials, found = research_api_routes() if role == 'researcher' else set(), {}, []
     with for_role('auditor' if owner else role):  # pick_auditors checks as auditor; every other path as its role
         for name, ways in paths.items():
-            known, reasons = None, []
+            known, reasons, row, own = None, [], table.get(name), None
             for way in ways:
                 if way == 'table':
-                    deployment, _, why = admission(table[name], role, None, credentials)
+                    deployment, _, why = admission(row, role, None, credentials)
+                    own = deployment
                 else:
                     deployment, why = available(name, probe=False)
                     why = why and why.diagnostic['code']
                     if way == 'research' and not why and not admits(name, deployment, api_routes):
                         why = 'ROLE_NOT_CONFIGURED'
                 known, reasons = known or deployment, [*reasons, why]
-            if known is None:
-                row = table.get(name)
+            if row is not None and not row.get('native_catalog'):  # an inline table row is the row itself, as
+                # _ranked realises it, never a catalogue route that shares its name
+                known = own or (deepcopy(row) if row.get('native_profile') else None)
+            elif known is None:
                 try:
                     known = select(name)
-                except (ValueError, OSError, KeyError, TypeError):  # not set up here: a shipped CLI template names
-                    # its line; an inline table row of a native route is its own route, as _ranked realises it
-                    known = templates.get(name) or (deepcopy(row) if row and not row.get('native_catalog')
-                                                    and row.get('native_profile') else None)
+                except (ValueError, OSError, KeyError, TypeError):  # not set up here: a CLI template names its line
+                    known = templates.get(name)
             found.append((name, known, 'usable' if None in reasons else reasons[0]))
     return found
 

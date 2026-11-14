@@ -145,7 +145,7 @@ class RouteMatrix(Vertical):
             self.value, self.saved = value, copy.deepcopy(value.get('routing_profile'))
             self.message = ('This machine\'s setup cannot be read: ' + value['error'] + ' (tare setup --reset starts '
                             'again)' if 'error' in value else 'Space, Enter or a click on the selected cell ticks it.')
-        self.routes, self.labels = routes, labels
+        self.routes, self.labels, self.identities = routes, labels, {}  # a route may run another model under its id
         self.sources = {route['id']: key[3] for rows in routes.values() for _, route, _, key in rows if not key[0]}
         self.cells = {role: {} for role in routes}
         for role, rows in routes.items():
