@@ -62,10 +62,9 @@ def actor(state):
 
 
 def actor_label(value):
-    from .model_choices import LABELS
+    from .model_choices import model_label
     model = value['model']
-    key = model.rsplit('-', 1)[0] if model.endswith(('-low', '-medium', '-high')) else model
-    return ' · '.join((ROLES.get(value['role'], value['role']), LABELS.get(key, model), value['reasoning']))
+    return ' · '.join((ROLES.get(value['role'], value['role']), model_label(model) or model, value['reasoning']))
 
 
 @contextmanager

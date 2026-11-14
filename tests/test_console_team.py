@@ -50,7 +50,7 @@ def test_live_row_names_the_real_child_and_restores_its_identity_without_full_ou
                 app.assistant_activity(event)
             await pilot.pause()
             row = app.query_one(ToolActivity)
-            assert 'Planner' in row.title and 'gpt-6.1-sol' in row.title and 'high' in row.title
+            assert 'Planner' in row.title and 'GPT-6.1 Sol' in row.title and 'high' in row.title
             assert 'Result ready' in row.title and 'Done' not in row.title
             assert not row.query_one('.tool-full-output', Button).display
             assert 'Requested reasoning: high' in str(row.query_one('.tool-receipt', Static).render())

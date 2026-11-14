@@ -32,6 +32,12 @@ unsupported effort to Default before Apply. Local and Bedrock profiles retain
 their existing qualified parameters; their reasoning control is fixed to the
 profile default in this delivery.
 
+A first-party model's name and levels come from its line in `relay/model_lines.json` (Claude Fable, GPT Terra,
+Gemini Argon, ...), found from the model id whatever the connection: `claude-fable-5-3` is **Claude Fable 5.3**,
+`gpt-6.2-terra` **GPT-6.2 Terra**, AGY's `claude-opus-5-5-high` **Claude Opus 5.5**, with no entry per version.
+Where the vendor lists levels per model (Codex's catalogue, AGY's ids), its list wins over the line's. An id of no
+known line keeps its raw name (`GPT-` prefixed under OpenAI connections) and only its profile's levels.
+
 Codex Direct and Codex CLI are connections under the same model. CLI catalogues
 may expose agent modes as well as reasoning: `ultra` and Claude `ultracode` are
 excluded. Tare keeps the agent loop, tools and flows. No automatic connection,

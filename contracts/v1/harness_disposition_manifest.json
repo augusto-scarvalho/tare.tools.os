@@ -2591,8 +2591,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns vendor model discovery and selection; Runtime retains session execution.",
-      "size_bytes": 6031,
-      "sha256": "d127baf3e0afca83189f2d34e88c6d9f4a45c488be0dddcd7238f67bac809778"
+      "size_bytes": 7328,
+      "sha256": "6ec2a27816d721bc44a8868a734e9f98740b69f8f7b7e8dfcf45f11cb7e59a9c"
     },
     {
       "name": "watcher.py",
@@ -3141,8 +3141,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns console presentation and project/session selection; observations never authorize execution.",
-      "size_bytes": 19585,
-      "sha256": "635b94c0ea28e5780ef095fd882086c8cbc3e477039458ecd28971c619395dda"
+      "size_bytes": 19593,
+      "sha256": "a2dc36a4a95c067620bc278d8b137a4bd23ad9c795d83704b053413b7c43b014"
     },
     {
       "name": "cli_discovery.py",
@@ -3361,8 +3361,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator model selection; Runtime retains session execution.",
-      "size_bytes": 31505,
-      "sha256": "45f9cdd1b5d627d7ce9e339fccd069630b783304e05a8020b9a24df720c7e2a1"
+      "size_bytes": 31284,
+      "sha256": "5387ded7c06a42fcde21deb8aa41aa2b11293d4c5eb357f9a2d9facf7d786663"
     },
     {
       "name": "model_picker.py",
@@ -4191,8 +4191,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 12118,
-      "sha256": "548f3b636e2a6f10b20dff1bee88db4fabf111a532574b54fdff1080365cf5d1"
+      "size_bytes": 12035,
+      "sha256": "7958ab2e2e4bab1a1ee44c0ac6d570b31b1345b35ab43634ed1df9cbf1b64580"
     },
     {
       "name": "planner_policy.py",
