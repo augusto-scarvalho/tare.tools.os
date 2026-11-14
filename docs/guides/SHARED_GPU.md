@@ -28,8 +28,8 @@ On the node (from another machine prefix `ssh <gpu-node> "wsl -e bash -lc '...'"
 ## What tare does when the GPU is taken
 
 - **Nothing waits for a busy GPU.** A local route whose GPU an image job holds is skipped and the next route of tare's
-  tiers takes the work at once: a conversation, its explorers and the implementers it delegates (a Work's units;
-  a local session's unit then leaves the local bill, as the session itself would). A call refused mid-session
+  tiers takes the work at once: a conversation, its explorers and the implementers it delegates (a Work's units).
+  A call refused mid-session
   (`HTTP_503` with `busy_reason` `gpu_busy`, `gpu_lease_timeout` or `gpu_lease_cancelled` in its receipt) costs no
   pause before the next route.
 - **You decide the fallback.** Explorers fall back to the overflow explorer of `/delegation overflow` (the judge
@@ -50,8 +50,11 @@ routes, but only while it is in surplus: what is left, as a fraction, is greater
 to run (23% left with 14% of the week to go; once use catches up with the pace the priority ends, so the allowance is
 spread, not burned). Every window that limits the route's model must be in surplus. In automatic role selection the
 term sits after the `--prefer_*` preference and the same-family and other-vendor rules and before the cost tier; in
-tare auto it orders the routes of the tier already chosen and never moves work to another tier. Pins, `--*_only`, a
-route the routing profile switches off and your own auditor list are untouched. The readings are those of
+tare auto it orders the routes of the tier already chosen and never moves work to another tier. An implementer a
+conversation delegates (a unit) tries, on any account, the routes of the kind `--prefer_*` names, then those in
+surplus, then tare's implementer ladder, cheapest tier first: with nothing in surplus and the GPU free, a hosted
+conversation's unit starts on the local model. Pins, `--*_only`, a route the routing profile switches off and your
+own auditor list are untouched. The readings are those of
 `tare quota`; the Max plan's monthly API credit has no API, so state it: `tare quota --set anthropic-api 100 --renews 14`
 (the balance now, the day of the month it renews, and a third number if each cycle brings a different grant).
 The TUI redoes the quota reading in the background at each demand (never waiting for it, at most once a minute), so

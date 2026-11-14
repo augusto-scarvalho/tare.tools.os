@@ -456,26 +456,19 @@ def verdict(before, after, changed, protected, retry):
     return 'NOT_VERIFIED', 'the checks fail after the change'
 
 
-def bill(deployment):
-    """Who pays for a route: its class (local, quota, usd) and, for a hosted one, the vendor named first in its id
-    (codex, claude, bedrock, openrouter), since each is another account or bill."""
-    from .challenger_variants import accounting
-    kind = accounting(deployment)
-    return (kind,) if kind == 'local' else (kind, str(deployment.get('id', '')).split('-')[0])
-
-
 def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None):
-    """The implementer routes to try, cheapest first: tare's tiers, on the session's own bill (D4): a local session
-    takes local routes, a hosted one the routes of its class and vendor, so a Codex quota session never climbs into
-    Bedrock dollars or another CLI's quota (the TUI walkthrough of 2026-10-07 did, unasked). The coordinator may fix
-    one of them and its effort; the child_routes_any experiment opens every hosted route. Nothing waits for a busy GPU
-    (owner, 2026-10-08): a local route whose GPU an image job holds is skipped, the coordinator's chosen one included,
-    and the unit takes the next routes of the policy (the owner's <storage>/serve/routing.json, else tare's), leaving a
-    local session's bill as the session itself would. A route the routing profile switches off for the implementer is
-    never run, the coordinator's chosen one and the fallback to the session's own model included (only a pin is the
-    user's own choice); `refused` collects why."""
-    from .delegation import experiments
-    from .turn_engine import available, gpu_taken, policy, with_effort
+    """The implementer routes to try, whichever account the conversation runs on (owner, 2026-11-14): the routes of
+    the kind --prefer_* names first, then those whose allowance lapses in surplus (larger lead first), then tare's
+    implementer ladder, cheapest tier first (the owner's <storage>/serve/routing.json, else tare's). With nothing in
+    surplus and the GPU free, a hosted conversation's unit starts on the local model. What may run is said by --*_only
+    and --prefer_local (available() leaves the other routes out), the routing profile and pins, never by the
+    coordinator's account. An implementer pin is the one route. The coordinator may fix one route and its effort,
+    tried first and alone. Nothing waits for a busy GPU (owner, 2026-10-08): a local route whose GPU an image job holds
+    is skipped, the coordinator's chosen one included, and the unit takes the next routes. A route the routing profile
+    switches off for the implementer is never run, the coordinator's chosen one and the fallback to the session's own
+    model included (only a pin is the user's own choice); `refused` collects why."""
+    from .native_catalog import select
+    from .turn_engine import available, gpu_taken, policy, surplus_first, with_effort
     from .execution_scope import current, execution_tiers, is_pro, kind, refusal
     temporary=current()
     if temporary.pin('implementer'):
@@ -483,22 +476,22 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
         deployment=pin_selection('implementer',chosen,effort)
         yield deployment['native_model_choice']['connection'],deployment
         return  # Never reconstruct from a name under the parent's coordinator role.
-    tiers = execution_tiers(policy()['implementer'])
-    allowed = [name for tier in tiers for name in tier]
+    allowed = surplus_first([name for tier in execution_tiers(policy()['implementer']) for name in tier])
+    if temporary.prefer:
+        def other(name):
+            try:
+                return kind(select(name)) != temporary.prefer
+            except (ValueError, OSError, KeyError, TypeError):
+                return True
+        allowed.sort(key=other)  # stable: the preferred kind first, each part keeping its lapsing-then-ladder order
     parent_name = parent.get('id')
     parent_allowed = (allow_parent and parent.get('native_profile') and isinstance(parent_name, str)
         and not is_pro(parent) and temporary.allows(parent, 'implementer')[0])
     if parent_allowed and parent_name not in allowed:
-        allowed.append(parent_name)  # The selected connection, still a separate role on the same bill.
+        allowed.append(parent_name)  # The conversation's own connection, in a separate role, after the ladder.
     if chosen and chosen not in allowed:
         raise ValueError("Choose one of tare's implementer routes: " + ', '.join(allowed))
-    own = bill(parent) if parent.get('native_profile') else None
-    any_hosted = own and own[0] != 'local' and experiments(own[0]).get('child_routes_any')
     gpu_busy = False
-    # An explicit CLI preference admits configured subscription workers even
-    # with a local coordinator. It never opens an unrelated inference API bill.
-    fits = lambda d: temporary.changes('implementer') or (temporary.prefer == 'subscription' and kind(d) == 'subscription') or own is None or bill(d) == own or (any_hosted and bill(d)[0] != 'local') or (
-        gpu_busy and own[0] == 'local')
     def names():
         yield from [chosen] if chosen else allowed
         if chosen and gpu_busy:
@@ -513,11 +506,6 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
             if name == chosen and refused is not None:
                 refused.append('SWITCHED_OFF_FOR_ROLE: ' + off)
             continue  # as an unavailable route: the chosen one is not replaced unless its GPU was busy
-        if not fits(deployment):
-            if name == chosen:
-                raise ValueError(f'{chosen} is not on this session\'s bill ({" ".join(own)}): choose a route of the '
-                                 'same class and vendor, or turn the child_routes_any experiment on.')
-            continue
         found.append(name)
         yield name, with_effort(deployment, effort) if effort else deployment
     if parent_allowed and not found and not chosen:

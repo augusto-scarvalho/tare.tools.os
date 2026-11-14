@@ -86,9 +86,6 @@ EXPERIMENTS = {
     # Phase 3 (D8): units the session hands at once run in parallel, 2 at a time, without it asking each time.
     # Off: the session asks for it per call. Wall time against conflicts, rework and quota is the bench's to say.
     'implement_parallel': False,
-    # A child implementer runs on the session's own bill (class and vendor). On: any hosted route of the ladder, as
-    # before 2026-10-07, when a Codex quota session climbed into Bedrock dollars and the Claude CLI's quota.
-    'child_routes_any': False,
     # Role guidance, phase 2: an explorer child reads the repository's root AGENTS.md (on: as before). Off when ~10
     # measured tasks say the answers hold without it (an explorer answers a bounded question; the file is the
     # repository's rules for changing it).

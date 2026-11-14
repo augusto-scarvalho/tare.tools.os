@@ -12,6 +12,10 @@ from test_delegation import enabled
 
 @pytest.mark.parametrize('size', [(80, 24), (130, 44)])
 def test_tui_saves_exploration_and_returns_without_model_call(tmp_path, enabled, monkeypatch, size):
+    # A file saved before 2026-11-14 still holds the child_routes_any switch, which is now what tare always does.
+    delegation.experiments_path().parent.mkdir(parents=True, exist_ok=True)
+    delegation.experiments_path().write_text('{"child_routes_any": true}', encoding='utf-8')
+
     async def scenario():
         app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
         async with app.run_test(size=size) as pilot:
@@ -21,6 +25,7 @@ def test_tui_saves_exploration_and_returns_without_model_call(tmp_path, enabled,
             panel = app.screen
             assert isinstance(panel, DelegationPanel)
             assert panel.region.contains_region(panel.query_one('#delegation-save', Button).region)
+            assert not panel.query('#delegation-child_routes_any')
             panel.query_one('#delegation-enabled', Switch).value = True
             panel.query_one('#delegation-calls', Input).value = '3'
             panel.query_one('#delegation-profile', TextArea).load_text('"fixture"')
@@ -32,6 +37,7 @@ def test_tui_saves_exploration_and_returns_without_model_call(tmp_path, enabled,
             from relay.native_agent import read_json
             assert read_json(delegation.policy_path())['calls'] == 3
             assert delegation.experiments() == dict(delegation.EXPERIMENTS, decider='shadow', contradiction_flags=True)
+            assert 'child_routes_any' not in read_json(delegation.experiments_path())
             assert not app.backend.launches
             await pilot.press('escape')
             assert app.screen is not panel
@@ -100,7 +106,6 @@ def test_planner_picker_saves_separate_model_and_allowance_without_a_model_call(
             await pilot.pause()
             assert app.screen is panel and panel.planner_profile is not None, str(panel.query_one('#delegation-status', Static).render())
             panel.query_one('#delegation-planner_child', Switch).value = True
-            panel.query_one('#delegation-child_routes_any', Switch).value = True
             routes_before = turn_engine.policy()['planner']
             panel.query_one('#delegation-calls', Input).value = '0'
             await pilot.click('#delegation-save')
@@ -111,7 +116,7 @@ def test_planner_picker_saves_separate_model_and_allowance_without_a_model_call(
             await pilot.pause(.4)  # Let the button's click debounce end after validation feedback.
             await pilot.click('#delegation-save')
             await pilot.pause()
-            assert delegation.experiments()['planner_child'] and delegation.experiments()['child_routes_any'], str(panel.query_one('#delegation-status', Static).render())
+            assert delegation.experiments()['planner_child'], str(panel.query_one('#delegation-status', Static).render())
             assert turn_engine.policy()['planner'][0].startswith('planner-')
             assert 'Claude' in planner_label() and 'high' in planner_label()
             assert app.selection().profile == original and not app.backend.launches

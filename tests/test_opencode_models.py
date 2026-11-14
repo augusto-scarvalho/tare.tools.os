@@ -137,14 +137,13 @@ def test_the_subscription_is_a_plan_and_the_api_is_paid_per_token():
     from relay.challenger_variants import accounting
     from relay.inference_allowlist import identities
     from relay.turn_engine import usage_keys
-    from relay.work_units import bill
     sub, api = native_catalog.select('opencode-sub-glm-5-3-flash'), api_profile()
     assert execution_scope.kind(sub) == 'subscription' and execution_scope.kind(api) == 'api'
     assert execution_scope.Scope(only='subscription').allows(sub, 'implementer')[0]
     assert not execution_scope.Scope(only='subscription').allows(api, 'implementer')[0]
     assert not execution_scope.Scope(only='api').allows(sub, 'implementer')[0]
     assert execution_scope.Scope(only='api').allows(api, 'implementer')[0]
-    assert accounting(sub) == 'quota' and bill(sub) == ('quota', 'opencode') and accounting(api) == 'usd'
+    assert accounting(sub) == 'quota' and accounting(api) == 'usd'
     assert usage_keys(sub) == ('opencode-sub', 'opencode-sub:glm-5.3-flash') and usage_keys(api) == ()
     assert identities(sub['id'], sub)[0] == 'opencode-sub' and identities(api['id'], api)[0] == 'opencode-api'
     assert model_choices.describe(api['id'], api)['route']['label'] == 'OpenCode API'

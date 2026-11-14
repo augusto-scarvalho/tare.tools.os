@@ -15,7 +15,6 @@ def test_only_one_fresh_operator_transport_change_can_recover_failed_planning(pl
     old=deepcopy(candidate);old['id']='old-cli'
     state.update(conversation_flow=True)
     state['planning']['routes']['old-cli']=old
-    state['planning']['other_providers']=True
     task={'id':'same-demand','objective':'Deliver the same bounded change.',
           'criteria':['Preserve the original acceptance criteria.'],'intent':'deliver',
           'intent_input':'human-retry','stage':'INTAKE'}
