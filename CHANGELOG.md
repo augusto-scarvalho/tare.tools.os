@@ -4,6 +4,8 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The minute between quota readings started by TUI demands counts from the last attempt too, not only from the last saved reading: a reading that failed saved nothing, so each demand would have started another.
+- Tests of the lapsing allowances take the time at each test's start, not at import: in CI the suite had run for seven minutes before the TUI test, so the stub's reading was already older than the 60-second guard and a second refresh started.
 - Lapsing allowances: Claude's 5 h window, which its reading names `session`, now counts among the windows that must be in surplus (the week alone promoted a route with 10% of the session left), and the 1% lead is compared exactly (rounding let 0.6 of a point through). Both found by an independent review by a model of another vendor.
 - Lapsing allowances, three corrections before release: a quota reading over an hour old promotes nothing and is not marked (on 2026-11-14 the saved reading was two days old and still showed 23% of a week the day's work had used; the TUI rereads at each demand); `tare quota` marks a window or credit "in surplus", since a route is used first only when every window that limits its model is; and a lead under 1% is no surplus, so a window that has just renewed is not marked.
 - The TUI redoes the provider quota reading in the background each time a turn starts, so the "used first" surplus is judged on a fresh reading: never awaited (routing uses the last finished one), none while one runs or when the last is under 60 seconds old, and only where the Usage panel asks the providers (not in tests or non-interactive entries).

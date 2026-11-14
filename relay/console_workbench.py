@@ -528,11 +528,12 @@ class ConversationWorkbench:
         turn never waits: routing uses the last finished reading. None while one runs or under a minute after the last."""
         import time
         from . import provider_quota
-        state = self.__dict__.setdefault('demand_quota', {'reading': False})
-        if (state['reading'] or not self.asks_providers or os.environ.get('TARE_CLI_DISCOVERY') == '0'
-                or time.time() - (provider_quota.cached() or {}).get('observed_at', 0) < 60):
+        state = self.__dict__.setdefault('demand_quota', {'reading': False, 'at': 0})
+        last = max(state['at'], (provider_quota.cached() or {}).get('observed_at', 0))  # the last attempt or reading:
+        if (state['reading'] or not self.asks_providers or os.environ.get('TARE_CLI_DISCOVERY') == '0'  # a reading that
+                or time.time() - last < 60):                                           # fails saves nothing to count from
             return
-        state['reading'] = True
+        state.update(reading=True, at=time.time())
         self.read_provider_quota(state)
 
     @work(thread=True, group='provider-quota')
