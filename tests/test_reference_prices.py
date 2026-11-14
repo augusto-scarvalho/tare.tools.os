@@ -150,9 +150,10 @@ def test_a_mode_with_its_own_price_is_unknown(reading):
 
 
 def test_a_failed_empty_reshaped_or_partial_reading_keeps_the_last_good_one(reading):
-    def unreachable():
-        raise AssertionError('read twice in a day')
-    assert prices.refresh_reading(NOW + 3600, fetch=unreachable) == reading  # at most once a day
+    fetched = []
+    # Two hours after the last reading: past the hourly attempt limit, so only the daily one holds this back.
+    assert prices.refresh_reading(NOW + 7200, fetch=lambda: fetched.append(1) or models_dev()) == reading
+    assert fetched == []  # at most once a day
     later = NOW + 2*86400
 
     def failing():
@@ -221,19 +222,6 @@ def test_an_absent_or_null_tier_is_no_tier(keys):
     assert rates(route('claude-haiku-5-5'))['uncached_input_tokens'] == '0.1'
 
 
-def test_a_reading_with_under_half_of_a_providers_models_keeps_the_last_good_one(reading):
-    later = NOW + 2*86400
-    partial = models_dev()
-    bedrock = partial['amazon-bedrock']['models']
-    del bedrock['global.anthropic.claude-fable-5-2'], bedrock['zai.glm-5']  # 1 of Bedrock's 3 models left
-    assert prices.refresh_reading(later, fetch=lambda: partial) == reading
-    assert rates(route('zai.glm-5', 'https://bedrock-runtime.us-east-1.amazonaws.com', 'bedrock-converse'))
-    smaller = models_dev()
-    del smaller['amazon-bedrock']['models']['zai.glm-5']  # 2 of 3: one model that left stays gone (unknown)
-    fresh = prices.refresh_reading(later + 7200, fetch=lambda: smaller)
-    assert fresh['read_at'] == later + 7200 and 'amazon-bedrock/zai.glm-5' not in fresh['models']
-
-
 def test_a_failed_attempt_holds_the_next_for_an_hour_and_the_first_reading_never_waits(keys):
     calls = []
 
@@ -243,20 +231,6 @@ def test_a_failed_attempt_holds_the_next_for_an_hour_and_the_first_reading_never
     assert prices.refresh_reading(NOW, fetch=failing) is None and calls == ['failed']  # the first attempt: at once
     assert prices.refresh_reading(NOW + 600, fetch=failing) is None and calls == ['failed']  # a start 10 min later
     assert prices.refresh_reading(NOW + 3601, fetch=models_dev)['read_at'] == NOW + 3601
-
-
-def test_a_price_under_a_quarter_of_the_last_waits_for_a_later_reading(reading):
-    cheaper = models_dev()
-    fable_cost(cheaper).update(input=1, output=5)  # 8 / 40 in the last good reading
-    held = prices.refresh_reading(NOW + 2*86400, fetch=lambda: cheaper)
-    assert rates(route('claude-fable-5-2'))['uncached_input_tokens'] == '8'
-    assert held['models'][FABLE]['since'] == '2026-11-14' and held['models'][FABLE]['falling']['day'] == '2026-11-16'
-    confirmed = prices.refresh_reading(NOW + 3*86400, fetch=lambda: cheaper)
-    assert rates(route('claude-fable-5-2'))['output_tokens'] == '5' and confirmed['models'][FABLE]['since'] == '2026-11-17'
-    modest = models_dev()
-    fable_cost(modest).update(input=0.3, output=2)  # not under a quarter of 1 / 5: taken at once
-    prices.refresh_reading(NOW + 4*86400, fetch=lambda: modest)
-    assert rates(route('claude-fable-5-2'))['uncached_input_tokens'] == '0.3'
 
 
 def test_setup_no_use_api_with_refresh_reads_nothing(keys, monkeypatch):
@@ -367,6 +341,8 @@ def test_capped_api_session_reserves_against_the_reference_and_counts_the_balanc
     assert result['status'] == 'PROPOSED' and client.generations == 4
     # Each call: 70 uncached x $2 + 10 cached x $0.1 + 20 out x $10 per million tokens.
     assert Decimal(result['spend']['known_amount']) == Decimal('0.001364') and result['spend']['uncertain_calls'] == 0
+    assert result['spend']['reference_prices_read'] == ['2026-11-14']  # the returned spend report says so too
+    assert result['cost']['reference_priced_calls'] == 4
     usage = json.loads((custody/'usage.json').read_text(encoding='utf-8'))
     assert all(prices.is_reference(c['cost']['tariff']) and c['cost']['complete'] for c in usage['calls'])
     from compute_plane.native_journal import NativeJournal
@@ -404,6 +380,7 @@ def test_a_work_reserves_against_the_reference_and_its_outcome_says_so(keys, os_
         assert outcome['status'] == 'PROPOSED', outcome
         # Each of 5 calls: 500 uncached input x $8.80 + 20 output x $44 per million tokens (the US regional price).
         assert Decimal(outcome['spend']['known_amount']) == Decimal('0.0264') and outcome['spend']['uncertain_calls'] == 0
+        assert outcome['spend']['reference_sources'] == outcome['cost']['reference_sources']
         assert Decimal(outcome['cost']['known_by_currency']['USD']) == Decimal('0.0264')
         assert outcome['cost']['reference_priced_calls'] == 5
         assert outcome['cost']['reference_prices_read'] == ['2026-11-14']
@@ -412,3 +389,58 @@ def test_a_work_reserves_against_the_reference_and_its_outcome_says_so(keys, os_
     finally:
         if seen.get('worktree') and seen['worktree'].exists():
             _git('worktree', 'remove', '--force', str(seen['worktree']), cwd=repo)
+
+
+@pytest.mark.parametrize('rates_value,tiers', [('0', []), ('0.0005', []), ('8', {}), ('8', [{'above': 'x', 'rates': {}}])])
+def test_a_saved_reading_passes_the_same_check_as_a_fresh_one(keys, rates_value, tiers):
+    """A schema-valid file with zero, sub-floor or malformed entries (edited, damaged) prices nothing from them."""
+    saved = {'schema': prices.READING, 'source': prices.MODELS_DEV, 'read_at': NOW, 'models': {FABLE: {
+        'rates': {k: rates_value for k in ('uncached_input_tokens', 'cache_read_tokens', 'cache_write_tokens',
+                                           'output_tokens')}, 'tiers': tiers, 'since': '2026-11-14'}}}
+    prices.reading_path().parent.mkdir(parents=True, exist_ok=True)
+    prices.reading_path().write_text(json.dumps(saved), encoding='utf-8')
+    assert prices.reading()['models'] == {} and rates(route('claude-fable-5-2')) is None
+    with pytest.raises(ValueError, match='spend_limit_requires_matching_tariff_and_usage_contract'):
+        settings({**route('claude-fable-5-2'), 'native_spend_policy': POLICY})
+    assert prices.reference(route('claude-fable-5-2')['native_profile'], saved) is None  # however it is handed over
+
+
+@pytest.mark.parametrize('record', ['{"at": 1' + '0'*400 + '}', '{"at": "1794627000"}', '{"at": -5}',
+                                    '{"at": 1794638000}', '[1]', 'not json'])
+def test_an_unusable_attempt_record_is_no_record(keys, record):
+    """An overflowing, textual, negative or future time (a clock moved back), or a damaged file, never blocks."""
+    path = prices.reading_path().with_name('reference-prices-attempt.json')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(record, encoding='utf-8')
+    assert prices.refresh_reading(NOW, fetch=models_dev)['read_at'] == NOW
+
+
+def test_a_reading_stamped_after_now_does_not_hold_the_next_back(reading):
+    later_clock = NOW - 3*3600  # the clock moved back three hours: the reading looks newer than now
+    assert prices.refresh_reading(later_clock, fetch=models_dev)['read_at'] == later_clock
+    for damaged in (1e12, -1, 10**400):  # after the year 3000, negative, overflowing: a damaged file, read again
+        saved = {**json.loads(prices.reading_path().read_text(encoding='utf-8')), 'read_at': NOW}
+        prices.reading_path().write_text(json.dumps({**saved, 'read_at': damaged}), encoding='utf-8')
+        assert prices.reading() is None
+        prices.reading_path().write_text(json.dumps(saved), encoding='utf-8')
+
+
+def test_a_reading_that_parses_replaces_the_last_whole(reading):
+    smaller = models_dev()
+    del smaller['amazon-bedrock']['models']['zai.glm-5']
+    glm = route('zai.glm-5', 'https://bedrock-runtime.us-east-1.amazonaws.com', 'bedrock-converse')
+    prices.refresh_reading(NOW + 86400, fetch=lambda: smaller)
+    assert rates(glm) is None  # missing from the new reading: unknown, refused under a cap
+    prices.refresh_reading(NOW + 2*86400, fetch=models_dev)
+    assert rates(glm)['output_tokens'] == '3.2'  # back once a reading lists it
+
+
+def test_the_spend_report_says_its_amounts_are_reference_priced(reading):
+    from compute_plane.native_usage import UsageContract, UsageTariff
+    from relay.native_spend import SpendModel, SpendPolicy
+    from tare_tools_agent_runtime import ConversationLog
+    from test_native_spend import Adapter
+    tariff = UsageTariff(**prices.reference(route('claude-fable-5-2')['native_profile']))
+    report = SpendModel(Adapter(), policy=SpendPolicy('1', 'USD'), tariff=tariff, journal=ConversationLog(),
+                        contract=UsageContract('anthropic-exclusive', 'fixture')).report()
+    assert report['reference_sources'] == [tariff.source] and report['reference_prices_read'] == ['2026-11-14']

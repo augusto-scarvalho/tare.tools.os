@@ -119,7 +119,11 @@ class SpendModel:
         external = self.external_committed()
         if external is not None:
             committed += external
+        from .provider_prices import is_reference
         return {'schema': 'tare.tools/native-spend-report/1', 'currency': self.policy.currency,
+            # Amounts valued at a models.dev reference price say so, wherever this report is kept or returned.
+            **({'reference_sources': [self.tariff.source], 'reference_prices_read': [self.tariff.effective_at]}
+               if is_reference(asdict(self.tariff)) else {}),
             'auxiliary_committed_amount': str(external) if external is not None else None,
             'max_amount': self.policy.max_amount if capped else None, 'known_amount': str(known),
             'committed_amount': str(committed) if external is not None and not unbounded_unknown else None,

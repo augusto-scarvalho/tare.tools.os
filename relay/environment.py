@@ -675,7 +675,7 @@ def main(argv=None):
             try:  # the models.dev reference prices, if not read today; no model call, no key sent
                 from .provider_prices import refresh_reading
                 refresh_reading(setup=value)  # with this command's --use / --no-use, not the saved choices
-            except Exception:  # optional: the last good reading stays, or none (no reference price, as before)
+            except OSError:  # storage it cannot write: the last good reading stays (network failures stay inside)
                 pass
         if args.credential:
             value = store_credential(value, args.credential, sys.stdin)

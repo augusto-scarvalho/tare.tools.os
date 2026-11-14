@@ -515,7 +515,7 @@ class ConversationWorkbench:
         try:  # the models.dev reference prices, at most once a day; no model call, no key sent
             from .provider_prices import refresh_reading
             refresh_reading()
-        except Exception:  # optional: the last good reading stays, or none (no reference price, as before)
+        except OSError:  # storage it cannot write: the last good reading stays (network failures stay inside)
             pass
         try:  # what each provider has left, so a spent plan is not chosen; no model call
             from . import provider_quota
