@@ -285,13 +285,14 @@ def refusal(role,deployment,*names):
     when the profile switches the route off for the role and the user did not choose it, else None. Automatic paths
     ask it to skip a route and take the next one; admit() asks it to refuse a start. The user's choice is a pin of this
     route for the role whose entries decide, --coordinator for a conversation, or user_choice(); anything else is
-    automatic, including a path nobody marked. A conversation starts on tare auto's implementer tiers, so it reads the
-    implementer entries and an implementer pin. `names`: what the caller calls the route, for the message."""
+    automatic, including a path nobody marked. A conversation (role coordinator) reads the coordinator entries, never
+    the implementer's; an implementer pin still covers it, since under that pin tare auto's tiers are that one route.
+    `names`: what the caller calls the route, for the message."""
     from .environment import PROFILE_ROLES,switched_off
-    profile_role='implementer' if role=='coordinator' else role
-    if not deployment or profile_role not in PROFILE_ROLES:return None
-    off=switched_off(profile_role,deployment,*names)
-    if not off or (role,deployment.get('id')) in CHOSEN.get() or pins_route(current().pin(profile_role),deployment):
+    if not deployment or role not in PROFILE_ROLES:return None
+    off=switched_off(role,deployment,*names)
+    if not off or (role,deployment.get('id')) in CHOSEN.get() or \
+            pins_route(current().pin('implementer' if role=='coordinator' else role),deployment):
         return None
     raw=current().coordinator
     if role=='coordinator' and raw:

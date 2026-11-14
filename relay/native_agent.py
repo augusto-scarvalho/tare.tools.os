@@ -1647,8 +1647,7 @@ def main(argv=None):
             from .turn_engine import resolve_auto
             named = (args.native_deployment or args.deployment not in (None, 'auto')) and not explicit_coordinator \
                 and 'native_auto_routes' not in deployment
-            deployment = resolve_host_mode(resolve_auto(deployment, request=prompt or '',
-                                                        role='implementer' if role == 'coordinator' else role))
+            deployment = resolve_host_mode(resolve_auto(deployment, request=prompt or '', role=role))
             named = deployment if named else None
         if continuation_request:
             args.stream = deployment.get('native_streaming', False)

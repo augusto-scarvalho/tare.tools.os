@@ -19,7 +19,7 @@ def stored():
     return json.loads(path.read_text(encoding='utf-8')).get('routing_profile') if path.exists() else None
 
 
-def journey(tmp_path, steps, size=(130, 44)):
+def journey(tmp_path, steps, size=(130, 44), role='auditor'):
     async def scenario():
         app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
         async with app.run_test(size=size) as pilot:
@@ -32,8 +32,9 @@ def journey(tmp_path, steps, size=(130, 44)):
             await pilot.pause()
             await app.workers.wait_for_complete()
             await pilot.pause()
-            panel.query_one('#matrix-role', Select).value = 'auditor'
-            await pilot.pause()
+            if role:  # else the role the tab opens on
+                panel.query_one('#matrix-role', Select).value = role
+                await pilot.pause()
 
             async def cell(row, column, key='space'):
                 table = panel.query_one('#matrix-table')
@@ -87,6 +88,33 @@ def rendered(panel, row):
     """The table's line for a row as drawn on screen, plain text."""
     table = panel.query_one('#matrix-table')
     return table.render_line(1 + table.get_row_index(row) - round(table.scroll_y)).text
+
+
+def test_coordinator_comes_first_its_ticks_store_its_own_entries_and_none_ticked_says_so(pool, tmp_path):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+    assert environment.main(['--auto', 'implementer:gpt/*@codex=off']) == 0
+
+    async def steps(app, pilot, panel, cell, status):
+        select = panel.query_one('#matrix-role', Select)
+        assert select.value == 'coordinator'  # the tab opens on it: the model a user meets first
+        assert str(select.query_one(OptionList).get_option_at_index(0).prompt) == (
+            'Coordinator · the model you talk to, when tare auto starts the conversation')
+        assert await cell('claude/opus', 'claude-code') == '[ ]'
+        await saved(pilot, panel)
+        assert stored() == {'off': {'coordinator': ['claude/opus@claude-code'], 'implementer': ['gpt/*@codex']}}
+        assert 'No route is ticked on' not in status()
+        panel.query_one(RouteMatrix).bulk('scope:*@*=off')
+        await pilot.pause()
+        assert ('No route is ticked on for Coordinator: tare auto cannot start a conversation; it stops before any '
+                'model call with "tare_auto_no_route_available: No route can start."') in status()
+        await saved(pilot, panel)
+        assert stored() == {'off': {'coordinator': ['*@*'], 'implementer': ['gpt/*@codex']}}
+        # Copy from Implementer: the implementer's entries for the conversation too, in one step.
+        panel.query_one(RouteMatrix).bulk('copy:implementer')
+        await pilot.pause()
+        await saved(pilot, panel)
+        assert stored() == {'off': {'coordinator': ['gpt/*@codex'], 'implementer': ['gpt/*@codex']}}
+    journey(tmp_path, steps, role=None)
 
 
 def test_a_vendor_off_then_one_line_on_stores_one_broad_off_and_one_on(pool, tmp_path):
@@ -500,6 +528,11 @@ def test_the_matrix_rows_agree_with_the_paths_that_route(pool, monkeypatch):
         for name in set(flat(rules['implementer'])) - table - set(rules['researcher']):
             taken = turn_engine.choose([[name]], probe=False, role=role)[2] is not None
             assert (rows[name] == 'usable') == taken, (role, name)
+    # coordinator: tare auto's tiers and nothing else, each as a conversation's tare auto takes it.
+    rows = {name: now for name, _, now in environment.auto_routes('coordinator')}
+    assert list(rows) == list(dict.fromkeys(flat(rules['implementer'])))
+    for name, now in rows.items():
+        assert (now == 'usable') == (turn_engine.choose([[name]], probe=False, role='coordinator')[2] is not None), name
     rows, snapshot = {n: now for n, _, now in environment.auto_routes('researcher')}, web_research.snapshot()
     for name in set(rules['researcher']) - set(flat(rules['implementer'])) - set(turn_engine.HELPER_ROUTES):
         assert (rows[name] == 'ROLE_NOT_CONFIGURED') == ('admitted research' in snapshot['unavailable'].get(name, '')), name

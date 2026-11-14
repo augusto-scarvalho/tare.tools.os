@@ -130,7 +130,10 @@ def decides(name):
 # own reasons. switched_off() is the one answer to "is this route off for this role": automatic paths ask it to skip
 # a route, and execution_scope.admit() asks it where every new start of a role passes, refusing a start the user did
 # not choose (a pick, a pin, a launch flag, the explorers of /delegation). Grammar: docs/guides/SHARED_GPU.md.
-PROFILE_ROLES = ('implementer', 'explorer', 'planner', 'plan-auditor', 'auditor', 'researcher', 'vision', 'heads_up')
+# coordinator: the model a conversation talks to when tare auto starts or moves it (tare auto's tiers, read for a
+# conversation); implementer: a session or delegated unit on those tiers or the role table.
+PROFILE_ROLES = ('implementer', 'explorer', 'planner', 'plan-auditor', 'auditor', 'researcher', 'vision', 'heads_up',
+                 'coordinator')
 RANKED_ROLES = PROFILE_ROLES[:5]  # the roles relay/role_deployments.json ranks (native_routes.ranked)
 SOURCES = ('claude-code', 'codex', 'agy', 'opencode-sub', 'opencode-api', 'api', 'openrouter', 'bedrock', 'local',
            'other-api')
@@ -327,7 +330,9 @@ def switched_off(role, deployment, *names, value=None):
 def auto_routes(role):
     """[(name, route or None, now)] of the routes automatic `role` routing considers here, checked as each path that
     reaches a route checks it, under that role, without a live probe: `now` is 'usable' when one of those paths takes
-    it, else the first path's reason (a rule). The routing profile does not change it. The paths: implementer and
+    it, else the first path's reason (a rule). The routing profile does not change it. The paths: coordinator tare
+    auto's tiers as a conversation's tare auto takes them (availability; coordinator_policy.eligible judges only a
+    --coordinator pin, not this path); implementer and
     planner their routing list (availability) and role table (native_routes.admission, what ranks); explorer its role
     table; auditor and plan-auditor the owner's auditor list when "Use my auditor routes" is chosen, else their role
     table, never both (native_routes._reviewers); researcher its list (availability and the research tool's own
@@ -344,7 +349,7 @@ def auto_routes(role):
     rules = policy()
     owner = role in ('auditor', 'plan-auditor') and not (
         current().changes(role) or rules.get('auditor_selection', 'cross_vendor_frontier') == 'cross_vendor_frontier')
-    lists = {'implementer': rules['implementer'], 'planner': rules['planner'],
+    lists = {'coordinator': rules['implementer'], 'implementer': rules['implementer'], 'planner': rules['planner'],
              'researcher': [*rules['implementer'], *HELPER_ROUTES],
              'vision': rules.get('vision', DEFAULT_POLICY['vision']),
              'heads_up': rules.get('heads_up') or DEFAULT_POLICY['heads_up']}
@@ -1008,7 +1013,9 @@ def main(argv=None):
     parser.add_argument('--auto', action='append', default=[], metavar='ROLE:PATTERN=on|off|default',
                         help="Switch routes on or off for one role's automatic routing, or back to tare's default; "
                         'PATTERN is a route id or MODEL@SOURCE, e.g. auditor:claude/opus@api=off or '
-                        "implementer:*@openrouter=off. Explicit choices and pins are not affected")
+                        "implementer:*@openrouter=off. coordinator is the model a conversation talks to when tare auto "
+                        'starts it; implementer entries no longer decide conversations, so switch a route off for '
+                        'both roles to keep it out of both. Explicit choices and pins are not affected')
     parser.add_argument('--auto-reset', nargs='?', const='', metavar='ROLE',
                         help="Back to tare's default for one role's automatic routing, or for every role")
     parser.add_argument('--auto-show', action='append', default=[], metavar='ROLE',

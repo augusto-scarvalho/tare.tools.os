@@ -182,8 +182,8 @@ class ConversationModels:
             saved = state['deployment']
             if not saved.get('native_auto_selection') or self.busy:
                 return
-            # The role the next route runs in decides by its routing profile entries; a conversation is tare auto's.
-            role = 'implementer' if state.get('conversation_flow') else state.get('config', {}).get('role', 'implementer')
+            # The role the next route runs in decides by its routing profile entries (session_role's test).
+            role = 'coordinator' if state.get('conversation_flow') else state.get('config', {}).get('role', 'implementer')
             from .turn_engine import successor
             if successor(status, per_message_limits=False) == 'stop':  # the operator's budget is the cap
                 self.say(f"tare auto: this conversation spent the budget you set, so it stays on "
