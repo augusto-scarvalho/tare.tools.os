@@ -65,6 +65,10 @@ def test_flow_layout_keeps_setup_drafts_and_review_actions_accessible(tmp_path, 
                     assert all(child.region.bottom <= box.region.bottom for child in children)
                     children[-1].scroll_visible(animate=False, force=True)
                     await pilot.wait_for_scheduled_animations()
+                    for _ in range(100):  # the scroll's layout can land after the animations report idle
+                        if children[-1].region.bottom <= size[1]:
+                            break
+                        await pilot.pause(0.05)
                     assert 0 <= children[-1].region.y < children[-1].region.bottom <= size[1]
             if size[0] < 100:
                 assert not app.query_one('#detail').display
