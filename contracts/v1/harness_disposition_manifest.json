@@ -2,7 +2,7 @@
   "$schema": "https://tare.tools/schemas/v1/disposition-manifest.json",
   "version": "1.0.0",
   "generated_at": "2026-10-04T03:10:28.054735+00:00",
-  "total_modules": 444,
+  "total_modules": 445,
   "modules": [
     {
       "name": "consent_decisions.py",
@@ -2981,8 +2981,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS selects configured eligible role routes and persists the rationale; existing native Work owner executes and recovers them.",
-      "size_bytes": 18679,
-      "sha256": "f7bc4af01ceb068256c35ee05f6dc9659c7a6932b0d0bbbf2080a277bab97a1c"
+      "size_bytes": 19339,
+      "sha256": "ebea832cb3e81076b094749ca4ff670aacab204e58152247c0afc0588de2fcca"
     },
     {
       "name": "native_serve.py",
@@ -3821,8 +3821,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 55532,
-      "sha256": "24ed63e61b837dba4bfa5c1ef6a8d4ac3cb59e9f86e358577fc9fa11b1da1927"
+      "size_bytes": 60281,
+      "sha256": "91301053e6a2cd7f553461abdcc89f2290fec501d20d5b2d2f1f3855f8446388"
     },
     {
       "name": "console_setup.py",
@@ -3861,8 +3861,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 5777,
-      "sha256": "2d0f95e429e9792cf66f71161db035da9c78252bfeb4fac64e67848097058c4a"
+      "size_bytes": 6727,
+      "sha256": "9c470bf86b12af086f683baf93ed07a3f294aac8af5a987e3fcbe89314030cd6"
     },
     {
       "name": "fleet.py",
@@ -4151,8 +4151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 16098,
-      "sha256": "e0ab802ca26e8eda0d39d9fb11b95544de334cc5d607b36e77f56e88753df9e9"
+      "size_bytes": 16438,
+      "sha256": "c810a6ba69cec6e01c8a52e934df74e4cd45ab2caac68c7b66d51081b125a532"
     },
     {
       "name": "research_tools.py",
@@ -4443,6 +4443,16 @@
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
       "size_bytes": 7977,
       "sha256": "9f06c0dc1fd81291b583515be7253e5d57fe1ec121c14d6a9b94e14d48dc5795"
+    },
+    {
+      "name": "console_route_matrix.py",
+      "path": "tare.tools.os/relay/console_route_matrix.py",
+      "summary": "The /routes Models per role tab: per role, ticks per model line and source that edit the routing profile.",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
+      "size_bytes": 26366,
+      "sha256": "af9925615cbbe61f03d9414ccb875ca8c24f4c7a32df5e4351a0b5d93a66be9c"
     }
   ]
 }
