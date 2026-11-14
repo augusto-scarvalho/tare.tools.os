@@ -12,26 +12,14 @@ from .native_generation import deployment_profile, load_deployment
 
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1'
-CLAUDE_MODELS = {
-    'claude-haiku-5-5': 'Claude Haiku 5.5',
-    'claude-sonnet-5-5': 'Claude Sonnet 5.5',
-    'claude-sonnet-5': 'Claude Sonnet 5',
-    'claude-opus-5-5': 'Claude Opus 5.5',
-    'claude-opus-5': 'Claude Opus 5',
-    'claude-opus-4-8': 'Claude Opus 4.8',
-    'claude-fable-5-2': 'Claude Fable 5.2',
-    'claude-fable-5-1': 'Claude Fable 5.1',
-    'claude-fable-5': 'Claude Fable 5',
-}
-LABELS = {'gemini-4-argon': 'Gemini 4 Argon', 'gemini-3.8-flash': 'Gemini 3.8 Flash',
-          'gemini-4-hydrogen': 'Gemini 4 Hydrogen', 'gemini-4-carbon': 'Gemini 4 Carbon',
-          'qwen38': 'Qwen3.8 27B', 'hauhaucs': 'HauhauCS · Qwen3.8',
+# Models outside relay/model_lines.json: local models and reseller ids. A first-party version takes its line's label.
+LABELS = {'qwen38': 'Qwen3.8 27B', 'hauhaucs': 'HauhauCS · Qwen3.8',
           'fable-tc': 'Fable-TC', 'qwen36-moe': 'Qwen3.6 MoE', 'swift-next': 'Swift 1.5 Flash-Next',
           'qwen38-gsq': 'Qwen3.8 27B GSQ · NInfer', 'swift27b': 'Swift 1.5 27B · NInfer',
           'us.anthropic.claude-opus-4-6-v1': 'Claude Opus 4.6',
           'us.anthropic.claude-sonnet-4-6': 'Claude Sonnet 4.6', 'zai.glm-5': 'GLM-5',
           'deepseek/deepseek-v4.1-flash': 'DeepSeek V4.1 Flash',
-          'z-ai/glm-5.3': 'GLM 5.3', 'xiaomi/mimo-v2.6-pro': 'MiMo V2.6 Pro (Preview)', **CLAUDE_MODELS}
+          'z-ai/glm-5.3': 'GLM 5.3', 'xiaomi/mimo-v2.6-pro': 'MiMo V2.6 Pro (Preview)'}
 SCHEMA = 'tare.tools/model-preferences/1'
 
 
@@ -40,25 +28,34 @@ def digest(value):
                                      allow_nan=False).encode()).hexdigest()
 
 
+def model_label(model):
+    """LABELS' name for `model`, else its line's (claude-fable-5-3 is Claude Fable 5.3), else None."""
+    from .vendor_models import line
+    known = line(model)
+    return LABELS.get(model) or known and known['label']
+
+
 def describe(name, value):
     profile = value['native_profile']
     model, protocol = profile['model'], profile['protocol']
     params = json.loads(profile.get('parameters_json', '{}'))
     endpoint = profile['endpoint']
     from .execution_team import reasoning
+    from .vendor_models import line
     declared_effort = reasoning(value)
     effort, supported = (declared_effort if protocol in {'anthropic-messages', 'bedrock-converse'}
                          and declared_effort in EFFORTS else ''), []
     key = model
-    label = LABELS.get(model, model)
+    label = model_label(model) or model
+    known = line(model)
     group, connection = 'Local', 'Local GPU'
     if protocol == 'vendor-cli':
         effort = params.get('effort', 'high')
         group, connection = {'cli://claude': ('Anthropic', 'Claude CLI'),
                              'cli://codex': ('OpenAI', 'Codex CLI'),
                              'cli://agy': ('Google', 'AGY CLI')}[endpoint]
-        if endpoint == 'cli://claude' and model in CLAUDE_MODELS:
-            supported = list(EFFORTS)
+        if endpoint == 'cli://claude' and known:  # Claude Code lists no levels: the line's apply
+            supported = known['efforts']
         elif endpoint == 'cli://codex':
             record = value['native_cli']['model_catalog']
             supported = [r['effort'] for r in record.get('supported_reasoning_levels', [])
@@ -68,7 +65,7 @@ def describe(name, value):
             supported = [e for e in EFFORTS[:3] if e in mapping]
             if model.endswith(('-low', '-medium', '-high')):
                 key = model.rsplit('-', 1)[0]
-            label = LABELS.get(key, key.replace('gemini-', 'Gemini ').replace('-flash', ' Flash').replace('-pro', ' Pro'))
+            label = model_label(key) or key.replace('gemini-', 'Gemini ').replace('-flash', ' Flash').replace('-pro', ' Pro')
     elif protocol == 'openai-codex-responses':
         group, connection = 'OpenAI', 'Codex Direct'
         effort = params.get('reasoning', {}).get('effort', '')
@@ -85,10 +82,10 @@ def describe(name, value):
             supported = [e for e in value.get('native_reasoning_levels', []) if e in EFFORTS[:3]]
         elif protocol == 'anthropic-messages':
             effort = params.get('output_config', {}).get('effort', '')
-            # Documented top-level effort for these catalogued Claude models.
+            # Documented top-level effort for Claude lines (relay/model_lines.json).
             # Custom endpoints need their own declared levels; a lookalike URL is no evidence.
-            known = endpoint.rstrip('/') == 'https://api.anthropic.com/v1' and model in CLAUDE_MODELS
-            supported = list(EFFORTS) if known else [e for e in value.get('native_reasoning_levels', []) if e in EFFORTS]
+            known = endpoint.rstrip('/') == 'https://api.anthropic.com/v1' and known
+            supported = known['efforts'] if known else [e for e in value.get('native_reasoning_levels', []) if e in EFFORTS]
     elif value.get('native_opencode'):
         from .opencode import connection as opencode_connection
         group = connection = opencode_connection(value)
@@ -124,7 +121,7 @@ def describe(name, value):
         # Resolved when a new session starts: Swift Flash-Next while the host PC is idle, else Qwen3.8.
         key, label, connection = name, 'Local auto', 'Local GPU · host-aware'
     if group == 'OpenAI':
-        label = model.replace('gpt-', 'GPT-', 1).replace('-astra', ' Astra').replace('-sol', ' Sol').replace('-terra', ' Terra').replace('-luna', ' Luna')
+        label = model_label(model) or model.replace('gpt-', 'GPT-', 1)
         if protocol == 'openai-responses' and params.get('reasoning', {}).get('mode') == 'pro':
             # A picker identity, never a wire model ID: Pro is an API execution mode.
             key, label, connection = model+'::pro', label+' Pro', 'OpenAI API · Pro mode'

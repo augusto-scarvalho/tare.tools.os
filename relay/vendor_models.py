@@ -4,11 +4,19 @@ No login, inference, credential discovery or implicit model fallback.
 """
 from copy import deepcopy
 import json
+from pathlib import Path
+import re
 
 from .model_choices import EFFORTS
 from .native_generation import deployment_profile
 
 CODEX_NATIVE_BATCH_QUALIFIED = {'gpt-5.6-sol', 'gpt-6-sol', 'gpt-6.1-sol'}
+# The one hand-written table of model lines (Claude Fable, GPT Terra, Gemini Argon...), keyed '<family>-<line>' as
+# parse() names them. Per line: the vendor and bias domain the roster records spell, the label pattern, the Claude
+# Code family alias where one exists, and the efforts a version offers. A vendor list that states levels per model
+# (Codex's cache, AGY's list, Anthropic's /v1/models) wins over the line's efforts; the line's apply where the
+# vendor cannot tell (Claude Code, the OpenAI and Gemini APIs) or is not read.
+LINES = json.loads(Path(__file__).with_name('model_lines.json').read_text(encoding='utf-8'))
 
 
 def parse(slug):
@@ -16,6 +24,17 @@ def parse(slug):
     parts = slug.split('-')
     return parts[0], '-'.join(p for p in parts[1:] if not p.replace('.', '').isdigit()), tuple(
         int(n) for p in parts[1:] if p.replace('.', '').isdigit() for n in p.split('.'))
+
+
+def line(slug):
+    """The LINES row of `slug` with its label filled in (claude-fable-5-3 is 'Claude Fable 5.3'), or None: a line
+    with no row (gpt-7-nova), a non-chat model (gpt-realtime-2.1 is line 'realtime'), a dated snapshot or an id with
+    no version. An AGY effort suffix is not part of the line: gemini-4-argon-high is Gemini 4 Argon."""
+    family, name, version = parse(re.sub(r'-(low|medium|high|xhigh)$', '', slug))
+    row = LINES.get(family+'-'+name)
+    if not row or len(version) not in (1, 2):
+        return None
+    return {**deepcopy(row), 'label': row['label'].format(version='.'.join(map(str, version)))}
 
 
 def older(slugs):

@@ -122,14 +122,14 @@ def read_details(key):
             return HeaderDetails(branch, 'Auto-select on start', 'Next execution')
         if 'native_auto_routes' in chosen:
             return HeaderDetails(branch,'tare auto','Next execution',deployment_identity(key,chosen),'','tare auto')
-        from .model_choices import LABELS
+        from .model_choices import model_label
         from .execution_team import reasoning
         effort = reasoning(chosen) or ''
         metadata = chosen.get('native_model_choice', {})
         model = label(chosen['native_profile']['model'])
         return HeaderDetails(branch, model, 'Saved model' if session else 'Next execution',
                              deployment_identity(key, chosen), effort,
-                             metadata.get('label', LABELS.get(model, model)))
+                             metadata.get('label', model_label(model) or model))
     except Exception:
         # A label is optional observation, never authority to replace a profile,
         # leak descriptor/credential content, or prevent interaction with chat.
