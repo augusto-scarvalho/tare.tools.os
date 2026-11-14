@@ -79,26 +79,24 @@ def configured():
     return path.exists() and 'planner' in read_json(path, 65536)
 
 
-def snapshot(parent, *, required=False):
+def snapshot():
+    """The planner routes a session freezes at its start. Any account's: the flags, the routing profile and pins limit
+    them where the planner is chosen (owner, 2026-11-14)."""
     from . import native_catalog
-    from .challenger_variants import accounting
-    from .delegation import experiments
     from .turn_engine import policy
     from .execution_scope import current, pinned
     if current().pin('planner'):
         with for_role('planner'):
             value = pinned('planner')
         name = value['native_model_choice']['connection']
-        return {'routes': {name: value}, 'route_order': [name], 'other_providers': True,
-                'origin': 'EXACT_TEMPORARY_PIN'}
+        return {'routes': {name: value}, 'route_order': [name], 'origin': 'EXACT_TEMPORARY_PIN'}
     routes = {}
     for name in policy()['planner']:
         try:
             routes[name] = native_catalog.select(name)
         except (ValueError, OSError, KeyError, TypeError):
             continue
-    return {'routes': routes, 'route_order': list(routes),
-            'other_providers': required or experiments(accounting(parent))['child_routes_any']}
+    return {'routes': routes, 'route_order': list(routes)}
 
 
 def record(path):
@@ -283,7 +281,7 @@ class PlanningTools:
         self.tools, self.root, self.state = tools, Path(root), state
         # Repair the former coordinator-as-planner fallback on resume without
         # rewriting the saved tool schema, system prefix or conversation.
-        self.planning = (snapshot(state['deployment'], required=True)
+        self.planning = (snapshot()
             if state.get('conversation_flow') and 'session-planner' in state['planning']['routes']
             else state['planning'])
         self.parent_model = None
@@ -320,7 +318,6 @@ class PlanningTools:
     @for_role('planner')
     def choose(self, args):
         from .turn_engine import available
-        from .work_units import bill
         routes = self.planning['routes']
         trace = getattr(self, '_trace', None)
         chosen = args.get('route')
@@ -330,7 +327,6 @@ class PlanningTools:
             from .execution_scope import current
             if not current().pin('planner'):
                 raise ValueError('Choose a configured planner route in /delegation or /routes.')
-        own = bill(self.state['deployment'])
         from .execution_scope import current,planner_candidates
         scope=current()
         if scope.pin('planner'):
@@ -340,8 +336,6 @@ class PlanningTools:
             connection=value['native_model_choice']['connection']
             if chosen and chosen!=connection:
                 raise ValueError('Requested route conflicts with --planner; consult tare models --role planner.')
-            if bill(value)!=own and not (self.planning['other_providers'] and bill(value)[0]!='local'):
-                raise ValueError('Pinned planner conflicts with the configured provider allowance; consult tare models --role planner.')
             if trace is not None:
                 trace.update(mode='EXACT_TEMPORARY_PIN', visited=[connection], skipped=[])
             return connection,value
@@ -357,12 +351,7 @@ class PlanningTools:
             current, _ = (deepcopy(frozen), None) if name == 'session-planner' else available(name)
             if current is None or current.get('native_profile') != frozen.get('native_profile'):
                 skipped.append((name, 'UNAVAILABLE_OR_PROFILE_CHANGED'))
-                continue  # frozen settings, current credential/CLI/GPU availability
-            if bill(frozen) != own and not scope.changes('planner') and not (self.planning['other_providers'] and bill(frozen)[0] != 'local'):
-                if chosen:
-                    raise ValueError('This planner uses another provider or allowance. Enable other providers in /delegation.')
-                skipped.append((name, 'OTHER_PROVIDER_ALLOWANCE'))
-                continue
+                continue  # frozen settings, current credential/CLI/GPU availability (it applies --*_only)
             from .execution_scope import refusal
             if off := refusal('planner', frozen, name):  # a pin returned above; a model's choice is not the user's
                 skipped.append((name, 'SWITCHED_OFF_FOR_ROLE'))

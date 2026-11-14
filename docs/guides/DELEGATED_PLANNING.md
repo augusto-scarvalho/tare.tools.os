@@ -2,9 +2,11 @@
 
 New TUI chats always use a separate planner for changes. Open `/delegation`,
 choose **Choose planner model…**, and save. This selects a planner for new native conversations
-without changing their coordinator model. To use a different provider or
-allowance, also enable **Allow delegated planners and implementers to use other
-providers or allowances**. Existing conversations keep their saved tools/routes.
+without changing their coordinator model. The planner, like the implementers a
+conversation delegates, may run on any provider or allowance, whichever account
+the coordinator is on: `--subscription_only`, `--api_only`, `--local_only`, the
+routing profile (`tare setup --auto`, the "Models per role" matrix) and pins
+limit it. Existing conversations keep their saved tools/routes.
 The existing `/routes` planner list remains the ordered fallback configuration;
 the model picker uses that same role configuration for new planning flows.
 

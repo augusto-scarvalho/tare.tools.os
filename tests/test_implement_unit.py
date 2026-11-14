@@ -623,33 +623,54 @@ def test_a_local_session_runs_its_units_in_series_even_when_asked_for_parallel(t
     assert report['children_at_once'] == 2 and 'parallel' not in report
 
 
-def test_a_child_stays_on_the_sessions_bill(monkeypatch, tmp_path):
-    # The TUI walkthrough of 2026-10-07: a Codex quota session's children climbed the ladder into Bedrock dollars
-    # and the Claude CLI's quota. A child takes a route of the session's class and vendor; another only by name with
-    # the child_routes_any experiment on.
+def test_a_unit_takes_tares_ladder_whatever_account_the_session_is_on(monkeypatch, tmp_path):
+    # 2026-11-14: an OpenRouter coordinator's unit stayed on OpenRouter credit while a Claude subscription week lapsed.
+    # The same-account rule of 2026-10-07 went away (owner): with nothing in surplus a unit takes the ladder, cheapest
+    # tier first, the local model included while its GPU is free; a coordinator may choose a route on another account.
     monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
-    fleet = {'codex-native-gpt-6-1-sol': {'id': 'codex-native-gpt-6-1-sol', 'native_profile': {'protocol': 'openai-codex-responses', 'endpoint': 'https://api.openai.com/v1'}},
+    fleet = {'qwen38-gsq': {'id': 'qwen38-gsq', 'native_profile': {'protocol': 'openai-chat', 'endpoint': 'http://192.168.0.10:8080/v1'}},
+             'codex-native-gpt-6-1-sol': {'id': 'codex-native-gpt-6-1-sol', 'native_profile': {'protocol': 'openai-codex-responses', 'endpoint': 'https://api.openai.com/v1'}},
              'codex-cli-gpt-6-luna': {'id': 'codex-cli-gpt-6-luna', 'native_profile': {'protocol': 'vendor-cli', 'endpoint': 'cli://codex'}},
              'claude-opus-5-5-cli': {'id': 'claude-opus-5-5-cli', 'native_profile': {'protocol': 'vendor-cli', 'endpoint': 'cli://claude'}},
              'bedrock-sonnet': {'id': 'bedrock-sonnet', 'native_profile': {'protocol': 'bedrock-converse', 'endpoint': 'https://bedrock.amazonaws.com'}},
-             'qwen38-gsq': {'id': 'qwen38-gsq', 'native_profile': {'protocol': 'openai-chat', 'endpoint': 'http://192.168.0.10:8080/v1'}}}
-    monkeypatch.setattr(turn_engine, 'policy', lambda: {'implementer': [list(fleet)]})
+             'openrouter-muse': {'id': 'openrouter-muse', 'native_credential_env': 'OPENROUTER_API_KEY', 'native_profile': {'protocol': 'openai-chat', 'endpoint': 'https://openrouter.ai/api/v1'}}}
+    ladder = [['qwen38-gsq'], ['codex-native-gpt-6-1-sol', 'codex-cli-gpt-6-luna'], ['claude-opus-5-5-cli', 'bedrock-sonnet']]
+    monkeypatch.setattr(turn_engine, 'policy', lambda: {'implementer': ladder})
     monkeypatch.setattr(turn_engine, 'available', lambda name, probe=True: (fleet.get(name), None))
-    codex = fleet['codex-native-gpt-6-1-sol']
-    assert [n for n, _ in work_units.routes(codex)] == ['codex-native-gpt-6-1-sol', 'codex-cli-gpt-6-luna']
-    assert [n for n, _ in work_units.routes(fleet['bedrock-sonnet'])] == ['bedrock-sonnet']
-    assert [n for n, _ in work_units.routes(fleet['qwen38-gsq'])] == ['qwen38-gsq']
-    with pytest.raises(ValueError, match='bill'):
-        list(work_units.routes(codex, chosen='bedrock-sonnet'))
-    delegation.save_experiments('quota', child_routes_any=True)
-    assert [n for n, _ in work_units.routes(codex)] == [n for n in fleet if n != 'qwen38-gsq']  # hosted, never local
-    assert [n for n, _ in work_units.routes(codex, chosen='claude-opus-5-5-cli')] == ['claude-opus-5-5-cli']
+    flat = [name for tier in ladder for name in tier]
+    for parent in ('openrouter-muse', 'codex-native-gpt-6-1-sol', 'bedrock-sonnet', 'qwen38-gsq'):
+        assert [n for n, _ in work_units.routes(fleet[parent])] == flat
+    # A conversation's own model, outside the ladder, comes after it.
+    assert [n for n, _ in work_units.routes(fleet['openrouter-muse'], allow_parent=True)] == [*flat, 'openrouter-muse']
+    assert [n for n, _ in work_units.routes(fleet['openrouter-muse'], chosen='bedrock-sonnet')] == ['bedrock-sonnet']
+    assert [n for n, _ in work_units.routes(fleet['codex-native-gpt-6-1-sol'], chosen='claude-opus-5-5-cli')] == [
+        'claude-opus-5-5-cli']
+
+
+def test_a_route_in_surplus_that_the_ladder_lacks_is_offered_to_a_unit(monkeypatch, tmp_path):
+    # tare's ladder has no Claude API route: on 2026-11-14 a monthly Anthropic credit of US$ 157 was lapsing and no unit
+    # could use it. The role selection's candidates in surplus join the ladder; one it does not admit never does.
+    from relay import native_routes
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
+    fleet = {name: {'id': name, 'native_profile': {'protocol': 'openai-chat', 'endpoint': 'https://example.invalid/' + name}}
+             for name in ('cheap', 'strong', 'claude-api-x', 'claude-api-y')}
+    monkeypatch.setattr(turn_engine, 'policy', lambda: {'implementer': [['cheap'], ['strong']]})
+    monkeypatch.setattr(turn_engine, 'available', lambda name, probe=True: (fleet.get(name), None))
+    candidates = [{'deployment': 'claude-api-x', 'expiring': {'lead': 0.5}}, {'deployment': 'strong', 'expiring': {'lead': 0.2}},
+                  {'deployment': 'claude-api-y'}, {'deployment': 'not-admitted', 'expiring': {'lead': 0.9}}]
+    monkeypatch.setattr(native_routes, 'ranked', lambda role: ([fleet['claude-api-x'], fleet['strong'], fleet['claude-api-y']],
+                                                             {'candidates': candidates}))
+    assert work_units.lapsing_outside(['cheap', 'strong']) == ['claude-api-x']
+    monkeypatch.setattr(turn_engine, 'surplus_first', lambda names: sorted(names, key=lambda n: n != 'claude-api-x'))
+    assert [n for n, _ in work_units.routes(fleet['cheap'])] == ['claude-api-x', 'cheap', 'strong']
+    monkeypatch.setattr(native_routes, 'ranked', lambda role: (_ for _ in ()).throw(ValueError('no table')))
+    assert [n for n, _ in work_units.routes(fleet['cheap'])] == ['cheap', 'strong']  # a ranking that fails adds nothing
 
 
 def test_a_busy_local_gpu_sends_a_local_sessions_unit_to_the_next_route_at_once(monkeypatch, tmp_path):
     # A unit is a session's delegated implementer: a conversation waits on it, so nothing waits for a busy GPU
     # (owner, 2026-10-08). A local session's unit then takes the next routes of the policy, as the session would;
-    # with the GPU free it stays on its local bill, and on the coordinator's chosen route.
+    # with the GPU free it starts on the local route, and the coordinator's chosen route is tried alone.
     monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
     fleet = {'qwen38-gsq': {'id': 'qwen38-gsq', 'native_profile': {'protocol': 'openai-chat', 'endpoint': 'http://192.168.0.10:8080/v1'}},
              'codex-native-gpt-6-1-sol': {'id': 'codex-native-gpt-6-1-sol', 'native_profile': {'protocol': 'openai-codex-responses', 'endpoint': 'https://api.openai.com/v1'}}}
@@ -663,5 +684,5 @@ def test_a_busy_local_gpu_sends_a_local_sessions_unit_to_the_next_route_at_once(
     # The coordinator's chosen route comes first; busy, the policy's routes follow (the owner's routing.json, else tare's).
     assert [n for n, _ in work_units.routes(local, chosen='qwen38-gsq')] == ['codex-native-gpt-6-1-sol']
     busy[0] = False
-    assert [n for n, _ in work_units.routes(local)] == ['qwen38-gsq']
+    assert [n for n, _ in work_units.routes(local)] == ['qwen38-gsq', 'codex-native-gpt-6-1-sol']
     assert [n for n, _ in work_units.routes(local, chosen='qwen38-gsq')] == ['qwen38-gsq']

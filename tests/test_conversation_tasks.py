@@ -852,7 +852,6 @@ def test_runtime_conversation_offers_only_coordinator_capabilities(setup, monkey
     assert result['status'] == 'PROPOSED'
     state = json.loads((custody/'native-agent.json').read_text())
     assert state['conversation_flow'] and 'session-planner' not in state['planning']['routes']
-    assert state['planning']['other_providers']
     body = next(body for path, body in client.calls if path == '/chat/completions')
     names = {t['function']['name'] for t in body['tools']}
     assert {'demand', 'delegate_plan', 'implement'} <= names
@@ -1232,7 +1231,7 @@ def test_native_conversation_runs_all_roles_with_real_effects_and_typed_artifact
     params['chat_template_kwargs']['reasoning_effort'] = 'high'
     planner_profile['native_profile']['parameters_json'] = json.dumps(params)
     monkeypatch.setattr(planning_tools, 'snapshot', lambda *a, **kw:
-        {'routes': {'planner': deepcopy(planner_profile)}, 'other_providers': False})
+        {'routes': {'planner': deepcopy(planner_profile)}})
     monkeypatch.setattr(turn_engine, 'available', lambda name, *a:
         (deepcopy(planner_profile if name == 'planner' else profile), None))
     monkeypatch.setattr(work_units, 'routes', lambda *a, **kw: iter([('worker', deepcopy(profile))]))

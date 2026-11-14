@@ -500,7 +500,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                         state['plan_tool'] = True
                     if trials.get('planner_child'):
                         from .planning_tools import snapshot as planning_snapshot
-                        state['planning'] = planning_snapshot(deployment)
+                        state['planning'] = planning_snapshot()
                     if trials['implement_child'] and config['role'] == 'implementer' and any(config['writable'].values()):
                         state['implement_tool'] = True  # R1: a read-only session never hands out edits
                         state['implement_parallel'] = trials['implement_parallel']
@@ -508,7 +508,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                     pass
             if state.get('conversation_flow'):
                 from .planning_tools import snapshot as planning_snapshot
-                state['planning'] = planning_snapshot(deployment, required=True)
+                state['planning'] = planning_snapshot()
                 from .web_research import snapshot as research_snapshot
                 state['research'] = research_snapshot()
                 state['implement_tool'] = True
