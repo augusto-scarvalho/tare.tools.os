@@ -6,7 +6,7 @@ Claude, Codex and AGY answer from their own CLI: the plan's windows, each with t
 resets. OpenRouter answers its credit endpoint. A provider that publishes no balance for an ordinary key is listed as
 not reported, unless the operator stated its balance (--set): tare then shows that balance less the dollars its own
 sessions recorded since (--renews: a credit that returns each month and does not carry over). A window or credit
-with more left than the share of its period still to run is marked "used first": routing prefers it to cost until use
+with more left than the share of its period still to run is marked "in surplus": routing prefers a route whose every window is in surplus to cost until use
 catches up with the pace. Every reading names its source and the time it was observed.
 """
 import argparse
@@ -340,6 +340,9 @@ def spent_until(deployment, now=None):
 
 
 LENGTHS = {'5 h': 5 * 3600, 'week': 7 * 86400}  # the windows tare can place in time
+# A reading older than this says too little of what is left now: on 2026-11-14 the saved one was two days old and still
+# showed 23% of a week the day's work had used. The TUI rereads at each demand; an older reading promotes nothing.
+FRESH = 3600
 
 
 def credit_pace(credit, now):
@@ -366,7 +369,8 @@ def surplus(deployment, now=None, cache=None):
         found = []
         try:
             for reading in cache['report'].get('accounts') or []:
-                if reading.get('account') != account or reading.get('status') != 'OBSERVED':
+                if (reading.get('account') != account or reading.get('status') != 'OBSERVED'
+                        or not now - FRESH <= reading['observed_at'] <= now):
                     continue
                 for bucket in reading.get('buckets') or []:
                     length, end = LENGTHS.get(bucket.get('window')), bucket.get('resets_at')
@@ -378,7 +382,7 @@ def surplus(deployment, now=None, cache=None):
             return None
         # ponytail: the reading is the last finished one; a refresh started by a TUI demand lands for the next one (tare serve and
         # tare agent refresh only where they already do)
-        if not found or (worst := min(found, key=lambda row: row[0]))[0] <= 0:
+        if not found or round((worst := min(found, key=lambda row: row[0]))[0], 2) <= 0:  # under 1% is no surplus
             return None
         return {'lead': worst[0], 'remaining': worst[1]['remaining'], 'time_left': worst[2],
                 'resets_at': worst[1]['resets_at'], 'allowance': account + ' ' + worst[1]['label']}
@@ -387,7 +391,7 @@ def surplus(deployment, now=None, cache=None):
     if ('credit', name) not in cache:
         cache[('credit', name)] = provider_spend.remaining(name, now)
     credit = cache[('credit', name)]
-    if not credit or not (pace := credit_pace(credit, now)) or pace[0] <= pace[1]:
+    if not credit or not (pace := credit_pace(credit, now)) or round(pace[0] - pace[1], 2) <= 0:
         return None
     return {'lead': pace[0] - pace[1], 'remaining': pace[0], 'time_left': pace[1], 'resets_at': credit['renews_at'],
             'allowance': name + ' credit'}
@@ -395,8 +399,8 @@ def surplus(deployment, now=None, cache=None):
 
 def used_first(remaining, time_left, what='window'):
     """The mark `tare quota` puts on a line in surplus, or ''."""
-    return (f" · used first: {remaining:.0%} left, {time_left:.0%} of the {what} left"
-            if remaining > time_left else '')
+    return (f" · in surplus: {remaining:.0%} left, {time_left:.0%} of the {what} left"
+            if round(remaining - time_left, 2) > 0 else '')
 
 
 def clock(epoch, now):
@@ -438,7 +442,8 @@ def render(report, now=None):
                 left = 'none left' if row['remaining'] <= 0 else f"{row['remaining']:.0%} left"
                 resets = ('resets ' + clock(row['resets_at'], now) if row.get('resets_at')
                           else 'resets ' + row['resets'] if row.get('resets') else '')
-                pace = row.get('window') in LENGTHS and type(row.get('resets_at')) in (int, float) and row['resets_at'] > now
+                pace = (row.get('window') in LENGTHS and type(row.get('resets_at')) in (int, float) and row['resets_at'] > now
+                        and now - FRESH <= account['observed_at'] <= now)
                 mark = used_first(row['remaining'], (row['resets_at'] - now) / LENGTHS[row['window']]) if pace else ''
                 lines.append(f"    {row['label']:<32}{left:>10}   {resets}{mark}".rstrip())
             lines += ['    ' + note for note in account.get('notes', [])]

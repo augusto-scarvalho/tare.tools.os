@@ -211,6 +211,16 @@ def test_tare_auto_tries_the_route_in_surplus_first_inside_its_tier_and_never_ch
     assert turn_engine.choose(tiers, start=1)[:2] == (1, 'agy-c')
 
 
+def test_a_reading_over_an_hour_old_promotes_nothing_and_is_not_marked():
+    # 2026-11-14: the saved reading was two days old and still showed 23% of a week the day's work had used.
+    save(reading('claude', bucket('week', 0.23, DAY)))
+    assert provider_quota.surplus(cli(), NOW + 3000)['lead'] > 0
+    assert provider_quota.surplus(cli(), NOW + 3700) is None
+    report = {'observed_at': NOW, 'accounts': [{**reading('claude', bucket('week', 0.23, DAY)), 'name': 'Claude subscription'}]}
+    assert 'in surplus' in provider_quota.render(report, NOW + 3000)
+    assert 'in surplus' not in provider_quota.render(report, NOW + 3700)
+
+
 def test_render_marks_what_is_used_first_and_says_the_credit_renews():
     now = ts(2026, 12, 6, 12)
     provider_spend.declare('anthropic-api', 100, now=ts(2026, 11, 14), renews=(14, 100))
@@ -224,10 +234,10 @@ def test_render_marks_what_is_used_first_and_says_the_credit_renews():
          'credit': credit}]}
     lines = provider_quota.render(report, now).splitlines()
     week = next(line for line in lines if line.strip().startswith('week, all models'))
-    assert '· used first: 23% left, 14% of the window left' in week
-    assert 'used first' not in next(line for line in lines if line.strip().startswith('5 h'))
+    assert '· in surplus: 23% left, 14% of the window left' in week
+    assert 'in surplus' not in next(line for line in lines if line.strip().startswith('5 h'))
     assert next(line for line in lines if 'Claude API' in line).endswith(
-        'US$ 50.00 left of US$ 100.00 a cycle, renews Mon 14 Dec · used first: 50% left, 25% of the cycle left')
+        'US$ 50.00 left of US$ 100.00 a cycle, renews Mon 14 Dec · in surplus: 50% left, 25% of the cycle left')
 
 
 def test_a_demand_in_the_tui_starts_one_quota_refresh_and_a_second_one_right_after_starts_none(tmp_path, monkeypatch):
