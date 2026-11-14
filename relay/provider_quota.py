@@ -1,11 +1,13 @@
 """What each provider reports as left: subscription quota and API credit, read without a model call.
 
-tare quota [--json] [--cached] [--set ACCOUNT AMOUNT]
+tare quota [--json] [--cached] [--set ACCOUNT AMOUNT [--renews DAY [GRANT]]]
 
 Claude, Codex and AGY answer from their own CLI: the plan's windows, each with the models it covers and when it
 resets. OpenRouter answers its credit endpoint. A provider that publishes no balance for an ordinary key is listed as
 not reported, unless the operator stated its balance (--set): tare then shows that balance less the dollars its own
-sessions recorded since. Every reading names its source and the time it was observed.
+sessions recorded since (--renews: a credit that returns each month and does not carry over). A window or credit
+with more left than the share of its period still to run is marked "used first": routing prefers it to cost until use
+catches up with the pace. Every reading names its source and the time it was observed.
 """
 import argparse
 import json
@@ -16,7 +18,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SCHEMA = 'tare.tools/provider-quota/1'
@@ -337,6 +339,65 @@ def spent_until(deployment, now=None):
     return max(found) if found else None
 
 
+LENGTHS = {'5 h': 5 * 3600, 'week': 7 * 86400}  # the windows tare can place in time
+
+
+def credit_pace(credit, now):
+    """(remaining fraction, time-left fraction) of a renewing declared credit in its cycle, else None."""
+    if not credit.get('renews_at') or credit['remaining'] <= 0 or credit['renews_at'] <= now:
+        return None
+    return min(1.0, credit['remaining'] / credit['grant']), (credit['renews_at'] - now) / (credit['renews_at'] - credit['cycle_start'])
+
+
+def surplus(deployment, now=None, cache=None):
+    """The one signal that a route's allowance lapses unused: None, or {'lead', 'remaining', 'time_left', 'resets_at',
+    'allowance'} while what is left exceeds the share of its window still to run (use first what would be lost, and
+    stop once use catches the pace). A subscription route needs every window that limits its model in surplus; an API
+    route needs a declared credit that renews. Nothing else (OpenRouter, a plain balance, a local model) has one.
+    `cache`: shared by one ranking so the files are read once."""
+    from . import provider_spend
+    from .turn_engine import usage_account
+    now = time.time() if now is None else now
+    cache = {} if cache is None else cache
+    if account := usage_account(deployment):
+        if 'report' not in cache:
+            cache['report'] = cached() or {}
+        model = str((deployment.get('native_profile') or {}).get('model') or '').lower()
+        found = []
+        try:
+            for reading in cache['report'].get('accounts') or []:
+                if reading.get('account') != account or reading.get('status') != 'OBSERVED':
+                    continue
+                for bucket in reading.get('buckets') or []:
+                    length, end = LENGTHS.get(bucket.get('window')), bucket.get('resets_at')
+                    if not length or type(end) not in (int, float) or end <= now or not covers(account, bucket, model):
+                        continue  # a window tare cannot place, or one whose reading says nothing of the new window
+                    time_left = (end - now) / length
+                    found.append((bucket['remaining'] - time_left, bucket, time_left))
+        except (KeyError, TypeError, AttributeError):
+            return None
+        # ponytail: a reading old but inside its window is used as it is; the next refresh corrects it
+        if not found or (worst := min(found, key=lambda row: row[0]))[0] <= 0:
+            return None
+        return {'lead': worst[0], 'remaining': worst[1]['remaining'], 'time_left': worst[2],
+                'resets_at': worst[1]['resets_at'], 'allowance': account + ' ' + worst[1]['label']}
+    if not (name := provider_spend.account(deployment)):
+        return None
+    if ('credit', name) not in cache:
+        cache[('credit', name)] = provider_spend.remaining(name, now)
+    credit = cache[('credit', name)]
+    if not credit or not (pace := credit_pace(credit, now)) or pace[0] <= pace[1]:
+        return None
+    return {'lead': pace[0] - pace[1], 'remaining': pace[0], 'time_left': pace[1], 'resets_at': credit['renews_at'],
+            'allowance': name + ' credit'}
+
+
+def used_first(remaining, time_left, what='window'):
+    """The mark `tare quota` puts on a line in surplus, or ''."""
+    return (f" · used first: {remaining:.0%} left, {time_left:.0%} of the {what} left"
+            if remaining > time_left else '')
+
+
 def clock(epoch, now):
     when = datetime.fromtimestamp(epoch)
     return when.strftime('%H:%M' if when.date() == datetime.fromtimestamp(now).date() else '%a %d %b %H:%M')
@@ -362,7 +423,11 @@ def render(report, now=None):
                 left = 'none' if credit['remaining'] <= 0 else f"US$ {credit['remaining']:.2f}"
                 stated = (f", stated {clock(credit['declared_at'], now)}, less tare's own use since"
                           if account['status'] == 'DECLARED' else '')
-                lines.append(f"{head}: {left} left of US$ {credit['total']:.2f}{stated}")
+                if credit.get('renews_at'):
+                    stated = ' a cycle, renews ' + datetime.fromtimestamp(credit['renews_at'], timezone.utc).strftime('%a %d %b')
+                pace = credit_pace(credit, now)
+                lines.append(f"{head}: {left} left of US$ {credit['total']:.2f}{stated}"
+                             + (used_first(*pace, 'cycle') if pace else ''))
                 if credit.get('at_reference_prices'):
                     lines.append(f"    US$ {credit['at_reference_prices']:.2f} of that use is valued at models.dev "
                                  'reference prices, not confirmed tariffs: the balance is only as exact as they are.')
@@ -372,7 +437,9 @@ def render(report, now=None):
                 left = 'none left' if row['remaining'] <= 0 else f"{row['remaining']:.0%} left"
                 resets = ('resets ' + clock(row['resets_at'], now) if row.get('resets_at')
                           else 'resets ' + row['resets'] if row.get('resets') else '')
-                lines.append(f"    {row['label']:<32}{left:>10}   {resets}".rstrip())
+                pace = row.get('window') in LENGTHS and type(row.get('resets_at')) in (int, float) and row['resets_at'] > now
+                mark = used_first(row['remaining'], (row['resets_at'] - now) / LENGTHS[row['window']]) if pace else ''
+                lines.append(f"    {row['label']:<32}{left:>10}   {resets}{mark}".rstrip())
             lines += ['    ' + note for note in account.get('notes', [])]
     lines += ['', 'Read ' + clock(report['observed_at'], now) + ' from each provider; no model call was made.']
     return '\n'.join(lines)
@@ -384,11 +451,20 @@ def main(argv=None):
     parser.add_argument('--cached', action='store_true', help='show the last readings without asking the providers')
     parser.add_argument('--set', nargs=2, metavar=('ACCOUNT', 'AMOUNT'),
                         help="state an API account's balance in dollars as of now; tare counts its own spend down from it")
+    parser.add_argument('--renews', nargs='+', metavar=('DAY', 'GRANT'), help=(
+        'with --set: the credit renews on this day of the month (1-31) and does not carry over; GRANT is the dollars '
+        'each cycle brings (default: the amount stated). While more is left than the share of the cycle still to run, '
+        'tare uses the account before cheaper routes'))
     args = parser.parse_args(argv)
+    if args.renews and (not args.set or len(args.renews) > 2):
+        parser.error('--renews DAY [GRANT] goes with --set ACCOUNT AMOUNT')
     if args.set:
         from . import provider_spend
         try:
-            provider_spend.declare(args.set[0], float(args.set[1]))
+            amount, renews = float(args.set[1]), None
+            if args.renews:
+                renews = (int(args.renews[0]), float(args.renews[-1]) if len(args.renews) > 1 else amount)
+            provider_spend.declare(args.set[0], amount, renews=renews)
         except ValueError as exc:
             parser.error(str(exc))
     report = cached() if args.cached and not args.set else refresh()

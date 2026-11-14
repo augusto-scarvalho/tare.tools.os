@@ -394,10 +394,13 @@ def auto_routes(role):
 def auto_rows(role, value=None):
     """The routes automatic `role` routing considers here (auto_routes): their line on source, the profile's state
     ('on' is tare's default; an entry is the owner's) and why one cannot be used now (a rule)."""
+    from .provider_quota import surplus
     value = read() if value is None else value
-    rows = []
+    rows, lapsing = [], {}
     for name, known, now in auto_routes(role):
         state = known and profile_state(role, known, value=value)
+        if now == 'usable' and known and known.get('native_profile') and (signal := surplus(known, cache=lapsing)):
+            now += ', used first: ' + signal['allowance']  # an allowance about to lapse (provider_quota.surplus)
         rows.append({'route': name, 'line': route_label(known) if known else '?',
                      'profile': f'{state[0]} ({state[1]})' if state else 'on' if known else '?', 'now': now})
     return rows

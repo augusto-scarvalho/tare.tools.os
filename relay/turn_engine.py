@@ -436,13 +436,27 @@ def available(name, probe=True):
     return deployment, None
 
 
+def surplus_first(names):
+    """One tier's routes with those whose allowance is lapsing in surplus first (larger lead first), the owner's order
+    for the rest (a stable sort). A route moves inside its tier only."""
+    from .native_catalog import select
+    from .provider_quota import surplus
+    cache, lead = {}, {}
+    for name in names:
+        try:
+            lead[name] = (surplus(select(name), cache=cache) or {}).get('lead', 0)
+        except (ValueError, OSError, KeyError, TypeError):
+            lead[name] = 0
+    return sorted(names, key=lambda name: -round(lead[name], 2))
+
+
 def choose(tiers, start=0, probe=True, role='implementer'):
     """First available route at or after tier `start` that the routing profile leaves on for `role`:
     (tier, name, deployment, skipped)."""
     from .execution_scope import refusal
     skipped = []
     for tier in range(start, len(tiers)):
-        for name in tiers[tier]:
+        for name in surplus_first(tiers[tier]):
             deployment, reason = available(name) if probe else available(name, probe=False)
             if deployment is not None and not (reason := refusal(role, deployment, name)):
                 return tier, name, deployment, skipped
