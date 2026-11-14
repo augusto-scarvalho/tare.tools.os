@@ -38,6 +38,71 @@ def ranked(role, producer=None, *, check_resources=False):
     with for_role(role):return _ranked(role,producer,check_resources=check_resources)
 
 
+def admission(row, role, author=None, credentials=None):
+    """(deployment, auditor identity, reason) of one role-table row under the rules that come before the routing
+    profile and any live probe; reason None when they admit it. `author`: the producer's identity, for a review role
+    (None checks no independence). `credentials`: a cache shared across rows. The matrix of /routes reads it too
+    (environment.auto_routes), so what it shows cannot drift from what ranks."""
+    from .work_audit import identity
+    from .execution_scope import constrained, current, same_family_admitted
+    credentials = {} if credentials is None else credentials
+    if role not in roles(row, current()):
+        return None, None, 'ROLE_NOT_CONFIGURED'
+    if row.get('qualified') is False:
+        # Registered from a provider's metadata: an exact pin reaches it, automatic selection waits for a live
+        # qualification through tare.
+        return None, None, 'NOT_QUALIFIED_PIN_ONLY'
+    if row.get('runner') != 'native-http':
+        return None, None, 'RUNNER_NOT_SUPPORTED_BY_NATIVE_WORK' if role == 'auditor' else 'RUNNER_NOT_SUPPORTED_BY_NATIVE_FLOW'
+    if row.get('cost_tier') not in COST or row.get('kind') not in {'primary', 'reserve'}:
+        return None, None, 'COST_OR_PREFERENCE_UNKNOWN'
+    try:
+        if row.get('native_catalog') and row['native_catalog'] not in native_catalog.LOCAL:
+            from .native_profiles import local_path
+            if not local_path(row['native_catalog']).is_file():
+                return None, None, 'PROFILE_NOT_INSTALLED'
+        deployment = (native_catalog.select(row['native_catalog']) if row.get('native_catalog')
+                      else copy.deepcopy(row))
+        if deployment.get('model') != row.get('model'):
+            raise ValueError('ROLE_PROFILE_IDENTITY_MISMATCH')
+        native_generation.deployment_profile(deployment, deployment['native_profile']['model'])
+        auditor = identity(deployment, 'auditor')
+    except (ValueError, KeyError, TypeError, OSError):
+        return None, None, 'PROFILE_OR_IDENTITY_INVALID'
+    deployment=constrained(deployment,role)
+    from .environment import allows, older
+    if not allows(deployment)[0]:
+        return deployment, auditor, 'NOT_USED_ON_THIS_MACHINE'
+    if older(deployment):
+        return deployment, auditor, 'OLDER_MODEL'
+    from .turn_engine import usage_limited
+    if usage_limited(deployment):
+        return deployment, auditor, 'QUOTA_EXHAUSTED'
+    same_family = bool(author and (auditor.model_id == author.model_id or auditor.bias_domain == author.bias_domain))
+    if same_family and not same_family_admitted():
+        return deployment, auditor, 'AUDITOR_NOT_INDEPENDENT'
+    if deployment['native_profile']['protocol'] == 'vendor-cli':
+        executable = deployment.get('native_cli', {}).get('executable')
+        if not executable or not Path(executable).is_file():
+            return deployment, auditor, 'CLI_EXECUTABLE_UNAVAILABLE'
+    if deployment['native_profile']['protocol'] == 'openai-codex-responses':
+        auth = deployment['native_codex_auth']
+        token_key = ('codex-login', auth['path'], auth['account_id'])
+        if token_key not in credentials:
+            credentials[token_key] = native_generation.codex_login_available(deployment)
+        if not credentials[token_key]:
+            return deployment, auditor, 'LOGIN_UNAVAILABLE'
+    key = deployment.get('native_credential_env')
+    if key and key not in credentials:
+        try:
+            credentials[key] = credential_available(key)
+        except Exception:
+            credentials[key] = False
+    if key and not credentials[key]:
+        return deployment, auditor, 'CREDENTIAL_UNAVAILABLE'
+    return deployment, auditor, None
+
+
 def _ranked(role, producer=None, *, check_resources=False):
     """No inference. New automatic dispatch can also observe current capacity."""
     from .work_audit import identity
@@ -46,67 +111,17 @@ def _ranked(role, producer=None, *, check_resources=False):
     author = identity(producer, 'implementer') if producer is not None else None
     table = configured(); decisions = []; eligible = []; credentials = {}; seen = set()
     from . import route_facts
-    from .execution_scope import current, same_family_admitted
+    from .execution_scope import current
     fact_cache = {}; evidence = route_facts.supplied_evidence(); observed_facts = {}
     for order, row in enumerate(table['deployments']):
         decision = {'deployment': row['id'], 'eligible': False}
         decisions.append(decision)
-        if role not in roles(row, current()):
-            decision['reason'] = 'ROLE_NOT_CONFIGURED'; continue
-        if row.get('qualified') is False:
-            # Registered from a provider's metadata: an exact pin reaches it, automatic selection waits for a live
-            # qualification through tare.
-            decision['reason'] = 'NOT_QUALIFIED_PIN_ONLY'; continue
-        if row.get('runner') != 'native-http':
-            decision['reason'] = 'RUNNER_NOT_SUPPORTED_BY_NATIVE_WORK' if role == 'auditor' else 'RUNNER_NOT_SUPPORTED_BY_NATIVE_FLOW'; continue
-        if row.get('cost_tier') not in COST or row.get('kind') not in {'primary', 'reserve'}:
-            decision['reason'] = 'COST_OR_PREFERENCE_UNKNOWN'; continue
-        try:
-            if row.get('native_catalog') and row['native_catalog'] not in native_catalog.LOCAL:
-                from .native_profiles import local_path
-                if not local_path(row['native_catalog']).is_file():
-                    decision['reason'] = 'PROFILE_NOT_INSTALLED'; continue
-            deployment = (native_catalog.select(row['native_catalog']) if row.get('native_catalog')
-                          else copy.deepcopy(row))
-            if deployment.get('model') != row.get('model'):
-                raise ValueError('ROLE_PROFILE_IDENTITY_MISMATCH')
-            native_generation.deployment_profile(deployment, deployment['native_profile']['model'])
-            auditor = identity(deployment, 'auditor')
-        except (ValueError, KeyError, TypeError, OSError):
-            decision['reason'] = 'PROFILE_OR_IDENTITY_INVALID'; continue
-        from .execution_scope import constrained
-        deployment=constrained(deployment,role)
-        from .environment import allows, older
-        from .execution_scope import refusal
-        if not allows(deployment)[0]:
-            decision['reason'] = 'NOT_USED_ON_THIS_MACHINE'; continue
-        if older(deployment):
-            decision['reason'] = 'OLDER_MODEL'; continue
-        from .turn_engine import usage_limited
-        if usage_limited(deployment):
-            decision['reason'] = 'QUOTA_EXHAUSTED'; continue
+        deployment, auditor, reason = admission(row, role, author, credentials)
+        if reason:
+            decision['reason'] = reason; continue
         same_family = bool(author and (auditor.model_id == author.model_id or auditor.bias_domain == author.bias_domain))
-        if same_family and not same_family_admitted():
-            decision['reason'] = 'AUDITOR_NOT_INDEPENDENT'; continue
-        if deployment['native_profile']['protocol'] == 'vendor-cli':
-            executable = deployment.get('native_cli', {}).get('executable')
-            if not executable or not Path(executable).is_file():
-                decision['reason'] = 'CLI_EXECUTABLE_UNAVAILABLE'; continue
-        if deployment['native_profile']['protocol'] == 'openai-codex-responses':
-            auth = deployment['native_codex_auth']
-            token_key = ('codex-login', auth['path'], auth['account_id'])
-            if token_key not in credentials:
-                credentials[token_key] = native_generation.codex_login_available(deployment)
-            if not credentials[token_key]:
-                decision['reason'] = 'LOGIN_UNAVAILABLE'; continue
         key = deployment.get('native_credential_env')
-        if key and key not in credentials:
-            try:
-                credentials[key] = credential_available(key)
-            except Exception:
-                credentials[key] = False
-        if key and not credentials[key]:
-            decision['reason'] = 'CREDENTIAL_UNAVAILABLE'; continue
+        from .execution_scope import refusal
         if refusal(role, deployment, row['id'], row.get('native_catalog', row['id'])):
             decision['reason'] = 'SWITCHED_OFF_FOR_ROLE'; continue  # after the rules, before a live probe
         if check_resources:

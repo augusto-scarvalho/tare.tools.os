@@ -1,10 +1,11 @@
 """/routes, "Models per role": the matrix tab edits the routing profile exactly as tare setup --auto would."""
 import asyncio
 import json
+from pathlib import Path
 
-from textual.widgets import Button, OptionList, Select, Static, TabbedContent
+from textual.widgets import Button, OptionList, Select, Static, TabbedContent, TextArea
 
-from relay import environment, turn_engine
+from relay import environment, execution_scope, native_catalog, native_routes, turn_engine, web_research
 from relay.console_route_matrix import RouteMatrix
 from relay.console_routes import RoutesPanel
 from relay.native_console import WorkConsole
@@ -92,34 +93,47 @@ def test_a_vendor_off_then_one_line_on_stores_one_broad_off_and_one_on(pool, tmp
     journey(tmp_path, steps)
 
 
-def test_a_cell_a_rule_decides_cannot_be_ticked(pool, tmp_path):
+def test_a_cell_a_rule_marks_still_ticks_and_the_rule_keeps_its_own_reason(pool, tmp_path):
     install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
     install(pool, 'claude-fable-5-2-cli', 'cli://claude', 'claude-fable-5-2')  # registered, not qualified here
     install(pool, 'codex-cli-gpt-5-6-sol', 'cli://codex', 'gpt-5.6-sol')  # a model Codex replaced
 
     async def steps(app, pilot, panel, cell, status):
-        assert (await cell('claude/fable', 'claude-code')).startswith('[x]!')
-        assert 'NOT_QUALIFIED_PIN_ONLY' in status() and 'a tick cannot change it' in status()
-        assert (await cell('claude/opus', 'codex')).strip() == '.'
-        assert 'codex does not carry it' in status()
+        assert await cell('claude/fable', 'claude-code') == '[ ]!'
+        assert 'off by you; not usable now either: NOT_QUALIFIED_PIN_ONLY' in status()
+        assert await cell('claude/fable', 'claude-code') == '[x]!'
+        assert 'on, but not used automatically now: NOT_QUALIFIED_PIN_ONLY' in status()
+        assert 'a tick does not override this rule' in status()
+        assert await cell('claude/fable', 'claude-code') == '[ ]!'
+        assert (await cell('claude/opus', 'codex')).strip() == '.'  # nothing to name: nothing to tick
+        assert 'this source does not carry it here' in status()
         panel.query_one('#matrix-role', Select).value = 'implementer'
         await pilot.pause()
-        assert (await cell('gpt/sol', 'codex')).startswith('[x]!')
+        assert await cell('gpt/sol', 'codex') == '[ ]!'
         assert 'OLDER_MODEL' in status()
-        assert not panel.query_one(RouteMatrix).dirty()
         await pilot.click('#matrix-save')
         await pilot.pause()
-        assert stored() is None
+        assert stored() == {'off': {'auditor': ['claude/fable@claude-code'], 'implementer': ['gpt/sol@codex']}}
+        # Automatic routing still refuses those routes for their own rule, not for the tick.
+        reasons = {c['deployment']: c['reason'] for c in native_routes.ranked(
+            'auditor', native_catalog.select('openai-api'))[1]['candidates']}
+        assert reasons['claude-fable-5-2-cli'] == 'NOT_QUALIFIED_PIN_ONLY'
+        reasons = {c['deployment']: c['reason'] for c in native_routes.ranked('implementer')[1]['candidates']}
+        assert reasons['codex-cli-gpt-5-6-sol'] == 'OLDER_MODEL'
     journey(tmp_path, steps)
 
 
-def test_unticking_the_last_eligible_auditor_warns_before_save_and_esc_asks(pool, tmp_path):
+def test_the_status_line_says_what_the_ticks_leave_before_save_and_esc_asks(pool, tmp_path):
     install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
 
     async def steps(app, pilot, panel, cell, status):
-        assert 'no eligible route' not in status()
-        await cell('claude/opus', 'claude-code')
-        assert 'Auditor: no eligible route left; the change is not audited.' in status()
+        assert 'none usable now' not in status() and 'No route is ticked on' not in status()
+        panel.query_one(RouteMatrix).bulk('scope:*@*=off')
+        await pilot.pause()
+        assert 'No route is ticked on for Auditor: the change is not audited.' in status()  # certain, from ticks
+        assert await cell('claude/fable', 'claude-code') == '[x]!'  # on again, but marked not usable here
+        assert 'Auditor: 2 route(s) on, none usable now (NOT_QUALIFIED_PIN_ONLY, PROFILE_NOT_INSTALLED).' in status()  # advisory
+        assert 'No route is ticked on' not in status()
         await pilot.press('escape')
         assert app.screen is panel and 'Press Esc again' in status()
         await pilot.press('escape')
@@ -204,23 +218,25 @@ def test_with_your_auditor_routes_the_matrix_shows_only_them_and_warns_when_none
 
     async def steps(app, pilot, panel, cell, status):
         assert set(cells(panel)) == {('claude/opus', 'claude-code')}
-        assert 'every independent auditor is off or unusable' in status()  # a Claude implementer has none
+        assert UNAUDITED in status()  # an Opus implementer has no other auditor ticked on
     journey(tmp_path, steps)
 
 
-def test_the_independent_auditor_warning_stays_while_its_edit_is_unsaved_whatever_role_is_shown(pool, tmp_path,
-                                                                                                 monkeypatch):
+UNAUDITED = 'Every auditor ticked on shares a line with implementer '
+
+
+def test_the_independent_auditor_warning_stays_while_its_edit_is_unsaved_whatever_role_is_shown(pool, tmp_path):
     install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
-    keys(monkeypatch)
 
     async def steps(app, pilot, panel, cell, status):
-        assert 'independent auditor' not in status()
-        panel.query_one('#matrix-bulk', Select).value = 'scope:*@api=off'  # Opus on Claude Code is left to audit Opus
+        assert 'independent audit' not in status()
+        panel.query_one(RouteMatrix).bulk('scope:*@*=off')
         await pilot.pause()
-        assert 'every independent auditor is off or unusable' in status()
+        assert await cell('claude/opus', 'claude-code') == '[x]'  # Opus is left to audit Opus
+        assert UNAUDITED in status()
         panel.query_one('#matrix-role', Select).value = 'explorer'
         await pilot.pause()
-        assert 'every independent auditor is off or unusable' in status()
+        assert UNAUDITED in status()
     journey(tmp_path, steps)
 
 
@@ -274,3 +290,140 @@ def test_entries_that_look_like_markup_are_listed_as_text_and_removed(pool, tmp_
         await pilot.pause()
         assert stored() is None
     journey(tmp_path, steps)
+
+
+def test_save_holds_the_file_from_its_read_to_its_write_against_tare_setup_auto(pool, tmp_path, monkeypatch):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+
+    async def steps(app, pilot, panel, cell, status):
+        await cell('claude/opus', 'claude-code')
+        real, started, outside = environment.read, [], []
+
+        def read():  # Save has read the file: another shell's tare setup --auto tries to write now
+            value = real()
+            if not started:
+                started.append(1)
+                outside.append(environment.main(['--auto', 'planner:gpt/*@codex=off']))
+            return value
+        monkeypatch.setattr(environment, 'read', read)
+        await pilot.click('#matrix-save')
+        for _ in range(100):
+            await pilot.pause(0.1)
+            if 'Saved.' in status():
+                break
+        monkeypatch.setattr(environment, 'read', real)
+        assert outside == [1]  # refused while Save held the file, instead of being overwritten
+        assert stored() == {'off': {'auditor': ['claude/opus@claude-code']}}
+        assert environment.main(['--auto', 'planner:gpt/*@codex=off']) == 0
+        assert stored() == {'off': {'auditor': ['claude/opus@claude-code'], 'planner': ['gpt/*@codex']}}
+    journey(tmp_path, steps)
+
+
+def test_the_matrix_reads_its_rows_again_after_the_order_tab_saves(pool, tmp_path):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+
+    async def steps(app, pilot, panel, cell, status):
+        assert await cell('claude/opus', 'claude-code') == '[ ]'  # an unsaved tick whose cell stays
+        assert await cell('gpt/sol', 'codex') == '[ ]!'  # one whose cell goes
+        tabs = panel.query_one('#routes-tabs', TabbedContent)
+        tabs.active = 'routes-order'
+        await pilot.pause()
+        panel.query_one('#routes-auditor-selection', Select).value = 'configured'
+        await pilot.pause()
+        panel.query_one('#routes-auditor', TextArea).load_text('claude-opus-5-5-cli')
+        await pilot.click('#routes-save')
+        await pilot.pause()
+        tabs.active = 'routes-matrix'
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert set(cells(panel)) == {('claude/opus', 'claude-code')}
+        assert str(panel.query_one('#matrix-table').get_cell('claude/opus', 'claude-code')) == '[ ]'
+        extra = panel.query_one('#matrix-extra', OptionList)
+        assert 'off  gpt/sol@codex' in [str(extra.get_option_at_index(i).prompt) for i in range(extra.option_count)]
+        assert 'No route is ticked on for Auditor' in status()  # the warnings follow the new rows
+    journey(tmp_path, steps)
+
+
+def test_availability_is_checked_as_the_role_it_is_for(pool, monkeypatch):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+    monkeypatch.setattr(execution_scope, 'current', lambda: execution_scope.Scope(prefer='local'))
+    with execution_scope.for_role('auditor'):  # --prefer_local keeps planner and auditor external
+        assert turn_engine.available('claude-opus-5-5-cli', probe=False)[0] is not None
+    assert {name: now for name, _, now in environment.auto_routes('auditor')}['claude-opus-5-5-cli'] == 'usable'
+
+
+def test_a_route_a_routing_list_reaches_is_judged_as_that_list_judges_it(pool, monkeypatch):
+    keys(monkeypatch)  # Fable 5.2 on the API: an implementer row of the role table, not qualified there
+    turn_engine.save_policy({'implementer': [['claude-api-fable-5-2']]})
+    assert turn_engine.choose(turn_engine.policy()['implementer'], probe=False)[1] == 'claude-api-fable-5-2'
+    assert {n: now for n, _, now in environment.auto_routes('implementer')}['claude-api-fable-5-2'] == 'usable'
+    assert {n: now for n, _, now in environment.auto_routes('auditor')}['claude-api-fable-5-2'] == 'NOT_QUALIFIED_PIN_ONLY'
+
+
+def test_an_inline_role_table_route_is_its_own_row(pool, tmp_path, monkeypatch):
+    keys(monkeypatch)
+    table = json.loads((Path(native_routes.__file__).with_name('role_deployments.json')).read_text(encoding='utf-8'))
+    row = next(r for r in table['deployments'] if r.get('native_catalog') == 'openai-api')
+    deployment = native_catalog.select('openai-api')
+    table['deployments'].append({**{k: v for k, v in row.items() if k != 'native_catalog'}, 'id': 'inline-auditor',
+                                 'native_profile': deployment['native_profile'],
+                                 'native_credential_env': deployment['native_credential_env']})
+    (tmp_path/'roles.json').write_text(json.dumps(table), encoding='utf-8')
+    monkeypatch.setenv('TARE_ROLE_DEPLOYMENTS', str(tmp_path/'roles.json'))
+    assert 'inline-auditor' in [d['id'] for d in native_routes.ranked('auditor', native_catalog.select(
+        'claude-api-opus-5-5'))[0]]
+    route, now = {n: (r, now) for n, r, now in environment.auto_routes('auditor')}['inline-auditor']
+    assert route['id'] == 'inline-auditor' and now == 'usable'
+
+
+def test_a_researcher_list_route_needs_the_research_tools_own_admission(pool, monkeypatch):
+    keys(monkeypatch)
+    turn_engine.save_policy({'researcher': [['openai-api', 'codex-cli-gpt-6-luna']]})
+    assert turn_engine.available('openai-api', probe=False)[0] is not None
+    assert 'openai-api' in web_research.snapshot()['unavailable']  # not a research CLI nor an OpenRouter route
+    assert {n: now for n, _, now in environment.auto_routes('researcher')}['openai-api'] == 'ROLE_NOT_CONFIGURED'
+
+
+def test_an_empty_saved_heads_up_list_reads_as_its_writer_reads_it():
+    turn_engine.policy_path().parent.mkdir(parents=True, exist_ok=True)
+    turn_engine.policy_path().write_text(json.dumps({'heads_up': []}), encoding='utf-8')
+    assert [n for n, _, _ in environment.auto_routes('heads_up')] == list(dict.fromkeys(
+        turn_engine.DEFAULT_POLICY['heads_up']))
+
+
+def flat(items):
+    return [n for item in items for n in (item if isinstance(item, list) else [item])]
+
+
+def test_the_matrix_rows_agree_with_the_paths_that_route(pool, monkeypatch):
+    """auto_routes against the real paths on the fixture catalogue, with no profile. Ranked roles: the routes only the
+    role table reaches, against native_routes.ranked (review roles: the union over a producer of each vendor, since
+    the matrix checks no independence). tare auto's tiers, for implementer and for the researcher's /research link
+    summary: against turn_engine.choose(probe=False), name by name. The researcher list: against
+    web_research.snapshot(). Not compared, because their loops live inline in their callers: the planner list
+    (planning_tools), vision (turn_engine.describe_files), heads_up (heads_up.write), the web search helper
+    (turn_engine.ask_cli) and the owner's auditor list (turn_engine.pick_auditors, which needs a producer)."""
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+    install(pool, 'claude-fable-5-2-cli', 'cli://claude', 'claude-fable-5-2')
+    install(pool, 'codex-cli-gpt-5-6-sol', 'cli://codex', 'gpt-5.6-sol')
+    keys(monkeypatch)
+    rules = turn_engine.policy()
+    producers = [native_catalog.select(name) for name in ('claude-api-opus-5-5', 'openai-api', 'gemini-api')]
+    for role in ('implementer', 'explorer', 'planner', 'plan-auditor', 'auditor'):
+        rows = {name: now for name, _, now in environment.auto_routes(role)}
+        listed = set(flat(rules.get(role) or [])) if role in ('implementer', 'planner') else set()
+        eligible = set()
+        for producer in producers if 'auditor' in role else [None]:
+            eligible |= {c['catalog'] for c in native_routes.ranked(role, producer)[1]['candidates'] if c['eligible']}
+        assert {n for n, now in rows.items() if now == 'usable' and n not in listed} == eligible - listed, role
+    table = {r.get('native_catalog', r['id']) for r in native_routes.configured()['deployments']}
+    for role in ('implementer', 'researcher'):
+        rows = {name: now for name, _, now in environment.auto_routes(role)}
+        for name in set(flat(rules['implementer'])) - table - set(rules['researcher']):
+            taken = turn_engine.choose([[name]], probe=False, role=role)[2] is not None
+            assert (rows[name] == 'usable') == taken, (role, name)
+    rows, snapshot = {n: now for n, _, now in environment.auto_routes('researcher')}, web_research.snapshot()
+    for name in set(rules['researcher']) - set(flat(rules['implementer'])) - set(turn_engine.HELPER_ROUTES):
+        assert (rows[name] == 'ROLE_NOT_CONFIGURED') == ('admitted research' in snapshot['unavailable'].get(name, '')), name
+        assert rows[name] != 'usable' or name in snapshot['routes'], name

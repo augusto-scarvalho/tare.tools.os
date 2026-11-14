@@ -97,6 +97,8 @@ class RoutesPanel(SupportPanel):
             for role in ROUTE_ROLES:
                 self.query_one('#routes-' + role, TextArea).load_text(as_text(value.get(role) or []))
             self.query_one('#routes-auditor-selection', Select).value = value['auditor_selection']
+            if self.query_one(RouteMatrix).routes is not None:  # its rows follow these lists
+                self.query_one(RouteMatrix).open()
         except (ValueError, OSError) as exc:
             message = str(exc)
         if self.is_mounted:

@@ -324,40 +324,65 @@ def switched_off(role, deployment, *names, value=None):
     return None
 
 
-def auto_routes(role, value=None):
-    """(name, route or None, now) of each route automatic `role` routing considers here, checked without a live probe:
-    `now` is 'usable' or why it cannot be used now (a rule). The routing profile does not change it. The candidates are
-    what each role's automatic path reads: implementer and planner their routing list and role table; explorer its role
-    table; auditor and plan-auditor the owner's auditor list when "Use my auditor routes" is chosen and their role
-    table otherwise, never both (native_routes._reviewers); researcher its list, tare auto's tiers (the /research link
-    summary) and the Codex web search helper; vision and heads_up their list."""
+def auto_routes(role):
+    """[(name, route or None, now)] of the routes automatic `role` routing considers here, checked as each path that
+    reaches a route checks it, under that role, without a live probe: `now` is 'usable' when one of those paths takes
+    it, else the first path's reason (a rule). The routing profile does not change it. The paths: implementer and
+    planner their routing list (availability) and role table (native_routes.admission, what ranks); explorer its role
+    table; auditor and plan-auditor the owner's auditor list when "Use my auditor routes" is chosen, else their role
+    table, never both (native_routes._reviewers); researcher its list (availability and the research tool's own
+    admission), tare auto's tiers (the /research link summary) and the Codex web search helper; vision and heads_up
+    their list, read as their writer reads it."""
+    from copy import deepcopy
     from .cli_discovery import TEMPLATES
-    from .execution_scope import current
+    from .execution_scope import current, for_role
     from .native_catalog import select
-    from .native_routes import configured, roles as table_roles
-    from .turn_engine import HELPER_ROUTES, available, policy
-    value = read() if value is None else value
+    from .native_routes import admission, configured, roles as table_roles
+    from .turn_engine import DEFAULT_POLICY, HELPER_ROUTES, available, policy
+    from .web_research import DEFAULT_ROUTES, admits, research_api_routes
     templates = json.loads(TEMPLATES.read_text(encoding='utf-8'))
     rules = policy()
-    review = role in ('auditor', 'plan-auditor')
-    owner = review and not (current().changes(role) or rules.get('auditor_selection', 'cross_vendor_frontier')
-                            == 'cross_vendor_frontier')
+    owner = role in ('auditor', 'plan-auditor') and not (
+        current().changes(role) or rules.get('auditor_selection', 'cross_vendor_frontier') == 'cross_vendor_frontier')
+    lists = {'implementer': rules['implementer'], 'planner': rules['planner'],
+             'researcher': [*rules['implementer'], *HELPER_ROUTES],
+             'vision': rules.get('vision', DEFAULT_POLICY['vision']),
+             'heads_up': rules.get('heads_up') or DEFAULT_POLICY['heads_up']}
+
+    def flat(items):
+        return [n for item in items or [] for n in (item if isinstance(item, list) else [item])]
+    paths = {}  # name: how each path that reaches it judges it
+    for name in flat(rules['auditor'] if owner else lists.get(role)):
+        paths.setdefault(name, []).append('list')
+    for name in flat(rules.get('researcher', DEFAULT_ROUTES) if role == 'researcher' else []):
+        paths.setdefault(name, []).append('research')
     table = {row.get('native_catalog', row['id']): row for row in configured()['deployments']
              if role in RANKED_ROLES and not owner and role in table_roles(row, current())}
-    lists = (rules.get('auditor') if owner else None if review else rules.get(role)) or []
-    if role == 'researcher':
-        lists = [*lists, *rules.get('implementer', []), *HELPER_ROUTES]
-    listed = [n for item in lists for n in (item if isinstance(item, list) else [item])]
-    for name in dict.fromkeys([*listed, *table]):
-        deployment, why = available(name, probe=False)
-        try:
-            known = deployment or select(name)
-        except (ValueError, OSError, KeyError, TypeError):
-            known = templates.get(name)  # a CLI route not set up here: its shipped template names its line
-        row = table.get(name, {})  # its rules (qualified, older) are the role table's; a routing list asks available()
-        yield name, known, (why.diagnostic['code'] if why is not None else 'NOT_QUALIFIED_PIN_ONLY'
-                            if row.get('qualified') is False else 'OLDER_MODEL' if row and older(deployment, value)
-                            else 'usable')
+    for name in table:
+        paths.setdefault(name, []).append('table')
+    api_routes, credentials, found = research_api_routes() if role == 'researcher' else set(), {}, []
+    with for_role('auditor' if owner else role):  # pick_auditors checks as auditor; every other path as its role
+        for name, ways in paths.items():
+            known, reasons = None, []
+            for way in ways:
+                if way == 'table':
+                    deployment, _, why = admission(table[name], role, None, credentials)
+                else:
+                    deployment, why = available(name, probe=False)
+                    why = why and why.diagnostic['code']
+                    if way == 'research' and not why and not admits(name, deployment, api_routes):
+                        why = 'ROLE_NOT_CONFIGURED'
+                known, reasons = known or deployment, [*reasons, why]
+            if known is None:
+                row = table.get(name)
+                try:
+                    known = select(name)
+                except (ValueError, OSError, KeyError, TypeError):  # not set up here: a shipped CLI template names
+                    # its line; an inline table row of a native route is its own route, as _ranked realises it
+                    known = templates.get(name) or (deepcopy(row) if row and not row.get('native_catalog')
+                                                    and row.get('native_profile') else None)
+            found.append((name, known, 'usable' if None in reasons else reasons[0]))
+    return found
 
 
 def auto_rows(role, value=None):
@@ -365,7 +390,7 @@ def auto_rows(role, value=None):
     ('on' is tare's default; an entry is the owner's) and why one cannot be used now (a rule)."""
     value = read() if value is None else value
     rows = []
-    for name, known, now in auto_routes(role, value):
+    for name, known, now in auto_routes(role):
         state = known and profile_state(role, known, value=value)
         rows.append({'route': name, 'line': route_label(known) if known else '?',
                      'profile': f'{state[0]} ({state[1]})' if state else 'on' if known else '?', 'now': now})
@@ -494,6 +519,27 @@ def save(value):
     os.replace(staged, path)
     _profiles.clear()  # this process reads the routing profile it just saved
     return value
+
+
+def update(change):
+    """Read, change and save the choices as one step under an OS file lock (released on a crash; a writer that does
+    not get it within two seconds fails): change(value) returns the value to save, or None to save nothing. The
+    writers of the routing profile take it (the /routes matrix, tare setup --auto and --auto-reset); the other
+    writers of this file (tare setup's other choices, the Setup panel) do not yet."""
+    from contextlib import ExitStack
+    from .conversation_permissions import decision_lock
+    folder = store().parent/'environment-lock'
+    folder.mkdir(parents=True, exist_ok=True)
+    with ExitStack() as held:
+        try:
+            held.enter_context(decision_lock(folder))
+        except ValueError:
+            raise ValueError(f'another writer is saving {store()}; nothing was saved, try again') from None
+        value = read()
+        if 'error' in value:
+            raise ValueError(value['error'] + ' (tare setup --reset starts again)')
+        changed = change(value)
+        return value if changed is None else save(changed)
 
 
 # Shipped local profiles (Qwen, Swift...) name the gateway placeholder; once the machine names its gateways they are
@@ -1041,16 +1087,16 @@ def main(argv=None):
             print(f'Moved {len(moved)} route(s) to newer models.', file=sys.stderr)
         if args.keep_older:
             value = keep_older(value, replacements(value))
-        for spec in args.auto:
-            value = set_auto(value, spec)
-        if args.auto_reset is not None:
-            value = reset_auto(value, args.auto_reset)
+        def auto(value):
+            for spec in args.auto:
+                value = set_auto(value, spec)
+            return reset_auto(value, args.auto_reset) if args.auto_reset is not None else value
         if changes:
-            value, added, retired = apply(value)
+            value, added, retired = apply(auto(value))
             if added or retired:
                 print(f'Generic local profiles: {len(added)} added, {len(retired)} retired.', file=sys.stderr)
-        elif edits:
-            value = save(value)
+        elif edits:  # on the file as it is under the lock, not as read above: another writer may have saved since
+            value = update(auto)
         if shown or edits:
             problems = profile(value)[1]
             print(json.dumps({'routing_profile': value.get('routing_profile'), 'problems': problems,
