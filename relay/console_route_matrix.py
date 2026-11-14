@@ -3,6 +3,7 @@ It edits the routing profile (`routing_profile`, relay/environment.py) and nothi
 import asyncio
 import copy
 import re
+from types import SimpleNamespace
 
 from rich.text import Text
 from textual.binding import Binding
@@ -246,25 +247,27 @@ class RouteMatrix(Vertical):
         return bool(rule and rule[1] and not rule[2] and rule[3] != '*' and self.look(f'{rule[0]}/{rule[1]}', rule[3]))
 
     def lineage(self, route, key, role):
-        """(model, bias domain) of a route for independence: its line's, from the lines table, else its roster
-        identity; None when tare cannot tell."""
+        """The identity (model_id, vendor, bias_domain) a route's audit independence is judged by: its line's, from
+        the lines table, else its roster identity; None when tare cannot tell."""
         from .vendor_models import LINES
         found = key[0] and LINES.get(f'{key[0]}-{key[1]}')
         if found:
-            return key[:3], found['bias_domain']
+            return SimpleNamespace(model_id='-'.join([key[0], key[1], *map(str, key[2] or ())]),
+                                   vendor=found['vendor'], bias_domain=found['bias_domain'])
         if (route['id'], role) not in self.identities:
             from .work_audit import identity
             try:
-                found = identity(route, role)
-                self.identities[route['id'], role] = found.model_id, found.bias_domain
+                self.identities[route['id'], role] = identity(route, role)
             except (ValueError, KeyError, TypeError, OSError):
                 self.identities[route['id'], role] = None
         return self.identities[route['id'], role]
 
     def safety(self):
         """What the edited ticks say, for the role shown and every role with unsaved edits, whatever is shown: certain
-        lines from ticks alone (no route ticked on, every auditor ticked on of an implementer's line) and an advisory
-        one when every route ticked on is marked not usable now. None says that a route will or will not run."""
+        lines from ticks alone (no route ticked on; an implementer ticked on that every auditor ticked on would be
+        refused for, or that only auditors of its own vendor would audit, as landing_policy.independence judges) and an
+        advisory one when every route ticked on is marked not usable now. None says that a route will or will not
+        run."""
         shown = [self.role, *self.edited()]
         pair = bool({'implementer', 'auditor'} & set(shown))
         lines = []
@@ -276,15 +279,26 @@ class RouteMatrix(Vertical):
             elif 'usable' not in ticked:
                 lines.append(f'{ROLES[role]}: {len(ticked)} route(s) on, none usable now ('
                              + ', '.join(reasons[:3]) + (', …' if len(reasons) > 3 else '') + ').')
+        from .landing_policy import independence  # the rule every audit selection and label uses
         auditors = [self.lineage(r, k, 'auditor') for _, r, _, k in self.routes['auditor']
                     if self.state(r, role='auditor') == 'on'] if pair else []
-        for _, route, _, key in self.routes['implementer'] if auditors else []:
+        unaudited = same_vendor = None
+        for _, route, _, key in self.routes['implementer'] if auditors and None not in auditors else []:
             me = self.state(route, role='implementer') == 'on' and self.lineage(route, key, 'implementer')
-            # a lineage tare cannot tell raises no alarm either way
-            if me and not any(a is None or a[0] != me[0] and a[1] != me[1] for a in auditors):
-                lines.append(f'Every auditor ticked on shares a line with implementer '
-                             f'{env.key_label(key) if key[0] else route["id"]}: no independent audit for its work.')
-                break
+            if not me:  # off, or an identity tare cannot tell: no alarm either way
+                continue
+            kinds = {independence(me, auditor) for auditor in auditors}
+            name = env.key_label(key) if key[0] else route['id']
+            if kinds == {'AUDITOR_NOT_INDEPENDENT'}:
+                unaudited = unaudited or name
+            elif 'INDEPENDENT' not in kinds:
+                same_vendor = same_vendor or name
+        if unaudited:
+            lines.append(f'No auditor ticked on may audit implementer {unaudited} (same model or line): its changes '
+                         'are not audited.')
+        if same_vendor:
+            lines.append(f'Every auditor ticked on for {same_vendor} is of the same vendor: its audits run, labelled '
+                         'not independent.')
         return lines
 
     def edited(self, value=None, base=None):

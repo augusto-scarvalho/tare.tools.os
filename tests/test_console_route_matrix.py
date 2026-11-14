@@ -226,21 +226,56 @@ def test_with_your_auditor_routes_the_matrix_shows_only_them_and_warns_when_none
     journey(tmp_path, steps)
 
 
-UNAUDITED = 'Every auditor ticked on shares a line with implementer '
+UNAUDITED = 'No auditor ticked on may audit implementer '
+SAME_VENDOR = 'is of the same vendor: its audits run, labelled not independent.'
+
+
+async def only_opus_audits(pilot, panel, cell):
+    panel.query_one(RouteMatrix).bulk('scope:*@*=off')
+    await pilot.pause()
+    assert await cell('claude/opus', 'claude-code') == '[x]'
 
 
 def test_the_independent_auditor_warning_stays_while_its_edit_is_unsaved_whatever_role_is_shown(pool, tmp_path):
     install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
 
     async def steps(app, pilot, panel, cell, status):
-        assert 'independent audit' not in status()
-        panel.query_one(RouteMatrix).bulk('scope:*@*=off')
-        await pilot.pause()
-        assert await cell('claude/opus', 'claude-code') == '[x]'  # Opus is left to audit Opus
+        assert UNAUDITED not in status() and SAME_VENDOR not in status()
+        await only_opus_audits(pilot, panel, cell)  # Opus is left to audit Opus
         assert UNAUDITED in status()
         panel.query_one('#matrix-role', Select).value = 'explorer'
         await pilot.pause()
         assert UNAUDITED in status()
+    journey(tmp_path, steps)
+
+
+def test_an_implementer_of_the_auditors_own_line_is_left_unaudited(pool, tmp_path):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+
+    async def steps(app, pilot, panel, cell, status):
+        await only_opus_audits(pilot, panel, cell)
+        assert 'No auditor ticked on may audit implementer bedrock-opus (same model or line): its changes are not ' \
+               'audited.' in status()  # the first Opus implementer; Opus auditors are refused for it
+    journey(tmp_path, steps)
+
+
+def test_a_claude_implementer_with_only_opus_ticked_to_audit_gets_the_same_vendor_line(pool, tmp_path):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+
+    async def steps(app, pilot, panel, cell, status):
+        await only_opus_audits(pilot, panel, cell)
+        assert 'Every auditor ticked on for bedrock-sonnet is of the same vendor: its audits run, labelled not ' \
+               'independent.' in status()  # Claude Sonnet: Opus audits it, labelled not independent
+    journey(tmp_path, steps)
+
+
+def test_an_auditor_of_another_vendor_ticked_on_leaves_no_line(pool, tmp_path):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+
+    async def steps(app, pilot, panel, cell, status):
+        await only_opus_audits(pilot, panel, cell)
+        assert await cell('gpt/sol', 'codex') == '[x]!'  # GPT-6.1 Sol on Codex, not set up here: still a tick
+        assert UNAUDITED not in status() and SAME_VENDOR not in status()
     journey(tmp_path, steps)
 
 
@@ -400,21 +435,21 @@ def test_an_inline_table_row_named_like_a_catalogue_route_is_shown_and_ticked_as
 def test_a_route_that_runs_another_model_under_its_id_is_judged_again_when_the_rows_are_read(pool, tmp_path,
                                                                                                monkeypatch):
     turn_engine.save_policy({'auditor': [['openrouter-muse-wonder']]}, auditor_selection='configured')
-    runs, real = ['gpt-6.1-sol', 'openai/gpt'], work_audit.identity
+    runs, real = ['gpt-6.1-sol', 'OpenAI', 'openai/gpt'], work_audit.identity
 
     def identity(route, role):  # a route with no line is judged by its roster identity
         if route['id'] == 'openrouter-muse-wonder':
-            return SimpleNamespace(model_id=runs[0], bias_domain=runs[1])
+            return SimpleNamespace(model_id=runs[0], vendor=runs[1], bias_domain=runs[2])
         return real(route, role)
     monkeypatch.setattr(work_audit, 'identity', identity)
 
     async def steps(app, pilot, panel, cell, status):
         assert UNAUDITED in status()  # its one auditor runs a GPT, like the GPT implementers
-        runs[:] = ['muse-wonder', 'meta/muse']  # the same id now runs another model
+        runs[:] = ['fixture-model', 'Fixture', 'fixture/one']  # the same id now runs another vendor's model
         panel.query_one(RouteMatrix).open()
         await app.workers.wait_for_complete()
         await pilot.pause()
-        assert UNAUDITED not in status()
+        assert UNAUDITED not in status() and SAME_VENDOR not in status()
     journey(tmp_path, steps)
 
 

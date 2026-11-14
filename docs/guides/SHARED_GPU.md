@@ -236,8 +236,12 @@ another path refuses it.
   Afterwards every cell of the vendor or source reads as asked.
 - The status line says only what the ticks show, for the role shown and for every role with unsaved edits, whichever
   role is shown. From the ticks alone: no route ticked on for a role, and what then happens ("No route is ticked on
-  for Auditor: the change is not audited"); every auditor ticked on sharing a line with an implementer ticked on
-  ("no independent audit for its work"). As advice: routes ticked on, none of them usable now, and why. No line says
+  for Auditor: the change is not audited"); and, judged by the rule every audit selection uses
+  (`landing_policy.independence`), an implementer ticked on that every auditor ticked on would be refused for, of
+  its own model or line ("No auditor ticked on may audit implementer X (same model or line): its changes are not
+  audited."), or that only auditors of its own vendor would audit ("Every auditor ticked on for X is of the same
+  vendor: its audits run, labelled not independent."); an auditor of another vendor ticked on leaves no line, and an
+  identity tare cannot tell raises none. As advice: routes ticked on, none of them usable now, and why. No line says
   that a route will or will not run.
 - Save writes only the roles edited in the tab, over the file as it is then, holding the file from its read to its
   write under an OS lock that `tare setup --auto` and `--auto-reset` also take, so neither overwrites the other; an
