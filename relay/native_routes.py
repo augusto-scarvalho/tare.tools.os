@@ -48,6 +48,8 @@ def _ranked(role, producer=None, *, check_resources=False):
     from . import route_facts
     from .execution_scope import current, same_family_admitted
     fact_cache = {}; evidence = route_facts.supplied_evidence(); observed_facts = {}
+    from .turn_engine import cross_vendor_first
+    first = bool(author) and cross_vendor_first()  # off: --any_vendor_auditor or /routes
     for order, row in enumerate(table['deployments']):
         decision = {'deployment': row['id'], 'eligible': False}
         decisions.append(decision)
@@ -145,7 +147,8 @@ def _ranked(role, producer=None, *, check_resources=False):
                       (deployment['native_profile']['endpoint'] == 'cli://codex' or row['id'] == 'claude-cli'))
         # An independent auditor always precedes an admitted same-family one, and another vendor precedes the same
         # vendor before any preference, tier or priority: a same-vendor auditor runs only when no other is eligible.
-        rank = (same_family, not cross, current().preference(deployment,role), COST[row['cost_tier']], priority, row['kind'] != 'primary', cli_backup, order)
+        # With `first` off the vendor leaves the order: preference, tier, priority, primary, CLI backup, table order.
+        rank = (same_family, first and not cross, current().preference(deployment,role), COST[row['cost_tier']], priority, row['kind'] != 'primary', cli_backup, order)
         eligible.append((rank, deployment, decision))
     if check_resources:
         kept = []
@@ -165,7 +168,7 @@ def _ranked(role, producer=None, *, check_resources=False):
             decision['diagnostic'] = diagnostic(decision['reason'])
     return [deployment for _, deployment, _ in eligible], {
         'schema': 'tare.tools/native-role-selection/1', 'role': role,
-        'reason': 'AUTO_CROSS_VENDOR_THEN_COST_AND_CONFIGURED_ORDER' if author else 'AUTO_COST_AND_CONFIGURED_ORDER',
+        'reason': 'AUTO_CROSS_VENDOR_THEN_COST_AND_CONFIGURED_ORDER' if first else 'AUTO_COST_AND_CONFIGURED_ORDER',
         'policy_sha256': sha256_canonical(table), 'producer_sha256': author.sha256 if author else None,
         'roster_sha256': author.payload['roster_sha256'] if author else None,
         'candidates': decisions, 'generation_calls': 0,
@@ -187,7 +190,7 @@ def _reviewers(producer, role='auditor', *, check_resources=True):
     Automatic admission comes from the role table, not model-name guessing.
     Explicit route lists retain their order after the existing independence gate.
     """
-    from .turn_engine import policy, pick_auditors
+    from .turn_engine import cross_vendor_first, policy, pick_auditors
     from .work_audit import identity, independence
     if role not in {'auditor', 'plan-auditor'}:
         raise ValueError('REVIEW_ROLE_REQUIRED')
@@ -199,7 +202,7 @@ def _reviewers(producer, role='auditor', *, check_resources=True):
     author = identity(producer, 'implementer')
     return [deployment for _, deployment in chosen], {
         'schema': 'tare.tools/native-role-selection/1', 'role': role,
-        'reason': 'OPERATOR_AUDITOR_ROUTES_CROSS_VENDOR_FIRST',
+        'reason': 'OPERATOR_AUDITOR_ROUTES_CROSS_VENDOR_FIRST' if cross_vendor_first() else 'OPERATOR_AUDITOR_ROUTES_IN_ORDER',
         'policy_sha256': sha256_canonical({'auditor':rules['auditor'], 'auditor_selection':'configured'}),
         'producer_sha256': author.sha256, 'roster_sha256': author.payload['roster_sha256'],
         'candidates': [{'deployment': name, 'eligible': True, 'position': index+1,

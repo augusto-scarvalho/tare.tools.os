@@ -3,7 +3,7 @@ import asyncio
 
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Button, Select, Static, TextArea
+from textual.widgets import Button, Checkbox, Select, Static, TextArea
 
 from .console_panels import SupportPanel
 
@@ -49,6 +49,9 @@ class RoutesPanel(SupportPanel):
                 yield Static('Who reviews plans and code?', classes='routes-label')
                 yield Select(AUDITOR_SELECTIONS, value=value['auditor_selection'], allow_blank=False,
                              id='routes-auditor-selection')
+                # Both reviewer modes; unticked saves any_vendor_auditor, absent while ticked (cross_vendor_first).
+                yield Checkbox('Put auditors of another vendor first', value.get('any_vendor_auditor') is not True,
+                               id='routes-cross-vendor-first')
                 yield Static('Automatic prefers another model provider. It uses enabled frontier connections, '
                              'subscription quota before metered API, Sol before Astra and Opus before Fable. '
                              'Google uses Argon. No extra model request is made to choose a reviewer.', classes='routes-label')
@@ -82,7 +85,8 @@ class RoutesPanel(SupportPanel):
             if event.button.id == 'routes-save':
                 roles = {role: from_text(self.query_one('#routes-' + role, TextArea).text) for role in ROUTE_ROLES}
                 value = await asyncio.to_thread(save_policy, roles,
-                    auditor_selection=self.query_one('#routes-auditor-selection', Select).value)
+                    auditor_selection=self.query_one('#routes-auditor-selection', Select).value,
+                    any_vendor_auditor=not self.query_one('#routes-cross-vendor-first', Checkbox).value)
                 message = 'Saved. New sessions take these routes; new reviews use this reviewer choice.'
             else:
                 value = await asyncio.to_thread(reset_policy)
@@ -90,6 +94,7 @@ class RoutesPanel(SupportPanel):
             for role in ROUTE_ROLES:
                 self.query_one('#routes-' + role, TextArea).load_text(as_text(value.get(role) or []))
             self.query_one('#routes-auditor-selection', Select).value = value['auditor_selection']
+            self.query_one('#routes-cross-vendor-first', Checkbox).value = value.get('any_vendor_auditor') is not True
         except (ValueError, OSError) as exc:
             message = str(exc)
         if self.is_mounted:
