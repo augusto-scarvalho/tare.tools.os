@@ -28,7 +28,7 @@ artifacts carry the session and profile digest, not authority.
 The native code auditor cannot edit: [`work_audit.run`](../../relay/work_audit.py)
 gives it read/list/search access, no writable paths, commands or admission power.
 Code audit is optional by default ([`default_policy` / `evaluate_admission`](../../relay/landing_policy.py)).
-When counted as independent, it requires a different `model_id` and `bias_domain`
+To count, it requires a different `model_id` and `bias_domain`
 ([`attest_identity`](../../relay/landing_policy.py), [`prepare`](../../relay/work_audit.py)).
 Both come from the model's record in `relay/round_table_roster.json`, which always decides. A native route's model
 id that no record names gets them from its line in `relay/model_lines.json` (vendor and bias domain; the model id
@@ -37,7 +37,10 @@ Anthropic's lines under their own ids with an effort suffix (`vendor_models.ORIG
 `line` (for example `"line": "claude-fable"`) so a receipt shows it was derived, not recorded; an id of no line,
 or a reseller's (OpenRouter, Bedrock, OpenCode, a local gateway), stays without identity and is refused as before.
 Claude Fable 5.3 therefore cannot audit Claude Fable 5.2, nor AGY's Claude Opus a Claude Opus on Claude Code,
-while Opus may still review Fable (another bias domain of the same vendor). The audit's review references the exact candidate and recorded evidence (`work_audit.run`).
+while Opus may still review Fable (another bias domain of the same vendor). Such a same-vendor audit counts, but it is
+not independent: the admission verdict records `independent: false` with the `CROSS_VENDOR_AUDITOR_PREFERRED`
+warning, and the Work's result says "audited by the same vendor: not independent" (`landing_policy.independence`).
+The audit's review references the exact candidate and recorded evidence (`work_audit.run`).
 A separate `plan-auditor` session alone does not attest model independence.
 Saved and imported artifacts remain proposals with `authority: NONE`
 ([`save_output` / `read_input`](../../relay/native_artifacts.py)); importing them does not verify their sources.

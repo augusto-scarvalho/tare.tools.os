@@ -148,8 +148,8 @@ def observe(node, implementer, audit, policy, cancellation, root, assess, *, aut
                     raise ValueError(reason)
                 # Effort realization must still have the independent auditor identity.
                 if role == 'auditor':
-                    producer, reviewer = identity(implementer, 'implementer'), identity(deployment, 'auditor')
-                    if producer.model_id == reviewer.model_id or producer.bias_domain == reviewer.bias_domain:
+                    from .landing_policy import independence
+                    if independence(identity(implementer, 'implementer'), identity(deployment, 'auditor')) == 'AUDITOR_NOT_INDEPENDENT':
                         raise ValueError('AUDITOR_NOT_INDEPENDENT')
                 seen.add(fingerprint)
                 fact_path = f'{role}-{key}-facts.json'
