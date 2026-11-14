@@ -537,6 +537,7 @@ def write(text, seen, known=()):
     from .native_generation import generate_text, vault_secret
     from .turn_engine import DEFAULT_POLICY, available, policy, with_effort
     from .environment import switched_off
+    from .execution_scope import admit
     prompt = ('Notes already shown to the user (never repeat these):\n' + ('\n'.join('- ' + s for s in seen) or 'none')
               + ('\n\nFacts the host is certain of (never contradict them):\n' + '\n'.join('- ' + s for s in known)
                  if known else '')
@@ -553,6 +554,7 @@ def write(text, seen, known=()):
             deployment = with_effort(deployment, effort)
         started = time.monotonic()
         try:
+            admit(deployment, 'heads_up')  # the routing profile's backstop: this call starts no session
             ok, answer, receipt = generate_text(deployment, deployment['native_profile']['model'], prompt,
                                                 WRITER_SECONDS, system=SYSTEM, credential_resolver=vault_secret,
                                                 control=_control(token))

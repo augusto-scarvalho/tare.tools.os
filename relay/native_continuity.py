@@ -138,7 +138,9 @@ def preview(source, project, *, terminal_connection=None):
                 'omitted_observations': checkpoint.get('omitted_observations', 0)}
 
 
-def save_request(target, preview, text, deployment):
+def save_request(target, preview, text, deployment, chosen=False):
+    """`chosen`: the user picked this route for the switch (the TUI's reviewed provider change), so the routing profile
+    lets it start; tare auto's escalation is not the user's choice."""
     if not isinstance(text, str) or not text.strip() or len(text.encode()) > MAX_BRIEF_BYTES:
         raise ValueError(f'Keep the continuity brief between 1 and {MAX_BRIEF_BYTES} UTF-8 bytes.')
     root = regular(Path(target).resolve())
@@ -146,7 +148,7 @@ def save_request(target, preview, text, deployment):
         raise ValueError('Continuation storage must be outside the project.')
     root.mkdir(parents=True, exist_ok=False)
     save_json(root/'continuation.json', {**preview, 'text': text, 'deployment': deployment,
-        'user_context': preview['user_context'] if text == preview['text'] else text})
+        'user_context': preview['user_context'] if text == preview['text'] else text, **({'chosen': True} if chosen else {})})
 
 
 def inherit(root, stack):

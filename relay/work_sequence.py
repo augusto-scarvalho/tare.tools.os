@@ -679,21 +679,25 @@ def main(argv=None):
         if args.resume or args.show:
             if not args.sequence or args.works or args.root or args.deployment or args.native_deployment or args.unlimited or args.wait_before_implement or args.expected_selection or args.workers not in (None, 1) or args.isolated_effects or args.show and args.workers is not None:
                 raise ValueError('Resume/show requires only the saved sequence path; saved configuration is reused.')
-            directory = args.sequence
+            directory, named = args.sequence, None
             if args.resume and args.workers == 1:
                 serial(directory)
         else:
             from .native_catalog import select
             directory = args.sequence or sequence_root()/uuid4().hex
-            create(directory, args.works, args.root or Path.cwd(), select(args.deployment, args.native_deployment, role='implementer'),
+            deployment = select(args.deployment, args.native_deployment, role='implementer')
+            named = deployment if args.native_deployment or args.deployment not in (None, 'auto') else None
+            create(directory, args.works, args.root or Path.cwd(), deployment,
                    unlimited=args.unlimited, wait_before_implement=args.wait_before_implement, expected_selection=args.expected_selection,
                    workers=args.workers or 1, isolated_effects=args.isolated_effects, limits=limits,
                    findings=args.findings, findings_sha256=args.findings_sha256)
         from tare_tools_agent_runtime import CancellationToken
         from . import native_signals
+        from .execution_scope import user_choice
         cancel = CancellationToken(); previous = native_signals.install(cancel)
         try:
-            result = inspect(directory) if args.show else execute(directory, cancellation=cancel, invocation_id=args.invocation_id)
+            with user_choice('implementer', named):  # the user's own implementer (the routing profile's backstop)
+                result = inspect(directory) if args.show else execute(directory, cancellation=cancel, invocation_id=args.invocation_id)
         finally:
             native_signals.restore(previous)
         print(json.dumps(result, ensure_ascii=False) if args.format == 'json' else render(result))

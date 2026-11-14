@@ -91,51 +91,75 @@ share). A model that appears later follows the default, and an update of tare's 
 now the default is the routes each role uses today, so the profile can only switch routes off; an "on" entry
 undoes a broader "off". A screen for it in `/routes` comes next.
 
-- **Only your own choices pass it.** A model you pick, a role pin (`--implementer`, `--auditor`, ...),
-  `--coordinator`, and the explorer and overflow explorer you set in `/delegation` still reach a route that is
-  off. Everything else skips it: tare auto's tiers, the role tables, the planner, auditor, vision, researcher and
-  heads-up lists, a saved `routing.json` (the order file does not switch a route back on), and a route the
-  coordinator names for a unit's implementer, a plan or a search, or the conversation's own model when a unit falls
-  back to it (it was picked for the conversation, not as implementer). The coordinator is a model, so its choice is
-  not yours: the route does not run, and the coordinator is told which route is off for which role and how you can
-  switch it on (`tare setup --auto ROLE:claude/opus-5.5@claude-code=on`, the route's version on its source; a route
-  id for a model with no line) or pin it. A pin of that route wins, since the pin is yours. A plan review reads the
-  `plan-auditor` entries and a change audit the `auditor` ones, also with your own auditor list; `/research` reads
-  the `researcher` entries, for the summary of its links and for its Codex web search.
+- **Only your own choices pass it.** These still start a route that is off:
+  - the model you pick (the picker's concrete model for a conversation or a flow, or a route you name with
+    `--deployment` or `--native-deployment`), for the role it runs in;
+  - a provider switch you review in the TUI;
+  - a role pin (`--implementer`, `--auditor`, ...) of that route, for that role (an auditor pin also covers plan
+    reviews);
+  - `--coordinator`, for the conversation;
+  - the explorer and overflow explorer you set in `/delegation`.
+
+  Everything else is automatic and skips the route: tare auto's tiers and the escalation to a next tier, the role
+  tables, the planner, auditor, vision, researcher and heads-up lists, a saved `routing.json` (the order file does
+  not switch a route back on), a challenger sampled by `/delegation`, a route the coordinator names for a unit's
+  implementer, a plan or a search (the coordinator is a model, so its choice is not yours), the conversation's own
+  model when a unit falls back to it (it was picked for the conversation, not as implementer), and a planner
+  reviewing its own plan when no independent reviewer is left (that is plan-auditor work). A choice is for one
+  route in one role: picking a model for the conversation or pinning it as planner does not make it your auditor.
+- **Two layers.** Each automatic path skips a route that is off and takes the next one, and says why (below).
+  Behind them, every new start of a role checks again where it starts (a session, or a vision, heads-up,
+  research, `tare explore` or `tare-copilot` call): a start the user did not choose is refused with
+  `SWITCHED_OFF_FOR_ROLE`, so a path that forgot to skip refuses loudly instead of running the route. A session
+  that already started goes on: a follow-up turn or a resumed session keeps its route. A fresh session is a new
+  start and is checked: after an edited earlier message, a mode change, a spent budget or an escalation,
+  `tare serve` moves the chat to the next route that is on.
 - **Rules come first.** A provider declined in setup, a route not yet proven here (`NOT_QUALIFIED_PIN_ONLY`), an
   older model (`OLDER_MODEL`), an auditor of the same family, a missing credential or a spent quota keep their own
   reasons. An "on" entry never makes such a route usable.
 - **A skipped route says why:** `SWITCHED_OFF_FOR_ROLE` and the entry, in tare auto's skipped routes, in a role
-  table's candidates and in "No route can start". A role left with no route behaves as when none is available: no
-  auditor means the change is not audited, no implementer means `tare_auto_no_route_available`.
+  table's candidates and in "No route can start", with how to switch it on (`tare setup --auto ROLE:ENTRY=on`) or
+  pin it, so the coordinator can tell you. A role left with no route behaves as when none is available: no auditor
+  means the change is not audited, no implementer means `tare_auto_no_route_available`, and a plan whose planner
+  is off for `plan-auditor`, with no independent reviewer left, is blocked before any model call
+  (`ROUTE_BLOCKED`, "No eligible plan-auditor").
 
-An entry is a route id or `MODEL@SOURCE`:
+An entry is `MODEL@SOURCE` or a route id. tare reads a route by what it is, never by what its model's name
+resembles:
 
 | Entry | Matches |
 |---|---|
-| `claude/fable@api` | Claude Fable on the Claude API, every version, a new one included |
+| `claude/fable@api` | Claude Fable on Anthropic's API, every version, a new one included |
 | `claude/fable-5.2@api` | only Claude Fable 5.2 there |
 | `claude/*@claude-code` | every Claude line on Claude Code |
 | `*@openrouter` | every route on OpenRouter |
-| `openrouter-muse-wonder` | a model with no line, by the route id `tare models` shows, and any other route id of that model on that source |
+| `openrouter-muse-wonder` | that one route, a route with no line, by the id `tare models` shows |
 
+- A route has a line only where its endpoint is the vendor's own: the vendor's CLI or API, Codex Direct for
+  OpenAI, or AGY serving Google's or Anthropic's model (`agy-claude-opus-5-5-cli` is `claude/opus-5.5@agy`, at
+  every effort). A reseller, a custom endpoint or a local model has no line, even when its model is called
+  `claude-fable-5-2`: name it by its route id or by `*@SOURCE`.
 - `MODEL` is `*`, a vendor (`claude/*`), a line as `relay/model_lines.json` names it (`claude/opus`, `gpt/sol`,
-  `gemini/argon`) or a line and version (`gpt/sol-6.1`; at most three parts of at most four digits). A model with
-  a line is named only this way, so one entry covers every route id of it on a source (`claude-cli` and
-  `claude-opus-5-5-cli` both run Claude Opus 5.5 on Claude Code): `tare setup --auto` refuses a route id for such a
-  route and prints the entry to use. A route id saved for one anyway is read as its version on its source, and
-  `tare setup` says so. A model with no line there (a reseller's own model, a local model) is named by its route
-  id or by `*@SOURCE`.
-- An alias is checked as itself and as the route it becomes: `local-default` (the fleet's default) and
-  `local-auto` (Swift Flash-Next on an idle host, else Qwen3.8) when they resolve; `auto` and tare auto through
-  each candidate they rank. An entry for `qwen38-gsq` also stops `local-default` when that is what it runs.
+  `gemini/argon`) or a line and version (`gpt/sol-6.1`; at most three parts of at most four digits).
+- A route with a line is named only by `MODEL@SOURCE`, so one entry covers every route id of it on a source
+  (`claude-cli` and `claude-opus-5-5-cli` both run Claude Opus 5.5 on Claude Code): `tare setup --auto` refuses a
+  route id for such a route and prints the entries to use. A route id saved for one anyway is read as its version
+  on its source, and `tare setup` says so.
+- A route id names exactly one route, the one tare resolves it to (`local-qwen` and `qwen38-gsq` name the same
+  route), and never another route that runs a model of the same name: two gateways that both serve `default` are
+  two routes, and `default-high` is a third. `auto`, `tare-auto` and `local-default` are names of automatic
+  routing, not routes: `tare setup` refuses them and ignores a saved one. A name that becomes a route when it
+  runs is checked as the route it became: `local-default` as the fleet's default route, `local-auto` as Swift
+  Flash-Next when the host is idle and as its own route otherwise, `auto` and tare auto as each candidate they
+  take.
 - `SOURCE` is `*` or one of `claude-code`, `codex` (the Codex CLI and Codex Direct: one ChatGPT plan), `agy`,
-  `opencode-sub`, `opencode-api`, `api` (the vendor's API, or another API paid per token), `openrouter`,
-  `bedrock`, `local`.
-- The most specific entry wins: a route id (of a model with no line), then a version, a line, a vendor, `*`; at
-  each of these a named source beats `*`. When "on" and "off" tie, "off" wins.
-- Roles: `implementer` (tare auto's tiers and Work units), `explorer`, `planner`, `plan-auditor`, `auditor`,
-  `researcher`, `vision`, `heads_up`.
+  `opencode-sub`, `opencode-api`, `api` (only a vendor's own API: Anthropic, OpenAI, Google), `openrouter`,
+  `bedrock`, `local`, `other-api` (any other endpoint paid per token).
+- The most specific entry wins: a route id, then a version, a line, a vendor, `*`; at each of these a named
+  source beats `*`. When "on" and "off" tie, "off" wins. Two entries tare reads the same
+  (`claude/fable-05.2@api` and `claude/fable-5.2@api`) are one: setting one replaces the other.
+- Roles: `implementer` (tare auto's tiers, the conversation tare auto starts, Work units), `explorer`, `planner`,
+  `plan-auditor`, `auditor`, `researcher`, `vision`, `heads_up`.
 - An entry tare cannot read is ignored and named by `tare setup`; it never stops routing.
 
 ```

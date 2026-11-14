@@ -263,7 +263,7 @@ def projection(*, role=None, via=None, vendor=None, provider=None, include_uncon
         if route.get('openrouter'):
             result[-1]['openrouter'] = route['openrouter']
         if role in PROFILE_ROLES:  # the routing profile's state for this role's automatic routing (tare setup --auto)
-            state = profile_state(role, value, name, value=setup)
+            state = profile_state(role, value, value=setup)
             result[-1]['automatic'] = f'{state[0]} ({state[1]})' if state else 'on'
     return result
 

@@ -5,6 +5,7 @@ No daemon, new engine, implicit Work selection, hook installation or settlement.
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 import importlib
 import json
 from pathlib import Path
@@ -159,6 +160,13 @@ def maintain(root, *, apply=False):
     after = IncrementalCacheEngine.detect_staleness(root)
     return {"status": "REPAIRED" if after.status == "FRESH" else "REPAIR_FAILED",
             "applied": True, "target": ".specgraph/cache.json", "authority": "NONE"}
+
+
+def named(role, args, deployment):
+    """A route the command line names (--deployment NAME, --native-deployment FILE) is the user's own choice for
+    `role`: the routing profile lets it start (relay.execution_scope.user_choice)."""
+    from relay.execution_scope import user_choice
+    return user_choice(role, deployment if args.native_deployment or args.deployment not in (None, 'auto') else None)
 
 
 CUSTODY = Path(__file__).resolve().parent.parent / ".reconciliation"
@@ -393,18 +401,25 @@ def main(argv=None):
                                 or args.unlimited or limits or hasattr(args, 'max_compactions')):
                 raise ValueError('WORK_RESUME_REUSES_ORIGINAL_EXECUTION_OPTIONS')
             from relay.work_audit import select_deployments
+            from relay.execution_scope import user_choice
             from tare_tools_agent_runtime import CancellationToken
             import signal
             cancel = CancellationToken()
             from relay import native_signals
             previous = native_signals.install(cancel)
             try:
-                output = run_work(args.work_id, graph_path=args.project_graph, deployment=args.deployment or 'local-qwen', repository_root=args.repo_root, checks=checks, dry_run=args.dry_run,
-                                  native_deployment=None if args.resume else select(args.deployment, args.native_deployment, role='implementer'),
-                                  limits=limits, unlimited=args.unlimited, wait_before_implement=args.wait_before_implement, run_id=args.run_id,
-                                  findings=args.findings, findings_sha256=args.findings_sha256,
-                                  audit_deployments=select_deployments(args.auditor_deployment, args.auditor_profile),
-                                  max_compactions=getattr(args, 'max_compactions', native_limits.UNSET), cancellation=cancel, resume=args.resume, retry_plan=args.retry_plan, retry_audit=args.retry_audit, **policy_options)
+                implementer = None if args.resume else select(args.deployment, args.native_deployment, role='implementer')
+                audits = select_deployments(args.auditor_deployment, args.auditor_profile)
+                with ExitStack() as chosen:  # the routes the command line names are the user's own
+                    chosen.enter_context(named('implementer', args, implementer))
+                    for audit in audits if isinstance(audits, list) else ():
+                        chosen.enter_context(user_choice('auditor', audit))
+                    output = run_work(args.work_id, graph_path=args.project_graph, deployment=args.deployment or 'local-qwen', repository_root=args.repo_root, checks=checks, dry_run=args.dry_run,
+                                      native_deployment=implementer,
+                                      limits=limits, unlimited=args.unlimited, wait_before_implement=args.wait_before_implement, run_id=args.run_id,
+                                      findings=args.findings, findings_sha256=args.findings_sha256,
+                                      audit_deployments=audits,
+                                      max_compactions=getattr(args, 'max_compactions', native_limits.UNSET), cancellation=cancel, resume=args.resume, retry_plan=args.retry_plan, retry_audit=args.retry_audit, **policy_options)
             finally:
                 native_signals.restore(previous)
             ok = output["status"] in {"SETTLED", "DRY_RUN", "WAITING_FOR_HUMAN", "HUMAN_DECLINED", "PAUSED", "RESUME_REQUESTED"}
@@ -413,10 +428,12 @@ def main(argv=None):
             output, ok = run_status(args.work_id, graph_path=args.project_graph), True
         elif args.action == "explore":
             from relay.native_catalog import select
-            output = explore(args.root, args.question, focus=args.focus, custody=args.custody,
-                             objective=args.objective, api_base=args.api_base, timeout=args.timeout,
-                             sources_only=args.sources_only, index_state=args.index_state, query=args.query,
-                             native_deployment=None if args.sources_only else select(args.deployment, args.native_deployment))
+            explorer = None if args.sources_only else select(args.deployment, args.native_deployment)
+            with named('explorer', args, explorer):
+                output = explore(args.root, args.question, focus=args.focus, custody=args.custody,
+                                 objective=args.objective, api_base=args.api_base, timeout=args.timeout,
+                                 sources_only=args.sources_only, index_state=args.index_state, query=args.query,
+                                 native_deployment=explorer)
             ok = output["status"] in {"COMPLETED", "SOURCES_READY"}
         elif args.action == "evidence":
             output = evidence(args.root, args.path, args.start, args.end, revision=args.revision, custody=args.custody)
@@ -433,12 +450,13 @@ def main(argv=None):
                 if not args.question:
                     raise ValueError("research requires --question, --seed and --domain")
                 from relay.native_catalog import select
-                output = study_owner.view(study_owner.research(jobs, args.question, args.seed, domains=args.domain,
-                    max_pages=args.max_pages, max_depth=args.max_depth, collect_only=args.collect_only,
-                    config={"timeout": args.timeout, **({"api_base": args.api_base} if args.api_base else {})},
-                    lock_path=args.custody / "explorer.lock",
-                    native_deployment=None if args.collect_only else select(args.deployment, args.native_deployment),
-                    max_model_calls=args.max_model_calls))
+                researcher = None if args.collect_only else select(args.deployment, args.native_deployment)
+                with named('researcher', args, researcher):
+                    output = study_owner.view(study_owner.research(jobs, args.question, args.seed, domains=args.domain,
+                        max_pages=args.max_pages, max_depth=args.max_depth, collect_only=args.collect_only,
+                        config={"timeout": args.timeout, **({"api_base": args.api_base} if args.api_base else {})},
+                        lock_path=args.custody / "explorer.lock", native_deployment=researcher,
+                        max_model_calls=args.max_model_calls))
                 ok = output["status"] in {"COMPLETED", "COLLECTED"}
         elif args.action == "doctor":
             if not args.native and (args.deployment or args.native_deployment or args.receipt):

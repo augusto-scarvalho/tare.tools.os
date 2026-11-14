@@ -612,11 +612,18 @@ class ExplorationTools:
             row['executed_decision'] = executed_decision(mode, deployment['id'], [deployment['id']])
             row['attempts'] = list(row.get('attempts') or []) + [executed_attempt(deployment, {'status': 'DISPATCHING'})]
             save_json(folder/'receipt.json', row)  # an interruption keeps this attempt with an unknown result
-            outcome = run_session(config, deployment, folder/'session', instruction,
-                         limits=execution_resources.limits(dict(max_model_calls=calls, max_seconds=seconds, max_model_retries=0, max_stagnant_turns=4),
-                                                           ('stagnation',) if execution_resources.selected('stagnation') else ()),
-                        cancellation=ParentCancellation(control), exploration_leaf=True,
-                        exploration_scope=row['source_path'], **options)
+            # The explorer and overflow explorer set in /delegation are the user's own choice; a sampled challenger
+            # and a route ranked for a restricted launch are not (the routing profile's backstop decides those).
+            frozen = self.__dict__.get('frozen') or {}
+            configured = frozen.get('selection') in ('CONFIGURED_EXPLORER', 'OVERFLOW_EXPLORER') and not (
+                frozen.get('experimental') and variant is frozen.get('variant'))
+            from .execution_scope import user_choice
+            with user_choice('explorer', deployment if configured else None):
+                outcome = run_session(config, deployment, folder/'session', instruction,
+                             limits=execution_resources.limits(dict(max_model_calls=calls, max_seconds=seconds, max_model_retries=0, max_stagnant_turns=4),
+                                                               ('stagnation',) if execution_resources.selected('stagnation') else ()),
+                            cancellation=ParentCancellation(control), exploration_leaf=True,
+                            exploration_scope=row['source_path'], **options)
             settle_attempt(row['attempts'][-1], outcome)
             save_json(folder/'receipt.json', row)
             if (outcome or {}).get('model_recovery', {}).get('available') and not control.should_stop():

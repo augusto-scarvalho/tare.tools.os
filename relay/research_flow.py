@@ -255,18 +255,22 @@ def main(argv=None):
         if args.resume or args.show:
             if not args.research or any((args.root, args.question, args.url, args.deployment, args.native_deployment, args.unlimited)):
                 raise ValueError('Resume/show uses only the saved research selection.')
-            directory = args.research
+            directory, named = args.research, None
         else:
             from .native_catalog import select
             directory = args.research or flow_root()/uuid4().hex
-            create(directory, args.root or Path.cwd(), args.question, args.url,
-                select(args.deployment, args.native_deployment, role='explorer'), unlimited=args.unlimited,
-                origin='CONFIGURED' if args.native_deployment or args.deployment not in (None, 'auto') else None)
+            deployment = select(args.deployment, args.native_deployment, role='explorer')
+            configured = args.native_deployment or args.deployment not in (None, 'auto')
+            named = deployment if configured else None  # the user's own explorer (the routing profile's backstop)
+            create(directory, args.root or Path.cwd(), args.question, args.url, deployment, unlimited=args.unlimited,
+                origin='CONFIGURED' if configured else None)
         from . import native_signals
         from tare_tools_agent_runtime import CancellationToken
+        from .execution_scope import user_choice
         cancel = CancellationToken(); previous = native_signals.install(cancel)
         try:
-            result = (source(directory, args.ref, args.start, args.end) if args.ref else inspect(directory)) if args.show else execute(directory, cancellation=cancel, invocation_id=args.invocation_id)
+            with user_choice('explorer', named):
+                result = (source(directory, args.ref, args.start, args.end) if args.ref else inspect(directory)) if args.show else execute(directory, cancellation=cancel, invocation_id=args.invocation_id)
         finally:
             native_signals.restore(previous)
         print(json.dumps(result, ensure_ascii=False) if args.format == 'json' or args.ref else render(result))

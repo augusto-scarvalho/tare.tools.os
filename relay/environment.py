@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+from types import MappingProxyType
 from urllib.parse import urlsplit
 
 SCHEMA = 'tare.tools/environment/1'
@@ -126,11 +127,14 @@ def decides(name):
 # comes next). tare's default is today's role rows (relay/role_deployments.json and the routing policy's lists); the
 # profile keeps only the owner's differences, so it can only switch routes off, and an "on" entry only undoes a
 # broader "off". Rules above it (setup, qualification, older models, independence, credentials, quota) keep their
-# own reasons. Only the user's own choices pass it: a pick, a pin, --coordinator, the explorers of /delegation; a route
-# a model names (the coordinator's unit, planner or research route) does not. Grammar: docs/guides/SHARED_GPU.md.
+# own reasons. switched_off() is the one answer to "is this route off for this role": automatic paths ask it to skip
+# a route, and execution_scope.admit() asks it where every new start of a role passes, refusing a start the user did
+# not choose (a pick, a pin, a launch flag, the explorers of /delegation). Grammar: docs/guides/SHARED_GPU.md.
 PROFILE_ROLES = ('implementer', 'explorer', 'planner', 'plan-auditor', 'auditor', 'researcher', 'vision', 'heads_up')
 RANKED_ROLES = PROFILE_ROLES[:5]  # the roles relay/role_deployments.json ranks (native_routes.ranked)
-SOURCES = ('claude-code', 'codex', 'agy', 'opencode-sub', 'opencode-api', 'api', 'openrouter', 'bedrock', 'local')
+SOURCES = ('claude-code', 'codex', 'agy', 'opencode-sub', 'opencode-api', 'api', 'openrouter', 'bedrock', 'local',
+           'other-api')
+AUTO_NAMES = ('auto', 'tare-auto', 'local-default')  # names of automatic routing, not routes
 # A line's words start with a letter; a version is at most three parts of at most four digits.
 MODEL = re.compile(r'\*|([a-z0-9]+)/(?:\*|([a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)*)(?:-(\d{1,4}(?:\.\d{1,4}){0,2}))?)')
 
@@ -153,10 +157,12 @@ def entry(text):
 
 
 def source(deployment):
-    """The SOURCES token of a route: who carries it and how it is paid."""
+    """The SOURCES token of a route: who carries it and how it is paid. `api` is a vendor's own API only (a host
+    vendor_models.ORIGINS names); any other endpoint paid per token is `other-api`."""
     from .challenger import local
     from .model_choices import OPENROUTER_ENDPOINT
     from .opencode import subscription
+    from .vendor_models import ORIGINS
     profile = deployment.get('native_profile') or {}
     endpoint, protocol = profile.get('endpoint', ''), profile.get('protocol', '')
     if protocol == 'vendor-cli':
@@ -169,15 +175,22 @@ def source(deployment):
         return 'bedrock'
     if endpoint.rstrip('/') == OPENROUTER_ENDPOINT:
         return 'openrouter'
-    return 'local' if local(deployment) else 'api'
+    if local(deployment):
+        return 'local'
+    url = urlsplit(endpoint)
+    return 'api' if url.scheme == 'https' and url.hostname in {o for v in ORIGINS.values() for o in v} else 'other-api'
 
 
 def route_key(deployment):
-    """(family, line, version, source) of a route: claude-api-fable-5-2 is ('claude', 'fable', (5, 2), 'api'). A model
-    of no line in relay/model_lines.json (a reseller's own id, a local model) has no family, line or version."""
-    from .vendor_models import AGY_EFFORT, line, parse
-    model = (deployment.get('native_profile') or {}).get('model', '')
-    return (*(parse(AGY_EFFORT.sub('', model)) if line(model) else (None, None, None)), source(deployment))
+    """(family, line, version, source) of a route: claude-api-fable-5-2 is ('claude', 'fable', (5, 2), 'api'). A route
+    has a line only where vendor_models.origin_line says its endpoint serves that vendor's own model (the vendor's
+    CLI or API, or AGY); any other route (a reseller, a custom endpoint, a local model) has none, whatever its wire
+    name says."""
+    from .vendor_models import AGY_EFFORT, origin_line, parse
+    profile = deployment.get('native_profile') or {}
+    model = profile.get('model', '')
+    lined = origin_line(model, profile.get('endpoint', ''))
+    return (*(parse(AGY_EFFORT.sub('', model)) if lined else (None, None, None)), source(deployment))
 
 
 def key_label(key, version=True):
@@ -190,16 +203,11 @@ def route_label(deployment):
     return key_label(route_key(deployment))
 
 
-def same_model(deployment):
-    """(wire model, source): what every route id of one model on one source shares, and an alias realised as it."""
-    from .vendor_models import AGY_EFFORT
-    return AGY_EFFORT.sub('', (deployment.get('native_profile') or {}).get('model', '')), source(deployment)
-
-
 def id_rule(text):
-    """(specificity, rule) of a route-id entry. A model with a line is named by MODEL@SOURCE, so an id of such a route
-    reads as its version on its source (every route id of it there); any other id also matches a route of the same
-    model on the same source. An id this machine cannot resolve matches that name only."""
+    """(specificity, rule) of a route-id entry. A route with a line is named by MODEL@SOURCE, so the id of one reads
+    as its version on its source (7, key). Any other id names exactly the route it resolves to here (8, its id:
+    local-qwen and qwen38-gsq are one route), never another route of the same model; an id this machine cannot
+    resolve names itself."""
     from .cli_discovery import TEMPLATES
     from .native_catalog import select
     try:
@@ -207,17 +215,22 @@ def id_rule(text):
     except (ValueError, OSError, KeyError, TypeError):  # not set up here: a shipped CLI template still names its model
         deployment = json.loads(TEMPLATES.read_text(encoding='utf-8')).get(text)
     key = route_key(deployment) if deployment else None
-    if key and key[0] and key[3]:
-        return 7, key
-    return 8, (text, *(same_model(deployment) if deployment else (None, None)))
+    return (7, key) if key and key[0] else (8, (deployment or {}).get('id') or text)
+
+
+def rule_of(text):
+    """The rule a saved entry is read as (a route id of a model with a line reads as its version on its source), or
+    None when it is malformed: two entries are the same when their rules are (claude/fable-05.2 is claude/fable-5.2)."""
+    parsed = entry(text)
+    return parsed and (id_rule(text) if isinstance(parsed[1], str) else parsed)[1]
 
 
 def _profile(value, role):
     saved = None if 'error' in value else value.get('routing_profile')
     if saved is None:
-        return {}, []
+        return MappingProxyType({}), ()
     if not isinstance(saved, dict):
-        return {}, ['routing_profile is not an object; ignored']
+        return MappingProxyType({}), ('routing_profile is not an object; ignored',)
     rules, problems = {}, [f'routing_profile.{key}: unknown; ignored' for key in sorted(set(saved) - {'off', 'on'})]
     for side in ('off', 'on'):
         roles = saved.get(side, {})
@@ -232,26 +245,31 @@ def _profile(value, role):
                 continue
             for text in texts:
                 parsed = entry(text)
-                if parsed is None:
-                    problems.append(f'routing_profile.{side}.{name}: {text!r} is not a route id or MODEL@SOURCE; ignored')
+                if parsed is None or text in AUTO_NAMES:
+                    problems.append(f'routing_profile.{side}.{name}: {text!r} is ' + (
+                        'a name of automatic routing, not a route' if text in AUTO_NAMES else
+                        'not a route id or MODEL@SOURCE') + '; ignored')
                     continue
                 if isinstance(parsed[1], str):
                     parsed = id_rule(text)
-                    if len(parsed[1]) == 4:
+                    if parsed[0] == 7:
                         problems.append(f'routing_profile.{side}.{name}: {text} runs a model line; read as '
                                         f'{key_label(parsed[1])}')
                 rules.setdefault(name, {'off': [], 'on': []})[side].append((text, *parsed))
-    return rules, problems
+    # Read-only: a caller cannot change what the next decision reads from the cache.
+    return MappingProxyType({r: MappingProxyType({s: tuple(e) for s, e in sides.items()})
+                             for r, sides in rules.items()}), tuple(problems)
 
 
 _profiles = {}
 
 
 def profile(value=None, role=None):
-    """The saved routing_profile as ({role: {'off': [(text, specificity, rule)], 'on': [...]}}, problems), for `role`
-    only when one is named. What cannot be read is ignored and named in problems (tare setup shows them): it never
-    stops routing, and ignoring it never makes more routes eligible than tare's default. The file is parsed once per
-    version of it: a new file (tare setup saves by replacing it), another size or time reads it again."""
+    """The saved routing_profile as ({role: {'off': ((text, specificity, rule), ...), 'on': (...)}}, problems), read
+    only, for `role` only when one is named. What cannot be read is ignored and named in problems (tare setup shows
+    them): it never stops routing, and ignoring it never makes more routes eligible than tare's default. The file is
+    parsed once per version of it: save() empties the cache, and another process's save replaces the file (a new
+    inode, also on Windows), so its size, time or inode differs and it is read again."""
     if value is not None:
         return _profile(value, role)
     path = store()
@@ -269,23 +287,18 @@ def profile(value=None, role=None):
     return _profiles[stamp]
 
 
-def profile_state(role, deployment, *names, value=None):
+def profile_state(role, deployment, value=None):
     """('off' or 'on', entry) of the most specific entry for this route and role (off wins a tie), or None: tare's
-    default. `names`: what the caller calls the route (its policy or table name, or an alias such as local-default or
-    local-auto); its id, model and source are known, so an alias is checked as itself and as what it resolved to."""
+    default. A route is known by what it is, never by what it resembles: its line on its source when it has one, else
+    its own id (an alias is checked as the route it realised)."""
     rules = profile(value, role)[0].get(role)
     if not rules:
         return None
-    from .native_catalog import LOCAL, LOCAL_DEFAULT, local_default
-    known = {deployment.get('id'), *names}
-    if LOCAL_DEFAULT in known:
-        known.add(local_default())
-    known |= {LOCAL.get(n, n) for n in known if n}  # local-qwen is qwen38-gsq, as tare models lists it
-    key, model = route_key(deployment), same_model(deployment)
+    key = route_key(deployment)
 
     def matches(rule):
-        if len(rule) == 3:  # a route id of a model with no line
-            return rule[0] in known or rule[1] is not None and rule[1:] == model
+        if isinstance(rule, str):  # a route id of a route with no line
+            return rule == deployment.get('id')
         return rule[3] in ('*', key[3]) and all(want in (None, have) for want, have in zip(rule[:3], key))
     found = max(((specificity, side == 'off', text) for side in ('off', 'on')
                  for text, specificity, rule in rules[side] if matches(rule)), default=None)
@@ -294,15 +307,17 @@ def profile_state(role, deployment, *names, value=None):
 
 def switched_off(role, deployment, *names, value=None):
     """An Unavailable (SWITCHED_OFF_FOR_ROLE) when the routing profile switches this route off for `role`, else None.
-    Every choice but the user's own asks it, after its rules: automatic routing and a route a model names (the
-    coordinator's unit, planner or research route). A pick, a pin or --coordinator never asks. It says how to switch
-    the route on: by its version on its source for a model with a line, else by its route id."""
-    state = profile_state(role, deployment, *names, value=value)
+    `names`: what the caller calls the route, for the message only. It says how the user can switch the route on: by
+    its version on its source for a model with a line, else by a name of the route itself."""
+    state = profile_state(role, deployment, value=value)
     if state and state[0] == 'off':
         from .scheduling_diagnostics import Unavailable
-        name = next((n for n in names if n), deployment.get('id'))
+        own = deployment.get('id')
+        name = next((n for n in names if n), None) or (deployment.get('native_model_choice') or {}).get(
+            'connection') or own
         key = route_key(deployment)
-        target = key_label(key) if key[0] and key[3] else name
+        target = key_label(key) if key[0] else next(
+            (n for n in (name, own) if n and n not in AUTO_NAMES and id_rule(n) == (8, own)), own)
         return Unavailable(f'{name} is switched off for {role} in the routing profile ({state[1]}); the user can switch '
                            f'it on (tare setup --auto {role}:{target}=on) or pin it', 'SWITCHED_OFF_FOR_ROLE')
     return None
@@ -328,7 +343,7 @@ def auto_rows(role, value=None):
             known = deployment or select(name)
         except (ValueError, OSError, KeyError, TypeError):
             known = templates.get(name)  # a CLI route not set up here: its shipped template names its line
-        state = known and profile_state(role, known, name, value=value)
+        state = known and profile_state(role, known, value=value)
         row = table.get(name, {})  # its rules (qualified, older) are the role table's; a routing list asks available()
         now = (why.diagnostic['code'] if why is not None else 'NOT_QUALIFIED_PIN_ONLY' if row.get('qualified') is False
                else 'OLDER_MODEL' if row and older(deployment, value) else 'usable')
@@ -353,26 +368,22 @@ def set_auto(value, spec):
     if state not in ('on', 'off', 'default') or entry(pattern) is None:
         raise ValueError(f'Give ROLE:PATTERN=on|off|default; PATTERN is a route id or MODEL@SOURCE such as '
                          f'claude/fable@api or *@openrouter (sources: {", ".join(SOURCES)}).')
-    if reads_as(pattern) != pattern:
-        line_wide = key_label(id_rule(pattern)[1], version=False)
+    if pattern in AUTO_NAMES:
+        raise ValueError(f'{pattern} is a name of automatic routing, not a route: name the route itself, as tare '
+                         f'models lists it, or MODEL@SOURCE.')
+    rule = rule_of(pattern)
+    if '@' not in pattern and not isinstance(rule, str):
         raise ValueError(f'{pattern} runs a model with a line, which is named by MODEL@SOURCE so that every route of it '
-                         f'there is covered: use {role}:{reads_as(pattern)}={state} (this version), or '
-                         f'{role}:{line_wide}={state} (every version).')
+                         f'there is covered: use {role}:{key_label(rule)}={state} (this version), or '
+                         f'{role}:{key_label(rule, version=False)}={state} (every version).')
     saved = _editable(value)
-    for side in ('off', 'on'):
-        roles = {r: [t for t in texts if reads_as(t) != pattern] if r == role else texts
+    for side in ('off', 'on'):  # an entry read as the same rule is replaced, not left to tie with this one
+        roles = {r: [t for t in texts if rule_of(t) != rule] if r == role else texts
                  for r, texts in saved[side].items()}
         if side == state:
             roles[role] = [*roles.get(role, []), pattern]
         saved[side] = roles
     return _store_profile(value, saved)
-
-
-def reads_as(text):
-    """The entry a saved one is read as: a route id of a model with a line reads as its version on its source."""
-    parsed = entry(text)
-    rule = id_rule(text)[1] if parsed and isinstance(parsed[1], str) else None
-    return key_label(rule) if rule and len(rule) == 4 else text
 
 
 def reset_auto(value, role=''):
@@ -453,6 +464,7 @@ def save(value):
     staged = path.with_name(path.name + f'.{os.getpid()}.tmp')  # the TUI and tare serve may write at once
     staged.write_bytes(raw)
     os.replace(staged, path)
+    _profiles.clear()  # this process reads the routing profile it just saved
     return value
 
 

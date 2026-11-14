@@ -543,9 +543,11 @@ def initial_choice(tiers, text, start=0, role='implementer'):
     return tier, name, chosen, decision['exclusions']
 
 
-def resolve_auto(deployment, start=0, request=None):
+def resolve_auto(deployment, start=0, request=None, role='implementer'):
     """Resolve tare auto once. A supplied initial request permits bounded hosted advice; legacy callers
-    and successor routing keep deterministic selection. Save the choice for the existing fallback ladder."""
+    and successor routing keep deterministic selection. Save the choice for the existing fallback ladder.
+    `role`: the role the route will run in, whose routing profile entries decide (tare auto's tiers are the
+    implementer's; /research reads the researcher's)."""
     from .execution_scope import current, pinned, ROLE
     if current().pin(ROLE.get()):
         if start:
@@ -555,8 +557,8 @@ def resolve_auto(deployment, start=0, request=None):
         return deployment
     from .execution_scope import execution_tiers
     tiers = execution_tiers(policy()['implementer'])
-    tier, name, chosen, skipped = (initial_choice(tiers, request, start) if request is not None
-                                    else choose(tiers, start))
+    tier, name, chosen, skipped = (initial_choice(tiers, request, start, role=role) if request is not None
+                                    else choose(tiers, start, role=role))
     if chosen is None:
         raise UnschedulableError('tare_auto_no_route_available', skipped)
     keep = {k: deployment[k] for k in ('native_model_choice',) if k in deployment}
@@ -823,9 +825,10 @@ def successor(status, *, per_message_limits):
     return 'continue'
 
 
-def next_auto(saved):
+def next_auto(saved, role='implementer'):
     """The deployment after a blocked tare auto session (its tier + 1 onward), else None. When its account ran out of
-    usage, another route of the same tier comes first (available() skips that account's routes)."""
+    usage, another route of the same tier comes first (available() skips that account's routes). `role` as in
+    resolve_auto."""
     if saved.get('native_coordinator_pin'):
         return None  # An explicit conversation pin is never a fallback ladder.
     from .execution_scope import current, ROLE
@@ -836,7 +839,7 @@ def next_auto(saved):
     try:
         # The current invocation's environment already carries inherited policy.
         # Saved deployment metadata must not re-enable an old temporary switch.
-        return resolve_auto(saved, selection['tier'] + (0 if usage_limited(saved) else 1))
+        return resolve_auto(saved, selection['tier'] + (0 if usage_limited(saved) else 1), role=role)
     except ValueError:
         return None
 
@@ -1116,6 +1119,8 @@ def ask_cli(prompt, *, images=(), search=False, timeout=240, trace=None):
         skipped.append((name, 'SWITCHED_OFF_FOR_ROLE'))
     else:
         raise RuntimeError('no Codex CLI route is available' + (': SWITCHED_OFF_FOR_ROLE: ' + refused if refused else ''))
+    from .execution_scope import admit
+    admit(deployment, 'researcher')  # the routing profile's backstop: this call starts no session
     with tempfile.TemporaryDirectory(prefix='tare-serve-cli-') as folder:
         answer = Path(folder)/'answer.txt'
         argv = [deployment['native_cli']['executable'], *(['--search'] if search else []), 'exec',
@@ -1194,6 +1199,8 @@ def see(deployment, prompt, paths, timeout=240):
 
     Codex takes images with -i; Claude takes them as base64 blocks in stream-json input; the AGY CLI accepts only
     text blocks, so a view_file-only agent opens them from a folder added to its workspace."""
+    from .execution_scope import admit
+    admit(deployment, 'vision')  # the routing profile's backstop: this call starts no session
     cli, model = deployment['native_cli']['executable'], deployment['native_profile']['model']
     endpoint = deployment['native_profile']['endpoint']
     with tempfile.TemporaryDirectory(prefix='tare-vision-') as folder:

@@ -1933,9 +1933,9 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             if continuation:
                 from .native_continuity import save_request
                 from .native_agent import session_root
-                preview, brief, deployment = continuation
+                preview, brief, deployment, *chosen = continuation  # a fourth True: the user picked the route
                 self.active.session = str(session_root()/uuid4().hex)
-                save_request(self.active.session, preview, brief, deployment)
+                save_request(self.active.session, preview, brief, deployment, chosen=chosen == [True])
                 self.active.prompt = ''
                 args = ['agent', '--continue-provider', '--session', self.active.session,
                         '--format', 'json', '--activity-events']

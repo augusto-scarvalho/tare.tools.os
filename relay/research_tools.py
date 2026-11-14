@@ -168,6 +168,7 @@ class ResearchTools:
         # returned to the coordinator instead of silently starting another CLI.
         from .turn_engine import usage_limited
         from .environment import allows, switched_off
+        from .execution_scope import pins_route
         from .native_routes import executed_attempt, executed_decision, settle_attempt
         visited, skipped = [], []
         launched = None
@@ -181,7 +182,8 @@ class ResearchTools:
             deployment = frozen['routes'][name]
             if not allows(deployment)[0] or usage_limited(deployment):
                 blocked = 'DISABLED_OR_USAGE_LIMITED', 'Disabled or quota-limited.'
-            elif not current().pin('researcher') and (off := switched_off('researcher', deployment, name)):
+            elif (off := switched_off('researcher', deployment, name)) and not pins_route(current().pin('researcher'),
+                                                                                         deployment):
                 blocked = 'SWITCHED_OFF_FOR_ROLE', 'SWITCHED_OFF_FOR_ROLE: ' + off  # a route the coordinator names too
             else:
                 blocked = None

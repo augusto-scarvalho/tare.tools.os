@@ -223,12 +223,14 @@ def research(jobs, question, seeds, *, domains, max_pages, max_depth, max_bytes=
         from .environment import default_route
         from .native_catalog import select
         from .turn_engine import resolve_auto
-        native_deployment = resolve_auto(select(default_route()))  # tare auto once the machine is set up
+        native_deployment = resolve_auto(select(default_route()), role='researcher')  # tare auto once set up
         if any(config[k] != DEFAULT_CONFIG[k] for k in ('api_base', 'model')):
             raise ValueError('custom_research_model_requires_native_deployment_profile')
     if native_deployment is not None and complete is not None:
         raise ValueError('native_research_cannot_override_completion')
     if native_deployment is not None:
+        from .execution_scope import admit
+        admit(native_deployment, 'researcher')  # the routing profile's backstop: these calls start no session
         from .native_generation import deployment_profile
         deployment_profile(native_deployment, native_deployment['native_profile']['model'])
         if type(max_model_calls) is not int or not 1 <= max_model_calls <= 128:

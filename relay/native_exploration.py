@@ -51,6 +51,8 @@ def explore(root, question, *, focus=(), custody, objective, timeout=240,
         if deployment is None:
             result['status'] = 'SOURCES_READY'
             return result
+        from .execution_scope import admit
+        admit(deployment, 'explorer')  # the routing profile's backstop: this call starts no session
         ok, text, receipt = generate_text(deployment, deployment['native_profile']['model'],
             json.dumps({'objective': objective, 'question': question, 'evidence': packet}, ensure_ascii=False),
             timeout, attempt_dir=run, attempt_label='exploration', control=control,

@@ -64,7 +64,9 @@ def turn_for(messages, root):
         chat = _chats.setdefault(key, {'floor': 0, 'contexts': {}})
         turn = _turns.get(key)
         if turn is None or turn['requests'] != len(requests):
-            tier, name, _ = route_from(chat['floor'])
+            tier, name, deployment = route_from(chat['floor'])
+            from .execution_scope import admit
+            admit(deployment, 'implementer')  # the routing profile's backstop: a new message is a new start
             start, why = engine.snapshot(root)
             turn = _turns[key] = {'requests': len(requests), 'route': name, 'tier': tier, 'start': start, 'why': why,
                                   'request': requests[-1] if requests else '',
