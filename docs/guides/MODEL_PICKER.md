@@ -38,6 +38,11 @@ Gemini Argon, ...), found from the model id whatever the connection: `claude-fab
 Where the vendor lists levels per model (Codex's catalogue, AGY's ids), its list wins over the line's. An id of no
 known line keeps its raw name (`GPT-` prefixed under OpenAI connections) and only its profile's levels.
 
+The line also gives such a model its author when the roster has no record for it, so its work can be audited by
+another line (see [the relay mesh](RELAY_MESH.md#local-operator-trust-boundary)). That holds only on the vendor's
+own CLI or API, or AGY: a reseller's id stays of unknown author even when spelled like a line. No automatic role
+picks a model for that: automatic roles come from `relay/role_deployments.json` rows, which name roster records.
+
 Codex Direct and Codex CLI are connections under the same model. CLI catalogues
 may expose agent modes as well as reasoning: `ultra` and Claude `ultracode` are
 excluded. Tare keeps the agent loop, tools and flows. No automatic connection,

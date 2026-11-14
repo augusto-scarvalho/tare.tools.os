@@ -49,7 +49,7 @@ def _attest(deployment):
         raise ValueError('native_work_requires_registered_model_identity')
     return attest_identity(roster_path=relay_mesh.RELAY_DIR/'round_table_roster.json',
         agent_id='tare-run:' + deployment['id'], role='implementer', model_id=deployment['model'],
-        runtime_key='native', runtime_model=profile.model)
+        runtime_key='native', runtime_model=profile.model, endpoint=profile.endpoint)
 
 
 def _entries(root, tree, paths):

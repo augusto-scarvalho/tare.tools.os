@@ -6,6 +6,7 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import re
+from urllib.parse import urlsplit
 
 from .model_choices import EFFORTS
 from .native_generation import deployment_profile
@@ -17,6 +18,14 @@ CODEX_NATIVE_BATCH_QUALIFIED = {'gpt-5.6-sol', 'gpt-6-sol', 'gpt-6.1-sol'}
 # (Codex's cache, AGY's list, Anthropic's /v1/models) wins over the line's efforts; the line's apply where the
 # vendor cannot tell (Claude Code, the OpenAI and Gemini APIs) or is not read.
 LINES = json.loads(Path(__file__).with_name('model_lines.json').read_text(encoding='utf-8'))
+# Where a model id names the vendor's own model: the vendor's CLI and API (Codex Direct is OpenAI's), and AGY, a
+# subscription CLI that serves Google's lines and Anthropic's under the vendor's own id with an effort suffix
+# (claude-opus-5-5-high). A reseller's id (OpenRouter, Bedrock, OpenCode, a local gateway) never counts here, even
+# spelled like a line: matching those is the mirror's job.
+ORIGINS = {'Anthropic': {'cli://claude', 'cli://agy', 'api.anthropic.com'},
+           'OpenAI': {'cli://codex', 'api.openai.com', 'chatgpt.com'},
+           'Google': {'cli://agy', 'generativelanguage.googleapis.com'}}
+AGY_EFFORT = re.compile(r'-(low|medium|high|xhigh)$')
 
 
 def parse(slug):
@@ -29,12 +38,24 @@ def parse(slug):
 def line(slug):
     """The LINES row of `slug` with its label filled in (claude-fable-5-3 is 'Claude Fable 5.3'), or None: a line
     with no row (gpt-7-nova), a non-chat model (gpt-realtime-2.1 is line 'realtime'), a dated snapshot or an id with
-    no version. An AGY effort suffix is not part of the line: gemini-4-argon-high is Gemini 4 Argon."""
-    family, name, version = parse(re.sub(r'-(low|medium|high|xhigh)$', '', slug))
+    no version. An AGY effort suffix is not part of the line: gemini-4-argon-high is Gemini 4 Argon. `line` names the
+    row (claude-fable)."""
+    family, name, version = parse(AGY_EFFORT.sub('', slug))
     row = LINES.get(family+'-'+name)
     if not row or len(version) not in (1, 2):
         return None
-    return {**deepcopy(row), 'label': row['label'].format(version='.'.join(map(str, version)))}
+    return {**deepcopy(row), 'line': family+'-'+name, 'label': row['label'].format(version='.'.join(map(str, version)))}
+
+
+def origin_line(model, endpoint):
+    """line(model) when `endpoint` is one of ORIGINS for that line's vendor, else None. The effort suffix counts
+    only on AGY, the one route that spells it."""
+    url = urlsplit(endpoint)
+    origin = endpoint if url.scheme == 'cli' else url.hostname if url.scheme == 'https' else None
+    row = line(model)
+    if not row or origin not in ORIGINS.get(row['vendor'], ()) or origin != 'cli://agy' and AGY_EFFORT.search(model):
+        return None
+    return row
 
 
 def older(slugs):

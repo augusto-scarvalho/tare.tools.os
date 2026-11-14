@@ -138,7 +138,8 @@ ROLES = ('coordinator', 'planner', 'implementer', 'explorer', 'researcher', 'aud
 
 
 def model_author(value):
-    """Only the attested roster identity proves authorship, never the transport."""
+    """Only the attested identity proves authorship, never the transport: a roster record, else the line of a model id
+    its vendor's own route serves (landing_policy.attest_identity)."""
     from .work_audit import identity
     try:
         return identity(value, 'implementer').vendor

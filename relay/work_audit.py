@@ -18,7 +18,8 @@ def identity(deployment, role):
     from .native_catalog import roster_path
     return attest_identity(roster_path=roster_path(),
         agent_id='tare-run:'+deployment['id'], role=role, model_id=deployment['model'],
-        runtime_key='native', runtime_model=deployment['native_profile']['model'])
+        runtime_key='native', runtime_model=deployment['native_profile']['model'],
+        endpoint=deployment['native_profile'].get('endpoint'))
 
 
 def prepare(implementer, deployments, mode):

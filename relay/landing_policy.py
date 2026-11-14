@@ -34,6 +34,8 @@ _IDENTITY_FIELDS = {
     "schema", "agent_id", "role", "model_id", "runtime_key",
     "runtime_model", "vendor", "bias_domain", "roster_sha256",
 }
+# Present only on an identity derived from the model's line, never read from a roster record.
+_LINE_FIELD = "line"
 _EVIDENCE_FIELDS = {
     "schema", "train_id", "descriptor_sha256", "candidate_sha256",
     "work_scope_sha256", "specgraph_scope_sha256", "checks",
@@ -139,8 +141,14 @@ def attest_identity(
     model_id: str,
     runtime_key: str,
     runtime_model: str,
+    endpoint: str | None = None,
 ) -> AgentIdentity:
-    """Bind identity to an exact roster alias; transport alone is never identity."""
+    """Bind identity to an exact roster alias; transport alone is never identity.
+
+    A roster record always decides. Only when no record names the model id or its wire id does a native route's
+    wire id get its line's vendor and bias domain, and only on that vendor's own `endpoint`
+    (vendor_models.origin_line); the identity then says which line it came from.
+    """
 
     if role not in {"implementer", "auditor"}:
         raise LandingPolicyRejected("IDENTITY_ROLE_INVALID")
@@ -153,7 +161,13 @@ def attest_identity(
     try:
         roster_raw = roster_file.read_bytes()
         roster = json.loads(roster_raw)
-        model = roster["models"][model_id]
+        derived = model_id not in roster["models"]
+        if derived:
+            from relay.vendor_models import origin_line
+            model = _line_record(roster["models"], model_id, runtime_key, runtime_model,
+                                 isinstance(endpoint, str) and origin_line(runtime_model, endpoint))
+        else:
+            model = roster["models"][model_id]
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise LandingPolicyRejected("IDENTITY_ROSTER_UNAVAILABLE") from exc
     if not isinstance(model, dict):
@@ -175,8 +189,23 @@ def attest_identity(
         "vendor": vendor,
         "bias_domain": bias_domain,
         "roster_sha256": hashlib.sha256(roster_raw).hexdigest(),
+        **({_LINE_FIELD: model[_LINE_FIELD]} if derived else {}),
     }
     return _identity_from_payload(payload)
+
+
+def _line_record(models, model_id, runtime_key, runtime_model, row):
+    """The record a native wire id gets from its line `row` while no roster record names it; KeyError otherwise."""
+
+    named = not isinstance(models, dict) or any(
+        isinstance(model, dict) and isinstance(model.get("runtime"), dict)
+        and runtime_model in model["runtime"].values()
+        for model in models.values()
+    )
+    if not (row and model_id == runtime_model and runtime_key == "native" and model_id not in models and not named):
+        raise KeyError(model_id)
+    return {"runtime": {runtime_key: runtime_model}, "vendor": row["vendor"],
+            "bias_domain": row["bias_domain"], _LINE_FIELD: row["line"]}
 
 
 def model_id_for_runtime(
@@ -205,7 +234,7 @@ def read_identity(path: str | Path) -> AgentIdentity:
         raw = Path(path).read_bytes()
     except OSError as exc:
         raise LandingPolicyRejected("IDENTITY_UNAVAILABLE") from exc
-    payload = _parse_canonical_object(raw, _IDENTITY_FIELDS, "IDENTITY")
+    payload = _parse_canonical_object(raw, _IDENTITY_FIELDS, "IDENTITY", frozenset({_LINE_FIELD}))
     return _identity_from_payload(payload, expected_raw=raw)
 
 
@@ -373,13 +402,23 @@ def write_verdict(path: str | Path, verdict: AdmissionVerdict) -> None:
 def verify_identity_against_roster(
     identity: AgentIdentity, roster_path: str | Path
 ) -> None:
-    """Re-attest an identity receipt against the current exact roster bytes."""
+    """Re-attest an identity receipt against the current exact roster bytes.
+
+    A line-derived receipt is re-derived from its line; its route was checked when it was attested.
+    """
 
     roster_file = Path(roster_path)
+    payload = identity.payload
     try:
         roster_raw = roster_file.read_bytes()
         roster = json.loads(roster_raw)
-        model = roster["models"][identity.model_id]
+        if _LINE_FIELD in payload:
+            from relay.vendor_models import line
+            row = line(payload["runtime_model"])
+            model = _line_record(roster["models"], identity.model_id, payload["runtime_key"],
+                                 payload["runtime_model"], row if row and row["line"] == payload[_LINE_FIELD] else None)
+        else:
+            model = roster["models"][identity.model_id]
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise LandingPolicyRejected("IDENTITY_ROSTER_UNAVAILABLE") from exc
     if hashlib.sha256(roster_raw).hexdigest() != identity.payload["roster_sha256"]:
@@ -456,9 +495,9 @@ def verify_admission_bundle(
 def _identity_from_payload(
     payload: Mapping[str, Any], *, expected_raw: bytes | None = None
 ) -> AgentIdentity:
-    if set(payload) != _IDENTITY_FIELDS or payload.get("schema") != IDENTITY_SCHEMA:
+    if set(payload) - {_LINE_FIELD} != _IDENTITY_FIELDS or payload.get("schema") != IDENTITY_SCHEMA:
         raise LandingPolicyRejected("IDENTITY_FIELDS_INVALID")
-    string_fields = _IDENTITY_FIELDS - {"schema"}
+    string_fields = set(payload) - {"schema"}
     if not all(isinstance(payload.get(name), str) and payload[name].strip() for name in string_fields):
         raise LandingPolicyRejected("IDENTITY_VALUE_INVALID")
     if payload.get("role") not in {"implementer", "auditor"}:
@@ -471,12 +510,12 @@ def _identity_from_payload(
     return AgentIdentity(dict(payload), raw, hashlib.sha256(raw).hexdigest())
 
 
-def _parse_canonical_object(raw: bytes, fields: set[str], label: str) -> dict[str, Any]:
+def _parse_canonical_object(raw: bytes, fields: set[str], label: str, optional: frozenset[str] = frozenset()) -> dict[str, Any]:
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise LandingPolicyRejected(f"{label}_JSON_INVALID") from exc
-    if not isinstance(payload, dict) or set(payload) != fields:
+    if not isinstance(payload, dict) or not fields <= set(payload) <= fields | optional:
         raise LandingPolicyRejected(f"{label}_FIELDS_INVALID")
     if raw != canonical_json_bytes(payload):
         raise LandingPolicyRejected(f"{label}_NOT_CANONICAL")

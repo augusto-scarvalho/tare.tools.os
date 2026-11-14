@@ -275,7 +275,8 @@ def execution_selection(producer, reviewer, *, planner=None):
         selected['pro_model'] = is_pro(deployment)
         try:
             lineage = identity(deployment, role)
-            selected.update(vendor=lineage.vendor, model_id=lineage.model_id, bias_domain=lineage.bias_domain)
+            selected.update(vendor=lineage.vendor, model_id=lineage.model_id, bias_domain=lineage.bias_domain,
+                            **({'line': lineage.payload['line']} if 'line' in lineage.payload else {}))
         except (ValueError, KeyError, TypeError, OSError):
             selected.update(vendor=None, model_id=None, bias_domain=None)
         result[role] = selected
