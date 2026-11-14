@@ -66,9 +66,13 @@ def read(executable, timeout=120):
     """The reply of one Claude Code call that reads the Billing page through the browser, or ValueError."""
     from .provider_quota import run
     try:
+        # --allowedTools only approves the five browser tools; the rest is what closes the boundary (probed on
+        # 2026-11-14 with Claude Code 2.1.325): no built-in tool (--tools ""), no other MCP server, and every tool
+        # not approved is refused without a prompt (dontAsk; a click through the extension's `computer` was denied).
         done = json.loads(run(executable, '-p', PROMPT, '--chrome', '--model', 'haiku', '--setting-sources', '',
-                              '--output-format', 'json', '--no-session-persistence', '--allowedTools', TOOLS,
-                              timeout=timeout))
+                              '--tools', '', '--permission-mode', 'dontAsk', '--strict-mcp-config',
+                              '--mcp-config', '{"mcpServers":{}}', '--allowedTools', TOOLS,
+                              '--output-format', 'json', '--no-session-persistence', timeout=timeout))
     except subprocess.TimeoutExpired:
         raise ValueError(f'the reading took over {timeout} s') from None
     except (OSError, ValueError):

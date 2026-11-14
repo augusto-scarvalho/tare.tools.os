@@ -178,6 +178,20 @@ def test_tare_quota_sync_runs_one_reading_and_prints_it(monkeypatch, capsys):
     stub_read(monkeypatch)
     monkeypatch.setattr(provider_quota, 'refresh', lambda now=None: {'observed_at': NOW, 'accounts': []})
     assert provider_quota.main(['--sync']) == 0
-    assert 'Read from the Console: US$ 157.93 left of US$ 185.42' in capsys.readouterr().err
+    said = capsys.readouterr()
+    assert 'Read from the Console: US$ 157.93 left of US$ 185.42' in said.err
+    assert 'the Console reading made one model call' in said.out and 'no model call was made' not in said.out
     stub_read(monkeypatch, fail='not the Billing page')
     assert provider_quota.main(['--sync']) == 1
+
+
+def test_the_reading_call_has_no_tool_but_the_five_read_only_browser_ones(monkeypatch):
+    # Found by the cross-vendor review: --allowedTools approves tools, it removes none; built-in file readers stayed.
+    sent = []
+    monkeypatch.setattr(provider_quota, 'run', lambda executable, *arguments, timeout: sent.append(arguments) or '{"result": "x"}')
+    assert console_credit.read('claude') == 'x'
+    args = list(sent[0])
+    assert args[args.index('--tools') + 1] == '' and args[args.index('--permission-mode') + 1] == 'dontAsk'
+    assert '--strict-mcp-config' in args and args[args.index('--mcp-config') + 1] == '{"mcpServers":{}}'
+    allowed = args[args.index('--allowedTools') + 1].split(',')
+    assert len(allowed) == 5 and not any(word in tool for tool in allowed for word in ('computer', 'javascript', 'form', 'upload'))

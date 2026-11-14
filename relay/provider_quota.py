@@ -497,7 +497,10 @@ def main(argv=None):
     if report is None:
         print('No reading yet. Run tare quota.', file=sys.stderr)
         return 1
-    print(json.dumps(report, indent=2) if args.json else render(report))
+    shown = json.dumps(report, indent=2) if args.json else render(report)
+    if args.sync:  # the footer speaks of the providers' readings; the Console reading is one model call
+        shown = shown.replace('no model call was made.', 'the Console reading made one model call (Haiku).')
+    print(shown)
     return 0 if synced is None or synced['ok'] else 1
 
 
