@@ -3441,8 +3441,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator interaction, workflow composition and evidence inspection; execution ports remain in Kernel and Runtime.",
-      "size_bytes": 484,
-      "sha256": "24f8281c4f30876a64d06bc1928ab0cfb1c90e84aa160935d0b890869355ef7e"
+      "size_bytes": 1138,
+      "sha256": "23c00523adeb7813d88601c85ede2760c674b64dcfe6480971d9bc985c1219f6"
     },
     {
       "name": "continuity_panel.py",
