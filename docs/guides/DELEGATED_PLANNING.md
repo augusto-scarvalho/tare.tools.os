@@ -40,6 +40,18 @@ conversation audit lines, the review result, a Work's result and the preview say
 same vendor: not independent"). A pinned or explicitly named auditor of the same
 vendor is your choice: it runs, with that label (`landing_policy.independence`).
 Another vendor is a diversity policy, not proof of unbiased judgment.
+
+You can turn "another vendor first" off: untick **Put auditors of another vendor
+first** in `/routes` (saved as `"any_vendor_auditor": true` in the routing policy,
+absent while ticked), or launch with `--any_vendor_auditor` for one TUI and its
+children. Either one turns it off, in both reviewer modes and for plan reviews.
+Then the automatic order is the subscription/API preference, cost tier, review
+priority, primary before reserve, CLI backup and table order (selection reason
+`AUTO_COST_AND_CONFIGURED_ORDER`); your own list keeps its order
+(`OPERATOR_AUDITOR_ROUTES_IN_ORDER`) and is replaced by the automatic choice only
+when a temporary preference sets all of it aside. Nothing else changes: the same
+model or bias domain is still refused (`AUDITOR_NOT_INDEPENDENT`), and a same-vendor
+audit is still `SAME_VENDOR_NOT_INDEPENDENT` and labelled as above.
 Saved formal-plan reviews and their retries retain the original exact profile;
 changing settings never resamples an accepted or rejected verdict.
 

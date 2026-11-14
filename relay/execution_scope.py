@@ -16,7 +16,7 @@ KINDS=('subscription','local','api')
 REVIEW_ROLES={'planner','plan-auditor','auditor'}
 PIN_ROLES=('planner','implementer','explorer','researcher','auditor')
 FLAGS=('subscription_only','local_only','api_only','pro_planner','prefer_api',
-       'prefer_subscription','prefer_local','disable_judge')
+       'prefer_subscription','prefer_local','disable_judge','any_vendor_auditor')
 HELP={
     'subscription_only':'Use only subscriptions: Codex, Claude and AGY CLIs and the OpenCode subscription; keep the Jev helper.',
     'local_only':'Use only local models and the local judge; keep search APIs. Local models then also plan and audit (your choice of this mode, not a quality claim); an audit by the same model family is not independent, so tare asks you before applying its change. The local judge reviews a protected command only while it is already loaded and idle; otherwise tare asks you, once per turn in the "Edit + system commands" (YOLO) mode.',
@@ -26,6 +26,7 @@ HELP={
     'prefer_subscription':'Prefer available subscriptions (CLIs, the OpenCode subscription) for planner and auditors.',
     'prefer_local':'Use local models; delegate planner and auditors to external providers.',
     'disable_judge':'Turn off Jev and the local judge. A protected command then asks you first, except in the "Edit + system commands" (YOLO) mode, where it runs with no model review and no question; Codex review, if selected, the sandbox and the fixed checks still apply.',
+    'any_vendor_auditor':"Do not put auditors of another vendor first: the auditor follows your other preferences (subscription or API, cost tier, your order). An audit by the implementer's own vendor is still labelled not independent.",
 }
 
 
@@ -39,6 +40,7 @@ class Scope:
     coordinator:str=''
     pins:tuple=()
     unlimited:tuple=()
+    any_vendor_auditor:bool=False
 
     def pin(self,role):
         return dict(self.pins).get('auditor' if role=='plan-auditor' else role,'')
@@ -51,7 +53,7 @@ class Scope:
         object.__setattr__(self,'unlimited',parse(self.unlimited))
         if self.only not in ('',*KINDS) or self.prefer not in ('',*KINDS):
             raise ValueError('Unknown temporary execution mode.')
-        if type(self.pro_planner) is not bool or type(self.disable_judge) is not bool:
+        if type(self.pro_planner) is not bool or type(self.disable_judge) is not bool or type(self.any_vendor_auditor) is not bool:
             raise ValueError('Temporary execution switches must be booleans.')
         if self.only and self.prefer and (self.only!=self.prefer or self.prefer=='local'):
             raise ValueError('These execution flags conflict. Use one *_only mode, or --prefer_local for local execution with external planning/auditing.')
@@ -98,7 +100,8 @@ class Scope:
         return Scope(self.only or other.only,other.prefer or self.prefer,
                      self.pro_planner or other.pro_planner,self.disable_judge or other.disable_judge,
                      (*self.restrictions,*other.restrictions),self.coordinator or other.coordinator,
-                     (*self.pins,*other.pins),(*self.unlimited,*other.unlimited)).validate()
+                     (*self.pins,*other.pins),(*self.unlimited,*other.unlimited),
+                     self.any_vendor_auditor or other.any_vendor_auditor).validate()
 
     def allows(self,deployment,role=None):
         if not self.active:return True,None
@@ -149,6 +152,7 @@ class Scope:
                                     'local':'Local execution; external planner/audit'}[self.prefer])
         if self.pro_planner:parts.append('Planner: OpenAI PRO')
         if self.disable_judge:parts.append('Jev/local judge: off')
+        if self.any_vendor_auditor:parts.append('Auditors of another vendor first: off')
         if self.coordinator:parts.append('Coordinator: '+self.coordinator)
         grouped={}  # roles sharing one pin are named once: 'explorer, implementer: provider/route@level'
         for role,pin in self.pins:grouped.setdefault(pin,[]).append(role)
@@ -390,7 +394,7 @@ def from_arguments(args, *, discovery=False):
         pro_planner=bool(args.pro_planner),disable_judge=bool(args.disable_judge),
         restrictions=tuple(restrictions),coordinator=getattr(args,'coordinator',''),
         pins=tuple((role,raw) for role in PIN_ROLES for raw in getattr(args,role,[])),
-        unlimited=getattr(args,'unlimited',())).validate()
+        unlimited=getattr(args,'unlimited',()),any_vendor_auditor=bool(args.any_vendor_auditor)).validate()
     if scope.restrictions or scope.coordinator:
         from .inference_allowlist import validate_catalog
         from .native_catalog import available_models,select,offline_deployments
@@ -416,7 +420,8 @@ def normalize_arguments(values):
     values=resource_arguments(list(values))
     normalized=[]
     index=0
-    switches=tuple('--'+r for r in PIN_ROLES)+('--coordinator','--pro_planner','--pro-planner','--disable_judge','--disable-judge')
+    switches=tuple('--'+r for r in PIN_ROLES)+('--coordinator','--pro_planner','--pro-planner','--disable_judge','--disable-judge',
+                                               '--any_vendor_auditor','--any-vendor-auditor')
     while index<len(values):
         value=values[index]
         index+=1

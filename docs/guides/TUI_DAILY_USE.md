@@ -70,6 +70,7 @@ preferences and conversation prompts are not replaced by these switches.
 | `--prefer_subscription` | Prefer available subscriptions (CLIs, the OpenCode subscription) for planner and auditors; fall back to other allowed connections. |
 | `--prefer_local` | Keep coordinator, explorer, implementer and researcher on local inference; use qualified external planner and auditors (never local ones). Hosted Jev stays available. |
 | `--disable_judge` | Disable hosted Jev and the local judge. A protected command then asks you first, except in **Edit + system commands** (YOLO), where it runs with no model review and no question. The sandbox, the fixed checks and final audits still apply, and so does native Codex Auto-review when the project's command review is Codex or both. `/permissions` shows which of these applies. |
+| `--any_vendor_auditor` | Do not put auditors of another vendor first: the auditor follows your other preferences (subscription or API, cost tier, your order). An audit by the implementer's own vendor is still labelled not independent. The **Put auditors of another vendor first** box in `/routes` does the same for every launch. |
 
 ```powershell
 tare --subscription_only
