@@ -200,8 +200,10 @@ auditor: the routes automatic routing considers (tare setup --auto auditor:PATTE
 
 The second tab of `/routes` edits the same profile. Pick a role; each row is a model line by its name (Claude
 Fable), grouped by vendor, and a route with no line is a row of its own under Other, by its catalogue label or id;
-each column is a source (Claude Code, Codex, AGY, OpenCode sub, OpenCode API, API, OpenRouter, Bedrock, Local,
-Other API) that has a route for that role here. The search finds a row by its name or its technical name
+each column is a source (Claude Code, Codex, AGY, OpenCode sub, OpenCode API, Vendor API, OpenRouter, Bedrock,
+Local, Other API) that has a route for that role here. Vendor API is the model owner's own API (Anthropic for
+Claude, OpenAI for GPT, Google for Gemini); OpenRouter, Bedrock and the OpenCode API are resellers of the same
+models, each a column of its own, so the origin and a reseller can be switched separately. The search finds a row by its name or its technical name
 (`claude/fable`), which the status line shows. Space, Enter or a click on the selected cell ticks it. Nothing is
 written until Save, and Esc asks once before it discards unsaved changes. The file Save writes is the one the
 equivalent `tare setup --auto` commands write.
