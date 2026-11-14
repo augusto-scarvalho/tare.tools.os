@@ -53,7 +53,13 @@ class SpendPolicy:
 
 
 def settings(deployment, *, configured=False):
-    tariff = UsageTariff(**deployment['native_usage_tariff']) if deployment.get('native_usage_tariff') is not None else None
+    """(policy, tariff): the route's own tariff, else its models.dev reference price (a pay-per-token API route
+    with a reading; its source says it is a reference), else None."""
+    own = deployment.get('native_usage_tariff')
+    if own is None and deployment.get('native_profile'):
+        from .provider_prices import reference
+        own = reference(deployment['native_profile'])
+    tariff = UsageTariff(**own) if own is not None else None
     policy = SpendPolicy(**deployment['native_spend_policy']) if deployment.get('native_spend_policy') is not None else None
     if policy and (tariff is None or policy.currency != tariff.currency
                    or deployment.get('native_usage_contract') is None):
@@ -113,7 +119,11 @@ class SpendModel:
         external = self.external_committed()
         if external is not None:
             committed += external
+        from .provider_prices import is_reference
         return {'schema': 'tare.tools/native-spend-report/1', 'currency': self.policy.currency,
+            # Amounts valued at a models.dev reference price say so, wherever this report is kept or returned.
+            **({'reference_sources': [self.tariff.source], 'reference_prices_read': [self.tariff.effective_at]}
+               if is_reference(asdict(self.tariff)) else {}),
             'auxiliary_committed_amount': str(external) if external is not None else None,
             'max_amount': self.policy.max_amount if capped else None, 'known_amount': str(known),
             'committed_amount': str(committed) if external is not None and not unbounded_unknown else None,

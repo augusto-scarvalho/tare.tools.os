@@ -363,6 +363,9 @@ def render(report, now=None):
                 stated = (f", stated {clock(credit['declared_at'], now)}, less tare's own use since"
                           if account['status'] == 'DECLARED' else '')
                 lines.append(f"{head}: {left} left of US$ {credit['total']:.2f}{stated}")
+                if credit.get('at_reference_prices'):
+                    lines.append(f"    US$ {credit['at_reference_prices']:.2f} of that use is valued at models.dev "
+                                 'reference prices, not confirmed tariffs: the balance is only as exact as they are.')
                 continue
             lines.append(head)
             for row in account.get('buckets', []):

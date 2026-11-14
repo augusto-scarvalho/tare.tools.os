@@ -91,7 +91,8 @@ allowlist. Do not retry them routinely; if AWS grants access, change `access` to
 
 Table from the installed LiteLLM, `us-east-1`, USD per million tokens, checked
 on 2026-09-07. Not reconciled with an invoice; Devstral 2 and Mistral Large 3 are
-not in the table.
+not in the table. What tare spends against is the models.dev reference price of the exact
+wire id ([HTTP providers, Prices](HTTP_API_PROVIDERS.md#prices)), not this table.
 
 | Model | Input | Output | Window |
 |---|---:|---:|---:|

@@ -482,6 +482,9 @@ def _spent(deployment, receipt):
         cost = receipt.get('cost') or {}
         if cost.get('currency') == 'USD' and cost.get('known_amount') is not None:
             found['usd'] = float(cost['known_amount'])
+            from .provider_prices import is_reference
+            if is_reference(cost.get('tariff')):
+                found['reference_read'] = cost['tariff'].get('effective_at')  # a models.dev reference, not a tariff
     except Exception:  # ponytail: a heads-up never fails the turn it reports on; a call without a record is unknown
         return found
     try:
@@ -523,11 +526,15 @@ def usage(session):
                         total['unknown'] += 1
                     if isinstance(call.get('usd'), (int, float)):
                         total['usd'] += call['usd']
+                        if call.get('reference_read'):
+                            total.setdefault('reference_read', set()).add(str(call['reference_read']))
                     else:
                         total['usd_unknown'] += 1
     except OSError:
         pass
     total['usd'] = round(total['usd'], 6)
+    if 'reference_read' in total:  # the days of the models.dev reference prices some of those dollars came from
+        total['reference_read'] = sorted(total['reference_read'])
     return total
 
 

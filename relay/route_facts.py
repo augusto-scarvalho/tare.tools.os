@@ -108,10 +108,13 @@ def collect(deployment, *, live=False, cache=None, evidence=None):
         result['quality']['catalog_sha256'] = reference['catalog_sha256']
         result['quality']['catalog_record'] = reference['catalog_record']
     result['price_references'] = reference['price_references']
-    if deployment.get('native_usage_tariff'):
+    from .provider_prices import is_reference, reference as reference_price, reference_note
+    tariff = deployment.get('native_usage_tariff') or reference_price(profile)
+    if tariff:
         from compute_plane.native_usage import UsageTariff
         from dataclasses import asdict
-        result['price'] = {'status': 'CONFIGURED_TARIFF', **asdict(UsageTariff(**deployment['native_usage_tariff']))}
+        result['price'] = {'status': 'REFERENCE_PRICE' if is_reference(tariff) else 'CONFIGURED_TARIFF',
+                           **asdict(UsageTariff(**tariff)), **({'scope': reference_note(tariff)} if is_reference(tariff) else {})}
 
     def fetch(url, *, ttl=5, max_bytes=65536):
         if url not in cache:

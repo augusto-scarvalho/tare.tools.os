@@ -90,13 +90,19 @@ def test_undispatched_trial_is_visible_and_prevents_promotion(study, tmp_path):
 
 @pytest.mark.parametrize('fault,issue', [('price', 'COST_INCOMPLETE'), ('verdict', 'VERDICT_UNKNOWN'),
     ('audit', 'AUDIT_MISSING'), ('verifier', 'VERIFIER_CONTRACT_MISMATCH'), ('extra', 'ADDITIONAL_COST_UNKNOWN'),
-    ('live', 'INCOMPLETE_EXECUTION'), ('clock', 'INVALID_EXECUTION_TIMESTAMPS'), ('profile', 'PROFILE_CHANGED_OR_MIXED')])
+    ('live', 'INCOMPLETE_EXECUTION'), ('clock', 'INVALID_EXECUTION_TIMESTAMPS'), ('profile', 'PROFILE_CHANGED_OR_MIXED'),
+    ('reference', 'COST_REFERENCE_PRICE')])
 def test_unknown_or_changed_evidence_never_wins(study, tmp_path, fault, issue):
     value, path, save = study
     trial = value['trials'][2]
     root = Path(trial['sessions'][0]['path'])
-    if fault == 'price':
-        report = json.loads((root/'usage.json').read_text()); report['calls'][0].pop('cost')
+    if fault in ('price', 'reference'):  # a models.dev reference may cap spend, never pick a winner
+        report = json.loads((root/'usage.json').read_text())
+        if fault == 'price':
+            report['calls'][0].pop('cost')
+        else:
+            report['calls'][0]['cost']['tariff'] = {'source': 'models.dev reference price (not a confirmed tariff) '
+                                                    'for openai/x, https://models.dev/api.json', 'effective_at': 'day'}
         (root/'usage.json').write_text(json.dumps(report))
     elif fault == 'verdict': trial.pop('verdict')
     elif fault == 'audit': trial['sessions'] = trial['sessions'][:1]

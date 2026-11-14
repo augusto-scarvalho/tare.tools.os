@@ -53,6 +53,8 @@ def describe(name, deployment=None):
     from compute_plane.native_usage import deployment_contract
     contract = deployment_contract(value) or {}
     from .native_generation import model_context_policy
+    from .provider_prices import is_reference, reference
+    tariff = value.get('native_usage_tariff') or reference(profile)
     return {'deployment': name, 'model': profile['model'], 'protocol': profile['protocol'],
             'context_window': profile['context_window'], 'output_tokens': profile['output_tokens'],
             'compaction_policy': {**model_context_policy(value),
@@ -64,7 +66,7 @@ def describe(name, deployment=None):
             'usage_accounting': 'contract_configured' if contract else 'unknown',
             'cost_accounting': ('provider_reported' if contract.get('layout') in {'openrouter-inclusive', 'openrouter-responses-inclusive',
                                                                                'opencode-exclusive'}
-                else 'tariff_configured' if value.get('native_usage_tariff') else 'unknown'),
+                else 'reference_price' if is_reference(tariff) else 'tariff_configured' if tariff else 'unknown'),
             'cost_estimate': 'client_reported' if contract.get('layout') == 'claude-cli-exclusive' else 'unknown',
             'subscription_quota': 'unknown'}
 
@@ -131,7 +133,8 @@ def usage(session):
             from compute_plane.native_usage import enrich_provider_costs
             report = enrich_provider_costs(report, state.get('deployment', {}))
         outcome = _usage_json(root/'outcome.json', 4*1024*1024) if (root/'outcome.json').exists() else {}
-        return {'session': str(root), 'session_id': state['session_id'],
+        from .provider_prices import reference_totals
+        return {**reference_totals((report or {}).get('calls') or []), 'session': str(root), 'session_id': state['session_id'],
                 'last_runtime_observation': outcome.get('runtime_observation'),
                 'effective_limits': state.get('limits'), 'deadline_utc': state.get('deadline_utc'),
                 'last_outcome_status': outcome.get('status'), 'model_calls': outcome.get('model_calls'),
