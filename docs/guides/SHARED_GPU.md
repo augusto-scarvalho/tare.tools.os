@@ -224,6 +224,7 @@ another path refuses it.
 | `~` after it | a version entry differs from the line's |
 | `.` | not carried by that source: nothing to tick |
 | `n/a` | that source carries it, but not for this role: nothing to tick |
+| `?` | no entry can name this route, so it cannot be switched here; the status line says why. The tab checks the entry it would write by reading it back through the profile's own matching: an inline role-table row that reuses a catalogue name (`openai-api`) is read as the catalogue's route, so rename the row. Bulk actions skip such a cell and say how many they skipped |
 
 - Unticking writes `off` for the line on that source; ticking it back removes the entry. An `on` is written only to
   undo a broader `off`. Ticking a cell also removes the version entries of that line on that source for that role,

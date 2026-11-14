@@ -27,7 +27,7 @@ NO_ROUTE = {'implementer': 'tare auto has no route (tare_auto_no_route_available
             'researcher': '/research and web search say no route is available',
             'vision': 'attached images get no description', 'heads_up': 'no heads-up note is written'}
 LEGEND = ('[x] on   [ ] off by you   ! not usable now: a rule decides, the tick stays yours   ~ a version entry differs'
-          '   . not carried   n/a not offered for this role')
+          '   . not carried   n/a not offered for this role   ? cannot be switched here (the status line says why)')
 
 
 def entries(value, side, role):
@@ -75,6 +75,19 @@ def row_of(route, key):
     return f'{key[0]}/{key[1]}' if key[0] else route['id']
 
 
+def unnamed(role, row, where, routes):
+    """Why no entry the tab can write names this cell, or None. The entry it writes (the line on its source, or the
+    route id) is read back through the profile's own matching and must be every route of the cell: an inline role-table
+    row that reuses a catalogue name fails, since the profile reads that id as the catalogue's route."""
+    pattern = f'{row}@{where}' if '/' in row else row
+    if all(reads({'routing_profile': {'off': {role: [pattern]}}}, role, route) == 'off' for route in routes):
+        return None
+    rule = env.rule_of(pattern)
+    other = env.key_label(rule) if isinstance(rule, tuple) and rule[0] else rule
+    return (f'its id is also the catalogue name of {other}, so no entry names it; rename the inline row'
+            if other and other != pattern else 'no entry names it')
+
+
 def load():
     """This machine's setup; per role, (name, route, now, key) of each route automatic routing considers; and each
     row's label: a line's from the lines table (Claude Fable), a route with no line by its catalogue label or id."""
@@ -119,7 +132,7 @@ class RouteMatrix(Vertical):
 
     def compose(self):
         self.value = self.routes = self.saved = None
-        self.role, self.warned, self.labels = 'implementer', False, {}
+        self.role, self.warned, self.labels, self.unnamed = 'implementer', False, {}, {}
         self.message, self.extra, self.identities, self.warnings = 'Reading the routes…', [], {}, []
         with Horizontal(classes='matrix-bar'):
             yield Select([(label, role) for role, label in ROLES.items()], value=self.role, allow_blank=False,
@@ -153,6 +166,8 @@ class RouteMatrix(Vertical):
             for name, route, now, key in rows:
                 self.cells[role].setdefault((row_of(route, key), key[3]), []).append((name, route, now, key))
         self.carried = {cell for found in self.cells.values() for cell in found}
+        self.unnamed = {(role, *cell): why for role, found in self.cells.items() for cell, routes in found.items()
+                        if (why := unnamed(role, *cell, [r for _, r, _, _ in routes]))}
         self.build()
 
     def state(self, route, key=None, role=None):
@@ -171,6 +186,8 @@ class RouteMatrix(Vertical):
         seen = self.look(row, where)
         if seen is None:
             return 'n/a' if (row, where) in self.carried else ' .'
+        if (self.role, row, where) in self.unnamed:
+            return ' ?'
         own, mixed, usable = seen
         return ('[x]' if own == 'on' else '[ ]') + ('' if usable else '!') + ('~' if mixed else '')
 
@@ -338,6 +355,8 @@ class RouteMatrix(Vertical):
         if seen is None:
             return f'{title}: ' + ('not offered for this role: tare\'s routes for it do not list it.'
                                    if (row, where) in self.carried else 'this source does not carry it here.')
+        if (self.role, row, where) in self.unnamed:
+            return f'{title}: cannot be switched here: {self.unnamed[self.role, row, where]}.'
         own, _, usable = seen
         routes = self.cells[self.role][row, where]
         reasons = ', '.join(sorted({now for _, _, now, _ in routes} - {'usable'}))
@@ -349,8 +368,9 @@ class RouteMatrix(Vertical):
             f'{n} {self.state(r)}, {now}' for n, r, now, _ in routes)
 
     def targets(self, rule):
-        """The role's cells `rule` covers (a line on a source, a vendor's lines, a source, a route id), for make()."""
-        found = []
+        """The role's cells `rule` covers (a line on a source, a vendor's lines, a source, a route id), for make(), and
+        how many more it covers that no entry can name (skipped: make() writes nothing for them)."""
+        found, skipped = [], 0
         for (row, where), routes in self.cells[self.role].items():
             name = f'{row}@{where}' if '/' in row else row
             if isinstance(rule, str):
@@ -360,17 +380,24 @@ class RouteMatrix(Vertical):
                     w in (None, h) for w, h in zip(rule[:3], env.rule_of(name)))
             else:  # *@SOURCE or *@*
                 hit = rule[3] in ('*', where)
-            if hit:
+            if hit and (self.role, row, where) in self.unnamed:
+                skipped += 1
+            elif hit:
                 found.append((name, [(r, k) for _, r, _, k in routes]))
-        return found
+        return found, skipped
 
     def make(self, value, pattern, want):
-        return make(value, self.role, pattern, want, self.targets(env.rule_of(pattern)), self.sources)
+        return make(value, self.role, pattern, want, self.targets(env.rule_of(pattern))[0], self.sources)
+
+    def skipped(self, *patterns):
+        count = sum(self.targets(env.rule_of(pattern))[1] for pattern in patterns)
+        return f' Skipped {count} cell(s) that no entry can name.' if count else ''
 
     def toggle(self, row, where):
-        """Any cell the source carries for the role ticks; a rule on it stays marked. Nothing to name, nothing to tick."""
+        """Any cell the source carries for the role ticks; a rule on it stays marked. Nothing to name, nothing to tick:
+        not carried, not offered, or no entry that reads back as the cell's routes."""
         seen = self.look(row, where)
-        if seen is None:
+        if seen is None or (self.role, row, where) in self.unnamed:
             return self.show(self.describe(row, where))
         pattern = f'{row}@{where}' if '/' in row else row
         want = 'off' if seen[0] == 'on' else 'on'
@@ -381,13 +408,13 @@ class RouteMatrix(Vertical):
         role = self.role
         if action.startswith('scope:'):
             pattern, _, want = action.removeprefix('scope:').rpartition('=')
-            self.edit(lambda v: self.make(v, pattern, want), f'{pattern}: {want}.', pattern)
+            self.edit(lambda v: self.make(v, pattern, want), f'{pattern}: {want}.' + self.skipped(pattern), pattern)
         elif action == 'subscriptions':
             def off(value):
                 for where in PAY_PER_TOKEN:
                     value = self.make(value, f'*@{where}', 'off')
                 return value
-            self.edit(off, 'Every pay-per-token source is off.')
+            self.edit(off, 'Every pay-per-token source is off.' + self.skipped(*(f'*@{w}' for w in PAY_PER_TOKEN)))
         elif action.startswith('copy:'):
             other = action.removeprefix('copy:')
             self.edit(lambda v: env.edit_auto(v, role, lambda side, _: list(entries(v, side, other))),

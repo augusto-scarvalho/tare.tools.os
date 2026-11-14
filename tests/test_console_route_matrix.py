@@ -75,8 +75,8 @@ def test_untick_and_tick_back_store_what_tare_setup_auto_stores_and_nothing_more
 
 async def saved(pilot, panel):
     """Press Save and wait for its answer: it reads and writes the file in a worker thread, under a lock."""
-    await pilot.click('#matrix-save')
-    for _ in range(100):
+    panel.query_one('#matrix-save', Button).press()  # not a click: an open menu would take it
+    for _ in range(200):
         await pilot.pause(0.05)
         answer = str(panel.query_one('#matrix-status', Static).render())
         if any(s in answer for s in ('Saved.', 'Not saved', 'Nothing to save')):
@@ -274,8 +274,9 @@ def test_an_auditor_of_another_vendor_ticked_on_leaves_no_line(pool, tmp_path):
 
     async def steps(app, pilot, panel, cell, status):
         await only_opus_audits(pilot, panel, cell)
+        assert SAME_VENDOR in status()  # Opus alone audits a Claude Sonnet implementer as its own vendor
         assert await cell('gpt/sol', 'codex') == '[x]!'  # GPT-6.1 Sol on Codex, not set up here: still a tick
-        assert UNAUDITED not in status() and SAME_VENDOR not in status()
+        assert UNAUDITED not in status() and SAME_VENDOR not in status()  # another vendor audits them all now
     journey(tmp_path, steps)
 
 
@@ -429,6 +430,32 @@ def test_an_inline_table_row_named_like_a_catalogue_route_is_shown_and_ticked_as
         await cell('claude/opus', 'api')
         await saved(pilot, panel)
         assert stored() == {'off': {'auditor': ['claude/opus@api']}}
+    journey(tmp_path, steps)
+
+
+def test_a_cell_no_entry_can_name_is_not_switched_and_bulk_actions_skip_it(pool, tmp_path, monkeypatch):
+    table = json.loads((Path(native_routes.__file__).with_name('role_deployments.json')).read_text(encoding='utf-8'))
+    muse = next(r for r in table['deployments'] if r.get('native_catalog') == 'openrouter-muse-wonder')
+    deployment = native_catalog.select('openrouter-muse-wonder')
+    table['deployments'] = [r for r in table['deployments'] if 'openai-api' not in (r['id'], r.get('native_catalog'))]
+    table['deployments'].append({**{k: v for k, v in muse.items() if k != 'native_catalog'}, 'id': 'openai-api',
+                                 'native_profile': deployment['native_profile'],
+                                 'native_credential_env': deployment['native_credential_env']})  # no line
+    (tmp_path/'roles.json').write_text(json.dumps(table), encoding='utf-8')
+    monkeypatch.setenv('TARE_ROLE_DEPLOYMENTS', str(tmp_path/'roles.json'))
+
+    async def steps(app, pilot, panel, cell, status):
+        assert await cell('openai-api', 'openrouter') == ' ?'  # the profile reads `openai-api` as GPT-6.1 Sol
+        assert ('meta/muse-wonder on OpenRouter (openai-api): cannot be switched here: its id is also the catalogue '
+                'name of gpt/sol-6.1@api, so no entry names it; rename the inline row.') in status()
+        assert not panel.query_one(RouteMatrix).dirty()
+        await saved(pilot, panel)
+        assert 'Nothing to save' in status() and stored() is None
+        panel.query_one('#matrix-bulk', Select).value = 'scope:*@openrouter=off'
+        await pilot.pause()
+        assert 'Skipped 1 cell(s) that no entry can name.' in status()
+        await saved(pilot, panel)
+        assert stored() == {'off': {'auditor': ['*@openrouter']}}
     journey(tmp_path, steps)
 
 
