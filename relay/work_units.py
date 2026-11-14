@@ -628,7 +628,12 @@ def brief(unit, commands, note, *, references=(), executables=(), host_review=Fa
                   'within the given paths; do not expand them. The separate planner\'s advice '
                   '(claims to verify against sources):', unit['planner_advice']]
     if unit.get('review_feedback'):
-        lines += ['', 'Previous independent review of this retained candidate. Correct demonstrated defects '
+        from .conversation_review import label_of
+        try:
+            label = label_of(json.loads(unit['review_feedback']))
+        except (ValueError, AttributeError):
+            label = None
+        lines += ['', ('Previous review ('+label+')' if label else 'Previous independent review')+' of this retained candidate. Correct demonstrated defects '
                   'within the same criteria; these findings do not expand the requested scope:', unit['review_feedback']]
     if note:
         lines += ['', 'From the session that planned it (a note, not new requirements):', note[:2000]]
@@ -1377,7 +1382,9 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     else:
                         allowed, why = suite_allows(verification_config, unit, repository, tree, changed, suite_before)
                         if review is not None and changed_files(tree, base) != changed:
-                            allowed, why = False, 'The candidate changed after independent review.'
+                            from .conversation_review import label_of
+                            label = label_of(result.get('audit'))
+                            allowed, why = False, 'The candidate changed after '+('review ('+label+')' if label else 'independent review')+'.'
                         baseline_metadata=row.get('host_baseline_metadata')
                         if baseline_metadata:
                             from .candidate_checks import source_digest
@@ -1462,7 +1469,9 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 'it, and these open items; never say it was audited or accepted.')
         else:
             result['next'] = ('Applied after its checks and ' + ('a ' + label + ', which the user confirmed (local-only '
-                              'mode); say plainly that the review was not independent' if label else 'an independent review') +
+                              'mode); say plainly that the review was not independent' if label else
+                              'a review ' + audit['independence'] + '; say plainly that the review was not independent'
+                              if audit.get('independence') else 'an independent review') +
                               '. Tell the user in plain words, in the language of their request, what changed and how it was checked.')
     return result
 

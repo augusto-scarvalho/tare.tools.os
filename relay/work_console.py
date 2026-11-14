@@ -111,17 +111,29 @@ def render(action, result):
             for stage in receipt.get('stages', []):
                 if stage['stage'] == 'implement' and stage.get('reason'):
                     lines.append('Reason: ' + stage['reason'])
+        from .landing_policy import SAME_VENDOR_AUDIT
+        from .work_audit import route_reason
+
+        def reason(row):  # a route saved before the vendor rule reads as the rule names it now
+            named = route_reason(row)
+            return named+(' · '+SAME_VENDOR_AUDIT if named == 'SAME_VENDOR_NOT_INDEPENDENT' else '')
         routing = receipt.get('audit_routing') or {}
         if routing:
             lines.append('Code audit: '+routing['status']+' · '+routing['reason'])
             for route in routing['routes']:
-                lines.append('  '+route['deployment']['id']+': '+route['reason'])
+                lines.append('  '+route['deployment']['id']+': '+reason(route))
         if routing.get('selection'):
+            # A configured-list candidate (native_routes._reviewers) saves no cross_vendor: the route of the same
+            # deployment in this record says it; without one the candidate stays as saved.
+            vendors = {route['deployment']['id']: route.get('cross_vendor') for route in routing.get('routes', [])}
             for candidate in routing['selection']['candidates']:
-                lines.append('  Candidate '+candidate['deployment']+': '+candidate['reason'])
+                if 'cross_vendor' not in candidate:
+                    candidate = {**candidate, 'cross_vendor': vendors.get(candidate.get('selected_deployment', candidate['deployment']))}
+                lines.append('  Candidate '+candidate['deployment']+': '+reason(candidate))
         if receipt.get('audit'):
             audit = receipt['audit']
-            lines.append('Auditor: '+audit['deployment']+' · '+str(audit.get('verdict') or audit.get('reason') or audit['result']['status']))
+            lines.append('Auditor: '+audit['deployment']+' · '+str(audit.get('verdict') or audit.get('reason') or audit['result']['status'])
+                         +(' · '+SAME_VENDOR_AUDIT if audit.get('cross_vendor') is False else ''))
             from .native_display import render_failure
             lines.extend(render_failure(audit['result']))
             lines.append('Audit session: '+audit['session'])
@@ -138,8 +150,11 @@ def render(action, result):
             lines.append('Original run: ' + receipt['resumed_from'])
         if receipt.get('admission'):
             lines.append('Admission: ' + receipt['admission']['verdict'])
-            if receipt['admission'].get('audit'):
-                lines.append('Independent audit counted: '+str(receipt['admission']['audit']['counted']))
+            admitted = receipt['admission'].get('audit') or {}
+            if admitted.get('counted') and admitted.get('cross_vendor') is False:
+                lines.append('Audit counted: True · '+SAME_VENDOR_AUDIT)
+            elif admitted:
+                lines.append('Independent audit counted: '+str(admitted['counted']))
             lines.extend('  ' + reason for reason in receipt['admission'].get('reason_codes', []))
         landing = receipt.get('landing')
         if landing:

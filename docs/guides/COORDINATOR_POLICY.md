@@ -100,7 +100,8 @@ require `vendor/deployment@reasoning`. The deployment identifies an exact
 connection, not a search by model name. `--auditor` also applies to
 `plan-auditor`; independence of identity and bias domain is still
 checked against the real producer, except that `--local_only` admits a
-same-family auditor as described above. The planner requires high or above. Research
+same-family auditor as described above. A pinned auditor of the producer's vendor
+runs, labelled "audited by the same vendor: not independent". The planner requires high or above. Research
 remains limited to qualified connections with read-only web tools;
 without a flag, it keeps medium.
 

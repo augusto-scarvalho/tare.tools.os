@@ -78,7 +78,8 @@ def admission(row, role, author=None, credentials=None):
     from .turn_engine import usage_limited
     if usage_limited(deployment):
         return deployment, auditor, 'QUOTA_EXHAUSTED'
-    same_family = bool(author and (auditor.model_id == author.model_id or auditor.bias_domain == author.bias_domain))
+    from .landing_policy import independence
+    same_family = bool(author) and independence(author, auditor) == 'AUDITOR_NOT_INDEPENDENT'
     if same_family and not same_family_admitted():
         return deployment, auditor, 'AUDITOR_NOT_INDEPENDENT'
     if deployment['native_profile']['protocol'] == 'vendor-cli':
@@ -119,7 +120,9 @@ def _ranked(role, producer=None, *, check_resources=False):
         deployment, auditor, reason = admission(row, role, author, credentials)
         if reason:
             decision['reason'] = reason; continue
-        same_family = bool(author and (auditor.model_id == author.model_id or auditor.bias_domain == author.bias_domain))
+        from .landing_policy import independence
+        kind = independence(author, auditor) if author else None
+        same_family = kind == 'AUDITOR_NOT_INDEPENDENT'
         key = deployment.get('native_credential_env')
         from .execution_scope import refusal
         if refusal(role, deployment, row['id'], row.get('native_catalog', row['id'])):
@@ -148,15 +151,17 @@ def _ranked(role, producer=None, *, check_resources=False):
         seen.add(fingerprint)
         cross = bool(author and auditor.vendor != author.vendor)
         decision.update(eligible=True, catalog=row.get('native_catalog',row['id']),
-            reason='SAME_FAMILY_LOCAL_ONLY_NOT_INDEPENDENT' if same_family else 'CONFIGURED_INDEPENDENT_NATIVE_ROUTE' if author else 'CONFIGURED_NATIVE_ROLE',
+            reason=('CONFIGURED_NATIVE_ROLE' if kind is None else 'SAME_FAMILY_LOCAL_ONLY_NOT_INDEPENDENT' if same_family
+                    else 'CONFIGURED_INDEPENDENT_NATIVE_ROUTE' if kind == 'INDEPENDENT' else kind),
             cost_tier=row['cost_tier'], cross_vendor=cross, profile_sha256=fingerprint,
             selected_deployment=deployment['id'], availability='CREDENTIAL_PRESENT_HOST_UNPROBED' if key else 'HOST_UNPROBED')
         priority = row.get('review_priority', 1000) if role in {'auditor', 'plan-auditor'} else 0
         decision['review_priority'] = priority
         cli_backup = (role in {'auditor', 'plan-auditor'} and
                       (deployment['native_profile']['endpoint'] == 'cli://codex' or row['id'] == 'claude-cli'))
-        # An independent auditor always precedes an admitted same-family one.
-        rank = (same_family, current().preference(deployment,role),not cross, COST[row['cost_tier']], priority, row['kind'] != 'primary', cli_backup, order)
+        # An independent auditor always precedes an admitted same-family one, and another vendor precedes the same
+        # vendor before any preference, tier or priority: a same-vendor auditor runs only when no other is eligible.
+        rank = (same_family, not cross, current().preference(deployment,role), COST[row['cost_tier']], priority, row['kind'] != 'primary', cli_backup, order)
         eligible.append((rank, deployment, decision))
     if check_resources:
         kept = []
@@ -199,7 +204,7 @@ def _reviewers(producer, role='auditor', *, check_resources=True):
     Explicit route lists retain their order after the existing independence gate.
     """
     from .turn_engine import policy, pick_auditors
-    from .work_audit import identity
+    from .work_audit import identity, independence
     if role not in {'auditor', 'plan-auditor'}:
         raise ValueError('REVIEW_ROLE_REQUIRED')
     rules = policy()
@@ -214,8 +219,9 @@ def _reviewers(producer, role='auditor', *, check_resources=True):
         'policy_sha256': sha256_canonical({'auditor':rules['auditor'], 'auditor_selection':'configured'}),
         'producer_sha256': author.sha256, 'roster_sha256': author.payload['roster_sha256'],
         'candidates': [{'deployment': name, 'eligible': True, 'position': index+1,
-                        'reason': 'OPERATOR_SELECTED_INDEPENDENT'}
-                       for index, (name, _) in enumerate(chosen)], 'generation_calls': 0}
+                        'reason': 'SAME_VENDOR_NOT_INDEPENDENT' if independence(producer, deployment) == 'SAME_VENDOR_NOT_INDEPENDENT'
+                                  else 'OPERATOR_SELECTED_INDEPENDENT'}
+                       for index, (name, deployment) in enumerate(chosen)], 'generation_calls': 0}
 
 
 def executed_decision(mode, executed_id, considered, skipped=()):

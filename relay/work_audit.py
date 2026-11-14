@@ -22,6 +22,24 @@ def identity(deployment, role):
         endpoint=deployment['native_profile'].get('endpoint'))
 
 
+def independence(implementer, auditor):
+    """landing_policy.independence of two deployments; None when either identity is unknown."""
+    from .landing_policy import independence as rule
+    try:
+        return rule(identity(implementer, 'implementer'), identity(auditor, 'auditor'))
+    except (ValueError, KeyError, TypeError, OSError):
+        return None
+
+
+def route_reason(route):
+    """A saved route's or candidate's reason as the vendor rule names it: one of the auditor's own vendor saved before
+    that rule (cross_vendor false, an INDEPENDENT reason) reads SAME_VENDOR_NOT_INDEPENDENT. Saved records stay as they are."""
+    if route.get('cross_vendor') is False and route.get('reason') in (
+            'AUTO_SELECTED_INDEPENDENT', 'OPERATOR_SELECTED_INDEPENDENT', 'CONFIGURED_INDEPENDENT_NATIVE_ROUTE'):
+        return 'SAME_VENDOR_NOT_INDEPENDENT'
+    return route.get('reason')
+
+
 def prepare(implementer, deployments, mode):
     from .landing_policy import AUDIT_MODES
     if mode not in AUDIT_MODES:
@@ -32,13 +50,15 @@ def prepare(implementer, deployments, mode):
     if deployments == 'auto':
         from .native_routes import independent_auditors
         deployments, selection = independent_auditors(implementer)
+    from .landing_policy import independence as rule
     producer = identity(implementer, 'implementer')
     routes = []
     for deployment in deployments or []:
         auditor = identity(deployment, 'auditor')
-        independent = auditor.model_id != producer.model_id and auditor.bias_domain != producer.bias_domain
+        kind = rule(producer, auditor)
         routes.append({'deployment': deployment, 'identity_sha256': auditor.sha256,
-            'eligible': independent, 'reason': ('AUTO_SELECTED_INDEPENDENT' if selection else 'OPERATOR_SELECTED_INDEPENDENT') if independent else 'AUDITOR_NOT_INDEPENDENT',
+            'eligible': kind != 'AUDITOR_NOT_INDEPENDENT',
+            'reason': ('AUTO_SELECTED_INDEPENDENT' if selection else 'OPERATOR_SELECTED_INDEPENDENT') if kind == 'INDEPENDENT' else kind,
             'cross_vendor': auditor.vendor != producer.vendor})
     return {'mode': 'required' if deployments or selection else mode, 'producer_sha256': producer.sha256,
             'routes': routes, 'status': 'READY' if any(r['eligible'] for r in routes) else
@@ -99,7 +119,7 @@ def run(train, origin, candidate, receipt, stage, cancellation):
         if not work_control.checkpoint(train, origin, receipt, stage, cancellation,
                                        custody=session if (session/'native-agent.json').exists() else None):
             return False
-        stage('code_audit', deployment=deployment['id'], reason=route['reason'], session=str(session))
+        stage('code_audit', deployment=deployment['id'], reason=route_reason(route), session=str(session))
         config = {'schema':'tare.tools/native-agent-config/1','role':'auditor','typed_output':True,
             'repositories':{'candidate':str(worktree.resolve()),'review':str(inputs.resolve())},
             'writable':{},'capabilities':['read','list','search'],'specgraph_edit_context':False,
@@ -125,8 +145,9 @@ def run(train, origin, candidate, receipt, stage, cancellation):
                 return False
             if result['status'] != 'PAUSED' and (result['status'] == 'PROPOSED' or result.get('failure_code')):
                 save_json(result_file,result)
+        # An eligible route is independent exactly when it is of another vendor (landing_policy.independence).
         receipt['audit'] = {'deployment':deployment['id'],'session':str(session),'result':result,
-                            'independent':True,'cross_vendor':route['cross_vendor']}
+                            'independent':route['cross_vendor'],'cross_vendor':route['cross_vendor']}
         stage('code_audit_result', deployment=deployment['id'], status=result['status'], failure_code=result.get('failure_code'))
         if cancellation.is_cancelled():
             receipt['status']='CANCELLED'; return False

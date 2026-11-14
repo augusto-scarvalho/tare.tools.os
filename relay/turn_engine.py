@@ -1402,7 +1402,7 @@ def _pick_auditors(implementer, names, *, probe=True, role='auditor'):
         except (ValueError, KeyError, OSError):
             return []  # Unknown producer identity cannot establish independence.
         return [(value['id'], value) for value in selected]
-    from .landing_policy import LandingPolicyRejected
+    from .landing_policy import LandingPolicyRejected, independence
     from .work_audit import identity
     from .execution_scope import refusal
     try:
@@ -1428,12 +1428,19 @@ def _pick_auditors(implementer, names, *, probe=True, role='auditor'):
             auditor = identity(deployment, 'auditor')
         except (LandingPolicyRejected, KeyError):
             continue
-        if author and (auditor.model_id == author.model_id or auditor.bias_domain == author.bias_domain):
+        kind = independence(author, auditor)
+        if kind == 'AUDITOR_NOT_INDEPENDENT':
             continue
-        found.append((bool(author) and auditor.vendor == author.vendor, name, deployment))
+        found.append((kind != 'INDEPENDENT', name, deployment))
     found.sort(key=lambda item: item[0])
     if not found and remap_required:
         return _pick_auditors(implementer,None,probe=probe,role=role)
+    if remap_required and all(same_vendor for same_vendor, _, _ in found):
+        # The automatic choice replaces what is left of the owner's list only to bring in another vendor.
+        from .work_audit import independence as standing
+        remapped = _pick_auditors(implementer,None,probe=probe,role=role)
+        if any(standing(implementer, deployment) == 'INDEPENDENT' for _, deployment in remapped):
+            return remapped
     return [item[1:] for item in found]
 
 
@@ -1503,7 +1510,7 @@ def run_audit(request, files, root, implementer, emit, checks=None):
     (review/'REQUEST.md').write_text(request, encoding='utf-8')
     if checks:
         (review/'VERIFICATION.md').write_text(verification_of(checks), encoding='utf-8')
-    recheck = request.startswith(FIX_PREFIX)
+    recheck = request.startswith((FIX_PREFIX, SAME_VENDOR_FIX_PREFIX))
     lines = changed_lines(files)
     config = {'schema': 'tare.tools/native-agent-config/1', 'role': 'auditor', 'typed_output': True,
               'repositories': {'workspace': str(root), 'review': str(review)}, 'writable': {}, 'verifiers': {},
@@ -1531,6 +1538,8 @@ def run_audit(request, files, root, implementer, emit, checks=None):
     # Two actual attempts, not two aliases of one exhausted subscription.
     result, record, attempt = None, None, 0
     from .native_routes import executed_attempt, executed_decision
+    from .landing_policy import SAME_VENDOR_AUDIT
+    from .work_audit import independence
     from .execution_scope import current as current_scope
     decision_mode = ('EXACT_TEMPORARY_PIN' if current_scope().pin('auditor') else
                      'CONFIGURED' if rules.get('auditor_selection') == 'configured' else 'AUTOMATIC')
@@ -1543,7 +1552,9 @@ def run_audit(request, files, root, implementer, emit, checks=None):
             continue
         if attempt >= 2:
             break
-        emit(f"\n\n_tare audit{' of the fix' if recheck else ''} · {name} · {lines} changed lines_\n")
+        same_vendor = independence(implementer, deployment) == 'SAME_VENDOR_NOT_INDEPENDENT'
+        emit(f"\n\n_tare audit{' of the fix' if recheck else ''} · {name}{' · ' + SAME_VENDOR_AUDIT if same_vendor else ''}"
+             f" · {lines} changed lines_\n")
         session = base.with_name(base.name + (f'-{attempt + 1}' if attempt else ''))
         attempt += 1
         from .execution_scope import current, require
@@ -1560,7 +1571,7 @@ def run_audit(request, files, root, implementer, emit, checks=None):
         record = {'route': name, 'session': str(session), 'status': result.get('status'),
                   'files': sorted({f.get('path') for f in files}), 'changed_lines': lines, 'recheck': recheck,
                   'executed_decision': executed_decision(decision_mode, name, visited, skipped),
-                  'attempts': list(attempts)}
+                  'attempts': list(attempts), **({'independence': SAME_VENDOR_AUDIT} if same_vendor else {})}
         if result.get('status') == 'PROPOSED':
             break
         if result.get('failure_code') in USAGE_LIMIT_CODES:
@@ -1574,13 +1585,15 @@ def run_audit(request, files, root, implementer, emit, checks=None):
     payload = read_input(result['artifact_file'])['artifact']['payload']
     record.update(verdict=payload['verdict'], findings=[f['claim'] for f in payload['findings']],
                   remaining=payload['remaining'])
-    emit(f"**{payload['verdict']}** — {payload['summary']}\n" +
+    tag = f" ({record['independence']})" if record.get('independence') else ''
+    emit(f"**{payload['verdict']}**{tag} — {payload['summary']}\n" +
          ''.join(f'- {claim}\n' for claim in record['findings']) +
          ''.join(f'- residual (not sent for fixing): {item}\n' for item in record['remaining']))
     return record
 
 
 FIX_PREFIX = 'An independent auditor ('
+SAME_VENDOR_FIX_PREFIX = 'An auditor ('  # followed by its route and "audited by the same vendor: not independent"
 
 
 def patch_of(files):
@@ -1839,7 +1852,9 @@ def audit_turn(files, root, request, implementer, emit, checks=None):
     if not material:
         return record, None
     findings = ''.join(f'- {item}\n' for item in material)
-    return record, (FIX_PREFIX + record['route'] + ') reviewed your change and asks for revision:\n' + findings +
+    who = (SAME_VENDOR_FIX_PREFIX + record['route'] + ' · ' + record['independence'] if record.get('independence')
+           else FIX_PREFIX + record['route'])
+    return record, (who + ') reviewed your change and asks for revision:\n' + findings +
                     'Make the smallest change that resolves each finding: no refactors, new abstractions or extra '
                     'scope. If a finding is wrong, change nothing for it and say precisely why; disputing is a valid '
                     'answer.')

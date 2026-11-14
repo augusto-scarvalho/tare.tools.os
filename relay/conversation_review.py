@@ -624,6 +624,7 @@ def resume_review(owner, task, job, previous, tree, unit, changed, control):
     row['calls_used']=count_calls(job/'session')
     result.update(route=previous['route'],session=str(job/'session'),
                   actor={'role':'auditor','model':state['deployment']['native_profile']['model'],'route':previous['route']})
+    result=labelled(result)
     row.update(status='FINISHED',result=result)
     save_json(job/'receipt.json',row,max_bytes=MAX_RECEIPT_BYTES)
     return result
@@ -681,15 +682,44 @@ def available(producer, owner=None):
         return pick_auditors(producer, rules['auditor'] if rules.get('auditor_selection') == 'configured' else None)
 
 
+def labelled(result):
+    """`result` (a review result, or a saved delivery's audit) classified by who produced and who audited, read from the
+    identities the host recorded in that review's request (host_execution_selection): a same-family review (admitted
+    only under --local_only) gets its `audit_label`, as a fresh one does, so the user is asked before applying it
+    (confirm_apply); a same-vendor one gets `independence`. A review saved before either label is classified too; a
+    result without its review session (no auditor ran) is returned unchanged."""
+    from types import SimpleNamespace
+    from .landing_policy import SAME_VENDOR_AUDIT, independence
+    from .native_agent import read_json
+    if not isinstance(result, dict) or not result.get('session'):
+        return result
+    try:
+        chosen = read_json(regular(Path(result['session']).parent/'input'/'request.json'),
+                           MAX_RECEIPT_BYTES)['host_execution_selection']
+        implementer, auditor = (SimpleNamespace(**{k: chosen[role][k] for k in ('model_id', 'bias_domain', 'vendor')})
+                                for role in ('implementer', 'auditor'))
+    except (OSError, ValueError, KeyError, TypeError):
+        return result
+    if not all([*vars(implementer).values(), *vars(auditor).values()]):
+        return result  # an unknown identity establishes nothing
+    kind = independence(implementer, auditor)
+    if kind == 'AUDITOR_NOT_INDEPENDENT':
+        return {**result, 'audit_label': NOT_INDEPENDENT}
+    if kind == 'SAME_VENDOR_NOT_INDEPENDENT':
+        return {**result, 'independence': SAME_VENDOR_AUDIT}
+    return result
+
+
+def label_of(audit):
+    """The words a review carries for an auditor that is not independent (same family, or same vendor), or None."""
+    return (audit or {}).get('audit_label') or (audit or {}).get('independence')
+
+
 def same_family(producer, auditor):
     """The auditor shares the implementer's model or bias domain. An unknown identity cannot be selected
     (pick_auditors refuses it) and leaves an earlier retried route as it was."""
-    from .work_audit import identity
-    try:
-        author, reviewer = identity(producer, 'implementer'), identity(auditor, 'auditor')
-    except (ValueError, KeyError, TypeError, OSError):
-        return False
-    return author.model_id == reviewer.model_id or author.bias_domain == reviewer.bias_domain
+    from .work_audit import independence
+    return independence(producer, auditor) == 'AUDITOR_NOT_INDEPENDENT'
 
 
 def reference_sources_current(config,sources):
@@ -729,6 +759,11 @@ def packet_preflight(tree,changed):
 
 
 def review(owner, task, tree, producer, unit, changed, checks, control, *, _unavailable=()):
+    """The candidate's audit: fresh, resumed or reused from a saved receipt, always classified (labelled)."""
+    return labelled(_review(owner, task, tree, producer, unit, changed, checks, control, _unavailable=_unavailable))
+
+
+def _review(owner, task, tree, producer, unit, changed, checks, control, *, _unavailable=()):
     from .blocker_rubric import BLOCKER_RUBRIC
     from .challenger import git
     from .delegation import child_calls
@@ -923,7 +958,11 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
     if parent_spend:
         _, tariff = settings(deployment)
         if tariff is None or tariff.currency != parent_spend.currency or owner.parent_model is None:
-            return {'verdict': 'INCONCLUSIVE', 'reason': 'The independent auditor needs a tariff matching the shared spend limit.'}
+            from .landing_policy import SAME_VENDOR_AUDIT
+            from .work_audit import independence
+            who = ('auditor ('+SAME_VENDOR_AUDIT+')' if independence(producer, deployment) == 'SAME_VENDOR_NOT_INDEPENDENT'
+                   else 'independent auditor')  # no review record yet: the two deployments in hand decide
+            return {'verdict': 'INCONCLUSIVE', 'reason': 'The '+who+' needs a tariff matching the shared spend limit.'}
         allowance = owner.parent_model.report()['remaining_amount']
         if Decimal(allowance) <= 0:
             return {'verdict': 'INCONCLUSIVE', 'reason': 'No shared spend allowance remains for review.'}
@@ -1118,7 +1157,8 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
         result.update(route=name, session=str(job/'session'),
                       actor={'role':'auditor','model':deployment['native_profile']['model'],'route':name},
                       **({'audit_label': label} if label else {}))
-        result = context_failure(job, row, result)
+        # A same-vendor auditor's verdict counts as any other's (no audit_label, which asks the user); it is named.
+        result = labelled(context_failure(job, row, result))
         row.update(status='FINISHED', result=result)
         save_json(path, row, max_bytes=MAX_RECEIPT_BYTES)
         if quota_before_review(job, result):
