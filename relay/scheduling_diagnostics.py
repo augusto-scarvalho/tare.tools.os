@@ -46,6 +46,7 @@ _CATALOG = {
     'NOT_USED_ON_THIS_MACHINE': ('policy', 'This route is not permitted on this machine.', 'Choose a permitted route or review the machine setup.', False),
     'OLDER_MODEL': ('policy', 'The model is excluded by the model selection policy.', 'Choose a permitted model or review the selection setup.', False),
     'AUDITOR_NOT_INDEPENDENT': ('policy', 'The auditor is not independent of the producer.', 'Choose an independent auditor that satisfies the audit policy.', False),
+    'SWITCHED_OFF_FOR_ROLE': ('policy', 'Your routing profile switches this route off for this role.', 'Switch it on with tare setup --auto, choose it yourself, or choose another route.', False),
     'CLI_EXECUTABLE_UNAVAILABLE': ('dependency', 'The configured CLI executable is unavailable.', 'Review the executable installation and configuration.', False),
     'DUPLICATE_REALIZATION': ('configuration', 'This route duplicates an existing realization.', 'Choose a distinct configured route or review duplicate configuration.', False),
     'UNKNOWN': ('unknown', 'The route is unavailable for an unspecified reason.', 'Review authoritative route diagnostics or choose another permitted route.', False),

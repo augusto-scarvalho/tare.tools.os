@@ -195,7 +195,7 @@ def run_flow(kind, text, root, emit, activity):
             name=deployment['native_model_choice']['connection']
         else:
             tiers = [rules['planner']] if role == 'planner' else rules['implementer']
-            tier, name, deployment, skipped = engine.choose(tiers)
+            tier, name, deployment, skipped = engine.choose(tiers, role=role)
             if deployment is None:
                 return None, 'tare: no route is available for /' + kind + ': ' + json.dumps(skipped)
             if role == 'planner':

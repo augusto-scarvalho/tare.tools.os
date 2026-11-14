@@ -4,6 +4,7 @@ same choices. No file, or a category left undecided, keeps today's behaviour: ev
 import json
 import os
 from pathlib import Path
+import re
 from urllib.parse import urlsplit
 
 SCHEMA = 'tare.tools/environment/1'
@@ -119,6 +120,210 @@ def decides(name):
     section = value.get('decision_models') or {}
     return 'error' not in value and section.get('use') is not False and \
         not declined((section.get('items') or {}).get(name))
+
+
+# Which routes automatic routing may use, per role: `routing_profile`, set with tare setup --auto (the /routes matrix
+# comes next). tare's default is today's role rows (relay/role_deployments.json and the routing policy's lists); the
+# profile keeps only the owner's differences, so it can only switch routes off, and an "on" entry only undoes a
+# broader "off". Rules above it (setup, qualification, older models, independence, credentials, quota) keep their
+# own reasons, and an explicit choice, a pin or --coordinator never asks it. Grammar: docs/guides/SHARED_GPU.md.
+PROFILE_ROLES = ('implementer', 'explorer', 'planner', 'plan-auditor', 'auditor', 'researcher', 'vision', 'heads_up')
+RANKED_ROLES = PROFILE_ROLES[:5]  # the roles relay/role_deployments.json ranks (native_routes.ranked)
+SOURCES = ('claude-code', 'codex', 'agy', 'opencode-sub', 'opencode-api', 'api', 'openrouter', 'bedrock', 'local')
+MODEL = re.compile(r'\*|([a-z0-9]+)/(?:\*|([a-z][a-z0-9-]*?)(?:-(\d+(?:\.\d+)?))?)')
+
+
+def entry(text):
+    """(specificity, rule) of one profile entry, or None when it is malformed. A route id (openrouter-muse-wonder) is
+    the most specific; MODEL@SOURCE ranks by its model part (claude/fable-5.2 over claude/fable over claude/* over
+    *), then by a named source over *."""
+    if not isinstance(text, str):
+        return None
+    if '@' not in text:
+        return (8, text) if re.fullmatch(r'[a-z0-9][a-z0-9._-]*', text) else None
+    model, _, where = text.partition('@')
+    found = MODEL.fullmatch(model)
+    if not found or where != '*' and where not in SOURCES:
+        return None
+    family, name, version = found.groups()
+    level = 0 if model == '*' else 3 if version else 2 if name else 1
+    return level*2 + (where != '*'), (family, name, version and tuple(map(int, version.split('.'))), where)
+
+
+def source(deployment):
+    """The SOURCES token of a route: who carries it and how it is paid."""
+    from .challenger import local
+    from .model_choices import OPENROUTER_ENDPOINT
+    from .opencode import subscription
+    profile = deployment.get('native_profile') or {}
+    endpoint, protocol = profile.get('endpoint', ''), profile.get('protocol', '')
+    if protocol == 'vendor-cli':
+        return {'cli://claude': 'claude-code', 'cli://codex': 'codex', 'cli://agy': 'agy'}.get(endpoint)
+    if protocol == 'openai-codex-responses':
+        return 'codex'  # Codex Direct: the same ChatGPT plan as the Codex CLI
+    if deployment.get('native_opencode'):
+        return 'opencode-sub' if subscription(deployment) else 'opencode-api'
+    if protocol.startswith('bedrock'):
+        return 'bedrock'
+    if endpoint.rstrip('/') == OPENROUTER_ENDPOINT:
+        return 'openrouter'
+    return 'local' if local(deployment) else 'api'
+
+
+def route_key(deployment):
+    """(family, line, version, source) of a route: claude-api-fable-5-2 is ('claude', 'fable', (5, 2), 'api'). A model
+    of no line in relay/model_lines.json (a reseller's own id, a local model) has no family, line or version."""
+    from .vendor_models import AGY_EFFORT, line, parse
+    model = (deployment.get('native_profile') or {}).get('model', '')
+    return (*(parse(AGY_EFFORT.sub('', model)) if line(model) else (None, None, None)), source(deployment))
+
+
+def route_label(deployment):
+    family, name, version, where = route_key(deployment)
+    return (f'{family}/{name}-' + '.'.join(map(str, version)) if family else '') + '@' + (where or '?')
+
+
+def profile(value=None):
+    """The saved routing_profile as ({role: {'off': [(text, specificity, rule)], 'on': [...]}}, problems). What cannot
+    be read is ignored and named in problems (tare setup shows them): it never stops routing, and ignoring it never
+    makes more routes eligible than tare's default."""
+    value = read() if value is None else value
+    saved = None if 'error' in value else value.get('routing_profile')
+    if saved is None:
+        return {}, []
+    if not isinstance(saved, dict):
+        return {}, ['routing_profile is not an object; ignored']
+    rules, problems = {}, [f'routing_profile.{key}: unknown; ignored' for key in sorted(set(saved) - {'off', 'on'})]
+    for side in ('off', 'on'):
+        roles = saved.get(side, {})
+        if not isinstance(roles, dict):
+            problems.append(f'routing_profile.{side} is not an object; ignored')
+            continue
+        for role, texts in roles.items():
+            if role not in PROFILE_ROLES or not isinstance(texts, list):
+                problems.append(f'routing_profile.{side}.{role}: unknown role or not a list; ignored')
+                continue
+            for text in texts:
+                parsed = entry(text)
+                if parsed is None:
+                    problems.append(f'routing_profile.{side}.{role}: {text!r} is not a route id or MODEL@SOURCE; ignored')
+                else:
+                    rules.setdefault(role, {'off': [], 'on': []})[side].append((text, *parsed))
+    return rules, problems
+
+
+def profile_state(role, deployment, *names, value=None):
+    """('off' or 'on', entry) of the most specific entry for this route and role (off wins a tie), or None: tare's
+    default. `names`: what the caller calls the route (its policy or table name); its id is known."""
+    rules = profile(value)[0].get(role)
+    if not rules:
+        return None
+    from .native_catalog import LOCAL, LOCAL_DEFAULT, local_default
+    known = {deployment.get('id'), *names}
+    if LOCAL_DEFAULT in known:
+        known.add(local_default())
+    known |= {LOCAL.get(n, n) for n in known if n}  # local-qwen is qwen38-gsq, as tare models lists it
+    key = route_key(deployment)
+    found = max(((specificity, side == 'off', text) for side in ('off', 'on') for text, specificity, rule in rules[side]
+                 if (rule in known if isinstance(rule, str) else
+                     rule[3] in ('*', key[3]) and all(want in (None, have) for want, have in zip(rule[:3], key)))),
+                default=None)
+    return found and ('off' if found[1] else 'on', found[2])
+
+
+def switched_off(role, deployment, *names, value=None):
+    """An Unavailable (SWITCHED_OFF_FOR_ROLE) when the routing profile switches this route off for automatic `role`
+    routing, else None. Only automatic paths ask, after their rules."""
+    state = profile_state(role, deployment, *names, value=value)
+    if state and state[0] == 'off':
+        from .scheduling_diagnostics import Unavailable
+        return Unavailable(f'switched off for {role} by {state[1]} (tare setup --auto)', 'SWITCHED_OFF_FOR_ROLE')
+    return None
+
+
+def auto_rows(role, value=None):
+    """The routes automatic `role` routing considers here, checked without a live probe: their line on source, the
+    profile's state ('on' is tare's default; an entry is the owner's) and why one cannot be used now (a rule)."""
+    from .cli_discovery import TEMPLATES
+    from .execution_scope import current
+    from .native_catalog import select
+    from .native_routes import configured, roles as table_roles
+    from .turn_engine import available, policy
+    value = read() if value is None else value
+    templates = json.loads(TEMPLATES.read_text(encoding='utf-8'))
+    table = {row.get('native_catalog', row['id']): row for row in configured()['deployments']
+             if role in RANKED_ROLES and role in table_roles(row, current())}
+    listed = [n for item in policy().get(role) or [] for n in (item if isinstance(item, list) else [item])]
+    rows = []
+    for name in dict.fromkeys([*listed, *table]):
+        deployment, why = available(name, probe=False)
+        try:
+            known = deployment or select(name)
+        except (ValueError, OSError, KeyError, TypeError):
+            known = templates.get(name)  # a CLI route not set up here: its shipped template names its line
+        state = known and profile_state(role, known, name, value=value)
+        row = table.get(name, {})  # its rules (qualified, older) are the role table's; a routing list asks available()
+        now = (why.diagnostic['code'] if why is not None else 'NOT_QUALIFIED_PIN_ONLY' if row.get('qualified') is False
+               else 'OLDER_MODEL' if row and older(deployment, value) else 'usable')
+        rows.append({'route': name, 'line': route_label(known) if known else '?',
+                     'profile': f'{state[0]} ({state[1]})' if state else 'on' if known else '?', 'now': now})
+    return rows
+
+
+def auto_table(role, value=None):
+    cells = [('route', 'line@source', 'profile', 'now')] + [tuple(r.values()) for r in auto_rows(role, value)]
+    widths = [max(len(cell[i]) for cell in cells) for i in range(3)]
+    return '\n'.join([f'{role}: the routes automatic routing considers (tare setup --auto {role}:PATTERN=on|off|default)']
+                     + ['  ' + '  '.join(cell[i].ljust(widths[i]) for i in range(3)) + '  ' + cell[3] for cell in cells])
+
+
+def set_auto(value, spec):
+    """ROLE:PATTERN=on|off|default into the routing profile; it keeps only differences from tare's default."""
+    role, _, rest = spec.partition(':')
+    pattern, _, state = rest.rpartition('=')
+    if role not in PROFILE_ROLES:
+        raise ValueError(f'Unknown role {role!r}: use ' + ', '.join(PROFILE_ROLES) + '.')
+    if state not in ('on', 'off', 'default') or entry(pattern) is None:
+        raise ValueError(f'Give ROLE:PATTERN=on|off|default; PATTERN is a route id or MODEL@SOURCE such as '
+                         f'claude/fable@api or *@openrouter (sources: {", ".join(SOURCES)}).')
+    saved = _editable(value)
+    for side in ('off', 'on'):
+        roles = {r: [t for t in texts if t != pattern] if r == role else texts for r, texts in saved[side].items()}
+        if side == state:
+            roles[role] = [*roles.get(role, []), pattern]
+        saved[side] = roles
+    return _store_profile(value, saved)
+
+
+def reset_auto(value, role=''):
+    """Forget the profile's entries for `role`, or the whole profile."""
+    if not role:
+        value.pop('routing_profile', None)
+        return value
+    if role not in PROFILE_ROLES:
+        raise ValueError(f'Unknown role {role!r}: use ' + ', '.join(PROFILE_ROLES) + '.')
+    saved = _editable(value)
+    return _store_profile(value, {**saved, **{side: {r: t for r, t in saved[side].items() if r != role}
+                                              for side in ('off', 'on')}})
+
+
+def _editable(value):
+    saved = value.get('routing_profile') or {}
+    if not isinstance(saved, dict) or any(not isinstance(saved.get(side, {}), dict) or any(
+            not isinstance(texts, list) for texts in saved.get(side, {}).values()) for side in ('off', 'on')):
+        raise ValueError('The saved routing profile cannot be read: tare setup --auto-reset starts it again.')
+    return {**saved, 'off': dict(saved.get('off', {})), 'on': dict(saved.get('on', {}))}
+
+
+def _store_profile(value, saved):
+    """Keep only what differs from tare's default: no empty role, side or profile."""
+    saved = {k: {r: t for r, t in v.items() if t} if k in ('off', 'on') else v for k, v in saved.items()}
+    saved = {k: v for k, v in saved.items() if v}
+    if saved:
+        value['routing_profile'] = saved
+    else:
+        value.pop('routing_profile', None)
+    return value
 
 
 def summary():
@@ -455,6 +660,11 @@ def show(value, found):
             for gateway in section.get('gateways') or []:
                 lines.append(f"    gateway {gateway['origin']} ({gateway.get('kind')}): "
                              f"{len(gateway.get('models') or [])} models, asked {gateway.get('observed', '?')}")
+    rules, problems = profile(value)
+    if rules or problems:
+        lines.append('  automatic routing: your changes for ' + (', '.join(sorted(rules)) or 'no role')
+                     + ' (tare setup --auto-show ROLE)')
+        lines += [f'    {p}' for p in problems]
     lines.append('Found here, without spending anything:')
     lines += [f'  {endpoint}: {path or "not installed"}' for endpoint, path in found['clis'].items()]
     hidden = sorted(older_models())
@@ -625,6 +835,15 @@ def main(argv=None):
     parser.add_argument('--replace-older', action='store_true', help='Move routes you named to the newer models')
     parser.add_argument('--keep-older', action='store_true', help='Keep the older models routes you named run')
     parser.add_argument('--reset', action='store_true', help='Forget every choice: back to every route tare finds')
+    parser.add_argument('--auto', action='append', default=[], metavar='ROLE:PATTERN=on|off|default',
+                        help="Switch routes on or off for one role's automatic routing, or back to tare's default; "
+                        'PATTERN is a route id or MODEL@SOURCE, e.g. auditor:claude/opus@api=off or '
+                        "implementer:*@openrouter=off. Explicit choices and pins are not affected")
+    parser.add_argument('--auto-reset', nargs='?', const='', metavar='ROLE',
+                        help="Back to tare's default for one role's automatic routing, or for every role")
+    parser.add_argument('--auto-show', action='append', default=[], metavar='ROLE',
+                        help='Show the routes automatic routing considers for a role: on, off by you, or not usable '
+                        'now and why')
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args(argv)
     if args.prove:
@@ -648,7 +867,13 @@ def main(argv=None):
             raise ValueError(value['error'] + ' (tare setup --reset starts again)')
         changes = bool(args.use or args.no_use or args.undecide or args.local_gateway or args.refresh or args.credential
                        or args.old_models or args.replace_older or args.keep_older or args.meta_contributor)
-        if not changes and not args.reset and not args.json:
+        edits = bool(args.auto) or args.auto_reset is not None
+        shown = list(dict.fromkeys([*(spec.partition(':')[0] for spec in args.auto), *args.auto_show,
+                                    *([args.auto_reset] if args.auto_reset else [])]))
+        for role in shown:
+            if role not in PROFILE_ROLES:
+                raise ValueError(f'Unknown role {role!r}: use ' + ', '.join(PROFILE_ROLES) + '.')
+        if not changes and not args.reset and not args.json and not shown and not edits:
             print(show(value, detect()))
             try:
                 if not sys.stdin.isatty():
@@ -681,10 +906,25 @@ def main(argv=None):
             print(f'Moved {len(moved)} route(s) to newer models.', file=sys.stderr)
         if args.keep_older:
             value = keep_older(value, replacements(value))
+        for spec in args.auto:
+            value = set_auto(value, spec)
+        if args.auto_reset is not None:
+            value = reset_auto(value, args.auto_reset)
         if changes:
             value, added, retired = apply(value)
             if added or retired:
                 print(f'Generic local profiles: {len(added)} added, {len(retired)} retired.', file=sys.stderr)
+        elif edits:
+            value = save(value)
+        if shown or edits:
+            problems = profile(value)[1]
+            print(json.dumps({'routing_profile': value.get('routing_profile'), 'problems': problems,
+                              'roles': {role: auto_rows(role, value) for role in shown}}, indent=1) if args.json else
+                  '\n\n'.join([*(f'Routing profile: {p}' for p in problems),
+                               *([auto_table(role, value) for role in shown]
+                                 or ["Automatic routing follows tare's default for every role."])]))
+            if not changes and not args.reset:
+                return 0
         found = detect()
         print(json.dumps({'setup': summary(), 'found': found}, indent=1) if args.json else show(value, found))
         return 0

@@ -82,6 +82,70 @@ turns do not invoke initial routing; their existing saved profile, history and c
 Offline regression coverage is in `tests/test_jev_initial_routing.py`, `tests/test_tare_auto.py`, and
 `tests/test_serve_agent.py`; it uses fixture transports/profiles/lease observations, not providers or a live GPU.
 
+## Which routes automatic routing may use: the routing profile
+
+`/routes` sets the order of each role's routes. The routing profile sets which routes automatic routing may use
+for each role. It does not change the order. tare ships a default, and the profile keeps only your differences
+from it (key `routing_profile` in this machine's `environment.json`, which the TUI, the CLI and `tare serve`
+share). A model that appears later follows the default, and an update of tare's default keeps your entries. For
+now the default is the routes each role uses today, so the profile can only switch routes off; an "on" entry
+undoes a broader "off". A screen for it in `/routes` comes next.
+
+- **Only automatic routing reads it.** tare auto's tiers, the role tables, the planner, auditor, vision,
+  researcher and heads-up lists all skip a route that is off, and so does a saved `routing.json`: the order file
+  does not switch a route back on. A model you pick, a role pin (`--implementer`, `--auditor`, ...),
+  `--coordinator`, a route the coordinator names for a unit, plan or search, and the explorers of `/delegation`
+  still reach it.
+- **Rules come first.** A provider declined in setup, a route not yet proven here (`NOT_QUALIFIED_PIN_ONLY`), an
+  older model (`OLDER_MODEL`), an auditor of the same family, a missing credential or a spent quota keep their own
+  reasons. An "on" entry never makes such a route usable.
+- **A skipped route says why:** `SWITCHED_OFF_FOR_ROLE` and the entry, in tare auto's skipped routes, in a role
+  table's candidates and in "No route can start". A role left with no route behaves as when none is available: no
+  auditor means the change is not audited, no implementer means `tare_auto_no_route_available`.
+
+An entry is a route id or `MODEL@SOURCE`:
+
+| Entry | Matches |
+|---|---|
+| `claude/fable@api` | Claude Fable on the Claude API, every version, a new one included |
+| `claude/fable-5.2@api` | only Claude Fable 5.2 there |
+| `claude/*@claude-code` | every Claude line on Claude Code |
+| `*@openrouter` | every route on OpenRouter |
+| `openrouter-muse-wonder` | one route, by the id `tare models` shows |
+
+- `MODEL` is `*`, a vendor (`claude/*`), a line as `relay/model_lines.json` names it (`claude/opus`, `gpt/sol`,
+  `gemini/argon`) or a line and version (`gpt/sol-6.1`). A model with no line there (a reseller's own model, a
+  local model) is named by its route id or by `*@SOURCE`.
+- `SOURCE` is `*` or one of `claude-code`, `codex` (the Codex CLI and Codex Direct: one ChatGPT plan), `agy`,
+  `opencode-sub`, `opencode-api`, `api` (the vendor's API, or another API paid per token), `openrouter`,
+  `bedrock`, `local`.
+- The most specific entry wins: a route id, then a version, a line, a vendor, `*`; at each of these a named
+  source beats `*`. When "on" and "off" tie, "off" wins.
+- Roles: `implementer` (tare auto's tiers and Work units), `explorer`, `planner`, `plan-auditor`, `auditor`,
+  `researcher`, `vision`, `heads_up`.
+- An entry tare cannot read is ignored and named by `tare setup`; it never stops routing.
+
+```
+tare setup --auto auditor:claude/*@*=off --auto auditor:claude/opus@api=on   # audits: of Claude, only Opus on the API
+tare setup --auto auditor:claude/opus@api=default                           # back to tare's default
+tare setup --auto-reset auditor                                             # forget one role's entries
+tare setup --auto-reset                                                     # forget the whole profile
+tare setup --auto-show auditor                                              # what the role considers, and why not now
+```
+
+`--auto-show` prints one row per route the role considers, checked without a live probe:
+
+```
+auditor: the routes automatic routing considers (tare setup --auto auditor:PATTERN=on|off|default)
+  route                  line@source                   profile                        now
+  codex-cli-gpt-6-1-sol  gpt/sol-6.1@codex             on                             usable
+  claude-opus-5-5-cli    claude/opus-5.5@claude-code   off (claude/opus@claude-code)  usable
+  claude-api-opus-5-5    claude/opus-5.5@api           on                             CREDENTIAL_UNAVAILABLE
+  claude-fable-5-2-cli   claude/fable-5.2@claude-code  on                             NOT_QUALIFIED_PIN_ONLY
+```
+
+`tare models --role ROLE` shows the same state in its "Automatic for ROLE" column.
+
 ## Reserving the GPU for a bench or a long run
 
 From this machine, without ssh (contract `gpu-lease/2`; the node needs its API token, see

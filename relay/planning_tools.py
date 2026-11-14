@@ -362,6 +362,10 @@ class PlanningTools:
                     raise ValueError('This planner uses another provider or allowance. Enable other providers in /delegation.')
                 skipped.append((name, 'OTHER_PROVIDER_ALLOWANCE'))
                 continue
+            from .environment import switched_off
+            if name != chosen and switched_off('planner', frozen, name):
+                skipped.append((name, 'SWITCHED_OFF_FOR_ROLE'))
+                continue
             from .planner_policy import effective
             try:
                 value = effective(frozen, args.get('effort'))

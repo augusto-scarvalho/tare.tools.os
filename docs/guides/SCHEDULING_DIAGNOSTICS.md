@@ -7,7 +7,7 @@ can select another available model or review setup, then send it again.
 
 | Category | Examples | Meaning |
 | --- | --- | --- |
-| Policy | `MACHINE_POLICY`, `LOCAL_GPU_DISABLED` | The saved machine or conversation choices exclude the route |
+| Policy | `MACHINE_POLICY`, `LOCAL_GPU_DISABLED`, `SWITCHED_OFF_FOR_ROLE` | The saved machine or conversation choices exclude the route; the last is the routing profile ([SHARED_GPU.md](SHARED_GPU.md#which-routes-automatic-routing-may-use-the-routing-profile)) |
 | Dependency | `CLI_UNAVAILABLE`, `CREDENTIAL_UNAVAILABLE`, `GATEWAY_UNREACHABLE` | A required executable, credential or service is unavailable |
 | Resource | `GPU_BUSY`, `GPU_RESERVED`, `QUOTA_EXHAUSTED` | An observed holder or usage limit prevents dispatch now |
 | Configuration | `PROFILE_UNAVAILABLE`, `ROLE_NOT_CONFIGURED`, `NOT_QUALIFIED_PIN_ONLY` | The selected profile or role needs configuration, or the route is reached only by an exact pin until qualified |

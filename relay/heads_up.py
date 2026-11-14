@@ -536,6 +536,7 @@ def write(text, seen, known=()):
     `known`: sentences the host is certain of (certain()), which the note must not contradict."""
     from .native_generation import generate_text, vault_secret
     from .turn_engine import DEFAULT_POLICY, available, policy, with_effort
+    from .environment import switched_off
     prompt = ('Notes already shown to the user (never repeat these):\n' + ('\n'.join('- ' + s for s in seen) or 'none')
               + ('\n\nFacts the host is certain of (never contradict them):\n' + '\n'.join('- ' + s for s in known)
                  if known else '')
@@ -546,7 +547,7 @@ def write(text, seen, known=()):
         if token.is_cancelled():
             break
         deployment, _ = available(name)
-        if deployment is None:
+        if deployment is None or switched_off('heads_up', deployment, name):
             continue
         if effort:
             deployment = with_effort(deployment, effort)

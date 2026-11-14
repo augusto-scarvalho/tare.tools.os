@@ -33,12 +33,14 @@ _turns, _chats, _guard = {}, {}, threading.Lock()
 
 def routes(start=0):
     """(tier, name, deployment) of the policy's available routes that carry client tools, from tier `start`."""
+    from .environment import switched_off
     for tier, names in enumerate(engine.policy()['implementer']):
         if tier < start:
             continue
         for name in names:
             deployment, _ = engine.available(name)
-            if deployment is not None and deployment['native_profile']['protocol'] == 'openai-chat':
+            if deployment is not None and deployment['native_profile']['protocol'] == 'openai-chat' and \
+                    not switched_off('implementer', deployment, name):
                 yield tier, name, deployment
 
 

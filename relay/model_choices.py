@@ -172,7 +172,7 @@ def projection(*, role=None, via=None, vendor=None, provider=None, include_uncon
     from .execution_scope import current, kind, is_pro
     from .coordinator_policy import APPROVED
     from .inference_allowlist import identities
-    from .environment import listed, read
+    from .environment import PROFILE_ROLES, listed, profile_state, read
     from .native_routes import configured, roles as table_roles
     from .turn_engine import policy
     from .web_research import DEFAULT_ROUTES
@@ -262,6 +262,9 @@ def projection(*, role=None, via=None, vendor=None, provider=None, include_uncon
                        'availability': 'UNVERIFIED', 'quota': 'UNVERIFIED'})
         if route.get('openrouter'):
             result[-1]['openrouter'] = route['openrouter']
+        if role in PROFILE_ROLES:  # the routing profile's state for this role's automatic routing (tare setup --auto)
+            state = profile_state(role, value, name, value=setup)
+            result[-1]['automatic'] = f'{state[0]} ({state[1]})' if state else 'on'
     return result
 
 
@@ -341,7 +344,8 @@ def main(argv=None):
                   ' | Author: '+row['vendor']+' | Connection: '+row['provider']+' ('+row['connection']+') | Access: '+row['via']+
                   ' | Local configuration: '+('configured' if row['configured'] else 'unconfigured (not executable)')+
                   ' | Reasoning supported: '+(', '.join(row['supported_reasoning']) or 'none')+
-                  ' | Reasoning permitted: '+(', '.join(row['allowed_reasoning']) or 'none'))
+                  ' | Reasoning permitted: '+(', '.join(row['allowed_reasoning']) or 'none')+
+                  (' | Automatic for '+args.role+': '+row['automatic'] if 'automatic' in row else ''))
             if (row.get('openrouter') or {}).get('notice'):
                 print('  Data use: '+row['openrouter']['notice'])
             for role, arguments in row['role_arguments'].items():

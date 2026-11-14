@@ -423,13 +423,15 @@ def available(name, probe=True):
     return deployment, None
 
 
-def choose(tiers, start=0, probe=True):
-    """First available route at or after tier `start`: (tier, name, deployment, skipped)."""
+def choose(tiers, start=0, probe=True, role='implementer'):
+    """First available route at or after tier `start` that the routing profile leaves on for `role`:
+    (tier, name, deployment, skipped)."""
+    from .environment import switched_off
     skipped = []
     for tier in range(start, len(tiers)):
         for name in tiers[tier]:
             deployment, reason = available(name) if probe else available(name, probe=False)
-            if deployment is not None:
+            if deployment is not None and not (reason := switched_off(role, deployment, name)):
                 return tier, name, deployment, skipped
             row = {'route': name, 'reason': str(reason) if isinstance(reason, Unavailable) else reason}
             if isinstance(reason, Unavailable):
@@ -441,18 +443,19 @@ def choose(tiers, start=0, probe=True):
 INITIAL_JEV_BYTES = 6000  # UTF-8, including question and tier descriptions; never truncate the task
 
 
-def initial_choice(tiers, text, start=0):
+def initial_choice(tiers, text, start=0, role='implementer'):
     """One hosted assessment for INITIAL only; policy and live availability retain execution authority.
 
     Tier labels are opaque policy positions, not a universal intelligence ranking. Only safe profile
     facts go to the judge, never endpoints, parameters, credential names or credential values.
     """
+    from .environment import switched_off
     eligible, exclusions, options = {}, [], {}
     for tier in range(start, len(tiers)):
         descriptions = []
         for name in tiers[tier]:
             deployment, why = available(name)
-            if deployment is None:
+            if deployment is None or (why := switched_off(role, deployment, name)):
                 row = {'route': name, 'reason': (
                     why.diagnostic['message'] if isinstance(why, Unavailable) else str(why))}
                 if isinstance(why, Unavailable):
@@ -519,11 +522,11 @@ def initial_choice(tiers, text, start=0):
         decision['reason'] = 'jev_failed'
     # Reobserve credentials/quota/leases after classification. Keep order within the selected tier
     # and its existing fallback ladder; the gateway still owns final GPU admission.
-    tier, name, chosen, skipped = choose(tiers, selected)
+    tier, name, chosen, skipped = choose(tiers, selected, role=role)
     if chosen is None and selected != next(iter(eligible)):
         # Advice is not an eligibility constraint. If its entire ladder disappeared, try
         # the owner's full policy again, including earlier tiers that can still execute.
-        tier, name, chosen, fallback_skipped = choose(tiers, start)
+        tier, name, chosen, fallback_skipped = choose(tiers, start, role=role)
         skipped += fallback_skipped
         decision['source'] = 'policy'
         decision['reason'] = 'suggested_ladder_unavailable'
@@ -1149,10 +1152,11 @@ def describe_files(paths, emit):
     if not paths:
         return ''
     emit(f'\n> `image` {len(paths)} attached')
+    from .environment import switched_off
     failures = []
     for name in policy().get('vision', DEFAULT_POLICY['vision']):
         deployment, why = available(name)
-        if deployment is None:
+        if deployment is None or (why := switched_off('vision', deployment, name)):
             failures.append(f'{name}: {why}')
             continue
         try:
@@ -1386,6 +1390,7 @@ def _pick_auditors(implementer, names, *, probe=True):
         return [(value['id'], value) for value in selected]
     from .landing_policy import LandingPolicyRejected
     from .work_audit import identity
+    from .environment import switched_off
     try:
         author = identity(implementer, 'implementer')
     except (LandingPolicyRejected, KeyError):
@@ -1403,8 +1408,8 @@ def _pick_auditors(implementer, names, *, probe=True):
                 remap_required=True
                 continue  # The operator's temporary family override requires a new route.
         deployment, _ = available(name) if probe else available(name, probe=False)
-        if deployment is None:
-            continue
+        if deployment is None or switched_off('auditor', deployment, name):
+            continue  # the owner's order list does not override the routing profile
         try:
             auditor = identity(deployment, 'auditor')
         except (LandingPolicyRejected, KeyError):

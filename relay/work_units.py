@@ -474,6 +474,7 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False):
     local session's bill as the session itself would."""
     from .delegation import experiments
     from .turn_engine import available, gpu_taken, policy, with_effort
+    from .environment import switched_off
     from .execution_scope import current, execution_tiers, is_pro, kind
     temporary=current()
     if temporary.pin('implementer'):
@@ -505,7 +506,7 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False):
     for name in names():
         deployment, why = available(name)
         gpu_busy = gpu_busy or gpu_taken(why)
-        if deployment is None:
+        if deployment is None or name != chosen and switched_off('implementer', deployment, name):
             continue
         if not fits(deployment):
             if name == chosen:
