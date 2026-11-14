@@ -99,14 +99,22 @@ def runtime_pin(engine: str, role: str) -> tuple[str, str]:
 CHAIR_ENDPOINTS = {"claude": "cli://claude", "antigravity": "cli://agy", "codex": "cli://codex"}
 
 
-def chair_off(engine: str, role: str):
+def chair_off(engine: str, role: str, model_known: bool = True):
     """The routing profile's SWITCHED_OFF_FOR_ROLE for a mesh chair in a role it knows, else None. The mesh's chairs
-    are fixed, so the profile simply decides; bookkeeper and overseer are not its roles."""
-    from relay.environment import PROFILE_ROLES, switched_off
+    are fixed, so the profile simply decides; bookkeeper and overseer are not its roles. `model_known=False`: the
+    launcher passes no model, so the CLI runs whatever it is set to; any entry that switches a model off for the role
+    on that CLI (or on every source) then refuses the chair, because tare cannot tell it is not that model."""
+    from relay.environment import PROFILE_ROLES, profile, source, switched_off
     if role not in PROFILE_ROLES or engine not in CHAIR_ENDPOINTS:
         return None
-    return switched_off(role, {"id": engine, "native_profile": {
-        "protocol": "vendor-cli", "endpoint": CHAIR_ENDPOINTS[engine], "model": runtime_pin(engine, role)[1]}})
+    route = {"id": engine, "native_profile": {
+        "protocol": "vendor-cli", "endpoint": CHAIR_ENDPOINTS[engine], "model": runtime_pin(engine, role)[1]}}
+    if model_known:
+        return switched_off(role, route)
+    hit = next((text for text, _, rule in (profile(role=role)[0].get(role) or {}).get("off", ())
+                if not isinstance(rule, str) and rule[3] in ("*", source(route))), None)
+    return hit and (f"{engine} runs whatever model its CLI is set to, and {hit} switches models off for {role} there; "
+                    f"tare cannot tell which one would run")
 
 
 def _now_iso() -> str:

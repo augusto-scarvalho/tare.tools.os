@@ -179,7 +179,7 @@ def execute_vendor(prompt: str, vendor_id: str | None = None,
     vendor_id = vendor_id or active_vendor()
     cfg = resolve_executor(vendor_id)
     import vendor_chairs
-    off = vendor_chairs.chair_off(vendor_id, "planner")
+    off = vendor_chairs.chair_off(vendor_id, "planner", model_known=False)  # the argv below names no model
     if off:  # the routing profile switches this planner off: no session starts; the caller quarantines the message
         log(f"[{vendor_id}] SWITCHED_OFF_FOR_ROLE: {off}")
         return subprocess.CompletedProcess([vendor_id], 1, "", f"SWITCHED_OFF_FOR_ROLE: {off}")

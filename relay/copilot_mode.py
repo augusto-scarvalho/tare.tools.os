@@ -72,15 +72,15 @@ def turn_for(messages, root):
                                   'request': requests[-1] if requests else '',
                                   'conversation': engine.conversation_request(requests), 'fix': None, 'fix_start': None,
                                   'chat': chat}
-        elif requests and requests[-1] != turn.get('admitted', turn['request']) and turn['route']:
+        elif turn['route'] and (not requests or requests[-1] != turn.get('admitted', turn['request'])):
             # An edited last message keeps its turn (the count is the same), but it is a new start for the routing
             # profile: its route is admitted again; a route gone away is left to today's handling. Its tool rounds
-            # are not admitted again.
+            # are not admitted again. A message with no request text to compare is admitted every time.
             from .environment import profile
             deployment = engine.available(turn['route'])[0] if profile()[0] else None
             if deployment is not None:
                 admit(deployment, 'implementer')
-            turn['admitted'] = requests[-1]
+            turn['admitted'] = requests[-1] if requests else ''
     return turn
 
 

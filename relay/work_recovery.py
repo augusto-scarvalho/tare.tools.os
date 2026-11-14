@@ -95,7 +95,9 @@ def resume_execution(train, descriptor, origin, receipt, stage, cancellation, *,
     resuming = (custody/'host.json').exists()
     from .execution_scope import user_choice
     # A Work paused before implementing starts its implementer now: still the user's choice if it was at creation.
-    with user_choice('implementer', origin['native_deployment'] if origin.get('implementer_chosen') else None):
+    chosen = origin.get('implementer_chosen')  # the id of the route the user named, never another one put in its place
+    with user_choice('implementer', origin['native_deployment']
+                     if chosen and chosen == origin['native_deployment'].get('id') else None):
         runner = create_runner(None if resuming else origin['native_deployment'], descriptor.work_id, custody,
             **({'shared_context': origin['shared_context']} if 'shared_context' in origin else {}),
             resume=resuming, limits=limits['implementation'], max_compactions=limits['max_compactions_per_stage'],

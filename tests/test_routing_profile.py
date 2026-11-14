@@ -732,7 +732,7 @@ def test_a_work_resumed_before_its_implementer_starts_is_a_new_start(work_host, 
     train = work_run.train_dir_for('work-one')
     origin_file = train/'WORK_RUN.json'
     origin = json.loads(origin_file.read_text(encoding='utf-8'))
-    assert origin['implementer_chosen'] is True
+    assert origin['implementer_chosen'] == origin['native_deployment']['id']  # the route it was given for
     request = human_wait.inspect(train)['request_sha256']
     assert tare_ops.main(['decision', 'work-one', '--decision', 'approve', '--expected', request, '--note', 'Go',
                           '--format', 'json']) == 0
@@ -740,6 +740,10 @@ def test_a_work_resumed_before_its_implementer_starts_is_a_new_start(work_host, 
     saved(off={'implementer': ['fixture']})
     # Had tare chosen the implementer, the resume in a later process is a new start of it: refused, no model call.
     origin_file.write_text(json.dumps({k: v for k, v in origin.items() if k != 'implementer_chosen'}), encoding='utf-8')
+    assert tare_ops.main(['run', 'work-one', '--resume']) != 0
+    assert 'SWITCHED_OFF_FOR_ROLE' in capsys.readouterr().out and not work_host[3].generations
+    # The mark is of one route: another route put in its place is not the user's choice.
+    origin_file.write_text(json.dumps({**origin, 'implementer_chosen': 'another-route'}), encoding='utf-8')
     assert tare_ops.main(['run', 'work-one', '--resume']) != 0
     assert 'SWITCHED_OFF_FOR_ROLE' in capsys.readouterr().out and not work_host[3].generations
     # The user's own route stays theirs across the process change.
@@ -796,9 +800,14 @@ def test_the_relay_mesh_chairs_read_the_profile_of_their_role(tmp_path, monkeypa
     assert autonomous_auditor.audit('code-audit', train/'prompt.txt') == 1 and asked == ['auditor']
     # The autonomous planner refuses before its vendor starts; the caller quarantines the message.
     monkeypatch.setattr(autonomous_planner, '_run', lambda cmd: pytest.fail('planner started for an off role'))
-    saved(off={'planner': ['gpt/*@codex']})
+    # Its argv names no model, so the CLI picks one: any model switched off on that CLI refuses it, whatever
+    # model tare would have guessed (gpt/terra is not the mesh's default model).
+    saved(off={'planner': ['gpt/terra@codex']})
     refused = autonomous_planner.execute_vendor('Plan.', vendor_id='codex')
-    assert refused.returncode == 1 and refused.stderr.startswith('SWITCHED_OFF_FOR_ROLE: codex is switched off')
+    assert refused.returncode == 1 and refused.stderr.startswith('SWITCHED_OFF_FOR_ROLE: codex runs whatever')
+    assert vendor_chairs.chair_off('codex', 'planner') is None  # with the model known, that entry is another's
+    saved(off={'planner': ['gpt/terra@claude-code'], 'auditor': ['*@*']})  # another source, another role
+    assert vendor_chairs.chair_off('codex', 'planner', model_known=False) is None
 
 
 def test_an_edited_copilot_message_is_admitted_again(tmp_path, monkeypatch):  # round three, 3
@@ -820,6 +829,13 @@ def test_an_edited_copilot_message_is_admitted_again(tmp_path, monkeypatch):  # 
     environment.save({})
     edited = copilot_mode.turn_for(copilot(project, 'one', 'two, edited'), project)
     assert edited is turn and edited['request'] == 'two'  # the turn itself is kept as it was
+    # A chat with no request text to compare (only client context) is admitted on every request.
+    monkeypatch.setattr(copilot_mode, 'user_requests', lambda messages: [])
+    bare = copilot_mode.turn_for([], project)
+    saved(off={'implementer': ['local']})
+    with pytest.raises(ValueError, match='^SWITCHED_OFF_FOR_ROLE: '):
+        copilot_mode.turn_for([], project)
+    assert bare['route'] == 'local'
 
 
 def test_a_researcher_pin_wins_where_research_skips_a_route(monkeypatch):  # round three, 4

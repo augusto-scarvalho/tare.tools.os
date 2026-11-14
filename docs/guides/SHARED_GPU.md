@@ -102,8 +102,8 @@ undoes a broader "off". A screen for it in `/routes` comes next.
   - the explorer and overflow explorer you set in `/delegation`, as routes: a launch restriction that leaves them in
     place keeps them yours.
 
-  A Work that pauses before its implementer starts (`--wait-before-implement`) remembers whether you named the
-  implementer, so its resume in a later process starts it as yours. A flow or plan review retried in a later
+  A Work that pauses before its implementer starts (`--wait-before-implement`) remembers which implementer you
+  named, so its resume in a later process starts that route, and only that one, as yours. A flow or plan review retried in a later
   process (`--retry-review`) does not: pin the route to run it.
 
   Everything else is automatic and skips the route: tare auto's tiers and the escalation to a next tier, the role
@@ -115,7 +115,10 @@ undoes a broader "off". A screen for it in `/routes` comes next.
   route in one role: picking a model for the conversation or pinning it as planner does not make it your auditor.
   The relay mesh's chairs have no choice of yours: the profile decides for its implementer, planner, auditor and
   plan-auditor chairs (a chair that is off is skipped like an exhausted one); its bookkeeper and overseer are not
-  roles of the profile.
+  roles of the profile. The mesh's planner starts its CLI without naming a model, so the CLI runs whatever it is set
+  to: any entry that switches a model off for `planner` on that CLI (or on every source) refuses it, because tare
+  cannot tell which model would run. A command you set yourself in `RELAY_PLAN_AUDIT_CMD` or `RELAY_CODE_AUDIT_CMD`
+  is your command, not a route: the profile does not read it.
 - **Two layers.** Each automatic path skips a route that is off and takes the next one, and says why (below).
   Behind them, every new start of a role checks again where it starts (a session, a Work's implementer, or a
   vision, heads-up, research, `tare explore` or `tare-copilot` call, an edited last message included): a start the

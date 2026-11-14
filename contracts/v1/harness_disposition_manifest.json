@@ -1997,8 +1997,8 @@
     {
       "name": "autonomous_planner.py",
       "path": "tare.tools.os/relay/autonomous_planner.py",
-      "size_bytes": 12059,
-      "sha256": "2a2eac6f91b37e8743ebb855b8c99d41ec77659ce2f6f7766eeaa489931458e6",
+      "size_bytes": 12111,
+      "sha256": "2123a32db3be990073ebecd85868ae01da3ed9b38e2a277bd0a68bd9487aeca2",
       "summary": "tare.tools Autonomous Planner Worker (Codex Runner v2.1 with Session Reuse)",
       "disposition": "EVOLVE_SATELLITE",
       "target_repository": "tare.tools.kernel (Harness Driver)",
@@ -2577,8 +2577,8 @@
     {
       "name": "vendor_chairs.py",
       "path": "tare.tools.os/relay/vendor_chairs.py",
-      "size_bytes": 14899,
-      "sha256": "a132d73064ac5eb8c868daca7c2c748707004695a8832a13cac65c6fc2ee86fb",
+      "size_bytes": 15602,
+      "sha256": "7bedb12d61a2a5b98ace4e3b81a887ad52e66dab1e27c20e566a72f3c90a45f7",
       "summary": "relay/vendor_chairs.py — MARM Multi-Vendor Fuel Gauge & Model Chair Fallback Router.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -2637,8 +2637,8 @@
     {
       "name": "work_run.py",
       "path": "tare.tools.os/relay/work_run.py",
-      "size_bytes": 54693,
-      "sha256": "624721cfa3bdb6f22ed8b50c64f1bbf33b4ced0577aa4fc06f5e5ada6d686177",
+      "size_bytes": 54712,
+      "sha256": "6ecf088d8cb1193f90336822e052cbc615e222a3dd59e66472309f53c51ba96e",
       "summary": "`tare run <WorkId>`: execute and settle one explicit Work through the existing train lifecycle.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -2821,8 +2821,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 12864,
-      "sha256": "e0e56d436d9c39ff2c82b5a9bfbd0ff905a9faa1d3d11ddae4d0f9255de27834"
+      "size_bytes": 13031,
+      "sha256": "a940cb0d8a94aadd1db80931efe14b67cb1994584848fddfd6c36b2010002459"
     },
     {
       "name": "work_resume.py",
@@ -3001,8 +3001,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator-facing entry points and route policy; the editor keeps tool execution and approval.",
-      "size_bytes": 22999,
-      "sha256": "667008eafbf51e22932df1cfd52fce8d7566f1b1e7ae394ffce87af4ff00f7e0"
+      "size_bytes": 23090,
+      "sha256": "225f8594ad5d4d7e48efeb01229dbc687f235d01e012cb6396f2808ff1b0608b"
     },
     {
       "name": "planning_findings.py",

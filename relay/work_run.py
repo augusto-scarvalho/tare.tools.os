@@ -519,7 +519,7 @@ def _run_work(work_id, *, deployment="local-qwen", repository_root=None, workspa
                 'workflow_sha256': receipt['workflow_sha256'],
                 **({'shared_context': shared_context} if shared_context is not None else {}),
                 # The user named this implementer: a resume in a later process marks it again (routing profile).
-                **({'implementer_chosen': True} if chosen('implementer', native_deployment) else {}),
+                **({'implementer_chosen': native_deployment['id']} if chosen('implementer', native_deployment) else {}),
                 **protection_origin,
                 **({'prepared_implementation': receipt['prepared_implementation'],
                     'audit_custody': str((custody/'code-audit').resolve())} if prepared is not None else {})})
