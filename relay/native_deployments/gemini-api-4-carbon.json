@@ -14,9 +14,9 @@
     "model": "gemini-4-carbon",
     "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai",
     "context_window": 131072,
-    "output_tokens": 8192,
+    "output_tokens": 32768,
     "parameters_json": "{\"reasoning_effort\":\"medium\"}",
-    "source": "https://ai.google.dev/gemini-api/docs/models/gemini-4-carbon (read 2026-11-13); conservative Tare context/output caps, not provider maxima; existing compatibility protocol and implicit cache"
+    "source": "https://ai.google.dev/gemini-api/docs/models/gemini-4-carbon (read 2026-11-13); conservative Tare context/output caps, not provider maxima (output limit 65,536); the output cap is 32,768 because thinking counts toward it: at high a planner call spent 8,189 of 8,192 on thinking and returned nothing (2026-11-14); existing compatibility protocol and implicit cache"
   },
   "native_usage_contract": {
     "layout": "gemini-chat",
