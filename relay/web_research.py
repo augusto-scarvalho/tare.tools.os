@@ -88,6 +88,20 @@ def key(value):
     return hashlib.sha256(encode(value).encode()).hexdigest()[:24]
 
 
+def research_api_routes():
+    from .native_routes import configured
+    return {r.get('native_catalog', r['id']) for r in configured()['deployments'] if 'researcher' in r['roles']}
+
+
+def admits(name, value, api_routes):
+    """Whether the research tool takes this route's transport: a research CLI, or an OpenRouter route the role table
+    lists for researcher (`api_routes`). The matrix of /routes asks it too (environment.auto_routes)."""
+    from .openrouter import is_route
+    profile = value['native_profile']
+    return (profile['protocol'] == 'vendor-cli' and profile['endpoint'] in {'cli://codex', 'cli://claude', 'cli://agy'}
+            or is_route(value) and name in api_routes)
+
+
 def snapshot():
     from . import native_catalog
     from .turn_engine import policy
@@ -98,15 +112,11 @@ def snapshot():
         return {'version':1,'routes':{name:value},'route_order':[name],'unavailable':{},'search_api':1,
                 'origin':'EXACT_TEMPORARY_PIN'}
     routes, skipped = {}, {}
-    from .native_routes import configured
-    api_routes = {r.get('native_catalog', r['id']) for r in configured()['deployments'] if 'researcher' in r['roles']}
+    api_routes = research_api_routes()
     for name in policy().get('researcher', DEFAULT_ROUTES):
         try:
             value = native_catalog.select(name)
-            profile = value['native_profile']
-            from .openrouter import is_route
-            if not ((profile['protocol'] == 'vendor-cli' and profile['endpoint'] in {'cli://codex', 'cli://claude', 'cli://agy'})
-                    or is_route(value) and name in api_routes):
+            if not admits(name, value, api_routes):
                 raise ValueError('Choose an admitted research CLI or API connection.')
             from .environment import allows
             allowed, reason = allows(value)

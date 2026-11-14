@@ -89,7 +89,7 @@ for each role. It does not change the order. tare ships a default, and the profi
 from it (key `routing_profile` in this machine's `environment.json`, which the TUI, the CLI and `tare serve`
 share). A model that appears later follows the default, and an update of tare's default keeps your entries. For
 now the default is the routes each role uses today, so the profile can only switch routes off; an "on" entry
-undoes a broader "off". A screen for it in `/routes` comes next.
+undoes a broader "off". The **Models per role** tab of `/routes` edits it ([below](#the-models-per-role-tab-of-routes)).
 
 - **Only your own choices pass it.** These still start a route that is off:
   - the model you pick (the picker's concrete model for a conversation or a flow, or a route you name with
@@ -195,6 +195,63 @@ auditor: the routes automatic routing considers (tare setup --auto auditor:PATTE
 ```
 
 `tare models --role ROLE` shows the same state in its "Automatic for ROLE" column.
+
+### The Models per role tab of `/routes`
+
+The second tab of `/routes` edits the same profile. Pick a role; each row is a model line by its name (Claude
+Fable), grouped by vendor, and a route with no line is a row of its own under Other, by its catalogue label or id;
+each column is a source (Claude Code, Codex, AGY, OpenCode sub, OpenCode API, API, OpenRouter, Bedrock, Local,
+Other API) that has a route for that role here. The search finds a row by its name or its technical name
+(`claude/fable`), which the status line shows. Space, Enter or a click on the selected cell ticks it. Nothing is
+written until Save, and Esc asks once before it discards unsaved changes. The file Save writes is the one the
+equivalent `tare setup --auto` commands write.
+
+The rows, like `--auto-show`, are the routes the role's automatic path considers, each checked as the paths that
+reach it check it, under that role (so `--prefer_local` and the other launch restrictions read as at run time), and
+read again each time the tab is shown or the Order tab saves: implementer and planner their list in the Order tab
+(availability) and their role table (the rules that rank it, qualification and older models included); explorer its
+role table; auditor and plan-auditor your auditor routes when "Use my auditor routes" is chosen in the Order tab,
+and their role table otherwise, never both; researcher its list (availability and the research tool's own
+admission), the implementer tiers (the `/research` link summary) and the Codex web search helper; vision and
+heads-up their list, an empty saved list read as their writer reads it. A route one path takes is usable even when
+another path refuses it.
+
+| Cell | Means |
+|---|---|
+| `[x]` | on |
+| `[ ]` | off by you |
+| `!` after it | not usable now: a rule above the profile (not set up, `NOT_QUALIFIED_PIN_ONLY`, `OLDER_MODEL`, a missing credential, a spent quota) decides, and the status line says which. The tick stays yours: you can tick it on or off and Save keeps it, but a tick does not override the rule ("on, but not used automatically now") |
+| `~` after it | a version entry differs from the line's |
+| `.` | not carried by that source: nothing to tick |
+| `n/a` | that source carries it, but not for this role: nothing to tick |
+
+- Unticking writes `off` for the line on that source; ticking it back removes the entry. An `on` is written only to
+  undo a broader `off`. Ticking a cell also removes the version entries of that line on that source for that role,
+  and the status line names them before you save.
+- Bulk actions for the role: a vendor or a source on or off (`claude/*@*`, `*@openrouter`), subscriptions only
+  (`opencode-api`, `api`, `openrouter`, `bedrock` and `other-api` off), copy another role's entries, and tare's
+  defaults for the role. "Off" is one broad entry, and the entries inside it go. "On" removes the entries inside
+  it, then writes an `on` for each line there that a broader entry still keeps off (after `*@api` off, "Anthropic:
+  every model on" writes `claude/opus@api` and the other Claude lines on the API), never one that changes nothing.
+  Afterwards every cell of the vendor or source reads as asked.
+- The status line says only what the ticks show, for the role shown and for every role with unsaved edits, whichever
+  role is shown. From the ticks alone: no route ticked on for a role, and what then happens ("No route is ticked on
+  for Auditor: the change is not audited"); and, judged by the rule every audit selection uses
+  (`landing_policy.independence`), an implementer ticked on that every auditor ticked on would be refused for, of
+  its own model or line ("No auditor ticked on may audit implementer X (same model or line): its changes are not
+  audited."), or that only auditors of its own vendor would audit ("Every auditor ticked on for X is of the same
+  vendor: its audits run, labelled not independent."); an auditor of another vendor ticked on leaves no line, and an
+  identity tare cannot tell raises none. As advice: routes ticked on, none of them usable now, and why. No line says
+  that a route will or will not run.
+- Save writes only the roles edited in the tab, over the file as it is then, holding the file from its read to its
+  write under an OS lock that `tare setup --auto` and `--auto-reset` also take, so neither overwrites the other; an
+  entry another shell saved for another role stays. When a role edited here also changed in the file since the tab
+  opened, nothing is written: the status line says so, the edits stay on screen, and Reload reads the file again,
+  dropping them. The other writers of `environment.json` (`tare setup`'s other choices, the Setup panel) do not take
+  the lock yet.
+- Entries no cell stands for (`*@*`, a vendor, a version, a line on every source, a line or route the role no longer
+  has, an entry tare cannot read) are listed under the table, as written and as plain text; Enter or a click removes
+  one.
 
 ## Reserving the GPU for a bench or a long run
 
