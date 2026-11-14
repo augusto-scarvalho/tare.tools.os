@@ -43,6 +43,20 @@ On the node (from another machine prefix `ssh <gpu-node> "wsl -e bash -lc '...'"
   ("local GPU busy (...), back in about 4 min; moving to the next route"), and `tare gpu report [--days 7]`
   sums the sessions that went to another route because of it, per route, with their tokens and known cost.
 
+## An allowance that lapses is used first
+
+A subscription window or an API credit that renews does not carry over what is left, so tare uses it before cheaper
+routes, but only while it is in surplus: what is left, as a fraction, is greater than the fraction of the window still
+to run (23% left with 14% of the week to go; once use catches up with the pace the priority ends, so the allowance is
+spread, not burned). Every window that limits the route's model must be in surplus. In automatic role selection the
+term sits after the `--prefer_*` preference and the same-family and other-vendor rules and before the cost tier; in
+tare auto it orders the routes of the tier already chosen and never moves work to another tier. Pins, `--*_only`, a
+route the routing profile switches off and your own auditor list are untouched. The readings are those of
+`tare quota`; the Max plan's monthly API credit has no API, so state it: `tare quota --set anthropic-api 100 --renews 14`
+(the balance now, the day of the month it renews, and a third number if each cycle brings a different grant).
+The TUI redoes the quota reading in the background at each demand (never waiting for it, at most once a minute), so
+the turn after it judges a fresh reading. `tare quota` marks each window or credit "in surplus" (a route is used first when every window that limits its model is) and `tare setup --auto-show ROLE` names the allowance.
+
 ## Initial tare auto choice
 
 New **tare auto** native conversations and the first ordinary `tare serve` chat turn share one initial

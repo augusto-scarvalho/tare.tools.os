@@ -137,6 +137,8 @@ def _ranked(role, producer=None, *, check_resources=False):
     table = configured(); decisions = []; eligible = []; credentials = {}; seen = set()
     from . import route_facts
     from .execution_scope import current
+    from .provider_quota import surplus
+    lapsing = {}  # one ranking reads the quota file and each account's spend once
     fact_cache = {}; evidence = route_facts.supplied_evidence(); observed_facts = {}
     from .turn_engine import cross_vendor_first
     first = bool(author) and cross_vendor_first()  # off: --any_vendor_auditor or /routes
@@ -185,10 +187,13 @@ def _ranked(role, producer=None, *, check_resources=False):
         decision['review_priority'] = priority
         cli_backup = (role in {'auditor', 'plan-auditor'} and
                       (deployment['native_profile']['endpoint'] == 'cli://codex' or row['id'] == 'claude-cli'))
+        signal = surplus(deployment, cache=lapsing)  # an allowance about to lapse, in surplus: None otherwise
+        if signal:
+            decision['expiring'] = signal
         # An independent auditor always precedes an admitted same-family one, and another vendor precedes the same
         # vendor before any preference, tier or priority: a same-vendor auditor runs only when no other is eligible.
-        # With `first` off the vendor leaves the order: preference, tier, priority, primary, CLI backup, table order.
-        rank = (same_family, first and not cross, current().preference(deployment,role), COST[row['cost_tier']], priority, row['kind'] != 'primary', cli_backup, order)
+        # With `first` off the vendor leaves the order: preference, lapsing allowance, tier, priority, primary, CLI backup, table order.
+        rank = (same_family, first and not cross, current().preference(deployment,role), -round(signal['lead'], 2) if signal else 0, COST[row['cost_tier']], priority, row['kind'] != 'primary', cli_backup, order)
         eligible.append((rank, deployment, decision))
     if check_resources:
         kept = []
@@ -212,6 +217,7 @@ def _ranked(role, producer=None, *, check_resources=False):
         'policy_sha256': sha256_canonical(table), 'producer_sha256': author.sha256 if author else None,
         'roster_sha256': author.payload['roster_sha256'] if author else None,
         'candidates': decisions, 'generation_calls': 0,
+        **({'expiring_first': True} if any(d.get('expiring') for _, _, d in eligible) else {}),
         'cost_scope': 'Configured tiers and operator review preference; no price estimate or measured quality ranking.'}
 
 

@@ -3,10 +3,13 @@ For OpenCode's subscription, which charges nothing per call, it keeps the plan a
 
 Most providers publish no balance for an ordinary API key. The operator states the balance once (tare quota --set
 ACCOUNT AMOUNT) and tare subtracts the dollars its own sessions record from then on. It counts tare's use only: use
-of the same key elsewhere needs a new statement.
+of the same key elsewhere needs a new statement. A credit that renews each month and does not carry over (Anthropic's
+Max plan API credit) is stated with --renews DAY [GRANT]: from each renewal the balance is the grant again.
 """
+import calendar
 import json
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 # The account an API credential is billed to. A subscription or a local model has none.
@@ -97,35 +100,67 @@ def spent(name, since, field='usd', reference=False):
     return round(total, 6)
 
 
+def cycle(day, now):
+    """(start, end) epochs, UTC, of the monthly cycle holding `now` when the credit renews on `day` of the month (a
+    day past the month's end is its last day): start <= now < end."""
+    when = datetime.fromtimestamp(now, timezone.utc)
+
+    def renewal(shift):
+        year, month = divmod(when.year*12 + when.month - 1 + shift, 12)
+        return datetime(year, month + 1, min(day, calendar.monthrange(year, month + 1)[1]), tzinfo=timezone.utc).timestamp()
+    return (renewal(0), renewal(1)) if now >= renewal(0) else (renewal(-1), renewal(0))
+
+
+def _renews(value):
+    return (isinstance(value, dict) and type(value.get('day')) is int and 1 <= value['day'] <= 31
+            and type(value.get('usd')) in (int, float) and 0 < value['usd'] < 1e9)
+
+
 def declared():
-    """{account: {'usd': balance, 'at': when it was stated}}."""
+    """{account: {'usd': balance, 'at': when it was stated, 'renews': {'day', 'usd'} when the credit renews}}."""
     try:
         value = json.loads((folder()/'provider-balance.json').read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return {}
-    return {k: v for k, v in value.items() if isinstance(v, dict) and type(v.get('usd')) in (int, float)
-            and type(v.get('at')) in (int, float)} if isinstance(value, dict) else {}
+    return {k: {a: b for a, b in v.items() if a != 'renews' or _renews(b)} for k, v in value.items()
+            if isinstance(v, dict) and type(v.get('usd')) in (int, float) and type(v.get('at')) in (int, float)
+            } if isinstance(value, dict) else {}
 
 
-def declare(name, usd, now=None):
-    """State the balance of an account as of now; the spend counted against it starts here."""
+def declare(name, usd, now=None, renews=None):
+    """State the balance of an account as of now; the spend counted against it starts here. `renews`: (day of the
+    month, dollars each cycle brings) for a credit that renews and does not carry over."""
     if name not in DECLARABLE:
         raise ValueError('unknown account ' + repr(name) + '; one of ' + ', '.join(sorted(DECLARABLE)))
     if not 0 <= usd < 1e9:
         raise ValueError('the balance is a dollar amount of zero or more')
+    entry = {'usd': float(usd), 'at': time.time() if now is None else now}
+    if renews:
+        entry['renews'] = {'day': renews[0], 'usd': float(renews[1])}
+        if not _renews(entry['renews']):
+            raise ValueError('--renews takes a day of the month (1-31) and a grant above zero')
     from .relay_io import write_json_atomic
-    balances = {**declared(), name: {'usd': float(usd), 'at': time.time() if now is None else now}}
+    balances = {**declared(), name: entry}
     folder().mkdir(parents=True, exist_ok=True)
     write_json_atomic(folder()/'provider-balance.json', balances)
-    return balances[name]
+    return entry
 
 
-def remaining(name):
-    """The declared balance less what tare recorded since, or None when none was declared."""
+def remaining(name, now=None):
+    """The declared balance less what tare recorded since, or None when none was declared. A renewing credit is the
+    stated balance until its first renewal and the grant again from each renewal on, never what was left before."""
     balance = declared().get(name)
     if balance is None:
         return None
-    reference = spent(name, balance['at'], reference=True)
-    return {'currency': 'USD', 'total': balance['usd'], 'declared_at': balance['at'],
-            'remaining': round(balance['usd'] - spent(name, balance['at']), 6),
+    since, total, extra = balance['at'], balance['usd'], {}
+    if renews := balance.get('renews'):
+        start, end = cycle(renews['day'], time.time() if now is None else now)
+        total = renews['usd']
+        extra = {'renews_at': end, 'cycle_start': start, 'grant': total}
+        if since < start:  # renewed since it was stated
+            balance = {**balance, 'usd': total}
+            since = start
+    reference = spent(name, since, reference=True)
+    return {'currency': 'USD', 'total': total, 'declared_at': balance['at'],
+            'remaining': round(balance['usd'] - spent(name, since), 6), **extra,
             **({'at_reference_prices': reference} if reference else {})}
