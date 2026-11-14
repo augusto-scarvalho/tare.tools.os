@@ -674,7 +674,7 @@ def main(argv=None):
                 value = add_gateway(value, gateway['origin'])
             try:  # the models.dev reference prices, if not read today; no model call, no key sent
                 from .provider_prices import refresh_reading
-                refresh_reading()
+                refresh_reading(setup=value)  # with this command's --use / --no-use, not the saved choices
             except Exception:  # optional: the last good reading stays, or none (no reference price, as before)
                 pass
         if args.credential:

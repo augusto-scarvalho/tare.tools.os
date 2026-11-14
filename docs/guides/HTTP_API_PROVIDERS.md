@@ -134,13 +134,21 @@ is: if the reference is 10% low, a spending cap lets about 10% more through and 
   gives that mode none of its own.
 - **Missing parts.** A cache price models.dev does not give stays unknown, never zero: a call that used it is
   partly priced, and under a cap a layout that needs it (Bedrock's cache writes) is refused.
+- **Prices that cannot be right.** A price under US$ 0.001 per million tokens is taken as no price: a model whose
+  input or output price (or one of its tiers') is under it is left out, and a cache price under it is unknown, not
+  free. The cheapest real prices in these providers are far above it (GPT-6 Luna: 0.1 / 0.5; the smallest cache
+  price: 0.005). A model whose tier list is malformed is left out too, never priced at its cheaper base price.
+- **Sudden drops.** A model whose input or output price falls under a quarter of the last good reading keeps the
+  earlier price until the next day's reading says the lower one again.
 
 tare reads the file at most once a day, when the TUI starts, when `tare serve` starts (unless `--no-discovery`)
-and on `tare setup --refresh`; only when a key of one of these providers is set and `tare setup` has not turned
-them off. It sends a plain GET with a generic user agent and nothing else. It keeps the four providers' prices in
-`<storage>/serve/reference-prices.json` (`tare.tools/reference-prices/1`) with the time of the reading. A failed,
-empty or reshaped reading keeps the last good one; with none, nothing changes. `tare models` never reads it from
-the network.
+and on `tare setup --refresh` (which follows that command's own `--use` and `--no-use`); only when a key of one of
+these providers is set and `tare setup` has not turned them off. It sends a plain GET with a generic user agent and
+nothing else. It keeps the four providers' prices in `<storage>/serve/reference-prices.json`
+(`tare.tools/reference-prices/1`) with the time of the reading, and the time of the last attempt in
+`<storage>/serve/reference-prices-attempt.json`: after an attempt that failed, the next waits an hour. A failed,
+empty or reshaped reading keeps the last good one, and so does one with under half the models a provider had (a
+partial answer); with none, nothing changes. `tare models` never reads it from the network.
 
 ## Verification
 

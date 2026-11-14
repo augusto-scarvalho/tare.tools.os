@@ -64,9 +64,12 @@ def record(deployment, calls, now=None):
         # OpenCode's subscription charges nothing; each reply says how much of the plan's allowance it used.
         allowance = amount((cost.get('opencode') or {}).get('allowance')) if plan else 0.0
         if name and usd > 0:
-            # Valued at a models.dev reference price, not a tariff: it counts down all the same, and says so.
-            rows.append(json.dumps({**row, 'account': name, 'usd': usd,
-                                    **({'reference': True} if is_reference(cost.get('tariff')) else {})}))
+            # Valued at a models.dev reference price, not a tariff: it counts down all the same, and the row says
+            # which entry priced it and the day that price was read.
+            tariff = cost.get('tariff')
+            rows.append(json.dumps({**row, 'account': name, 'usd': usd, **({
+                'reference': True, 'price_source': tariff['source'], 'price_read': tariff.get('effective_at')}
+                if is_reference(tariff) else {})}))
         elif allowance > 0:
             rows.append(json.dumps({**row, 'account': plan, 'allowance': allowance}))
     if rows:

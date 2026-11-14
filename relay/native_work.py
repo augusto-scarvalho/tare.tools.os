@@ -190,6 +190,7 @@ def implement_native(*, worktree, descriptor, node, session_id, control, journal
             **({'owner_interrupted': True} if len(model_recovery) > 2 and model_recovery[2] else {}))
     preparation_ms = round((time.monotonic()-started)*1000, 3)
     from compute_plane.native_usage import MAX_USAGE_BYTES, UsageContract, native_usage_report
+    from .provider_prices import reference_totals
     from compute_plane.native_journal import save_json
     contract = (spend_configuration or {}).get('native_usage_contract')
     usage = None
@@ -222,7 +223,8 @@ def implement_native(*, worktree, descriptor, node, session_id, control, journal
         'usage_receipt_status': usage_status,
         'cost': {'known_by_currency': usage['known_cost_by_currency'] if usage else {},
                  'unpriced_or_partial_calls': usage['unpriced_or_partial_calls'] if usage else None,
-                 'scope': usage['scope'] if usage else 'Usage receipt unavailable'},
+                 'scope': usage['scope'] if usage else 'Usage receipt unavailable',
+                 **(reference_totals(usage['calls']) if usage else {})},  # a models.dev reference says so
         'descriptor_sha256': descriptor.sha256, 'session_id': session_id,
         'profile_digest': adapter.profile_digest, 'observation_failures': adapter.observation_failures,
         'capability_observations': tools.observations(), 'authority': 'NONE',

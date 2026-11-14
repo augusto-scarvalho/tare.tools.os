@@ -27,8 +27,15 @@ READING = 'tare.tools/reference-prices/1'
 REFERENCE_HOSTS = {'api.anthropic.com': 'anthropic', 'api.openai.com': 'openai',
                    'generativelanguage.googleapis.com': 'google'}
 BEDROCK = re.compile(r'https://bedrock-runtime\.([a-z0-9-]+)\.amazonaws\.com')
+PROVIDERS = (*REFERENCE_HOSTS.values(), 'amazon-bedrock')
 # Their keys: with none of them set, or all declined in tare setup, models.dev is not read.
 REFERENCE_KEYS = ('ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'AWS_BEARER_TOKEN_BEDROCK')
+# A price per million tokens below this is no price: a zero, or a positive number JSON reads as 0.0 (1e-324), would
+# reserve and charge nothing under a cap. An input or output price below it leaves the model out (unknown, as if
+# unlisted); a cache price below it is unknown, never free; tiers alike. It sits far below every real price in these
+# providers today: the cheapest first-party route, gpt-6-luna, costs 0.1 / 0.5, and the smallest real cache price is
+# 0.005 (gpt-5-nano's cache read); only true zeros (embeddings, free previews) fall under it.
+PRICE_FLOOR = Decimal('0.001')
 
 
 def rates(inp, cache, write, out):
@@ -65,11 +72,12 @@ def reading():
 
 
 def _rates(cost):
-    """A models.dev cost block in tare's categories (decimal strings per million tokens), or None without a numeric
-    input and output price. A missing or non-numeric cache price is unknown (null), never guessed."""
+    """A models.dev cost block in tare's categories (decimal strings per million tokens), or None without an input
+    and output price of at least PRICE_FLOOR. A missing, non-numeric or sub-floor cache price is unknown (null)."""
     def number(key):
         value = cost.get(key)
-        return str(Decimal(str(value))) if type(value) in (int, float) and math.isfinite(value) and value >= 0 else None
+        price = Decimal(str(value)) if type(value) in (int, float) and math.isfinite(value) else None
+        return str(price) if price is not None and price >= PRICE_FLOOR else None
     found = rates(number('input'), number('cache_read'), number('cache_write'), number('output'))
     return found if found['uncached_input_tokens'] is not None and found['output_tokens'] is not None else None
 
@@ -88,12 +96,12 @@ def _tier(tier):
 def parse_reading(data):
     """{'provider/id': {'rates', 'tiers'}} for the providers whose routes take a reference price, or None when the
     file is not shaped as expected (one of them missing, or without a single priced model). Unknown fields are
-    ignored; a model without numeric input and output prices, or with a tier tare cannot read (so cannot bound), is
-    left out."""
+    ignored; a model without input and output prices, or with a tier tare cannot read (so cannot bound), is left
+    out."""
     if not isinstance(data, dict):
         return None
     models = {}
-    for provider in (*REFERENCE_HOSTS.values(), 'amazon-bedrock'):
+    for provider in PROVIDERS:
         entries = data.get(provider).get('models') if isinstance(data.get(provider), dict) else None
         if not isinstance(entries, dict):
             return None
@@ -103,10 +111,12 @@ def parse_reading(data):
             base = _rates(cost) if isinstance(cost, dict) else None
             if base is None:
                 continue
-            over, listed = cost.get('context_over_200k'), cost.get('tiers') or []
-            tiers = [_tier({**over, 'tier': {'type': 'context', 'size': 200000}} if isinstance(over, dict) else None)
-                     ] if over is not None else []
-            tiers += [_tier(t) for t in listed] if isinstance(listed, list) else [None]
+            # Absent (or null) is no tier; present but not a list (tiers) or an object (context_over_200k) cannot be
+            # bounded, so it leaves the model out rather than letting the base price stand for a higher one.
+            over, listed = cost.get('context_over_200k'), cost.get('tiers')
+            tiers = [] if over is None else [
+                _tier({**over, 'tier': {'type': 'context', 'size': 200000}}) if isinstance(over, dict) else None]
+            tiers += [] if listed is None else [_tier(t) for t in listed] if isinstance(listed, list) else [None]
             if None not in tiers:
                 models[provider+'/'+key] = {'rates': base, 'tiers': tiers}
                 priced += 1
@@ -127,9 +137,18 @@ def fetch_models_dev():
     return json.loads(raw)
 
 
-def refresh_reading(now=None, fetch=fetch_models_dev):
-    """Read models.dev at most once a day and keep it with the day it was read. A failed, empty or reshaped reading
-    keeps the last good one."""
+def _fell(old, new):
+    """Whether the input or output price fell under a quarter of the last good one."""
+    try:
+        return any(4*Decimal(new['rates'][k]) < Decimal(old['rates'][k]) for k in ('uncached_input_tokens', 'output_tokens'))
+    except (KeyError, TypeError, ArithmeticError):
+        return False
+
+
+def refresh_reading(now=None, fetch=None, setup=None):
+    """Read models.dev at most once a day (after an attempt that failed, at most once an hour) and keep it with the
+    day it was read. A failed, empty, reshaped or much smaller reading keeps the last good one. `setup`: the
+    machine's choices as tare setup is about to save them; else the saved ones."""
     global _reading
     now = time.time() if now is None else now
     saved = reading()
@@ -137,25 +156,44 @@ def refresh_reading(now=None, fetch=fetch_models_dev):
         return saved
     from .environment import declined, read
     from .provider_quota import secret
-    setup = read()
+    setup = read() if setup is None else setup
     api = setup.get('api_providers') or {}
     if 'error' in setup or api.get('use') is False or not any(
             not declined((api.get('items') or {}).get(key)) and secret(key) for key in REFERENCE_KEYS):
         return saved  # no route that would use it is set up here
+    # Each attempt's time, so an outage costs one GET an hour, not one per start; the first reading never waits.
+    attempt = reading_path().with_name('reference-prices-attempt.json')
     try:
-        models = parse_reading(fetch())
+        if 0 <= now - float(json.loads(attempt.read_text(encoding='utf-8'))['at']) < 3600:
+            return saved
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    from .relay_io import write_json_atomic
+    attempt.parent.mkdir(parents=True, exist_ok=True)
+    write_json_atomic(attempt, {'at': now})
+    try:
+        models = parse_reading((fetch or fetch_models_dev)())
     except Exception:  # whatever went wrong reading it (network, HTTP, JSON), the last good reading stays
+        models = None
+    before = (saved or {}).get('models', {})
+    # Under half the models a provider had in the last good reading is a partial answer, not a new catalogue.
+    if models and any(2*sum(k.startswith(p+'/') for k in models) < sum(k.startswith(p+'/') for k in before)
+                      for p in PROVIDERS):
         models = None
     if not models:
         return saved
-    day, before = datetime.fromtimestamp(now, timezone.utc).date().isoformat(), (saved or {}).get('models', {})
+    day = datetime.fromtimestamp(now, timezone.utc).date().isoformat()
     # A price keeps the day it was first read while it stays the same, so a session spending against it can resume.
-    for key, entry in models.items():
+    for key, entry in list(models.items()):
         old = before.get(key) if isinstance(before.get(key), dict) else {}
         same = (old.get('rates'), old.get('tiers')) == (entry['rates'], entry['tiers'])
         entry['since'] = old['since'] if same and isinstance(old.get('since'), str) else day
+        # A price under a quarter of the last good one waits for the next reading (a later day: readings are a day
+        # apart) to say it again; until then the last good price stays, and the lower one is kept beside it.
+        if not same and _fell(old, entry) and (old.get('falling') or {}).get('rates') != entry['rates']:
+            models[key] = {**{k: old.get(k) for k in ('rates', 'tiers', 'since')},
+                           'falling': {'rates': entry['rates'], 'day': day}}
     value = {'schema': READING, 'source': MODELS_DEV, 'read_at': now, 'models': models}
-    from .relay_io import write_json_atomic
     reading_path().parent.mkdir(parents=True, exist_ok=True)
     write_json_atomic(reading_path(), value)
     _reading = (None, None)
@@ -215,11 +253,14 @@ def reference_note(tariff):
 
 
 def reference_totals(calls):
-    """For a usage total: how many started calls were valued at a reference price, and the days those were read."""
-    days = [str(c['cost']['tariff'].get('effective_at')) for c in calls
-            if isinstance(c, dict) and c.get('execution') != 'not_started' and isinstance(c.get('cost'), dict)
-            and is_reference(c['cost'].get('tariff'))]
-    return {'reference_priced_calls': len(days), 'reference_prices_read': sorted(set(days))} if days else {}
+    """For a usage total: how many started calls were valued at a reference price, the days those were read and
+    their sources (which model's entry)."""
+    found = [c['cost']['tariff'] for c in calls
+             if isinstance(c, dict) and c.get('execution') != 'not_started' and isinstance(c.get('cost'), dict)
+             and is_reference(c['cost'].get('tariff'))]
+    return {'reference_priced_calls': len(found),
+            'reference_prices_read': sorted({str(t.get('effective_at')) for t in found}),
+            'reference_sources': sorted({t['source'] for t in found})} if found else {}
 
 
 def bedrock_rates(data, model, region):

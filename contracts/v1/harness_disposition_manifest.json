@@ -2151,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 129119,
-      "sha256": "114e540563e93b25b9e5765a67ed77cf084e8bb926c5cbb49432976a2f7e644f"
+      "size_bytes": 129277,
+      "sha256": "4df4cd75cc43c62f9e6ce6c40edd3a788c8ebab5140cfb7a2438fe4da49bffa8"
     },
     {
       "name": "native_artifacts.py",
@@ -2271,8 +2271,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 15241,
-      "sha256": "5e866f45fa71fa92c3fb4d47723b47b167c0451dab6ae4b1596e66d70354639e"
+      "size_bytes": 15397,
+      "sha256": "5b0e3c70723c07d486d8fdaaf951023b1994e36b29885c6dac00d810e10c54e0"
     },
     {
       "name": "native_work_context.py",
@@ -3561,8 +3561,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator interaction, workflow composition and evidence inspection; execution ports remain in Kernel and Runtime.",
-      "size_bytes": 20895,
-      "sha256": "1f1542692a26e0be11bb23f8d6853853319352164184990a601a5f62b6e13a68"
+      "size_bytes": 23732,
+      "sha256": "0ab741dee59dac0903d52a18912d4bae12987a5857a5a5ca4177916acbd80a70"
     },
     {
       "name": "route_admission.py",
@@ -3821,8 +3821,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 36071,
-      "sha256": "591803a9bd27caff5ab810d82ab1a8fee5a2469ea261a65e19da1145d0245b98"
+      "size_bytes": 36145,
+      "sha256": "d2d6d55a509763f3fa322a6a6c3a2580e24b60d5c656d89f8fad514270e84c9b"
     },
     {
       "name": "console_setup.py",
@@ -4401,8 +4401,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 6137,
-      "sha256": "38f8d852fbc1caf61b0a53a516d3554a83eea2732631eeee05521d375edf64ea"
+      "size_bytes": 6311,
+      "sha256": "bd13e65f48ab6ceaf83593d47d3ed80b9e66b4baba5cd98e3f5c8cacb04038ef"
     },
     {
       "name": "push_preflight.py",

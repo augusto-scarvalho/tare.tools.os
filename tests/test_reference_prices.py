@@ -11,6 +11,7 @@ from relay import provider_prices as prices
 from relay.native_catalog import select
 from relay.native_spend import settings
 from test_native_agent import Client, deployment as agent_deployment, setup as agent_setup, steps  # noqa: F401
+from test_work_run import NativeFixtureClient, _git, native_fixture_arguments, os_root  # noqa: F401
 
 # An excerpt of the real file (MIT, attribution inside): whole entries for a few models of five providers.
 FIXTURE = Path(__file__).resolve().parent/'fixtures'/'models_dev_api_20261114.json'
@@ -160,15 +161,115 @@ def test_a_failed_empty_reshaped_or_partial_reading_keeps_the_last_good_one(read
     unpriced = models_dev()
     for entry in unpriced['openai']['models'].values():
         entry['cost'] = {'input': 'free'}
-    for fetch in (failing, lambda: {}, lambda: [], lambda: reshaped, lambda: unpriced):
-        assert prices.refresh_reading(later, fetch=fetch) == reading
+    calls = []
+    for i, fetch in enumerate((failing, lambda: {}, lambda: [], lambda: reshaped, lambda: unpriced)):
+        # Two hours apart: a failed attempt holds the next one back for an hour.
+        assert prices.refresh_reading(later + i*7200, fetch=lambda f=fetch: calls.append(1) or f()) == reading
         assert prices.reading()['read_at'] == NOW
+    assert len(calls) == 5
     # A new reading keeps the day a price was first read while it holds, and moves it when the price changes.
     changed = models_dev()
     changed['anthropic']['models']['claude-fable-5-2']['cost']['input'] = 7
-    fresh = prices.refresh_reading(later, fetch=lambda: changed)
-    assert fresh['read_at'] == later and fresh['models']['anthropic/claude-haiku-5-5']['since'] == '2026-11-14'
-    assert fresh['models']['anthropic/claude-fable-5-2']['since'] == '2026-11-16'
+    fresh = prices.refresh_reading(later + 5*7200, fetch=lambda: changed)
+    assert fresh['read_at'] == later + 5*7200 and fresh['models']['anthropic/claude-haiku-5-5']['since'] == '2026-11-14'
+    assert fresh['models'][FABLE]['since'] == '2026-11-16'
+
+
+FABLE = 'anthropic/claude-fable-5-2'
+
+
+def fable_cost(data):
+    return data['anthropic']['models']['claude-fable-5-2']['cost']
+
+
+@pytest.mark.parametrize('value', ['1e-324', '0', '0.000999'])
+def test_a_zero_or_tiny_price_leaves_the_model_out_and_refused_under_a_cap(keys, value):
+    data = models_dev()
+    fable_cost(data).update(input='TINY', output='TINY', cache_read='TINY', cache_write='TINY')
+    data = json.loads(json.dumps(data).replace('"TINY"', value))  # 1e-324 as JSON text, which reads back as 0.0
+    reading = prices.refresh_reading(NOW, fetch=lambda: data)
+    assert FABLE not in reading['models'] and 'anthropic/claude-haiku-5-5' in reading['models']
+    assert rates(route('claude-fable-5-2')) is None
+    with pytest.raises(ValueError, match='spend_limit_requires_matching_tariff_and_usage_contract'):
+        settings({**route('claude-fable-5-2'), 'native_spend_policy': POLICY})
+
+
+def test_a_price_at_the_floor_is_kept_a_cache_price_under_it_is_unknown_and_a_tier_under_it_drops_the_model(keys):
+    data = models_dev()
+    fable_cost(data).update(input=0.001, output=0.001, cache_read=0, cache_write=0.0009)
+    data['anthropic']['models']['claude-haiku-5-5']['cost']['tiers'][0]['output'] = 0
+    reading = prices.refresh_reading(NOW, fetch=lambda: data)
+    assert rates(route('claude-fable-5-2')) == {'uncached_input_tokens': '0.001', 'output_tokens': '0.001',
+                                                 'cache_read_tokens': None, 'cache_write_tokens': None}
+    assert 'anthropic/claude-haiku-5-5' not in reading['models']
+
+
+@pytest.mark.parametrize('field,value', [('tiers', {}), ('tiers', False), ('tiers', 0), ('tiers', ''),
+                                         ('tiers', 'context'), ('context_over_200k', []),
+                                         ('context_over_200k', 'x'), ('context_over_200k', 0)])
+def test_a_malformed_tier_leaves_the_model_out_never_the_base_price(keys, field, value):
+    data = models_dev()
+    data['anthropic']['models']['claude-haiku-5-5']['cost'][field] = value
+    prices.refresh_reading(NOW, fetch=lambda: data)
+    assert rates(route('claude-haiku-5-5')) is None  # the 131072-token window reaches its 100k tier
+
+
+def test_an_absent_or_null_tier_is_no_tier(keys):
+    data = models_dev()
+    data['anthropic']['models']['claude-haiku-5-5']['cost']['tiers'] = None
+    prices.refresh_reading(NOW, fetch=lambda: data)
+    assert rates(route('claude-haiku-5-5'))['uncached_input_tokens'] == '0.1'
+
+
+def test_a_reading_with_under_half_of_a_providers_models_keeps_the_last_good_one(reading):
+    later = NOW + 2*86400
+    partial = models_dev()
+    bedrock = partial['amazon-bedrock']['models']
+    del bedrock['global.anthropic.claude-fable-5-2'], bedrock['zai.glm-5']  # 1 of Bedrock's 3 models left
+    assert prices.refresh_reading(later, fetch=lambda: partial) == reading
+    assert rates(route('zai.glm-5', 'https://bedrock-runtime.us-east-1.amazonaws.com', 'bedrock-converse'))
+    smaller = models_dev()
+    del smaller['amazon-bedrock']['models']['zai.glm-5']  # 2 of 3: one model that left stays gone (unknown)
+    fresh = prices.refresh_reading(later + 7200, fetch=lambda: smaller)
+    assert fresh['read_at'] == later + 7200 and 'amazon-bedrock/zai.glm-5' not in fresh['models']
+
+
+def test_a_failed_attempt_holds_the_next_for_an_hour_and_the_first_reading_never_waits(keys):
+    calls = []
+
+    def failing():
+        calls.append('failed')
+        raise OSError('offline')
+    assert prices.refresh_reading(NOW, fetch=failing) is None and calls == ['failed']  # the first attempt: at once
+    assert prices.refresh_reading(NOW + 600, fetch=failing) is None and calls == ['failed']  # a start 10 min later
+    assert prices.refresh_reading(NOW + 3601, fetch=models_dev)['read_at'] == NOW + 3601
+
+
+def test_a_price_under_a_quarter_of_the_last_waits_for_a_later_reading(reading):
+    cheaper = models_dev()
+    fable_cost(cheaper).update(input=1, output=5)  # 8 / 40 in the last good reading
+    held = prices.refresh_reading(NOW + 2*86400, fetch=lambda: cheaper)
+    assert rates(route('claude-fable-5-2'))['uncached_input_tokens'] == '8'
+    assert held['models'][FABLE]['since'] == '2026-11-14' and held['models'][FABLE]['falling']['day'] == '2026-11-16'
+    confirmed = prices.refresh_reading(NOW + 3*86400, fetch=lambda: cheaper)
+    assert rates(route('claude-fable-5-2'))['output_tokens'] == '5' and confirmed['models'][FABLE]['since'] == '2026-11-17'
+    modest = models_dev()
+    fable_cost(modest).update(input=0.3, output=2)  # not under a quarter of 1 / 5: taken at once
+    prices.refresh_reading(NOW + 4*86400, fetch=lambda: modest)
+    assert rates(route('claude-fable-5-2'))['uncached_input_tokens'] == '0.3'
+
+
+def test_setup_no_use_api_with_refresh_reads_nothing(keys, monkeypatch):
+    import urllib.request
+    from relay import environment
+    calls = []
+
+    def urlopen(*args, **kwargs):
+        calls.append(args)
+        raise OSError('no network in tests')
+    monkeypatch.setattr(urllib.request, 'urlopen', urlopen)
+    assert environment.main(['--no-use', 'api', '--refresh']) == 0
+    assert calls == [] and prices.reading() is None
 
 
 def test_the_reading_respects_the_machine_setup(monkeypatch, tmp_path):
@@ -226,6 +327,8 @@ def test_reference_totals_label_usage_rows_and_the_declared_balance(reading):
     assert '1 call(s) valued at models.dev reference prices read 2026-11-14: not confirmed tariffs' in body
     provider_spend.declare('anthropic-api', 2.0, now=time.time() - 5)
     assert provider_spend.record({'id': 'r', 'native_credential_env': 'ANTHROPIC_API_KEY'}, [call]) == 1
+    row = json.loads((provider_spend.folder()/'provider-spend.jsonl').read_text(encoding='utf-8').splitlines()[-1])
+    assert row['reference'] is True and row['price_source'] == tariff['source'] and row['price_read'] == '2026-11-14'
     credit = provider_spend.remaining('anthropic-api')
     assert credit['remaining'] == 1.5 and credit['at_reference_prices'] == 0.5
     text = provider_quota.render({'observed_at': time.time(), 'accounts': [
@@ -273,3 +376,39 @@ def test_capped_api_session_reserves_against_the_reference_and_counts_the_balanc
     credit = provider_spend.remaining('gemini-api')
     assert credit['remaining'] == pytest.approx(1 - 0.001364) and credit['at_reference_prices'] == pytest.approx(0.001364)
     assert 'valued at models.dev reference prices read 2026-11-14' in usage_rows(native_profiles.usage(custody))[0]['body']
+
+
+def test_a_work_reserves_against_the_reference_and_its_outcome_says_so(keys, os_root, tmp_path):
+    """The Work host: a Bedrock route with no tariff of its own, under a cap, through implement_native."""
+    from compute_plane.native_models import ModelProfile
+    from relay import relay_mesh, work_run
+    from relay.native_work import implement_native
+    prices.refresh_reading(NOW, fetch=models_dev)
+    root, repo = os_root
+    args = native_fixture_arguments(tmp_path, work_run.load_node(relay_mesh.WORK_GRAPH_FILE, 'work-one'))
+    endpoint = 'https://bedrock-runtime.us-east-1.amazonaws.com'
+    args['profile'] = ModelProfile('bedrock-converse', 'us.anthropic.claude-fable-5-2', 32768, 1024, 'fixture', endpoint)
+    args['client'].endpoint = endpoint
+    args['spend_configuration'] = {'native_spend_policy': {'max_amount': '1', 'currency': 'USD'},
+                                   'native_usage_contract': {'layout': 'converse-exclusive', 'source': 'fixture'}}
+    seen = {}
+
+    def implement(worktree, descriptor):
+        seen['worktree'] = worktree
+        seen['outcome'] = implement_native(worktree=worktree, descriptor=descriptor, **args)
+        return seen['outcome']
+    try:
+        work_run.run_work('work-one', repository_root=repo, plan_auditor=lambda *a: {'verdict': 'ACCEPT', 'findings': []},
+                          implementer=implement, evidence_factory=lambda *a: pytest.fail('proposal is not admission'))
+        outcome = seen['outcome']
+        assert outcome['status'] == 'PROPOSED', outcome
+        # Each of 5 calls: 500 uncached input x $8.80 + 20 output x $44 per million tokens (the US regional price).
+        assert Decimal(outcome['spend']['known_amount']) == Decimal('0.0264') and outcome['spend']['uncertain_calls'] == 0
+        assert Decimal(outcome['cost']['known_by_currency']['USD']) == Decimal('0.0264')
+        assert outcome['cost']['reference_priced_calls'] == 5
+        assert outcome['cost']['reference_prices_read'] == ['2026-11-14']
+        assert outcome['cost']['reference_sources'] == ['models.dev reference price (not a confirmed tariff) for '
+                                                        'amazon-bedrock/us.anthropic.claude-fable-5-2, https://models.dev/api.json']
+    finally:
+        if seen.get('worktree') and seen['worktree'].exists():
+            _git('worktree', 'remove', '--force', str(seen['worktree']), cwd=repo)
