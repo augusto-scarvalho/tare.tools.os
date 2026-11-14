@@ -1125,7 +1125,6 @@ class ConversationTools:
                 from .conversation_workspace import snapshot
                 from .challenger import git
                 from .native_installation import storage_root
-                import shutil
                 config = deepcopy(self.state['config'])
                 config['verifiers'].update(detected_checks(config))
                 unit = (task or {}).get('plan', {}).get('unit')
@@ -1227,7 +1226,9 @@ class ConversationTools:
                         if callable(getattr(check_runner,'close',None)):check_runner.close()
                     try: git(config['repositories'][repository], 'worktree', 'remove', '--force', str(tree), timeout=120)
                     except (ValueError, OSError): pass
-                    shutil.rmtree(tree, ignore_errors=True)
+                    from .worker_wait import discard
+                    try: discard(tree)  # what Git left of the tree, and its pytest temporary root
+                    except OSError: pass
             elif name == 'delegate_plan':
                 value, task = self.active()
                 if task['intent'] not in {'plan', 'deliver'}:

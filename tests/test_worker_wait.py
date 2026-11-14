@@ -220,3 +220,33 @@ def test_implementer_minimum_reports_missing_resource_with_unlimited_counterpart
     assert str(work_units.MIN_CHILD_CALLS)+' calls' in message and '120 s' in message
     assert 'No model call started' in message
     assert 'configuration' not in message.lower() and 'another conversation' not in message.lower()
+
+
+def test_a_discarded_candidate_takes_its_pytest_root_and_nothing_outside_its_folders(tmp_path, monkeypatch):
+    import os
+    from test_sandbox_secrets import folder_link
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
+    wt = tmp_path/'storage'/'wt'
+    tree, scratch = wt/'0123abcd', wt/'.0123abcd-pytest'
+    (tree/'.git'/'objects').mkdir(parents=True)
+    (tree/'.git'/'objects'/'pack').write_text('object')
+    os.chmod(tree/'.git'/'objects'/'pack', 0o400)  # Git's objects are read-only on Windows
+    (scratch/'test_x0').mkdir(parents=True)
+    outside = tmp_path/'outside'; outside.mkdir(); (outside/'own.txt').write_text('not scratch')
+    folder_link(outside, scratch/'test_x0'/'link')
+    worker_wait.discard(tree)
+    assert not tree.exists() and not scratch.exists() and (outside/'own.txt').read_text() == 'not scratch'
+    scratch.mkdir()
+    worker_wait.discard(tree)  # Git already removed the tree: its pytest root still goes
+    assert not scratch.exists()
+    for wrong in (tmp_path/'elsewhere'/'0123abcd', wt/'not-a-candidate'):
+        wrong.mkdir(parents=True)
+        with pytest.raises(ValueError, match='outside the private candidate root'):
+            worker_wait.discard(wrong)
+        assert wrong.exists()
+    # A waiting worker a new plan replaced: its tree and the profile its session kept go; its journal stays.
+    session = tmp_path/'custody'/'units'/'wait-1'/'session-1'
+    (session/'command-tmp'/'AppData'/'Roaming').mkdir(parents=True); (session/'journal.jsonl').write_text('{}')
+    tree.mkdir()
+    worker_wait.release(tmp_path, {'tree': str(tree), 'session': str(session)})
+    assert not tree.exists() and not (session/'command-tmp').exists() and (session/'journal.jsonl').exists()

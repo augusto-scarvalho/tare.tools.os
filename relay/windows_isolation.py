@@ -6,6 +6,30 @@ from compute_plane.mediated_tools import validate_command_confinement
 from compute_plane.windows_mxc import WindowsMxcProfile
 
 
+GIB = 1024**3
+
+
+def job_limits(base, total=None):
+    """A sandboxed command's Windows job limits (processes, bytes for one process, bytes for its whole tree), sized by
+    the machine instead of fixed: the tree may use a quarter of the machine's memory, at least 2 GiB and at most 4 GiB,
+    and one process at most 2 GiB (the Kernel's WindowsJob accepts no more of either). With the launcher's fixed
+    256 MiB a process and 512 MiB a tree, Godot's import of a small project, which peaks at 644 MiB, died in the
+    sandbox (measured 2026-11-14). The same machine gives the same limits every time, so a check's verdict does not
+    depend on what else is open. The process count stays the launcher's. `total`: the machine's memory in bytes."""
+    if total is None:
+        import ctypes
+        class Status(ctypes.Structure):
+            _fields_ = [('length', ctypes.c_uint32), ('load', ctypes.c_uint32), *((name, ctypes.c_uint64) for name in (
+                'total', 'available', 'total_page', 'available_page', 'total_virtual', 'available_virtual', 'extended'))]
+        status = Status(length=ctypes.sizeof(Status))
+        try:
+            total = status.total if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)) else 0
+        except (AttributeError, OSError):
+            total = 0  # unknown: the floor
+    tree = min(4*GIB, max(2*GIB, total//4))
+    return base[0], min(2*GIB, tree), tree
+
+
 def windows_isolation_factory(*, backend, policy, cwd, environment, seconds,
                               mediation_factory, codex_executable=None,
                               codex_sha256=None, verification_seconds=None, staged_effects=False,
@@ -46,6 +70,8 @@ def windows_isolation_factory(*, backend, policy, cwd, environment, seconds,
         else:
             launcher = CodexSandboxProfile(policy, executable=codex_executable,
                 expected_executable_sha256=codex_sha256, cwd=str(root), environment=environment)
+        if backend in ('mxc', 'codex'):
+            launcher.job_limits = job_limits(launcher.job_limits)
         mediator = mediation_factory(**session)
         if not callable(getattr(mediator, 'execute', None)):
             raise ValueError('command_mediation_unavailable')

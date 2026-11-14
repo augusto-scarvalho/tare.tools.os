@@ -10,7 +10,9 @@ where this sandbox works.
 
 - Read-only: the system folders (`/usr`, `/bin`, `/sbin`, `/lib*`, `/etc`), the check's runtimes, the project and
   the folders granted to it.
-- Writable: the plan's edit paths and the check's own scratch folders (its `HOME` and temporary folders).
+- Writable: the plan's edit paths and the check's own scratch folders (its `HOME` and temporary folders), which
+  tare deletes when the work that made them ends. XDG's folders default to that `HOME`, so a check starts with an
+  empty profile.
 - Nothing else exists inside. Your home folder and other projects are absent.
 - Secret files (`.env`, `.npmrc` and the like) are masked: reading one fails with "Permission denied". Renaming a
   folder above one carries the mask along.

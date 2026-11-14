@@ -8,7 +8,8 @@ import relay.windows_isolation as module
 def fixture(tmp_path, monkeypatch):
     calls = []
     class Launcher:
-        def __init__(self, *args, **kwargs): calls.append(('launcher', args, kwargs))
+        job_limits = (16, 256*1024**2, 512*1024**2)  # the Kernel profiles' fixed ones
+        def __init__(self, *args, **kwargs): calls.append(('launcher', args, kwargs)); Launcher.last = self
     monkeypatch.setattr(module, 'WindowsMxcProfile', Launcher)
     monkeypatch.setattr(module, 'CodexSandboxProfile', Launcher)
     monkeypatch.setattr('compute_plane.linux_bwrap.LinuxBwrapProfile', Launcher)  # imported only for 'bwrap'
@@ -32,6 +33,9 @@ def test_host_composes_one_launcher_and_existing_mediator(fixture, backend):
     args['environment']['SAFE'] = 'changed by caller'
     assert bind(**session) is mediator
     assert [item[0] for item in calls] == ['launcher', 'mediate', 'bind']
+    # A Windows launcher's limits follow the machine; bubblewrap has none to set.
+    limits = module.WindowsMxcProfile.last.job_limits
+    assert limits == (module.job_limits((16, 1, 2)) if backend != 'bwrap' else (16, 256*1024**2, 512*1024**2))
     assert calls[0][2]['environment'] == {'SAFE': 'fixed'}
     assert calls[-1][1][1:] == ({'SAFE': 'fixed'}, 10)
     if backend == 'codex': assert calls[0][2]['expected_executable_sha256'] == 'a'*64
@@ -77,3 +81,15 @@ def test_failed_admission_never_binds_or_falls_back(fixture, tmp_path, monkeypat
     with pytest.raises((ValueError, OSError)): bind(**session)
     assert not any(call[0] == 'bind' for call in calls)
     assert len([call for call in calls if call[0] == 'launcher']) <= 1
+
+
+@pytest.mark.parametrize('gib,process,tree', [(0, 2, 2), (4, 2, 2), (8, 2, 2), (12, 2, 3), (20, 2, 4), (64, 2, 4)])
+def test_sandbox_memory_limits_follow_the_machine_within_what_the_kernel_accepts(gib, process, tree):
+    # 2026-11-14: Godot's import of a small project peaks at 644 MiB and died under the fixed 256 MiB a process and
+    # 512 MiB a tree. A quarter of the machine's memory for the tree, 2 to 4 GiB; one process at most 2 GiB.
+    from compute_plane.managed_process import WindowsJob
+    limits = module.job_limits((16, 256*1024**2, 512*1024**2), gib*module.GIB)
+    assert limits == (16, process*module.GIB, tree*module.GIB)
+    import os
+    if os.name == 'nt':
+        WindowsJob(resource_limits=limits).close()  # the Kernel accepts them
