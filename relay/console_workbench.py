@@ -520,6 +520,9 @@ class ConversationWorkbench:
         try:  # what each provider has left, so a spent plan is not chosen; no model call
             from . import provider_quota
             provider_quota.refresh()
+            from .console_credit import sync_if_due  # opt-in, at most every 12 hours: it opens a tab and spends a call
+            if sync_if_due():
+                provider_quota.refresh()  # states the credit it read
         except Exception:  # optional: without a reading tare learns a spent plan from the failed call, as before
             pass
 

@@ -116,20 +116,28 @@ def _renews(value):
             and type(value.get('usd')) in (int, float) and 0 < value['usd'] < 1e9)
 
 
+def _window(value):
+    return (isinstance(value, dict) and all(type(value.get(k)) in (int, float) for k in ('start', 'end', 'usd'))
+            and value['start'] < value['end'] and 0 < value['usd'] < 1e9)
+
+
 def declared():
-    """{account: {'usd': balance, 'at': when it was stated, 'renews': {'day', 'usd'} when the credit renews}}."""
+    """{account: {'usd': balance, 'at': when it was stated, 'renews': {'day', 'usd'} when the credit renews, or
+    'window': {'start', 'end', 'usd'} for a credit read from the Console with its exact window}}."""
     try:
         value = json.loads((folder()/'provider-balance.json').read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return {}
-    return {k: {a: b for a, b in v.items() if a != 'renews' or _renews(b)} for k, v in value.items()
+    return {k: {a: b for a, b in v.items() if a not in ('renews', 'window') or (_renews if a == 'renews' else _window)(b)}
+            for k, v in value.items()
             if isinstance(v, dict) and type(v.get('usd')) in (int, float) and type(v.get('at')) in (int, float)
             } if isinstance(value, dict) else {}
 
 
-def declare(name, usd, now=None, renews=None):
+def declare(name, usd, now=None, renews=None, window=None):
     """State the balance of an account as of now; the spend counted against it starts here. `renews`: (day of the
-    month, dollars each cycle brings) for a credit that renews and does not carry over."""
+    month, dollars each cycle brings) for a credit that renews and does not carry over. `window`: (start, end, dollars
+    granted) for a credit read from the Console, which lapses at `end`; one entry has `renews` or `window`, not both."""
     if name not in DECLARABLE:
         raise ValueError('unknown account ' + repr(name) + '; one of ' + ', '.join(sorted(DECLARABLE)))
     if not 0 <= usd < 1e9:
@@ -139,6 +147,12 @@ def declare(name, usd, now=None, renews=None):
         entry['renews'] = {'day': renews[0], 'usd': float(renews[1])}
         if not _renews(entry['renews']):
             raise ValueError('--renews takes a day of the month (1-31) and a grant above zero')
+    if window:
+        if renews:
+            raise ValueError('a credit has renews or a window, not both')
+        entry['window'] = dict(zip(('start', 'end', 'usd'), map(float, window)))
+        if not _window(entry['window']):
+            raise ValueError('a window is a start before its end and a grant above zero')
     from .relay_io import write_json_atomic
     balances = {**declared(), name: entry}
     folder().mkdir(parents=True, exist_ok=True)
@@ -153,7 +167,12 @@ def remaining(name, now=None):
     if balance is None:
         return None
     since, total, extra = balance['at'], balance['usd'], {}
-    if renews := balance.get('renews'):
+    if window := balance.get('window'):
+        if (time.time() if now is None else now) >= window['end']:
+            return None  # the credit lapsed; the next Console reading states the new one
+        total = window['usd']
+        extra = {'renews_at': window['end'], 'cycle_start': window['start'], 'grant': total, 'console': True}
+    elif renews := balance.get('renews'):
         start, end = cycle(renews['day'], time.time() if now is None else now)
         total = renews['usd']
         extra = {'renews_at': end, 'cycle_start': start, 'grant': total}

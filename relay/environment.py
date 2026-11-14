@@ -835,6 +835,11 @@ def show(value, found):
             for gateway in section.get('gateways') or []:
                 lines.append(f"    gateway {gateway['origin']} ({gateway.get('kind')}): "
                              f"{len(gateway.get('models') or [])} models, asked {gateway.get('observed', '?')}")
+    lines.append('  Console credit reading: ' + ('on' if (value.get('console_credit') or {}).get('use') else 'off')
+                 + ' (tare setup --console-credit on|off). It reads the Claude API credit from the Console Billing page '
+                 'through the Claude in Chrome extension; needs Claude Code signed in and a browser signed in to the Console; '
+                 'one reading is one Haiku call on the Claude subscription (about a cent of quota, half a minute, a tab that '
+                 'opens and closes). tare quota --sync reads it once.')
     rules, problems = profile(value)
     if rules or problems:
         lines.append('  automatic routing: your changes for ' + (', '.join(sorted(rules)) or 'no role')
@@ -1004,6 +1009,9 @@ def main(argv=None):
     parser.add_argument('--refresh', action='store_true', help='Ask the saved gateways for their models again')
     parser.add_argument('--old-models', choices=('on', 'off'), help="Offer the CLIs' older models too (off by default: "
                         'a model a newer one of the same line, or a newer generation, replaces)')
+    parser.add_argument('--console-credit', choices=('on', 'off'), help=(
+        "Read the Claude API credit from the Console's Billing page when the TUI starts, at most every 12 hours (off by "
+        'default); tare quota --sync reads it once without this'))
     parser.add_argument('--credential', metavar='ENV_NAME', help='Store an API key in the vault, read from stdin')
     parser.add_argument('--meta-contributor', choices=('on', 'off'),
                         help='Allow Meta to use prompts, code and responses sent to Muse Spark Contributor')
@@ -1060,7 +1068,7 @@ def main(argv=None):
         if 'error' in value:
             raise ValueError(value['error'] + ' (tare setup --reset starts again)')
         changes = bool(args.use or args.no_use or args.undecide or args.local_gateway or args.refresh or args.credential
-                       or args.old_models or args.replace_older or args.keep_older or args.meta_contributor)
+                       or args.old_models or args.console_credit or args.replace_older or args.keep_older or args.meta_contributor)
         edits = bool(args.auto) or args.auto_reset is not None
         shown = list(dict.fromkeys([*(spec.partition(':')[0] for spec in args.auto), *args.auto_show,
                                     *([args.auto_reset] if args.auto_reset else [])]))
@@ -1104,6 +1112,10 @@ def main(argv=None):
             value = store_credential(value, args.credential, sys.stdin)
         if args.old_models:
             value = old_models(value, args.old_models == 'on')
+        if args.console_credit:
+            value = {k: v for k, v in value.items() if k != 'console_credit'}
+            if args.console_credit == 'on':  # off is the default: no entry at all
+                value['console_credit'] = {'use': True}
         if args.meta_contributor:
             value['model_data_use'] = {**(value.get('model_data_use') or {}),
                                      'meta_contributor': args.meta_contributor == 'on'}

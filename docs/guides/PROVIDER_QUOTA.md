@@ -121,6 +121,33 @@ the reason, and the other providers are still read.
 Any subscription that a refused call left out says so under its windows ("A refused call left this account out
 until ..."), because that limit holds even when a later reading shows room.
 
+## Reading the Anthropic API credit from the Console
+
+Anthropic has no API for the balance or expiry of the monthly API credit of a Max or Ultra plan; only the Console's
+Billing page shows them. `tare quota --sync` reads that page once through your browser and states the credit for
+`anthropic-api` with its exact window (granted, expires, what was granted), so the real cycle is used, not a day you
+guessed. tare then counts its own spend down from the balance read, as for any stated balance.
+
+- **Needs.** Claude Code signed in, and the Claude in Chrome extension connected in a browser that is signed in to the
+  Console. Only read-only browser tools are allowed: nothing is clicked or typed.
+- **Costs.** One Haiku call on the Claude subscription (about a cent of quota, about half a minute) and a tab that opens
+  and closes. `tare quota --sync` is the consent for that one reading.
+- **Kept.** The model sees the whole Billing page; tare parses only the credits section and saves only the stated
+  numbers (`<storage>/serve/provider-balance.json`) and the attempt (`<storage>/serve/console-credit.json`).
+- **Fails.** The last statement stays. `tare quota` shows a failed last attempt as a note under the Claude API account.
+  A credit past its expiry counts as lapsed until the next reading.
+- **Automatic.** Off until you turn it on: `tare setup --console-credit on` (`off` turns it off). When on, the console
+  reads the credit at start when the last attempt is over 12 hours old (one hour after a failed one), never at each
+  demand.
+- **Anthropic's terms.** Yours to weigh before turning it on; this is what they say, not legal advice (read on
+  2026-11-14). The Commercial Terms, which govern the Console, have no clause on automated reading of its pages. The
+  Consumer Terms, which govern the Claude plan the extension runs on, forbid access "through automated or non-human
+  means" except with an API key "or where we otherwise explicitly permit it", and forbid scraping. No text says that
+  Anthropic's own Claude in Chrome reading your own signed-in page is that permission, and none says it is forbidden;
+  its documentation describes acting in sites you are signed in to, on your behalf. tare reads one section of one
+  page of your own account, clicks nothing, and never works around a sign-in page or a block.
+- **Without it.** `tare quota --set anthropic-api AMOUNT --renews DAY [GRANT]` stays the way to state the credit by hand.
+
 ## The saved readings
 
 Each `tare quota` saves its readings in `<storage>/serve/provider-quota.json` (schema

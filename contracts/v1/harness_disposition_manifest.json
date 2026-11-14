@@ -2,7 +2,7 @@
   "$schema": "https://tare.tools/schemas/v1/disposition-manifest.json",
   "version": "1.0.0",
   "generated_at": "2026-10-04T03:10:28.054735+00:00",
-  "total_modules": 445,
+  "total_modules": 446,
   "modules": [
     {
       "name": "consent_decisions.py",
@@ -3421,8 +3421,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator views and draft composition; Runtime retains execution authority.",
-      "size_bytes": 41581,
-      "sha256": "ecc63956aec44e554775b47ecf403c8e218fbd6467c63549f7273731960e5a2c"
+      "size_bytes": 41801,
+      "sha256": "b17339137019909aacc15f666c0c55f0c2a2888696ef1081318ee524a30bea83"
     },
     {
       "name": "adaptive_routes.py",
@@ -3821,8 +3821,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 62143,
-      "sha256": "904fc14f78906e9795d2c82837feff3513c39c23583bf7c5120f5dba098e814e"
+      "size_bytes": 63243,
+      "sha256": "3b20790551bd380b026949efe093785ac61b787a97036ca8d1bfec6d250d8cd0"
     },
     {
       "name": "console_setup.py",
@@ -4391,8 +4391,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 26607,
-      "sha256": "04b5a7bad0e131b7d8325288fddf1cf7bc0ab9d2e4a2d3a980c93d734071777b"
+      "size_bytes": 28193,
+      "sha256": "7c322e90e237e1d3f412cac032e1b30eedd2d33c0f1fc90b37f6de0ae51e460e"
     },
     {
       "name": "provider_spend.py",
@@ -4401,8 +4401,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 8338,
-      "sha256": "3c51222310c81c866ab233f95f916eb8ad35c6a633b8c7c6eb710da2694695dd"
+      "size_bytes": 9527,
+      "sha256": "90c7edcb5adbcab931e1ab6b35fe250b40b793ebe7b994ae22c27b8b7b321ce8"
     },
     {
       "name": "push_preflight.py",
@@ -4453,6 +4453,16 @@
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
       "size_bytes": 26977,
       "sha256": "226cd1a5b27fba891cf5811c9d6a5768bce08f73c86795e847b53daba3867950"
+    },
+    {
+      "name": "console_credit.py",
+      "path": "tare.tools.os/relay/console_credit.py",
+      "summary": "The Anthropic monthly API credit read from the Console's Billing page (opt-in; tare quota --sync).",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
+      "size_bytes": 8416,
+      "sha256": "9d7cf1ccbc918a3df43f861289115f48e509163c06a13c65ac5de0be840f5562"
     }
   ]
 }
