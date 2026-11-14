@@ -111,6 +111,18 @@ CHANGED = {
     'codex-cli-gpt-6-1-luna': [['OpenAI', 'openai/gpt', 'gpt-6.1-luna', 'gpt-luna'], 'OpenAI'],
     'gemini-api-3-8-flash': [['Google', 'google/gemini', 'gemini-3.8-flash', 'gemini-flash'], 'Google'],
 }
+# The AGY Claude templates, added later: their high level has the roster record their role row needs (a row must name
+# one), the other levels their line's identity.
+AGY_CLAUDE = {
+    'agy-claude-opus-5-5-cli': [['Anthropic', 'anthropic/opus', 'claude-opus-5-5-high'], 'Anthropic'],
+    'agy-claude-opus-5-5-cli@high': [['Anthropic', 'anthropic/opus', 'claude-opus-5-5-high'], 'Anthropic'],
+    'agy-claude-opus-5-5-cli@low': [['Anthropic', 'anthropic/opus', 'claude-opus-5-5-low', 'claude-opus'], 'Anthropic'],
+    'agy-claude-opus-5-5-cli@medium': [['Anthropic', 'anthropic/opus', 'claude-opus-5-5-medium', 'claude-opus'], 'Anthropic'],
+    'agy-claude-sonnet-5-5-cli': [['Anthropic', 'anthropic/sonnet', 'claude-sonnet-5-5-high'], 'Anthropic'],
+    'agy-claude-sonnet-5-5-cli@high': [['Anthropic', 'anthropic/sonnet', 'claude-sonnet-5-5-high'], 'Anthropic'],
+    'agy-claude-sonnet-5-5-cli@low': [['Anthropic', 'anthropic/sonnet', 'claude-sonnet-5-5-low', 'claude-sonnet'], 'Anthropic'],
+    'agy-claude-sonnet-5-5-cli@medium': [['Anthropic', 'anthropic/sonnet', 'claude-sonnet-5-5-medium', 'claude-sonnet'], 'Anthropic'],
+}
 
 
 def realized():
@@ -148,7 +160,7 @@ def route(endpoint, model, name='fixture'):
 
 def test_every_shipped_identity_is_unchanged_except_four_ids_with_no_record_that_gain_their_line():
     assert all(BEFORE[name] == [U, 'UNKNOWN'] for name in CHANGED)
-    assert shown(realized()) == {**BEFORE, **CHANGED}
+    assert shown(realized()) == {**BEFORE, **CHANGED, **AGY_CLAUDE}
 
 
 def test_what_the_four_gain_is_audit_never_an_automatic_role(pool):
@@ -175,7 +187,7 @@ NEW = {  # endpoint, wire id: vendor, bias domain, line
     ('https://chatgpt.com/backend-api/codex', 'gpt-6.2-terra'): ('OpenAI', 'openai/gpt', 'gpt-terra'),
     ('https://generativelanguage.googleapis.com/v1beta/openai', 'gemini-4.1-argon'): ('Google', 'google/gemini', 'gemini-argon'),
     ('cli://agy', 'gemini-4.1-argon-high'): ('Google', 'google/gemini', 'gemini-argon'),
-    ('cli://agy', 'claude-opus-5-5-high'): ('Anthropic', 'anthropic/opus', 'claude-opus'),
+    ('cli://agy', 'claude-opus-5-5-medium'): ('Anthropic', 'anthropic/opus', 'claude-opus'),  # -high has a record
 }
 REFUSED = [
     # No line: an unknown line or family, a non-chat model, a dated snapshot, an alias with no version.
@@ -195,7 +207,7 @@ REFUSED = [
     # Another vendor's route, a look-alike host, plain HTTP, an effort suffix off AGY.
     ('cli://claude', 'gpt-6.2-terra'), ('cli://codex', 'claude-fable-5-3'), ('cli://agy', 'gpt-6.2-terra-high'),
     ('https://api.openai.com/v1', 'gemini-4.1-argon'), ('https://api.openai.com.example.test/v1', 'gpt-6.2-terra'),
-    ('http://api.openai.com/v1', 'gpt-6.2-terra'), ('cli://claude', 'claude-opus-5-5-high'),
+    ('http://api.openai.com/v1', 'gpt-6.2-terra'), ('cli://claude', 'claude-opus-5-5-medium'),
     ('https://generativelanguage.googleapis.com/v1beta/openai', 'gemini-4.1-argon-high'),
 ]
 
@@ -262,7 +274,7 @@ def test_a_derived_receipt_round_trips_and_is_refused_when_the_roster_or_its_lin
 
 def test_independence_holds_for_derived_identities_as_for_recorded_ones():
     shipped = {name: value for name, value, _ in native_catalog.offline_deployments(include_unconfigured=True)}
-    fable_5_3, agy_opus = route('cli://claude', 'claude-fable-5-3', 'f'), route('cli://agy', 'claude-opus-5-5-high', 'o')
+    fable_5_3, agy_opus = route('cli://claude', 'claude-fable-5-3', 'f'), route('cli://agy', 'claude-opus-5-5-medium', 'o')
     cases = [  # implementer, auditor: independent, cross-vendor
         (native_catalog.select('claude-api-fable-5-2'), fable_5_3, False, False),  # same bias domain
         (fable_5_3, fable_5_3, False, False),  # same model

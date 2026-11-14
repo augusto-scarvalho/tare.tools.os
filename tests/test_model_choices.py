@@ -127,6 +127,26 @@ def test_argon_picker_groups_efforts_and_materializes_exact_model(tmp_path, monk
             models.realization(choices, dict(chosen, reasoning=unsupported))
 
 
+@pytest.mark.parametrize('order', [1, -1])
+def test_claude_on_agy_is_grouped_under_its_author_whatever_the_route_order(monkeypatch, order):
+    from relay.cli_discovery import TEMPLATES
+    from relay.inference_allowlist import identities
+    templates = json.loads(TEMPLATES.read_text(encoding='utf-8'))
+    names = ['agy-claude-opus-5-5-cli', 'claude-opus-5-5-cli'][::order]
+    (opus,) = catalog(monkeypatch, {name: dict(templates[name], native_cli={**templates[name]['native_cli'],
+                                                                           'executable': __file__}) for name in names})
+    assert (opus['key'], opus['label'], opus['group']) == ('claude-opus-5-5', 'Claude Opus 5.5', 'Anthropic')
+    routes = {r['id']: r for r in opus['routes']}
+    assert routes['agy-claude-opus-5-5-cli']['label'] == 'AGY CLI' and routes['claude-opus-5-5-cli']['label'] == 'Claude CLI'
+    assert routes['agy-claude-opus-5-5-cli']['efforts'] == ['low', 'medium', 'high']
+    for effort in ('low', 'medium', 'high'):
+        value = models.realization([opus], {'key': opus['key'], 'connection': 'agy-claude-opus-5-5-cli', 'reasoning': effort})
+        assert value['native_profile']['model'] == value['model'] == 'claude-opus-5-5-'+effort
+    # The connection, which pins name, stays AGY's: Google, never the author.
+    assert identities('agy-claude-opus-5-5-cli', templates['agy-claude-opus-5-5-cli'])[0] == 'google'
+    assert identities('claude-opus-5-5-cli', templates['claude-opus-5-5-cli'])[0] == 'anthropic'
+
+
 def test_expansion_preserves_connections_and_exact_codex_catalog_records():
     cli = profile('cli://codex', 'gpt-6-astra')
     records = [{'slug': name, 'visibility': visibility, 'context_window': 272000,

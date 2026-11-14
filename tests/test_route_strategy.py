@@ -164,7 +164,7 @@ def test_historical_delivery_cost_includes_failed_attempts_and_binds_efforts():
 
 def test_real_policy_reserves_planning_and_audit_for_frontier(installed):
     policy = native_routes.configured()
-    frontiers = {'gpt-6.1-sol','gpt-6-astra','claude-opus-5.5','fable-5.1','fable-5.2','gemini-4-carbon',
+    frontiers = {'gpt-6.1-sol','gpt-6-astra','claude-opus-5.5','claude-opus-5-5-high','fable-5.1','fable-5.2','gemini-4-carbon',
                  'gemini-4-argon-high','gemini-4-argon', 'moonshotai/kimi-k3.1-pro', 'meta/muse-wonder'}
     for row in policy['deployments']:
         assert ('auditor' in row['roles']) == (row['model'] in frontiers)

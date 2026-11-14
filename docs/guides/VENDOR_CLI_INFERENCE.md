@@ -118,6 +118,10 @@ credits or substitute another model when the subscription cannot serve one.
 
 Keep executable paths and deployment files local. This example uses Claude;
 AGY uses `cli://agy`, its qualified executable/version/model and high effort.
+AGY also serves Anthropic's Claude Opus 5.5 and Sonnet 5.5 under their own ids
+with an effort suffix (`claude-opus-5-5-high`): the same boundary, decoder and
+served-model check apply, their author is Anthropic for audit independence, and
+they spend AGY's allowance, not Claude's ([model picker](MODEL_PICKER.md)).
 
 ```json
 {

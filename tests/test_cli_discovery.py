@@ -25,7 +25,8 @@ def test_found_clis_offer_their_models_without_a_call_and_a_proof_makes_one_read
     assert calls == []  # finding a CLI spends nothing
     assert report['cli://codex']['status'] == 'missing'
     assert report['cli://agy']['status'] == 'found'
-    assert report['cli://agy']['added'] == ['agy-cli', 'agy-gemini-4-argon-cli', 'agy-gemini-4-hydrogen-cli']
+    assert report['cli://agy']['added'] == ['agy-claude-opus-5-5-cli', 'agy-claude-sonnet-5-5-cli', 'agy-cli',
+                                            'agy-gemini-4-argon-cli', 'agy-gemini-4-hydrogen-cli']
     argon = load_deployment(native_profiles.local_path('agy-gemini-4-argon-cli'))
     assert argon['native_cli']['executable'] == str(agy)
     assert argon['native_profile']['model'] == 'gemini-4-argon-high'

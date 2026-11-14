@@ -57,7 +57,8 @@ def identities(name, deployment):
     item = describe(name, deployment)
     route = item['route']
     profile = deployment['native_profile']
-    group = item['group'].lower()
+    # The connection, not the author: AGY is Google's also when it serves Claude (model_choices.describe).
+    group = 'google' if profile['endpoint'] == 'cli://agy' else item['group'].lower()
     provider = {'aws bedrock': 'bedrock', 'local': {'qwen38-gsq': 'ninfer',
                 'swift27b': 'ninfer', 'swift-next': 'strata'}.get(profile['model'], 'local')}.get(group, group)
     if deployment.get('native_opencode'):
