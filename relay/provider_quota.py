@@ -1,6 +1,6 @@
 """What each provider reports as left: subscription quota and API credit, read without a model call.
 
-tare quota [--json] [--cached] [--set ACCOUNT AMOUNT [--renews DAY [GRANT]]]
+tare quota [--json] [--cached] [--sync] [--set ACCOUNT AMOUNT [--renews DAY [GRANT]]]
 
 Claude, Codex and AGY answer from their own CLI: the plan's windows, each with the models it covers and when it
 resets. OpenRouter answers its credit endpoint. A provider that publishes no balance for an ordinary key is listed as
@@ -266,6 +266,11 @@ def refresh(now=None):
             accounts.append({**reading, 'status': 'NOT_REPORTED', 'reason':
                              'This provider has no balance endpoint for an API key. State the balance with '
                              'tare quota --set ' + account + ' AMOUNT and tare counts down from it.'})
+    from .console_credit import ACCOUNT, note
+    if text := note(now):  # a failed Console reading, under the Claude API account
+        for reading in accounts:
+            if reading['account'] == ACCOUNT:
+                reading.setdefault('notes', []).append(text)
     report = {'schema': SCHEMA, 'observed_at': now, 'accounts': accounts}
     from .relay_io import write_json_atomic
     path = cache_path()
@@ -430,7 +435,10 @@ def render(report, now=None):
                 left = 'none' if credit['remaining'] <= 0 else f"US$ {credit['remaining']:.2f}"
                 stated = (f", stated {clock(credit['declared_at'], now)}, less tare's own use since"
                           if account['status'] == 'DECLARED' else '')
-                if credit.get('renews_at'):
+                if credit.get('console'):  # a window read from the Console: it says where it came from
+                    stated = (', lapses ' + datetime.fromtimestamp(credit['renews_at'], timezone.utc).strftime('%a %d %b')
+                              + ' (read from the Console ' + datetime.fromtimestamp(credit['declared_at']).strftime('%d %b %H:%M') + ')')
+                elif credit.get('renews_at'):
                     stated = ' a cycle, renews ' + datetime.fromtimestamp(credit['renews_at'], timezone.utc).strftime('%a %d %b')
                 pace = credit_pace(credit, now)
                 lines.append(f"{head}: {left} left of US$ {credit['total']:.2f}{stated}"
@@ -438,6 +446,7 @@ def render(report, now=None):
                 if credit.get('at_reference_prices'):
                     lines.append(f"    US$ {credit['at_reference_prices']:.2f} of that use is valued at models.dev "
                                  'reference prices, not confirmed tariffs: the balance is only as exact as they are.')
+                lines += ['    ' + note for note in account.get('notes', [])]
                 continue
             lines.append(head)
             for row in account.get('buckets', []):
@@ -457,6 +466,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog='tare quota', description=__doc__.split('\n\n')[0])
     parser.add_argument('--json', action='store_true', help='print the readings as JSON')
     parser.add_argument('--cached', action='store_true', help='show the last readings without asking the providers')
+    parser.add_argument('--sync', action='store_true', help=(
+        "read the Claude API credit (balance and expiry) from the Console's Billing page through the Claude in Chrome "
+        'extension, in a browser signed in to the Console: one Haiku call on the Claude subscription, about half a minute, '
+        'a tab that opens and closes. Running it is the consent for that one reading'))
     parser.add_argument('--set', nargs=2, metavar=('ACCOUNT', 'AMOUNT'),
                         help="state an API account's balance in dollars as of now; tare counts its own spend down from it")
     parser.add_argument('--renews', nargs='+', metavar=('DAY', 'GRANT'), help=(
@@ -475,12 +488,17 @@ def main(argv=None):
             provider_spend.declare(args.set[0], amount, renews=renews)
         except ValueError as exc:
             parser.error(str(exc))
-    report = cached() if args.cached and not args.set else refresh()
+    synced = None
+    if args.sync:
+        from . import console_credit
+        synced = console_credit.sync()
+        print(console_credit.describe(synced), file=sys.stderr)
+    report = cached() if args.cached and not args.set and not args.sync else refresh()
     if report is None:
         print('No reading yet. Run tare quota.', file=sys.stderr)
         return 1
     print(json.dumps(report, indent=2) if args.json else render(report))
-    return 0
+    return 0 if synced is None or synced['ok'] else 1
 
 
 if __name__ == '__main__':
