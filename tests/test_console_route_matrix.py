@@ -75,7 +75,9 @@ def test_untick_and_tick_back_store_what_tare_setup_auto_stores_and_nothing_more
 
 
 async def saved(pilot, panel):
-    """Press Save and wait for its answer: it reads and writes the file in a worker thread, under a lock."""
+    """Press Save and wait for its answer: it reads and writes the file in a worker thread, under a lock. The status
+    is cleared first, so the answer waited for is this Save's and not the "Saved." an earlier one left there."""
+    panel.query_one('#matrix-status', Static).update('')
     await pilot.click('#matrix-save')
     for _ in range(200):
         await pilot.pause(0.05)
