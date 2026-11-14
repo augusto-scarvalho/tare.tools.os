@@ -32,7 +32,9 @@ def test_auto_resolves_current_profile_and_reserve(selection, role):
         if row['id'].startswith('opencode-sub-'): row['roles'].remove(role)
     reserve = native_catalog.select('auto', role=role)
     assert reserve['native_profile'] == native_catalog.select('bedrock-opus')['native_profile']
-    assert all(r['reason'].startswith('RUNNER_NOT_SUPPORTED') for r in reserve['native_selection']['candidates']
+    # A CLI route is never the automatic reserve: its runner is not supported here, or it is a pin-only row.
+    assert all(r['reason'].startswith(('RUNNER_NOT_SUPPORTED', 'NOT_QUALIFIED_PIN_ONLY'))
+               for r in reserve['native_selection']['candidates']
                if r['deployment'].endswith('-cli') and r['reason'] != 'ROLE_NOT_CONFIGURED')
 
 

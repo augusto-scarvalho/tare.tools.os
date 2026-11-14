@@ -191,6 +191,39 @@ def test_saving_planner_or_routes_preserves_the_review_mode(pool, mode):
     assert turn_engine.policy()['planner'][0].startswith('planner-')
 
 
+NEW_ROUTES = {'claude-fable-5-2-cli': ('cli://claude', 'claude-fable-5-2', 'Anthropic'),
+              'codex-cli-gpt-6-1-terra': ('cli://codex', 'gpt-6.1-terra', 'OpenAI'),
+              'agy-gemini-4-hydrogen-cli': ('cli://agy', 'gemini-4-hydrogen-high', 'Google'),
+              'claude-api-fable-5-2': (None, None, 'Anthropic'), 'openai-api-gpt-6-1-terra': (None, None, 'OpenAI'),
+              'gemini-api-4-carbon': (None, None, 'Google'), 'gemini-api-4-hydrogen': (None, None, 'Google')}
+
+
+def test_new_models_have_an_author_take_a_pin_and_wait_for_qualification_before_any_automatic_role(pool):
+    from relay import model_choices
+    for name, (endpoint, model, _) in NEW_ROUTES.items():
+        if endpoint:
+            install(pool, name, endpoint, model)
+    table = {r['id']: r for r in native_routes.configured()['deployments']}
+    rows = {r['deployment']: r for r in model_choices.projection(include_unconfigured=True)}
+    for name, (_, _, vendor) in NEW_ROUTES.items():
+        assert work_audit.identity(native_catalog.select(name), 'implementer').vendor == rows[name]['vendor'] == vendor
+        assert table[name]['qualified'] is False
+        role = table[name]['roles'][0]
+        pin = rows[name]['role_arguments'][role][0].split(' ', 1)[1]
+        assert model_choices.select_exact(pin, role)['native_model_choice']['connection'] == name
+    local = native_catalog.select('qwen38-gsq')
+    for role in ('planner', 'plan-auditor', 'auditor', 'implementer', 'explorer'):
+        chosen, selection = native_routes.ranked(role, local if 'auditor' in role else None)
+        assert not set(NEW_ROUTES) & {d['id'] for d in chosen}
+        assert {c['deployment']: c['reason'] for c in selection['candidates'] if c['deployment'] in NEW_ROUTES} == {
+            n: 'NOT_QUALIFIED_PIN_ONLY' if role in table[n]['roles'] else 'ROLE_NOT_CONFIGURED' for n in NEW_ROUTES}
+    # Their own line still may not review their work.
+    for producer, peer in (('claude-api-fable-5-2', 'claude-api-fable-5-1'), ('openai-api-gpt-6-1-terra', 'openai-api'),
+                           ('gemini-api-4-hydrogen', 'gemini-api'), ('gemini-api-4-carbon', 'gemini-api')):
+        _, selection = native_routes.ranked('auditor', native_catalog.select(producer))
+        assert next(c for c in selection['candidates'] if c['deployment'] == peer)['reason'] == 'AUDITOR_NOT_INDEPENDENT'
+
+
 def test_review_priority_is_bounded_operator_policy_not_a_quality_score():
     roster=round_table_roster.load_roster()
     table=round_table_roster.load_role_deployments(roster=roster)

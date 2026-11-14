@@ -41,8 +41,8 @@ account, model or paid API fallback is introduced.
 
 `scripts/configure_vendor_models.py` expands existing local connections using
 an explicit local Codex catalogue and the documented Claude IDs:
-`claude-opus-5-5`, `claude-sonnet-5-5`, `claude-fable-5-1`, and
-`claude-haiku-5-5`. Existing base profiles stay available. Codex entries marked hidden are excluded; each CLI variant retains
+`claude-opus-5-5`, `claude-sonnet-5-5`, `claude-fable-5-1`, `claude-fable-5-2`
+and `claude-haiku-5-5`. Existing base profiles stay available. Codex entries marked hidden are excluded; each CLI variant retains
 its own complete model catalogue record. Direct variants retain the selected
 connection's account binding and conservative context/output limits.
 
@@ -76,6 +76,17 @@ audit and the highest implementation escalation tier. It shares the
 `google/gemini` lineage with Gemini Flash, so it cannot independently audit
 that family. The profile retains conservative AGY transport limits; this
 registration does not establish comparative quality, price or available quota.
+
+### Fable 5.2, GPT-6.1 Terra and Gemini 4 Hydrogen
+
+Discovery offers `claude-fable-5-2-cli` (**Claude Fable 5.2**, Default **high**; Claude Code 2.1.325 lists it),
+`codex-cli-gpt-6-1-terra` (**GPT-6.1 Terra**, from Codex's own model list) and `agy-gemini-4-hydrogen-cli`
+(**Gemini 4 Hydrogen**, low, medium and high from `agy models` on 2026-11-13; AGY's `xhigh` is left out because
+the Kernel takes AGY efforts up to high). Gemini 4 Carbon has no CLI route: AGY 1.5.8 does not list it; it is on
+the Gemini API ([HTTP providers](HTTP_API_PROVIDERS.md)). These routes can be chosen and pinned to a role; no
+automatic role picks them until they are qualified through tare (`"qualified": false` in
+`relay/role_deployments.json`). Hydrogen shares the `google/gemini` lineage, Fable 5.2 `anthropic/fable` and
+Terra `openai/gpt`, so none reviews work of its own line.
 
 ### Claude Haiku 5.5 candidate
 

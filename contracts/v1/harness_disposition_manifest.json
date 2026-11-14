@@ -2201,8 +2201,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 10211,
-      "sha256": "47e8708ba85d1edd5c912a84ec5ad4ed6303015cd9de8f43277cfecbd93ea22f"
+      "size_bytes": 10447,
+      "sha256": "457983a729cdb1d06f5a104ef7e55bdcc4f4e96a7508cf1156e9e7f7a934d6de"
     },
     {
       "name": "native_diagnostics.py",
@@ -2591,8 +2591,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns vendor model discovery and selection; Runtime retains session execution.",
-      "size_bytes": 6011,
-      "sha256": "356627b041a50d8121242e2117dff0a66460bf12f649f5527925e85e454e5ba2"
+      "size_bytes": 6031,
+      "sha256": "d127baf3e0afca83189f2d34e88c6d9f4a45c488be0dddcd7238f67bac809778"
     },
     {
       "name": "watcher.py",
@@ -3361,8 +3361,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator model selection; Runtime retains session execution.",
-      "size_bytes": 31371,
-      "sha256": "94bb2b035e01acb928d40af2642975e1a2b0b32fb29370eb2e1c88a659add425"
+      "size_bytes": 31505,
+      "sha256": "45f9cdd1b5d627d7ce9e339fccd069630b783304e05a8020b9a24df720c7e2a1"
     },
     {
       "name": "model_picker.py",

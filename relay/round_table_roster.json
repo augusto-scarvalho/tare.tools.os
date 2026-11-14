@@ -61,6 +61,16 @@
         "native-http": "claude-fable-5-1"
       }
     },
+    "fable-5.2": {
+      "display_name": "Fable 5.2",
+      "vendor": "Anthropic",
+      "bias_domain": "anthropic/fable",
+      "runtime": {
+        "claude": "claude-fable-5-2",
+        "native": "claude-fable-5-2",
+        "native-http": "claude-fable-5-2"
+      }
+    },
     "gemini-4-argon": {
       "display_name": "Gemini 4 Argon HTTP",
       "vendor": "Google",
@@ -98,6 +108,54 @@
         "google-cli": "gemini-4-argon-low",
         "native": "gemini-4-argon-low",
         "native-http": "gemini-4-argon-low"
+      }
+    },
+    "gemini-4-hydrogen": {
+      "display_name": "Gemini 4 Hydrogen HTTP",
+      "vendor": "Google",
+      "bias_domain": "google/gemini",
+      "runtime": {
+        "native": "gemini-4-hydrogen",
+        "native-http": "gemini-4-hydrogen"
+      }
+    },
+    "gemini-4-hydrogen-high": {
+      "display_name": "Gemini 4 Hydrogen High",
+      "vendor": "Google",
+      "bias_domain": "google/gemini",
+      "runtime": {
+        "google-cli": "gemini-4-hydrogen-high",
+        "native": "gemini-4-hydrogen-high",
+        "native-http": "gemini-4-hydrogen-high"
+      }
+    },
+    "gemini-4-hydrogen-medium": {
+      "display_name": "Gemini 4 Hydrogen Medium",
+      "vendor": "Google",
+      "bias_domain": "google/gemini",
+      "runtime": {
+        "google-cli": "gemini-4-hydrogen-medium",
+        "native": "gemini-4-hydrogen-medium",
+        "native-http": "gemini-4-hydrogen-medium"
+      }
+    },
+    "gemini-4-hydrogen-low": {
+      "display_name": "Gemini 4 Hydrogen Low",
+      "vendor": "Google",
+      "bias_domain": "google/gemini",
+      "runtime": {
+        "google-cli": "gemini-4-hydrogen-low",
+        "native": "gemini-4-hydrogen-low",
+        "native-http": "gemini-4-hydrogen-low"
+      }
+    },
+    "gemini-4-carbon": {
+      "display_name": "Gemini 4 Carbon HTTP",
+      "vendor": "Google",
+      "bias_domain": "google/gemini",
+      "runtime": {
+        "native": "gemini-4-carbon",
+        "native-http": "gemini-4-carbon"
       }
     },
     "fable-5": {
@@ -634,6 +692,16 @@
         "codex": "gpt-6.1-sol",
         "native": "gpt-6.1-sol",
         "native-http": "gpt-6.1-sol"
+      }
+    },
+    "gpt-6.1-terra": {
+      "display_name": "GPT-6.1 Terra",
+      "vendor": "OpenAI",
+      "bias_domain": "openai/gpt",
+      "runtime": {
+        "codex": "gpt-6.1-terra",
+        "native": "gpt-6.1-terra",
+        "native-http": "gpt-6.1-terra"
       }
     },
     "gpt-6-luna": {

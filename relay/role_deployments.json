@@ -118,6 +118,28 @@
       "review_priority": 1
     },
     {
+      "id": "claude-fable-5-2-cli",
+      "model": "fable-5.2",
+      "provider": "Anthropic",
+      "transport": "CLI",
+      "runner": "native-http",
+      "quota_domain": "anthropic-cli-plan",
+      "endpoint_domain": "anthropic-cli",
+      "effort": null,
+      "roles": [
+        "planner",
+        "plan-auditor",
+        "auditor",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "qualified": false,
+      "native_catalog": "claude-fable-5-2-cli",
+      "note": "Fable 5.1's roles; Claude Code 2.1.325 lists claude-fable-5-2 (2026-11-13). Pin only until qualified through tare. Subscription quota and incremental billing remain unverified.",
+      "review_priority": 1
+    },
+    {
       "id": "claude-opus-5-5-cli",
       "model": "claude-opus-5.5",
       "provider": "Anthropic",
@@ -249,6 +271,25 @@
       "cost_tier": "flat",
       "native_catalog": "codex-cli-gpt-5-6-terra",
       "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
+    },
+    {
+      "id": "codex-cli-gpt-6-1-terra",
+      "model": "gpt-6.1-terra",
+      "provider": "OpenAI",
+      "transport": "CLI",
+      "runner": "native-http",
+      "quota_domain": "openai-codex-plan",
+      "endpoint_domain": "openai-cli",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "qualified": false,
+      "native_catalog": "codex-cli-gpt-6-1-terra",
+      "note": "GPT-5.6 Terra's roles; Codex discovery writes this profile from Codex's model cache. Pin only until qualified through tare. Subscription quota and incremental billing remain unverified."
     },
     {
       "id": "codex-native",
@@ -527,6 +568,25 @@
       "review_priority": 0
     },
     {
+      "id": "agy-gemini-4-hydrogen-cli",
+      "model": "gemini-4-hydrogen-high",
+      "provider": "Google",
+      "transport": "CLI",
+      "runner": "native-http",
+      "quota_domain": "google-cli-plan",
+      "endpoint_domain": "google-cli",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "qualified": false,
+      "native_catalog": "agy-gemini-4-hydrogen-cli",
+      "note": "Gemini 3.8 Flash's roles: Google's model page names Hydrogen the successor of 3.8 Flash. Exact AGY model IDs observed 2026-11-13. Pin only until qualified through tare; quota, billing and comparative quality remain separately evidenced."
+    },
+    {
       "id": "codex-native-gpt-6-1-sol",
       "model": "gpt-6.1-sol",
       "provider": "OpenAI",
@@ -653,6 +713,90 @@
       "review_priority": 1,
       "native_catalog": "claude-api-fable-5-1",
       "note": "Operator-admitted frontier. Prefer a different vendor, then configured allowance class and review preference. API credit is separate from CLI quota; no measured quality or savings claim. Pro execution modes are not automatic reviewer choices. Available for implementation/exploration in a restricted TUI launch; the ordinary execution ladder is unchanged."
+    },
+    {
+      "id": "claude-api-fable-5-2",
+      "model": "fable-5.2",
+      "provider": "Anthropic",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "anthropic-api-credit",
+      "endpoint_domain": "anthropic-api",
+      "effort": null,
+      "roles": [
+        "planner",
+        "plan-auditor",
+        "auditor",
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "review_priority": 1,
+      "qualified": false,
+      "native_catalog": "claude-api-fable-5-2",
+      "note": "Fable 5.1's roles; Anthropic's model list, read 2026-11-13. Pin only until qualified through tare. API credit is separate from CLI quota; no measured quality or savings claim."
+    },
+    {
+      "id": "openai-api-gpt-6-1-terra",
+      "model": "gpt-6.1-terra",
+      "provider": "OpenAI",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openai-api-credit",
+      "endpoint_domain": "openai-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "qualified": false,
+      "native_catalog": "openai-api-gpt-6-1-terra",
+      "note": "GPT-5.6 Terra's roles; OpenAI's model list and model page, read 2026-11-13. Pin only until qualified through tare. API credit is separate from CLI quota; no measured quality or savings claim."
+    },
+    {
+      "id": "gemini-api-4-carbon",
+      "model": "gemini-4-carbon",
+      "provider": "Google",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "google-api-credit",
+      "endpoint_domain": "google-api",
+      "effort": null,
+      "roles": [
+        "planner",
+        "plan-auditor",
+        "auditor",
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "review_priority": 0,
+      "qualified": false,
+      "native_catalog": "gemini-api-4-carbon",
+      "note": "Gemini 4 Argon's roles: Google's model page names Carbon its most capable reasoning model, above Argon. Gemini model list, read 2026-11-13. Pin only until qualified through tare; no measured quality or savings claim."
+    },
+    {
+      "id": "gemini-api-4-hydrogen",
+      "model": "gemini-4-hydrogen",
+      "provider": "Google",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "google-api-credit",
+      "endpoint_domain": "google-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "metered",
+      "qualified": false,
+      "native_catalog": "gemini-api-4-hydrogen",
+      "note": "Gemini 3.8 Flash's roles on AGY: Google's model page names Hydrogen the successor of 3.8 Flash. Gemini model list, read 2026-11-13. Pin only until qualified through tare; no measured quality or savings claim."
     },
     {
       "id": "gemini-api",
