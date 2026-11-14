@@ -464,17 +464,19 @@ def bill(deployment):
     return (kind,) if kind == 'local' else (kind, str(deployment.get('id', '')).split('-')[0])
 
 
-def routes(parent, chosen=None, effort=None, *, allow_parent=False):
+def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None):
     """The implementer routes to try, cheapest first: tare's tiers, on the session's own bill (D4): a local session
     takes local routes, a hosted one the routes of its class and vendor, so a Codex quota session never climbs into
     Bedrock dollars or another CLI's quota (the TUI walkthrough of 2026-10-07 did, unasked). The coordinator may fix
     one of them and its effort; the child_routes_any experiment opens every hosted route. Nothing waits for a busy GPU
     (owner, 2026-10-08): a local route whose GPU an image job holds is skipped, the coordinator's chosen one included,
     and the unit takes the next routes of the policy (the owner's <storage>/serve/routing.json, else tare's), leaving a
-    local session's bill as the session itself would."""
+    local session's bill as the session itself would. A route the routing profile switches off for the implementer is
+    never run, the coordinator's chosen one and the fallback to the session's own model included (only a pin is the
+    user's own choice); `refused` collects why."""
     from .delegation import experiments
     from .turn_engine import available, gpu_taken, policy, with_effort
-    from .execution_scope import current, execution_tiers, is_pro, kind
+    from .execution_scope import current, execution_tiers, is_pro, kind, refusal
     temporary=current()
     if temporary.pin('implementer'):
         from .execution_scope import pin_selection
@@ -507,6 +509,10 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False):
         gpu_busy = gpu_busy or gpu_taken(why)
         if deployment is None:
             continue
+        if off := refusal('implementer', deployment, name):
+            if name == chosen and refused is not None:
+                refused.append('SWITCHED_OFF_FOR_ROLE: ' + off)
+            continue  # as an unavailable route: the chosen one is not replaced unless its GPU was busy
         if not fits(deployment):
             if name == chosen:
                 raise ValueError(f'{chosen} is not on this session\'s bill ({" ".join(own)}): choose a route of the '
@@ -517,6 +523,11 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False):
     if parent_allowed and not found and not chosen:
         # Separate implementer role, same explicitly selected model/allowance.
         # Explicit route choices never silently fall back to this profile.
+        # The conversation's model was picked for the conversation, not as implementer: the profile still decides.
+        if off := refusal('implementer', parent, parent['id']):
+            if refused is not None:
+                refused.append('SWITCHED_OFF_FOR_ROLE: ' + off)
+            return
         yield parent['id'], with_effort(parent, effort) if effort else parent
 
 
@@ -1015,8 +1026,9 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
     protected = [test_file(t) for t in unit.get('test_paths') or []]
     result = {'verdict': 'INCONCLUSIVE', 'reason': 'no implementer route is available'}
     producer=candidate_producer(custody,candidate['producer']) if candidate and candidate.get('review_only') else None
+    refused = []  # why the routing profile refused the coordinator's chosen route or the session's own model
     choices = [(worker['route'], worker['producer'])] if worker else [(producer['id'], producer)] if producer else routes(
-        state.get('deployment') or {}, args.get('route'), args.get('effort'),
+        state.get('deployment') or {}, args.get('route'), args.get('effort'), refused=refused,
         **({'allow_parent': True} if state.get('conversation_flow') else {}))
     visited = []  # rungs actually reached, for executed_decision only; selection is unchanged
     for rung, (name, deployment) in enumerate(choices):
@@ -1425,6 +1437,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     from .worker_wait import discard
                     try:discard(tree)
                     except OSError:row['candidate_cleanup']='deferred: files are still in use'
+    if refused and not visited:
+        result['reason'] = refused[0]
     result['rungs'] = len(receipt['rungs'])
     receipt.update(result=result, finished=now())
     (job/'receipt.json').write_text(json.dumps(receipt, indent=1), encoding='utf-8')

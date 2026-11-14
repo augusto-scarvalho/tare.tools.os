@@ -148,6 +148,9 @@ def create_runner(deployment, work_id, custody, *, budget=None, timeout=native_l
     from . import native_work_credentials
     from .native_attempt import binding_identity
 
+    if not resume:  # a new implementer session that does not pass run_session: the routing profile's backstop
+        from .execution_scope import admit
+        admit(deployment, 'implementer')
     root = Path(custody); root.mkdir(parents=True, exist_ok=True)
     saved = json.loads((root/'host.json').read_bytes()) if resume else None
     if saved:

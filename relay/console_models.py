@@ -150,7 +150,8 @@ class ConversationModels:
                 return  # a question/plan/pending stage is not a failed implementation to escalate
             saved = state['deployment']
             with local_models(local):  # the conversation's choice: no local route or local judge when it said so
-                if not saved.get('native_auto_selection') or next_auto(saved) is None:
+                role = state.get('config', {}).get('role', 'implementer')  # its routing profile entries decide
+                if not saved.get('native_auto_selection') or next_auto(saved, role=role) is None:
                     return  # not tare auto, or no stronger tier to go to: the judge is not asked
                 verdict = unanswered(request, reply, {'source': 'tui', 'route': saved['native_auto_selection']['route']})
         except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -177,9 +178,12 @@ class ConversationModels:
         from .native_continuity import preview
         from .turn_engine import local_models, next_auto
         try:
-            saved = read_json(Path(source)/'native-agent.json', 1024*1024)['deployment']
+            state = read_json(Path(source)/'native-agent.json', 1024*1024)
+            saved = state['deployment']
             if not saved.get('native_auto_selection') or self.busy:
                 return
+            # The role the next route runs in decides by its routing profile entries; a conversation is tare auto's.
+            role = 'implementer' if state.get('conversation_flow') else state.get('config', {}).get('role', 'implementer')
             from .turn_engine import successor
             if successor(status, per_message_limits=False) == 'stop':  # the operator's budget is the cap
                 self.say(f"tare auto: this conversation spent the budget you set, so it stays on "
@@ -187,7 +191,7 @@ class ConversationModels:
                          f"to continue on a stronger route.")
                 return
             with local_models(self.selection().local_models):
-                deployment = next_auto(saved)
+                deployment = next_auto(saved, role=role)
             if deployment is None:
                 self.say('tare auto: no further route is available.')
                 return
@@ -345,7 +349,8 @@ class ConversationModels:
             if self.busy or self.sending_message or current.root != selected.root or active_source != source:
                 self.notify('The conversation changed. Open the provider switch again.')
                 return
-            self.execute(False, assistant=current.mode == 'assistant', continuation=(value, text, deployment))
+            # The user picked this route: the routing profile lets it start (tare auto's escalation above does not).
+            self.execute(False, assistant=current.mode == 'assistant', continuation=(value, text, deployment, True))
             self.query_one('#prompt').focus()
         self.push_screen(ContinuityPanel(value['text'], label), confirmed)
 

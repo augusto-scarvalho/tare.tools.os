@@ -20,6 +20,7 @@ import uuid
 
 from . import turn_engine as engine  # the shared turn engine; this module adapts VS Code chats
 from . import ci_watch
+from .execution_scope import refusal
 
 
 
@@ -195,7 +196,7 @@ def run_flow(kind, text, root, emit, activity):
             name=deployment['native_model_choice']['connection']
         else:
             tiers = [rules['planner']] if role == 'planner' else rules['implementer']
-            tier, name, deployment, skipped = engine.choose(tiers)
+            tier, name, deployment, skipped = engine.choose(tiers, role=role)
             if deployment is None:
                 return None, 'tare: no route is available for /' + kind + ': ' + json.dumps(skipped)
             if role == 'planner':
@@ -387,9 +388,21 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
             current = state['sessions'][-1]
             deployment, reason = engine.available(current['route'])
             session = Path(current['session'])
+            # A fresh session (a fork, a mode change, a retry) is a new start: the routing profile decides again; a
+            # resumed one continues on the route it started on.
+            off = deployment is not None and refusal('implementer', deployment, current['route'])
             if deployment is None:  # the route went away: continue on the next available one
                 session, result = escalate(state, root, current['tier'], instruction, emit, emit_text, activity,
                                            why=reason, same_tier_ok=True, mode=mode)
+            elif off and state.get('fork'):  # fork onto the next route that is on, from what the client shows
+                tier, name, deployment, skipped = engine.choose(tiers, current['tier'])
+                if deployment is None:
+                    return 'tare: no route is available right now: ' + json.dumps(skipped)
+                session, result = fresh(state, root, instruction, deployment, emit, emit_text, activity, mode=mode,
+                                        why=str(off), route=name, tier=tier, skipped=skipped, brief=state.pop('fork'))
+            elif off and current.get('mode', 'accept-edits') != mode:
+                session, result = escalate(state, root, current['tier'], instruction, emit, emit_text, activity,
+                                           why=str(off), same_tier_ok=True, mode=mode, renew=True)
             elif state.get('fork'):  # the session remembers discarded turns: fork from what the client shows
                 session, result = fresh(state, root, instruction, deployment, emit, emit_text, activity, mode=mode,
                                         why='the conversation went back to an earlier message',
@@ -407,8 +420,10 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
                 except ValueError as exc:
                     if 'budget exhausted' not in str(exc):
                         raise
-                    session, result = fresh(state, root, instruction, deployment, emit, emit_text, activity,
-                                            mode=mode, why='the previous one spent its budget')
+                    session, result = (escalate(state, root, current['tier'], instruction, emit, emit_text, activity,
+                                                why=str(off), same_tier_ok=True, mode=mode, renew=True) if off else
+                                       fresh(state, root, instruction, deployment, emit, emit_text, activity,
+                                             mode=mode, why='the previous one spent its budget'))
             runs = [(session, result)]
             state['turns'] += 1
         step = engine.successor((result or {}).get('status'), per_message_limits=True)

@@ -543,6 +543,7 @@ def write(text, seen, known=()):
     `known`: sentences the host is certain of (certain()), which the note must not contradict."""
     from .native_generation import generate_text, vault_secret
     from .turn_engine import DEFAULT_POLICY, available, policy, with_effort
+    from .execution_scope import admit, refusal
     prompt = ('Notes already shown to the user (never repeat these):\n' + ('\n'.join('- ' + s for s in seen) or 'none')
               + ('\n\nFacts the host is certain of (never contradict them):\n' + '\n'.join('- ' + s for s in known)
                  if known else '')
@@ -553,12 +554,13 @@ def write(text, seen, known=()):
         if token.is_cancelled():
             break
         deployment, _ = available(name)
-        if deployment is None:
+        if deployment is None or refusal('heads_up', deployment, name):
             continue
         if effort:
             deployment = with_effort(deployment, effort)
         started = time.monotonic()
         try:
+            admit(deployment, 'heads_up')  # the routing profile's backstop: this call starts no session
             ok, answer, receipt = generate_text(deployment, deployment['native_profile']['model'], prompt,
                                                 WRITER_SECONDS, system=SYSTEM, credential_resolver=vault_secret,
                                                 control=_control(token))

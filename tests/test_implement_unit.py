@@ -512,7 +512,7 @@ def test_units_handed_at_once_run_together_and_apply_one_after_another(tmp_path,
              'b': "v = open('a.py').read().split()[-1]; assert open('b.py').read() == 'other = %s\\n' % v"}
     monkeypatch.setattr(work_units, 'checks', lambda config, unit, *a: {unit['key']: [sys.executable, '-B', '-c', check[unit['key']]]})
     monkeypatch.setattr(work_units, 'suite_allows', lambda *a: (True, 'fixture'))
-    monkeypatch.setattr(work_units, 'routes', lambda *a: iter([('child-route', deployment())]))
+    monkeypatch.setattr(work_units, 'routes', lambda *a, **kw: iter([('child-route', deployment())]))
     together, first = threading.Barrier(2, timeout=20), set()
     applied_a=threading.Event()
     real_apply=work_units.apply
@@ -581,7 +581,7 @@ def test_a_unit_whose_tests_need_another_units_code_is_run_again_after_it(tmp_pa
              'b': "assert open('a.py').read() == 'value = 2\\n' and open('b.py').read() == 'other = 2\\n'"}
     monkeypatch.setattr(work_units, 'checks', lambda config, unit, *a: {unit['key']: [sys.executable, '-B', '-c', check[unit['key']]]})
     monkeypatch.setattr(work_units, 'suite_allows', lambda *a: (True, 'fixture'))
-    monkeypatch.setattr(work_units, 'routes', lambda *a: iter([('child-route', deployment())]))
+    monkeypatch.setattr(work_units, 'routes', lambda *a, **kw: iter([('child-route', deployment())]))
     together, first = threading.Barrier(2, timeout=20), set()
 
     def child(config, deployment, custody, instruction, **kw):

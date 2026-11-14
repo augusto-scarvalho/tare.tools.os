@@ -223,17 +223,23 @@ def main(argv=None):
         if args.preview:
             value = preview(args.root, args.question, json.loads(args.inputs))
         else:
+            named = None
             if not (args.show or args.resume):
                 from .native_catalog import select
                 args.synthesis = args.synthesis or flow_root()/uuid4().hex
+                deployment = select(args.deployment, args.native_deployment, role='explorer')
+                if args.native_deployment or args.deployment not in (None, 'auto'):
+                    named = deployment  # the user's own explorer (the routing profile's backstop)
                 create(args.synthesis, args.root, args.question, json.loads(args.inputs), args.reviewed_sha256,
-                       select(args.deployment, args.native_deployment, role='explorer'))
+                       deployment)
             from . import native_signals
             from tare_tools_agent_runtime import CancellationToken
+            from .execution_scope import user_choice
             cancel = CancellationToken(); previous = native_signals.install(cancel)
             try:
-                value = inspect(args.synthesis) if args.show else execute(args.synthesis, cancellation=cancel,
-                                                                         invocation_id=args.invocation_id)
+                with user_choice('explorer', named):
+                    value = inspect(args.synthesis) if args.show else execute(args.synthesis, cancellation=cancel,
+                                                                             invocation_id=args.invocation_id)
             finally:
                 native_signals.restore(previous)
         print(json.dumps(value, ensure_ascii=False) if args.format == 'json' else render(value))

@@ -1640,10 +1640,16 @@ def main(argv=None):
                           select(args.deployment or (None if args.native_deployment else default_route()), args.native_deployment,
                                  role=(config or {}).get('role', 'implementer'))
                           if not args.resume or args.deployment or args.native_deployment else None)
+        role = 'coordinator' if args.conversation else (config or {}).get('role', 'implementer')
+        named = None  # a route the user named (the picker's concrete model, --deployment, --native-deployment)
         if deployment is not None and not args.resume and not continuation_request:
             from .native_catalog import resolve_host_mode
             from .turn_engine import resolve_auto
-            deployment = resolve_host_mode(resolve_auto(deployment, request=prompt or ''))
+            named = (args.native_deployment or args.deployment not in (None, 'auto')) and not explicit_coordinator \
+                and 'native_auto_routes' not in deployment
+            deployment = resolve_host_mode(resolve_auto(deployment, request=prompt or '',
+                                                        role='implementer' if role == 'coordinator' else role))
+            named = deployment if named else None
         if continuation_request:
             args.stream = deployment.get('native_streaming', False)
         if args.stream:
@@ -1761,7 +1767,8 @@ def main(argv=None):
             emit = activity_scope.enter_context(stream(
                 'conversation', Path(custody).resolve(), project,
                 callback=lambda event: print(encode(event), file=sys.stderr, flush=True), lock=stderr_lock))
-        from .execution_scope import current
+        from .execution_scope import current, user_choice
+        activity_scope.enter_context(user_choice(role, named))  # the routing profile lets the user's own route start
         result = run_session(config, deployment, custody, prompt,
             unlimited_resources=current().unlimited,
             resume=args.resume, limits=limits, cancellation=cancel, follow_up=args.follow_up, message_id=args.message_id,

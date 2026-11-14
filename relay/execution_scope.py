@@ -11,6 +11,7 @@ ROLE=ContextVar('tare_execution_role',default='coordinator')
 COORDINATOR=ContextVar('tare_conversation_coordinator',default='')
 POLICY_VIEW=ContextVar('tare_policy_view',default=None)
 CONFIRMABLE_AUDIT=ContextVar('tare_confirmable_audit',default=False)  # set only by conversation_review.available
+CHOSEN=ContextVar('tare_user_choice',default=frozenset())  # (role, deployment id) the user chose: user_choice()
 KINDS=('subscription','local','api')
 REVIEW_ROLES={'planner','plan-auditor','auditor'}
 PIN_ROLES=('planner','implementer','explorer','researcher','auditor')
@@ -252,6 +253,80 @@ def require(deployment,role=None):
 
 
 @contextmanager
+def user_choice(role,deployment):
+    """Mark `deployment` as the user's own choice for `role` while the block runs: the picker's concrete model, a
+    route named on the command line, a provider switch the user reviewed, a /delegation explorer. admit() then lets
+    a start of exactly this route in exactly this role through. A session never hands it to the sessions it starts
+    (session_role clears it); None, 'auto' or tare auto's placeholder marks nothing."""
+    chosen=CHOSEN.get()
+    if isinstance(deployment,dict) and 'native_auto_routes' not in deployment:chosen=chosen|{(role,deployment.get('id'))}
+    token=CHOSEN.set(chosen)
+    try:yield
+    finally:CHOSEN.reset(token)
+
+
+def chosen(role,deployment):
+    """Whether user_choice() marks `deployment` for `role` now: a record that outlives this process (a paused Work's
+    origin) saves it, and its resume marks the route again."""
+    return isinstance(deployment,dict) and (role,deployment.get('id')) in CHOSEN.get()
+
+
+def pins_route(raw,deployment):
+    """A role pin names this route (its connection, a catalog name), whatever effort the session then runs at."""
+    if not raw:return False
+    from .inference_allowlist import parse
+    connection=(deployment.get('native_model_choice') or {}).get('connection',deployment.get('id',''))
+    return parse(raw)[0][1]==str(connection).lower()
+
+
+def refusal(role,deployment,*names):
+    """The one test for a start of `role` on `deployment`: the routing profile's SWITCHED_OFF_FOR_ROLE (an Unavailable)
+    when the profile switches the route off for the role and the user did not choose it, else None. Automatic paths
+    ask it to skip a route and take the next one; admit() asks it to refuse a start. The user's choice is a pin of this
+    route for the role whose entries decide, --coordinator for a conversation, or user_choice(); anything else is
+    automatic, including a path nobody marked. A conversation starts on tare auto's implementer tiers, so it reads the
+    implementer entries and an implementer pin. `names`: what the caller calls the route, for the message."""
+    from .environment import PROFILE_ROLES,switched_off
+    profile_role='implementer' if role=='coordinator' else role
+    if not deployment or profile_role not in PROFILE_ROLES:return None
+    off=switched_off(profile_role,deployment,*names)
+    if not off or (role,deployment.get('id')) in CHOSEN.get() or pins_route(current().pin(profile_role),deployment):
+        return None
+    raw=current().coordinator
+    if role=='coordinator' and raw:
+        from .inference_allowlist import matches,parse
+        try:
+            if matches(raw,deployment.get('id',''),deployment,effort=parse(raw)[0][2][0]):return None
+        except (ValueError,KeyError,TypeError,IndexError):pass
+    return off
+
+
+def admit(deployment,role):
+    """The routing profile's backstop, where every new start of a role passes (session_role for sessions; the Work
+    implementer, vision, heads-up, research, explore and tare-copilot calls that start no session call it themselves):
+    a start refusal() refuses raises SWITCHED_OFF_FOR_ROLE."""
+    off=refusal(role,deployment)
+    if off:raise ValueError('SWITCHED_OFF_FOR_ROLE: '+str(off)+'. No model call was made.')
+
+
+def started(custody,deployment,role):
+    """admit() for a new session: its own route and role, or those of a provider switch it continues
+    (continuation.json, whose route the user chose only when the switch says so)."""
+    from pathlib import Path
+    from .environment import profile
+    if not profile()[0]:return  # nothing is switched off: nothing to read
+    path=Path(custody)/'continuation.json'
+    if path.is_file():
+        from .native_agent import read_json
+        request=read_json(path,1024*1024)
+        if request.get('chosen'):return
+        parent=read_json(Path(request['source'])/'native-agent.json',1024*1024)
+        deployment=request['deployment']
+        role='coordinator' if parent.get('conversation_flow') else parent['config']['role']
+    admit(deployment,role)
+
+
+@contextmanager
 def for_role(role):
     token=ROLE.set(role)
     try:yield
@@ -425,7 +500,11 @@ def session_role(function):
                     if role=='coordinator' and candidate.get('native_coordinator_pin'):
                         from .coordinator_policy import eligible
                         eligible(candidate)
-                return function(config,deployment,custody,*args,**kwargs)
+                if not kwargs.get('resume'):  # a resumed session started when its route was allowed: it continues
+                    started(custody,candidate,role)
+                token=CHOSEN.set(frozenset())  # a session it starts is a new start of its own
+                try:return function(config,deployment,custody,*args,**kwargs)
+                finally:CHOSEN.reset(token)
     return run
 
 

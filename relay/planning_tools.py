@@ -351,6 +351,7 @@ class PlanningTools:
         mode = 'TEMPORARY_POLICY' if scope.changes('planner') else ('CONFIGURED' if chosen else 'AUTOMATIC')
         visited = []
         skipped = []
+        refused = None  # the coordinator's chosen planner, switched off for the planner by the routing profile
         for name,frozen in candidates:
             visited.append(name)
             current, _ = (deepcopy(frozen), None) if name == 'session-planner' else available(name)
@@ -361,6 +362,12 @@ class PlanningTools:
                 if chosen:
                     raise ValueError('This planner uses another provider or allowance. Enable other providers in /delegation.')
                 skipped.append((name, 'OTHER_PROVIDER_ALLOWANCE'))
+                continue
+            from .execution_scope import refusal
+            if off := refusal('planner', frozen, name):  # a pin returned above; a model's choice is not the user's
+                skipped.append((name, 'SWITCHED_OFF_FOR_ROLE'))
+                if name == chosen:
+                    refused = off
                 continue
             from .planner_policy import effective
             try:
@@ -373,6 +380,8 @@ class PlanningTools:
             if trace is not None:
                 trace.update(mode=mode, visited=visited, skipped=skipped)
             return name, value
+        if refused:
+            raise ValueError('SWITCHED_OFF_FOR_ROLE: '+refused+'. No model call was made.')
         if scope.only == 'local':
             raise ValueError('No local planner is available in local-only mode ('+(
                 ', '.join(n+': '+why for n, why in skipped) or 'no local model is admitted as planner')+

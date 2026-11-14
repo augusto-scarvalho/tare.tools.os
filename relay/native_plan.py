@@ -1,6 +1,7 @@
 """Bounded PLAN composition: native roles produce claims; Backlog owns mutation."""
 from . import execution_resources
 import argparse
+from contextlib import contextmanager
 import copy
 from datetime import datetime, timezone
 import hashlib
@@ -292,6 +293,14 @@ def _select_route(choice, role, reason, producer=None):
         'executed_decision': executed_decision('AUTOMATIC', deployment.get('id'), considered, skipped)}
 
 
+@contextmanager
+def named(planner, reviewer):
+    """A planner or reviewer named on the command line (the picker's model) is the user's own choice for its role."""
+    from .execution_scope import user_choice
+    with user_choice('planner', planner), user_choice('plan-auditor', reviewer):
+        yield
+
+
 def requested_profile(name, path):
     from .native_catalog import select
     if name == 'auto':
@@ -494,7 +503,11 @@ def generate(root, graph_path, directory, instruction, deployment, *, unlimited=
         else:
             reviewer, review_route = select_route(reviewer_deployment, 'plan-auditor',
                 'OPERATOR_SELECTED_REVIEWER', deployment)
-        if reviewer is None and reviewer_deployment is None:
+        from .execution_scope import refusal
+        off = reviewer is None and reviewer_deployment is None and refusal('plan-auditor', deployment)
+        if off:  # a planner reviewing itself does plan-auditor work: off for that role, the plan has no reviewer
+            review_route = {'reason': 'SWITCHED_OFF_FOR_ROLE', 'message': str(off), 'selection_attempt': review_route}
+        elif reviewer is None and reviewer_deployment is None:
             # Default is a preference, not a new gate on the existing PLAN
             # contract. Explicit "auto" still requires an independent route.
             reviewer = deployment
@@ -511,8 +524,10 @@ def generate(root, graph_path, directory, instruction, deployment, *, unlimited=
     directory.mkdir(parents=True, exist_ok=False)
     save_json(directory/'routes.json', routes)
     if deployment is None or reviewer is None:
+        why = routes.get('plan-auditor', {}).get('message')
         return record_result(directory, {'status': 'ROUTE_BLOCKED', 'plan_dir': str(directory),
-            'reason': 'No eligible '+('planner' if deployment is None else 'plan-auditor'), 'routes': routes,
+            'reason': 'No eligible '+('planner' if deployment is None else 'plan-auditor')+(': SWITCHED_OFF_FOR_ROLE: '
+                      + why if deployment is not None and why else ''), 'routes': routes,
             'model_calls': 0}, invocation_id, root, graph_path)
     review_limits = stage_limits(reviewer, 'plan', unlimited=unlimited)
     inputs = directory/'input'; inputs.mkdir()
@@ -683,10 +698,12 @@ def main(argv=None):
         if args.replan:
             if args.preview or args.apply or args.retry_review or args.graph or not args.instruction:
                 raise ValueError('Use --replan PREVIOUS_PLAN --instruction CORRECTION, with optional new deployment and limits.')
-            result = replan(args.replan, args.plan or plan_root()/uuid4().hex, args.instruction,
-                requested_profile(args.deployment, args.native_deployment), unlimited=args.unlimited, cancellation=cancellation,
-                reviewer_deployment=requested_profile(args.reviewer_deployment, args.reviewer_profile) if args.reviewer_deployment or args.reviewer_profile else None,
-                invocation_id=args.invocation_id)
+            planner = requested_profile(args.deployment, args.native_deployment)
+            reviewer = requested_profile(args.reviewer_deployment, args.reviewer_profile) if args.reviewer_deployment or args.reviewer_profile else None
+            with named(planner if args.deployment or args.native_deployment else None, reviewer):
+                result = replan(args.replan, args.plan or plan_root()/uuid4().hex, args.instruction,
+                    planner, unlimited=args.unlimited, cancellation=cancellation, reviewer_deployment=reviewer,
+                    invocation_id=args.invocation_id)
         elif args.retry_review:
             if (not args.plan or args.preview or args.apply or args.instruction or args.graph
                     or args.deployment or args.native_deployment or args.reviewer_deployment or args.reviewer_profile or args.unlimited):
@@ -703,11 +720,13 @@ def main(argv=None):
         else:
             if not args.instruction:
                 raise ValueError('Describe the demand with --instruction.')
-            result = generate(args.root, args.graph or relay_mesh.WORK_GRAPH_FILE,
-                args.plan or plan_root()/uuid4().hex, args.instruction,
-                requested_profile(args.deployment, args.native_deployment), unlimited=args.unlimited, cancellation=cancellation,
-                reviewer_deployment=requested_profile(args.reviewer_deployment, args.reviewer_profile) if args.reviewer_deployment or args.reviewer_profile else None,
-                invocation_id=args.invocation_id, findings=args.findings, findings_sha256=args.findings_sha256)
+            planner = requested_profile(args.deployment, args.native_deployment)
+            reviewer = requested_profile(args.reviewer_deployment, args.reviewer_profile) if args.reviewer_deployment or args.reviewer_profile else None
+            with named(planner if args.deployment or args.native_deployment else None, reviewer):
+                result = generate(args.root, args.graph or relay_mesh.WORK_GRAPH_FILE,
+                    args.plan or plan_root()/uuid4().hex, args.instruction,
+                    planner, unlimited=args.unlimited, cancellation=cancellation, reviewer_deployment=reviewer,
+                    invocation_id=args.invocation_id, findings=args.findings, findings_sha256=args.findings_sha256)
         print(json.dumps(result, ensure_ascii=False) if args.format == 'json' else render(result))
         return 0 if result['status'] in {'REVIEWED', 'APPLIED', 'ALREADY_APPLIED'} else 2
     except (ValueError, OSError, KeyError) as exc:

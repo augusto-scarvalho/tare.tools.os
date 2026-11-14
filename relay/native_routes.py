@@ -77,6 +77,7 @@ def _ranked(role, producer=None, *, check_resources=False):
         from .execution_scope import constrained
         deployment=constrained(deployment,role)
         from .environment import allows, older
+        from .execution_scope import refusal
         if not allows(deployment)[0]:
             decision['reason'] = 'NOT_USED_ON_THIS_MACHINE'; continue
         if older(deployment):
@@ -106,6 +107,8 @@ def _ranked(role, producer=None, *, check_resources=False):
                 credentials[key] = False
         if key and not credentials[key]:
             decision['reason'] = 'CREDENTIAL_UNAVAILABLE'; continue
+        if refusal(role, deployment, row['id'], row.get('native_catalog', row['id'])):
+            decision['reason'] = 'SWITCHED_OFF_FOR_ROLE'; continue  # after the rules, before a live probe
         if check_resources:
             try:
                 facts = route_facts.collect(deployment, live=True, cache=fact_cache, evidence=evidence)
@@ -188,8 +191,7 @@ def _reviewers(producer, role='auditor', *, check_resources=True):
     from .execution_scope import current
     if current().changes(role) or rules.get('auditor_selection', 'cross_vendor_frontier') == 'cross_vendor_frontier':
         return ranked(role, producer, check_resources=check_resources)
-    chosen = (pick_auditors(producer, rules['auditor']) if check_resources
-              else pick_auditors(producer, rules['auditor'], probe=False))
+    chosen = pick_auditors(producer, rules['auditor'], probe=check_resources, role=role)
     author = identity(producer, 'implementer')
     return [deployment for _, deployment in chosen], {
         'schema': 'tare.tools/native-role-selection/1', 'role': role,

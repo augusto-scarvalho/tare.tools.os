@@ -168,6 +168,7 @@ class ResearchTools:
         # returned to the coordinator instead of silently starting another CLI.
         from .turn_engine import usage_limited
         from .environment import allows
+        from .execution_scope import refusal
         from .native_routes import executed_attempt, executed_decision, settle_attempt
         visited, skipped = [], []
         launched = None
@@ -180,8 +181,14 @@ class ResearchTools:
             visited.append(name)
             deployment = frozen['routes'][name]
             if not allows(deployment)[0] or usage_limited(deployment):
-                skipped.append((name, 'DISABLED_OR_USAGE_LIMITED'))
-                failures.append({'route': name, 'reason': 'Disabled or quota-limited.'})
+                blocked = 'DISABLED_OR_USAGE_LIMITED', 'Disabled or quota-limited.'
+            elif off := refusal('researcher', deployment, name):
+                blocked = 'SWITCHED_OFF_FOR_ROLE', 'SWITCHED_OFF_FOR_ROLE: ' + off  # a route the coordinator names too
+            else:
+                blocked = None
+            if blocked:
+                skipped.append((name, blocked[0]))
+                failures.append({'route': name, 'reason': blocked[1]})
                 if launched is not None:
                     decision(launched)
                     save_json(job/'receipt.json', receipt)

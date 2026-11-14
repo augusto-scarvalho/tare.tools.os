@@ -423,13 +423,15 @@ def available(name, probe=True):
     return deployment, None
 
 
-def choose(tiers, start=0, probe=True):
-    """First available route at or after tier `start`: (tier, name, deployment, skipped)."""
+def choose(tiers, start=0, probe=True, role='implementer'):
+    """First available route at or after tier `start` that the routing profile leaves on for `role`:
+    (tier, name, deployment, skipped)."""
+    from .execution_scope import refusal
     skipped = []
     for tier in range(start, len(tiers)):
         for name in tiers[tier]:
             deployment, reason = available(name) if probe else available(name, probe=False)
-            if deployment is not None:
+            if deployment is not None and not (reason := refusal(role, deployment, name)):
                 return tier, name, deployment, skipped
             row = {'route': name, 'reason': str(reason) if isinstance(reason, Unavailable) else reason}
             if isinstance(reason, Unavailable):
@@ -441,18 +443,19 @@ def choose(tiers, start=0, probe=True):
 INITIAL_JEV_BYTES = 6000  # UTF-8, including question and tier descriptions; never truncate the task
 
 
-def initial_choice(tiers, text, start=0):
+def initial_choice(tiers, text, start=0, role='implementer'):
     """One hosted assessment for INITIAL only; policy and live availability retain execution authority.
 
     Tier labels are opaque policy positions, not a universal intelligence ranking. Only safe profile
     facts go to the judge, never endpoints, parameters, credential names or credential values.
     """
+    from .execution_scope import refusal
     eligible, exclusions, options = {}, [], {}
     for tier in range(start, len(tiers)):
         descriptions = []
         for name in tiers[tier]:
             deployment, why = available(name)
-            if deployment is None:
+            if deployment is None or (why := refusal(role, deployment, name)):
                 row = {'route': name, 'reason': (
                     why.diagnostic['message'] if isinstance(why, Unavailable) else str(why))}
                 if isinstance(why, Unavailable):
@@ -519,11 +522,11 @@ def initial_choice(tiers, text, start=0):
         decision['reason'] = 'jev_failed'
     # Reobserve credentials/quota/leases after classification. Keep order within the selected tier
     # and its existing fallback ladder; the gateway still owns final GPU admission.
-    tier, name, chosen, skipped = choose(tiers, selected)
+    tier, name, chosen, skipped = choose(tiers, selected, role=role)
     if chosen is None and selected != next(iter(eligible)):
         # Advice is not an eligibility constraint. If its entire ladder disappeared, try
         # the owner's full policy again, including earlier tiers that can still execute.
-        tier, name, chosen, fallback_skipped = choose(tiers, start)
+        tier, name, chosen, fallback_skipped = choose(tiers, start, role=role)
         skipped += fallback_skipped
         decision['source'] = 'policy'
         decision['reason'] = 'suggested_ladder_unavailable'
@@ -540,9 +543,11 @@ def initial_choice(tiers, text, start=0):
     return tier, name, chosen, decision['exclusions']
 
 
-def resolve_auto(deployment, start=0, request=None):
+def resolve_auto(deployment, start=0, request=None, role='implementer'):
     """Resolve tare auto once. A supplied initial request permits bounded hosted advice; legacy callers
-    and successor routing keep deterministic selection. Save the choice for the existing fallback ladder."""
+    and successor routing keep deterministic selection. Save the choice for the existing fallback ladder.
+    `role`: the role the route will run in, whose routing profile entries decide (tare auto's tiers are the
+    implementer's; /research reads the researcher's)."""
     from .execution_scope import current, pinned, ROLE
     if current().pin(ROLE.get()):
         if start:
@@ -552,8 +557,8 @@ def resolve_auto(deployment, start=0, request=None):
         return deployment
     from .execution_scope import execution_tiers
     tiers = execution_tiers(policy()['implementer'])
-    tier, name, chosen, skipped = (initial_choice(tiers, request, start) if request is not None
-                                    else choose(tiers, start))
+    tier, name, chosen, skipped = (initial_choice(tiers, request, start, role=role) if request is not None
+                                    else choose(tiers, start, role=role))
     if chosen is None:
         raise UnschedulableError('tare_auto_no_route_available', skipped)
     keep = {k: deployment[k] for k in ('native_model_choice',) if k in deployment}
@@ -820,9 +825,10 @@ def successor(status, *, per_message_limits):
     return 'continue'
 
 
-def next_auto(saved):
+def next_auto(saved, role='implementer'):
     """The deployment after a blocked tare auto session (its tier + 1 onward), else None. When its account ran out of
-    usage, another route of the same tier comes first (available() skips that account's routes)."""
+    usage, another route of the same tier comes first (available() skips that account's routes). `role` as in
+    resolve_auto."""
     if saved.get('native_coordinator_pin'):
         return None  # An explicit conversation pin is never a fallback ladder.
     from .execution_scope import current, ROLE
@@ -833,7 +839,7 @@ def next_auto(saved):
     try:
         # The current invocation's environment already carries inherited policy.
         # Saved deployment metadata must not re-enable an old temporary switch.
-        return resolve_auto(saved, selection['tier'] + (0 if usage_limited(saved) else 1))
+        return resolve_auto(saved, selection['tier'] + (0 if usage_limited(saved) else 1), role=role)
     except ValueError:
         return None
 
@@ -1097,16 +1103,24 @@ def route_effort(deployment):
 def ask_cli(prompt, *, images=(), search=False, timeout=240, trace=None):
     """One read-only, toolless-on-disk Codex CLI exchange on the cheapest route: (answer, route).
 
-    An optional `trace` dict receives the visited routes, known skips and the dispatched deployment."""
-    visited, skipped = [], []
+    An optional `trace` dict receives the visited routes, known skips and the dispatched deployment. It serves
+    /research's web search, so the routing profile's researcher entries decide whether a route may answer."""
+    from .execution_scope import admit
+    visited, skipped, refused = [], [], None
     for name in HELPER_ROUTES:
         visited.append(name)
         deployment, _ = available(name)
-        if deployment is not None:
+        if deployment is None:
+            skipped.append((name, 'UNAVAILABLE'))
+            continue
+        try:  # this call starts no session: the routing profile's backstop is the gate (a researcher pin wins)
+            admit(deployment, 'researcher')
             break
-        skipped.append((name, 'UNAVAILABLE'))
+        except ValueError as exc:
+            refused = str(exc)
+            skipped.append((name, 'SWITCHED_OFF_FOR_ROLE'))
     else:
-        raise RuntimeError('no Codex CLI route is available')
+        raise RuntimeError('no Codex CLI route is available' + (': ' + refused if refused else ''))
     with tempfile.TemporaryDirectory(prefix='tare-serve-cli-') as folder:
         answer = Path(folder)/'answer.txt'
         argv = [deployment['native_cli']['executable'], *(['--search'] if search else []), 'exec',
@@ -1149,10 +1163,11 @@ def describe_files(paths, emit):
     if not paths:
         return ''
     emit(f'\n> `image` {len(paths)} attached')
+    from .execution_scope import refusal
     failures = []
     for name in policy().get('vision', DEFAULT_POLICY['vision']):
         deployment, why = available(name)
-        if deployment is None:
+        if deployment is None or (why := refusal('vision', deployment, name)):
             failures.append(f'{name}: {why}')
             continue
         try:
@@ -1184,6 +1199,8 @@ def see(deployment, prompt, paths, timeout=240):
 
     Codex takes images with -i; Claude takes them as base64 blocks in stream-json input; the AGY CLI accepts only
     text blocks, so a view_file-only agent opens them from a folder added to its workspace."""
+    from .execution_scope import admit
+    admit(deployment, 'vision')  # the routing profile's backstop: this call starts no session
     cli, model = deployment['native_cli']['executable'], deployment['native_profile']['model']
     endpoint = deployment['native_profile']['endpoint']
     with tempfile.TemporaryDirectory(prefix='tare-vision-') as folder:
@@ -1280,7 +1297,7 @@ def read_links(question, urls, emit, *, mode, max_pages, max_depth, fetch=None):
     """Pages read locally (Trafilatura) and summarized by the first available route, citing URLs."""
     from .native_installation import storage_root
     from .research import research
-    tier, name, deployment, skipped = choose(policy()['implementer'])
+    tier, name, deployment, skipped = choose(policy()['implementer'], role='researcher')
     if deployment is None:
         return None, 'tare: no route is available for /research: ' + json.dumps(skipped)
     emit(f'_tare /research · reading {len(urls)} link(s) with {name}_\n\n')
@@ -1364,14 +1381,15 @@ def with_effort(deployment, effort, *, at_least=False):
     return value
 
 
-def pick_auditors(implementer, names, *, probe=True):
+def pick_auditors(implementer, names, *, probe=True, role='auditor'):
     from .execution_scope import for_role
-    with for_role('auditor'):return _pick_auditors(implementer,names,probe=probe)
+    with for_role('auditor'):return _pick_auditors(implementer,names,probe=probe,role=role)
 
 
-def _pick_auditors(implementer, names, *, probe=True):
+def _pick_auditors(implementer, names, *, probe=True, role='auditor'):
     """[(name, deployment)] of independent auditors: never the implementer's model or bias domain
-    (landing policy AUDITOR_NOT_INDEPENDENT); another vendor first (CROSS_VENDOR_AUDITOR_PREFERRED)."""
+    (landing policy AUDITOR_NOT_INDEPENDENT); another vendor first (CROSS_VENDOR_AUDITOR_PREFERRED). `role` is the
+    routing profile's: plan-auditor for a plan review, auditor for a change."""
     from .execution_scope import current
     if current().pin('auditor'):
         from .execution_scope import pinned
@@ -1380,12 +1398,13 @@ def _pick_auditors(implementer, names, *, probe=True):
     if names is None:
         from .native_routes import reviewers
         try:
-            selected, _ = reviewers(implementer,check_resources=probe)
+            selected, _ = reviewers(implementer,role=role,check_resources=probe)
         except (ValueError, KeyError, OSError):
             return []  # Unknown producer identity cannot establish independence.
         return [(value['id'], value) for value in selected]
     from .landing_policy import LandingPolicyRejected
     from .work_audit import identity
+    from .execution_scope import refusal
     try:
         author = identity(implementer, 'implementer')
     except (LandingPolicyRejected, KeyError):
@@ -1403,8 +1422,8 @@ def _pick_auditors(implementer, names, *, probe=True):
                 remap_required=True
                 continue  # The operator's temporary family override requires a new route.
         deployment, _ = available(name) if probe else available(name, probe=False)
-        if deployment is None:
-            continue
+        if deployment is None or refusal(role, deployment, name):
+            continue  # the owner's order list does not override the routing profile
         try:
             auditor = identity(deployment, 'auditor')
         except (LandingPolicyRejected, KeyError):
@@ -1414,7 +1433,7 @@ def _pick_auditors(implementer, names, *, probe=True):
         found.append((bool(author) and auditor.vendor == author.vendor, name, deployment))
     found.sort(key=lambda item: item[0])
     if not found and remap_required:
-        return _pick_auditors(implementer,None,probe=probe)
+        return _pick_auditors(implementer,None,probe=probe,role=role)
     return [item[1:] for item in found]
 
 

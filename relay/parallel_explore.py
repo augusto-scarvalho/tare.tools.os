@@ -261,18 +261,21 @@ def main(argv=None):
             if not args.batch or any((args.root, args.question, args.workers is not None,
                     args.deployment, args.native_deployment, args.unlimited)):
                 raise ValueError('Resume/show takes only the saved batch path.')
-            directory = args.batch
+            directory, named = args.batch, None
         else:
             from .native_catalog import select
             directory = args.batch or batch_root()/uuid4().hex
-            create(directory, args.root or Path.cwd(), args.question,
-                select(args.deployment, args.native_deployment, role='explorer'),
+            deployment = select(args.deployment, args.native_deployment, role='explorer')
+            named = deployment if args.native_deployment or args.deployment not in (None, 'auto') else None
+            create(directory, args.root or Path.cwd(), args.question, deployment,
                 workers=args.workers if args.workers is not None else 1, unlimited=args.unlimited, limits=limits)
         from . import native_signals
         from tare_tools_agent_runtime import CancellationToken
+        from .execution_scope import user_choice
         cancel = CancellationToken(); previous = native_signals.install(cancel)
         try:
-            result = inspect(directory) if args.show else execute(directory, cancellation=cancel, invocation_id=args.invocation_id)
+            with user_choice('explorer', named):  # the user's own explorer (the routing profile's backstop)
+                result = inspect(directory) if args.show else execute(directory, cancellation=cancel, invocation_id=args.invocation_id)
         finally:
             native_signals.restore(previous)
         print(json.dumps(result, ensure_ascii=False) if args.format == 'json' else render(result))

@@ -224,8 +224,9 @@ def decode(rows, endpoint, *, prior_web=False):
 
 
 def research(deployment, question, *, root, control, max_calls, refresh=False, on_dispatch=None):
-    from .execution_scope import require
+    from .execution_scope import admit, require
     require(deployment,'researcher')
+    admit(deployment, 'researcher')  # the routing profile's backstop: a research connection is not a session
     if deployment['native_profile']['protocol'] != 'vendor-cli':
         from .research_api import research as api_research
         return api_research(deployment, question, root=root, control=control, max_calls=max_calls,
