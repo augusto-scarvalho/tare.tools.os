@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The guide of the Console credit reading says what Anthropic's terms say and do not say about it (read 2026-11-14), so the owner of a machine weighs it before turning the reading on.
 - Console credit reading: after a failed attempt (the browser was closed, the Console asked to sign in) the next TUI start tries again once an hour has passed, not twelve.
 - `tare quota --sync` reads the Anthropic monthly API credit (balance, grant and expiry) from the Console's Billing page through the Claude in Chrome extension, with one read-only Haiku call on the Claude subscription (about a cent of quota, half a minute), and states it for `anthropic-api` with its exact window: it counts tare's spend down until it lapses and feeds the "used first" surplus. Opt-in and off by default: `tare setup --console-credit on` also reads it when the TUI starts, at most every 12 hours; a failed attempt leaves the last statement and shows as a note under the Claude API account in `tare quota`. `--set ... --renews` remains the way without it.
 - The minute between quota readings started by TUI demands counts from the last attempt too, not only from the last saved reading: a reading that failed saved nothing, so each demand would have started another.

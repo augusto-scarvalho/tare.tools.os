@@ -137,7 +137,15 @@ guessed. tare then counts its own spend down from the balance read, as for any s
 - **Fails.** The last statement stays. `tare quota` shows a failed last attempt as a note under the Claude API account.
   A credit past its expiry counts as lapsed until the next reading.
 - **Automatic.** Off until you turn it on: `tare setup --console-credit on` (`off` turns it off). When on, the console
-  reads the credit at start when the last attempt is over 12 hours old, never at each demand.
+  reads the credit at start when the last attempt is over 12 hours old (one hour after a failed one), never at each
+  demand.
+- **Anthropic's terms.** Yours to weigh before turning it on; this is what they say, not legal advice (read on
+  2026-11-14). The Commercial Terms, which govern the Console, have no clause on automated reading of its pages. The
+  Consumer Terms, which govern the Claude plan the extension runs on, forbid access "through automated or non-human
+  means" except with an API key "or where we otherwise explicitly permit it", and forbid scraping. No text says that
+  Anthropic's own Claude in Chrome reading your own signed-in page is that permission, and none says it is forbidden;
+  its documentation describes acting in sites you are signed in to, on your behalf. tare reads one section of one
+  page of your own account, clicks nothing, and never works around a sign-in page or a block.
 - **Without it.** `tare quota --set anthropic-api AMOUNT --renews DAY [GRANT]` stays the way to state the credit by hand.
 
 ## The saved readings
