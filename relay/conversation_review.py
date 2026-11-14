@@ -684,12 +684,8 @@ def available(producer, owner=None):
 def same_family(producer, auditor):
     """The auditor shares the implementer's model or bias domain. An unknown identity cannot be selected
     (pick_auditors refuses it) and leaves an earlier retried route as it was."""
-    from .work_audit import identity
-    try:
-        author, reviewer = identity(producer, 'implementer'), identity(auditor, 'auditor')
-    except (ValueError, KeyError, TypeError, OSError):
-        return False
-    return author.model_id == reviewer.model_id or author.bias_domain == reviewer.bias_domain
+    from .work_audit import independence
+    return independence(producer, auditor) == 'AUDITOR_NOT_INDEPENDENT'
 
 
 def reference_sources_current(config,sources):
@@ -901,6 +897,11 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
     label = NOT_INDEPENDENT if (admitted or pinned) and same_family(producer, candidates[0][1]) else None
     if label and not admitted:
         return {'verdict': 'INCONCLUSIVE', 'reason': NO_AUDITOR}  # a local-only review retried outside that mode
+    # A same-vendor auditor's verdict counts as any other's (no audit_label, which asks the user); it is only named.
+    from .landing_policy import SAME_VENDOR_AUDIT
+    from .work_audit import independence
+    vendor = ({'independence': SAME_VENDOR_AUDIT}
+              if independence(producer, candidates[0][1]) == 'SAME_VENDOR_NOT_INDEPENDENT' else {})
     from . import execution_resources as resources
     calls = resources.child_calls(audit_call_budget(len(changed), len(diff.splitlines())))
     maximum = owner.state['limits']['max_model_calls']
@@ -934,7 +935,7 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
            'deployment': deployment,
            'request_sha256': identity, 'invocation': owner.invocation_id,
            'calls_reserved': calls, 'amount_committed': allowance, 'context_contract': contract,
-           **({'audit_label': label} if label else {})}
+           **({'audit_label': label} if label else {}), **vendor}
     if coverage_previous:
         row.update(coverage_continuation_of=identity,**({'coverage_read_before':coverage_reads} if coverage_reads is not None else {}))
     save_json(path, row, max_bytes=MAX_RECEIPT_BYTES)  # durable intent, not evidence of dispatch
@@ -1117,7 +1118,7 @@ def review(owner, task, tree, producer, unit, changed, checks, control, *, _unav
         result=apply_satellite_obligations(result,satellites)
         result.update(route=name, session=str(job/'session'),
                       actor={'role':'auditor','model':deployment['native_profile']['model'],'route':name},
-                      **({'audit_label': label} if label else {}))
+                      **({'audit_label': label} if label else {}), **vendor)
         result = context_failure(job, row, result)
         row.update(status='FINISHED', result=result)
         save_json(path, row, max_bytes=MAX_RECEIPT_BYTES)

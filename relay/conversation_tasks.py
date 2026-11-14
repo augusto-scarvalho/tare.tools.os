@@ -279,7 +279,8 @@ def delivery_view(value, *, config=None, unit=None):
         result['project_graph_binding'] = graph_binding(config or {})
     if (value.get('audit') or {}).get('verdict') == 'INCONCLUSIVE' and not value.get('applied'):  # applied: the user's decision
         audit = value['audit']
-        result['reason'] = ('Audit ('+audit['audit_label']+') incomplete: ' if audit.get('audit_label') else 'Independent audit incomplete: ')+str(
+        label = audit.get('audit_label') or audit.get('independence')  # same family, or same vendor
+        result['reason'] = ('Audit ('+label+') incomplete: ' if label else 'Independent audit incomplete: ')+str(
             audit.get('failure_code') or audit.get('reason') or 'No accepted verdict')
         result['next'] = 'Explain the concrete audit failure and stop. The candidate was not applied. '
         result['next'] += 'Name audit.actor.model as the selected auditor. A local call/context/time limit is not evidence of exhausted provider quota. '
@@ -306,7 +307,8 @@ def delivery_view(value, *, config=None, unit=None):
             result['next']+='make one bounded correction now using demand relation=correct and implement, removing only unnecessary copied review data. '
             result['next']+='Use diff_projection sizes and largest_changed_values. Do not drop required evidence or retry the unchanged packet with another model.'
         elif audit.get('requires_candidate_revision') and audit.get('summary') and audit.get('findings'):
-            result['reason']='The completed '+('same-family (not independent)' if audit.get('audit_label') else 'independent')+' review identified required candidate corrections.'
+            result['reason']='The completed '+('same-family (not independent) review' if audit.get('audit_label') else
+                'review ('+audit['independence']+')' if audit.get('independence') else 'independent review')+' identified required candidate corrections.'
             result['next']='Preserve the verdict, findings, remaining obligations and saved plan. Make one bounded correction now with demand relation=correct and implement. The host carries the full review to the implementer. An unchanged candidate does not authorize another audit.'
     elif value.get('verdict') == 'NOT_VERIFIED':
         result['next'] = 'Preserve this demand and plan. Diagnose checks_after, then use relation=correct and implement '

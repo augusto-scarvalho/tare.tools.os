@@ -29,9 +29,17 @@ or a known balance; missing cost remains unknown. The selection itself uses no L
 
 **Use my auditor routes** retains an explicit list and the independence gate.
 Previously saved auditor lists stay manual until their owner chooses automatic
-review. An independently registered lineage of the same vendor remains a fallback
-when no eligible different vendor is available; the receipt and preview identify
-that case. Another vendor is a diversity policy, not proof of unbiased judgment.
+review. An independent auditor is one of another vendor. Another bias domain of
+the same vendor (Opus for Fable, or AGY's Claude for Claude Code) is chosen only
+when no auditor of another vendor is eligible, whatever the tier, priority or a
+subscription/API preference; in an owner's list another vendor also goes first.
+Such an audit runs and its verdict counts as before, but it is never called
+independent: its selection reason is `SAME_VENDOR_NOT_INDEPENDENT`, and the
+conversation audit lines, the review result, a Work's result and the preview say
+"audited by the same vendor: not independent" (a plan review: "reviewed by the
+same vendor: not independent"). A pinned or explicitly named auditor of the same
+vendor is your choice: it runs, with that label (`landing_policy.independence`).
+Another vendor is a diversity policy, not proof of unbiased judgment.
 Saved formal-plan reviews and their retries retain the original exact profile;
 changing settings never resamples an accepted or rejected verdict.
 

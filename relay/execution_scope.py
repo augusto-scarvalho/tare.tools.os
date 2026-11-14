@@ -180,8 +180,9 @@ def pinned(role,producer=None):
     if role in ('auditor','plan-auditor'):
         from .work_audit import identity
         if producer is None:raise ValueError('Pinned auditor requires the actual producer.')
+        from .landing_policy import independence
         author=identity(producer,'implementer');auditor=identity(live,'auditor')
-        if (author.model_id==auditor.model_id or author.bias_domain==auditor.bias_domain) and not same_family_admitted():
+        if independence(author,auditor)=='AUDITOR_NOT_INDEPENDENT' and not same_family_admitted():
             raise ValueError('Pinned auditor is not independent; consult tare models --role auditor.')
     return live
 

@@ -425,7 +425,9 @@ def retry_review(directory, *, cancellation=None, invocation_id=None):
                 save_json(custody/'review-artifact.json', artifact)
                 save_json(custody/'review.json', {'proposal_sha256': view['proposal_sha256'],
                     'review': artifact['payload'],
-                    'independence': 'Separate session and registered model lineage exclusion.' if selection else
+                    'independence': 'Separate session; '+routes['plan-auditor']['independence']+'.'
+                        if (routes or {}).get('plan-auditor', {}).get('independence') else
+                        'Separate session and registered model lineage exclusion.' if selection else
                         'Separate session; cross-model independence is not attested by PLAN.'})
             attempt.update(status=audited['status'], reason=audited.get('reason'), failure_code=audited.get('failure_code'))
         except Exception as exc:
@@ -520,6 +522,11 @@ def generate(root, graph_path, directory, instruction, deployment, *, unlimited=
             review_route = {**route(deployment, 'SEPARATE_SESSION_NO_INDEPENDENT_REVIEWER'),
                             'independent': False, 'selection_attempt': review_route,
                             'executed_decision': actual}
+        else:
+            from .landing_policy import SAME_VENDOR_REVIEW
+            from .work_audit import independence
+            if reviewer is not None and independence(deployment, reviewer) == 'SAME_VENDOR_NOT_INDEPENDENT':
+                review_route['independence'] = SAME_VENDOR_REVIEW
         routes['plan-auditor'] = review_route
     directory.mkdir(parents=True, exist_ok=False)
     save_json(directory/'routes.json', routes)
@@ -628,7 +635,8 @@ def render_summary(result):
         lines += ['- Check: '+criterion for criterion in node['exit_criteria']]
     review = (result.get('review') or {}).get('review')
     if review:
-        lines += ['', 'Reviewer: '+review['summary']]
+        vendor = ((result.get('routes') or {}).get('plan-auditor') or {}).get('independence')
+        lines += ['', 'Reviewer'+(' ('+vendor+')' if vendor else '')+': '+review['summary']]
         lines += ['- '+str(item) for item in [*review.get('findings', []), *review.get('remaining', [])]]
     lines += ['', 'Apply adds proposed tasks. Work execution requires separate admission.']
     return '\n'.join(lines)
@@ -641,7 +649,8 @@ def render(result):
     lines = [result['status'], proposal['instruction'], '', 'Graph: '+proposal['graph_path'],
         'Base revision: '+proposal['base_revision'], 'Preview SHA-256: '+result['proposal_sha256']]
     for role, selected in (result.get('routes') or {}).items():
-        lines.append(role+': '+selected['deployment']+' · '+selected['model']+' · '+selected['reason'])
+        lines.append(role+': '+selected['deployment']+' · '+selected['model']+' · '+selected['reason']
+                     +(' · '+selected['independence'] if selected.get('independence') else ''))
     if not result.get('routes'):
         lines.append('Role selection history unavailable for this legacy plan.')
     if proposal.get('predecessor'):

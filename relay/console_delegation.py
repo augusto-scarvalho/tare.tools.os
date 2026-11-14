@@ -231,9 +231,10 @@ def plan_reviewer_label(profile=None):
                     'Connect another provider in /setup, or require an independent reviewer for a formal plan.')
         value = candidates[0]
         card = describe(value['id'], value)
-        cross = identity(planner, 'implementer').vendor != identity(value, 'auditor').vendor
+        from .landing_policy import SAME_VENDOR_REVIEW, independence
+        cross = independence(identity(planner, 'implementer'), identity(value, 'auditor')) == 'INDEPENDENT'
         return ('Plan review: '+card['label']+' · '+card['route']['label']+
-                (' · another provider' if cross else ' · same provider, different lineage')+
+                (' · another provider' if cross else ' · '+SAME_VENDOR_REVIEW)+
                 '\nFor formal plans; checked again before dispatch. Delegated planning advice stays with the coordinator.')
     except (ValueError, OSError, KeyError, TypeError):
         return 'Plan review: unavailable. Open Review settings to check the configured routes.'

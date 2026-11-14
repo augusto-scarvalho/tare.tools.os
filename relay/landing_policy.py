@@ -290,6 +290,21 @@ def write_evidence(path: str | Path, evidence: LandingEvidence) -> None:
     _write_create_only(Path(path), evidence.canonical_bytes, "EVIDENCE_ALREADY_EXISTS")
 
 
+SAME_VENDOR_AUDIT = "audited by the same vendor: not independent"
+SAME_VENDOR_REVIEW = "reviewed by the same vendor: not independent"
+
+
+def independence(implementer: AgentIdentity, auditor: AgentIdentity) -> str:
+    """How `auditor` stands to `implementer`, the one rule every selection and label uses (owner, 2026-11-14):
+    AUDITOR_NOT_INDEPENDENT (same model id or bias domain: refused), INDEPENDENT (another vendor), or
+    SAME_VENDOR_NOT_INDEPENDENT (another bias domain of the same vendor: it runs and its verdict counts, but it is
+    never called independent and never chosen while an eligible auditor of another vendor exists)."""
+
+    if auditor.model_id == implementer.model_id or auditor.bias_domain == implementer.bias_domain:
+        return "AUDITOR_NOT_INDEPENDENT"
+    return "INDEPENDENT" if auditor.vendor != implementer.vendor else "SAME_VENDOR_NOT_INDEPENDENT"
+
+
 def evaluate_admission(
     evidence: LandingEvidence,
     implementer: AgentIdentity,
@@ -324,13 +339,12 @@ def evaluate_admission(
     cross_vendor = False
     audit_counted = False
     if auditor is not None:
-        same_model = auditor.model_id == implementer.model_id
-        same_bias = auditor.bias_domain == implementer.bias_domain
-        independent = not same_model and not same_bias
+        kind = independence(implementer, auditor)
+        independent = kind == "INDEPENDENT"  # a same-vendor audit counts below, but is not independent
         cross_vendor = auditor.vendor != implementer.vendor
         if policy.audit_mode == "off":
             pass
-        elif not independent:
+        elif kind == "AUDITOR_NOT_INDEPENDENT":
             reason_codes.append("AUDITOR_NOT_INDEPENDENT")
         else:
             audit_counted = True

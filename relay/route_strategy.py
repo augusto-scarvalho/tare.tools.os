@@ -141,8 +141,8 @@ def observe(node, implementer, audit, policy, cancellation, root, assess, *, aut
             # implementer, never against the implementation baseline.
             auditors, _ = ranked('auditor', producer, check_resources=True)
             reviewer = proposed_route(configured['auditor'], auditors)
-            author, critic = identity(producer, 'implementer'), identity(reviewer, 'auditor')
-            if author.model_id == critic.model_id or author.bias_domain == critic.bias_domain:
+            from .landing_policy import independence
+            if independence(identity(producer, 'implementer'), identity(reviewer, 'auditor')) == 'AUDITOR_NOT_INDEPENDENT':
                 raise ValueError('AUDITOR_NOT_INDEPENDENT')
             profiles = {'implementer': producer, 'auditor': reviewer}
             from .delivery_comparison import strategy_profile

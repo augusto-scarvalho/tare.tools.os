@@ -134,7 +134,8 @@ def test_same_vendor_different_bias_is_allowed_but_cross_vendor_is_recommended()
     )
 
     assert verdict.verdict == "ADMITTED"
-    assert verdict.payload["audit"]["independent"] is True
+    assert verdict.payload["audit"]["counted"] is True
+    assert verdict.payload["audit"]["independent"] is False  # counted, but never called independent
     assert verdict.payload["audit"]["cross_vendor"] is False
     assert verdict.payload["warnings"] == ["CROSS_VENDOR_AUDITOR_PREFERRED"]
 
