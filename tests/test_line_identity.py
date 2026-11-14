@@ -2,6 +2,7 @@
 always decides; any other id keeps today's refusal, and no automatic role picks a model for its line."""
 from copy import deepcopy
 import json
+from pathlib import Path
 
 import pytest
 
@@ -121,7 +122,10 @@ def realized():
             variant = deepcopy(value)  # as model_choices.realization sets an AGY level
             variant['native_profile']['model'] = variant['model'] = model
             yield name+'@'+level, variant
-    base = deployment(json.loads(TEMPLATES.read_text(encoding='utf-8'))['codex-cli'], r'C:\fixture\codex.exe')
+    # An absolute path on every platform: the profile check refuses a relative executable, and a Windows path is
+    # relative on POSIX. The file need not exist; identity does not read it.
+    base = deployment(json.loads(TEMPLATES.read_text(encoding='utf-8'))['codex-cli'],
+                      str(Path(__file__).resolve().parent/'fixture-codex.exe'))
     for name, value in sorted(expand({'codex-cli': base}, CODEX).items()):
         yield 'expand:'+name, native_catalog.canonical_identity(value)
 
