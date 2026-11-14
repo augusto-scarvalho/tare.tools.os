@@ -152,7 +152,8 @@ nothing else. It keeps the four providers' prices in `<storage>/serve/reference-
 cannot use there (not a number, or later than the clock, which may have moved back) holds nothing back. A failed,
 empty or reshaped reading keeps the last good one; one that parses, with a priced model for each provider, replaces
 it whole, so a model it no longer lists is unknown until a later reading lists it again. With no reading, nothing
-changes. `tare models` never reads it from the network.
+changes. Nothing in this reading can stop the TUI or `tare serve` from starting; `tare setup --refresh` says in its
+output when it could not read the prices. `tare models` never reads it from the network.
 
 ## Verification
 

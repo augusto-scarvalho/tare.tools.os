@@ -444,3 +444,61 @@ def test_the_spend_report_says_its_amounts_are_reference_priced(reading):
     report = SpendModel(Adapter(), policy=SpendPolicy('1', 'USD'), tariff=tariff, journal=ConversationLog(),
                         contract=UsageContract('anthropic-exclusive', 'fixture')).report()
     assert report['reference_sources'] == [tariff.source] and report['reference_prices_read'] == ['2026-11-14']
+
+
+@pytest.mark.parametrize('error', [TypeError, RuntimeError])
+def test_a_remote_file_that_breaks_the_parser_keeps_the_last_good_reading(reading, monkeypatch, error):
+    def broken(data):
+        raise error('an answer shaped as nobody foresaw')
+    monkeypatch.setattr(prices, 'parse_reading', broken)
+    assert prices.refresh_reading(NOW + 2*86400, fetch=models_dev) == reading
+
+
+def test_an_assertion_inside_a_fetch_stub_is_never_swallowed(keys):
+    def stub():
+        raise AssertionError('this test expected no read')
+    with pytest.raises(AssertionError, match='expected no read'):
+        prices.refresh_reading(NOW, fetch=stub)
+
+
+def broken_refresh(**kwargs):
+    raise RuntimeError('a bug in the refresh')
+
+
+def test_serve_start_survives_a_refresh_that_raises_and_still_reads_the_quota(monkeypatch):
+    from relay import native_serve, provider_quota
+    quota = []
+    monkeypatch.setattr('relay.cli_discovery.discover', lambda: [])
+    monkeypatch.setattr(prices, 'refresh_reading', broken_refresh)
+    monkeypatch.setattr(provider_quota, 'refresh', lambda: quota.append(1))
+    native_serve.discover_clis()
+    assert quota == [1]
+
+
+def test_tui_start_survives_a_refresh_that_raises_and_still_reads_the_quota(tmp_path, monkeypatch):
+    """Textual ends the whole app on an exception in this worker (exit_on_error, not overridden here)."""
+    import asyncio
+    from relay import provider_quota
+    from relay.native_console import WorkConsole
+    from test_native_console import FakeBackend
+    quota = []
+    monkeypatch.setattr('relay.cli_discovery.discover', lambda: [])
+    monkeypatch.setattr('relay.cli_discovery.locate', lambda endpoint: None)
+    monkeypatch.setattr(prices, 'refresh_reading', broken_refresh)
+    monkeypatch.setattr(provider_quota, 'refresh', lambda: quota.append(1))
+
+    async def scenario():
+        monkeypatch.delenv('TARE_CLI_DISCOVERY', raising=False)  # the interactive entry's start-up worker
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant', discover_clis=True)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await app.workers.wait_for_complete(); await pilot.pause()
+            assert quota == [1] and app.is_running
+    asyncio.run(scenario())
+
+
+def test_setup_refresh_reports_a_failed_reading_and_still_saves_the_choices(keys, monkeypatch, capsys):
+    from relay import environment
+    monkeypatch.setattr(prices, 'refresh_reading', broken_refresh)
+    assert environment.main(['--use', 'api', '--refresh']) == 0
+    assert 'tare setup: reference prices not read: RuntimeError: a bug in the refresh' in capsys.readouterr().err
+    assert environment.read()['api_providers']['use'] is True

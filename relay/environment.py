@@ -675,8 +675,9 @@ def main(argv=None):
             try:  # the models.dev reference prices, if not read today; no model call, no key sent
                 from .provider_prices import refresh_reading
                 refresh_reading(setup=value)  # with this command's --use / --no-use, not the saved choices
-            except OSError:  # storage it cannot write: the last good reading stays (network failures stay inside)
-                pass
+            except Exception as exc:  # said in the output, like a gateway that does not answer; the choices still save
+                print(f'tare setup: reference prices not read: {type(exc).__name__}: {str(exc)[:200]}; '
+                      'the last reading stays.', file=sys.stderr)
         if args.credential:
             value = store_credential(value, args.credential, sys.stdin)
         if args.old_models:

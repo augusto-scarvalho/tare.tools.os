@@ -2991,8 +2991,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator-facing entry points; Runtime retains session execution.",
-      "size_bytes": 27646,
-      "sha256": "5ff8204cae59a48a2783ab6d0067433a8b553755296f0a7d84c4510c2af745fc"
+      "size_bytes": 27643,
+      "sha256": "db1c36e4433fa1a1674c05ca5929bc4939b52633ae45bb29b805a78f7d6b51a7"
     },
     {
       "name": "copilot_mode.py",
@@ -3421,8 +3421,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator views and draft composition; Runtime retains execution authority.",
-      "size_bytes": 40690,
-      "sha256": "b4a689565d3a243cde428168d05433a7a3bbff36eb4fb8f002e99eb284384ec8"
+      "size_bytes": 40687,
+      "sha256": "70a2ad7a8cde4d5f07c49ada95a831d89abe4efd8ef01ca819b8d4d45d56ccaa"
     },
     {
       "name": "adaptive_routes.py",
@@ -3561,8 +3561,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator interaction, workflow composition and evidence inspection; execution ports remain in Kernel and Runtime.",
-      "size_bytes": 25112,
-      "sha256": "811f8a22dcb45865f375057b120b20468fe69e9df91bdbdec4a7af13e05153c0"
+      "size_bytes": 25206,
+      "sha256": "ae467bebefd6c4fecdcf042ac9c361bf7bccf31515e9f44d88ccbfb574e1665c"
     },
     {
       "name": "route_admission.py",
@@ -3821,8 +3821,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 36148,
-      "sha256": "aed4aaea0d08ed1fa585bf65e1b8522b4cd3a871cf65c2c37b9a818d96c51c03"
+      "size_bytes": 36303,
+      "sha256": "9bb564f909082ba4899a3d09d0f76b1a8facd280956556eb5c1506c267e15e2a"
     },
     {
       "name": "console_setup.py",

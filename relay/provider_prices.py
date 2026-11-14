@@ -205,13 +205,12 @@ def refresh_reading(now=None, fetch=None, setup=None):
     from .relay_io import write_json_atomic
     attempt.parent.mkdir(parents=True, exist_ok=True)
     write_json_atomic(attempt, {'at': now})
-    try:
-        data = (fetch or fetch_models_dev)()
+    try:  # reading and parsing a third party's file is one step: whatever fails in it, the last good reading stays
+        models = parse_reading((fetch or fetch_models_dev)())
     except AssertionError:
         raise  # a failed check (a test's, or tare's own) is a bug, never an outage
-    except Exception:  # the network read (DNS, TLS, HTTP, a cut or malformed answer): the last good reading stays
-        data = None
-    models = parse_reading(data)
+    except Exception:  # the network (DNS, TLS, HTTP, a cut), or an answer shaped as nobody foresaw: no reading now
+        models = None
     if not models:
         return saved
     day, before = datetime.fromtimestamp(now, timezone.utc).date().isoformat(), (saved or {}).get('models', {})
