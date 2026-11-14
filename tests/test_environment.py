@@ -228,6 +228,24 @@ def test_an_internet_openai_provider_is_not_labelled_local_gpu():
     assert describe('x', {'native_profile': profile})['route']['label'] == 'Local GPU'
 
 
+def test_a_proof_first_writes_the_cli_routes_and_reads_the_prices_the_tui_start_would(machine, monkeypatch, capsys):
+    # 2026-11-14: right after an update, tare setup --prove claude-fable-5-2-cli answered native_deployment_unknown
+    # (only the TUI and tare serve ran discovery) and the API routes' cost lines said the price was unknown.
+    import io
+    from relay import cli_discovery, provider_prices
+    known, done = {}, []
+    route = {**CODEX, 'id': 'new-cli-model'}
+    monkeypatch.setattr(turn_engine, 'available', lambda name: (known.get(name), None if name in known else 'unknown'))
+    monkeypatch.setattr(cli_discovery, 'discover', lambda: done.append('discover') or known.update({'new-cli-model': route}))
+    monkeypatch.setattr(provider_prices, 'refresh_reading', lambda: done.append('prices'))
+    monkeypatch.setattr('sys.stdin', io.StringIO(''))
+    assert environment.main(['--prove', 'new-cli-model']) == 1  # not confirmed: nothing spent
+    assert done == ['discover', 'prices'] and 'new-cli-model: one minimal call' in capsys.readouterr().out
+    done.clear()
+    environment.main(['--prove', 'new-cli-model'])
+    assert done == ['prices']  # a name that resolves needs no discovery
+
+
 def test_a_proof_says_its_cost_first_and_spends_only_when_agreed(machine, monkeypatch, capsys):
     import io
     from relay import native_generation
