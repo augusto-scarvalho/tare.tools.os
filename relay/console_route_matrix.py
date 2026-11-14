@@ -16,7 +16,7 @@ ROLES = {'implementer': 'Implementer', 'explorer': 'Explorer', 'planner': 'Plann
          'auditor': 'Auditor', 'researcher': 'Researcher', 'vision': 'Vision', 'heads_up': 'Heads-up'}
 VENDORS = {'claude': 'Anthropic', 'gpt': 'OpenAI', 'gemini': 'Google'}
 SOURCE_LABELS = {'claude-code': 'Claude Code', 'codex': 'Codex', 'agy': 'AGY', 'opencode-sub': 'OpenCode sub',
-                 'opencode-api': 'OpenCode API', 'api': 'API', 'openrouter': 'OpenRouter', 'bedrock': 'Bedrock',
+                 'opencode-api': 'OpenCode API', 'api': 'Vendor API', 'openrouter': 'OpenRouter', 'bedrock': 'Bedrock',
                  'local': 'Local', 'other-api': 'Other API'}
 PAY_PER_TOKEN = ('opencode-api', 'api', 'openrouter', 'bedrock', 'other-api')
 NO_ROUTE = {'implementer': 'tare auto has no route (tare_auto_no_route_available)',
