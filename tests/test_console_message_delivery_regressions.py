@@ -151,6 +151,7 @@ def test_late_failure_after_transcript_reset_is_silent(tmp_path):
     started,release=Event(),Event()
     class Backend(FakeBackend):
         def message_observations(self,selection):
+            if started.is_set():return []  # only the old view's read fails; a later read is the new view's
             started.set()
             assert release.wait(8)
             raise OSError('old view read failure')
@@ -164,8 +165,13 @@ def test_late_failure_after_transcript_reset_is_silent(tmp_path):
             output=app.query_one(Transcript)
             output.clear()
             app.query_one('#prompt',TextArea).load_text('A new unsent draft')
+            # A poll that arrives during the read is coalesced into a second read, of the new view (on a slow
+            # runner the timer does this by itself; a backend that failed every read then showed that failure).
+            app._message_refresh_pending=True
+            shown=[];notice=output.delivery_notice  # every notice, also one the second read would clear
+            output.delivery_notice=lambda text:(shown.append(text) if text else None,notice(text))[1]
             release.set();await read
-            assert not output.message_rows and output.delivery_note is None
+            assert not shown and not output.message_rows and output.delivery_note is None
             assert app.query_one('#prompt',TextArea).text=='A new unsent draft'
     try:asyncio.run(scenario())
     finally:release.set()
