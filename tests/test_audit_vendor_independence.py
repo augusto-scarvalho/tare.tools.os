@@ -130,6 +130,75 @@ def test_a_same_vendor_plan_review_carries_the_review_wording(pool, monkeypatch,
     assert f'Reviewer ({SAME_VENDOR_REVIEW}): Adequate' in native_plan.render_summary(result)
 
 
+def admission_train(tmp_path, cross=False, saved=None, mode='required'):
+    """A train with a passed audit's receipts and its saved verdict; `saved` edits the saved payload."""
+    import hashlib
+    from test_landing_policy import evidence, identity as attested
+    from relay.landing_policy import LandingPolicy, evaluate_admission, write_evidence, write_identity
+    from relay.train_execution import canonical_json_bytes
+    train = tmp_path/'TRAIN-SMART-ONE'; train.mkdir()
+    impl, auditor = ((attested('implementer', 'gpt-5.6-sol', 'codex', 'gpt-5.6-sol'),
+                      attested('auditor', 'gemini-3.7', 'google-cli', 'gemini-3.7-flash-high')) if cross else
+                     (attested('implementer', 'claude-opus-4.8', 'claude', 'claude-opus-4-8'),
+                      attested('auditor', 'fable-5', 'claude', 'claude-fable-5')))
+    report = train/'AUDIT_REPORT.md'; report.write_text('PASS\n', encoding='utf-8')
+    verdict = evaluate_admission(evidence(), impl, policy=LandingPolicy(mode, True), auditor=auditor,
+                                 audit_passed=True, audit_sha256=hashlib.sha256(report.read_bytes()).hexdigest())
+    write_identity(train/'IMPLEMENTER_IDENTITY.json', impl); write_identity(train/'AUDITOR_IDENTITY.json', auditor)
+    write_evidence(train/'LANDING_EVIDENCE.json', evidence())
+    payload = json.loads(verdict.canonical_bytes)
+    if saved:
+        saved(payload)
+    (train/'ADMISSION_VERDICT.json').write_bytes(canonical_json_bytes(payload))
+    return train, verdict
+
+
+def land(train):
+    """The landing gate's recompute (relay_mesh.admission_valid calls exactly this)."""
+    from test_landing_policy import ROSTER
+    from relay.landing_policy import verify_admission_bundle
+    return verify_admission_bundle(train, roster_path=ROSTER, train_id=train.name, descriptor_sha256='1'*64,
+                                   candidate_sha256='2'*64, audit_passed_validator=lambda: True)
+
+
+def resume(train, monkeypatch, mode='required'):
+    """A resumed Work prepares its admission verdict again over the saved one."""
+    from relay import relay_mesh
+    monkeypatch.setattr(relay_mesh, 'TRAINS_DIR', train.parent)
+    monkeypatch.setattr(relay_mesh, 'audit_valid', lambda *a: (True, 'fixture'))
+    return relay_mesh.prepare_admission_verdict(train.name, audit_mode=mode)
+
+
+def test_a_same_vendor_verdict_saved_before_the_change_still_resumes_and_lands(tmp_path, monkeypatch):
+    train, verdict = admission_train(tmp_path, saved=lambda p: p['audit'].update(independent=True))
+    saved = (train/'ADMISSION_VERDICT.json').read_bytes()
+    assert verdict.payload['audit']['independent'] is False and b'"independent":true' in saved
+    assert resume(train, monkeypatch).sha256 == verdict.sha256
+    assert land(train).sha256 == verdict.sha256 and (train/'ADMISSION_VERDICT.json').read_bytes() == saved
+
+
+@pytest.mark.parametrize('cross,mode,saved', [
+    (True, 'required', lambda p: p['audit'].update(independent=False)),  # the other direction, for another vendor
+    (False, 'off', lambda p: p['audit'].update(independent=True)),  # an audit that did not count
+    (False, 'required', lambda p: p['audit'].update(independent=True, cross_vendor=True)),
+    (False, 'required', lambda p: p['audit'].update(independent=True, counted=False)),
+    (False, 'required', lambda p: (p['audit'].update(independent=True), p.update(warnings=[]))),
+    (False, 'required', lambda p: p['audit'].update(independent=True, sha256='0'*64))])
+def test_no_other_saved_verdict_shape_is_accepted(tmp_path, monkeypatch, cross, mode, saved):
+    from relay.landing_policy import LandingPolicyRejected
+    train, _ = admission_train(tmp_path, cross=cross, saved=saved, mode=mode)
+    with pytest.raises(LandingPolicyRejected, match='VERDICT_RECOMPUTE_MISMATCH'):
+        land(train)
+    with pytest.raises(LandingPolicyRejected, match='VERDICT_CREATE_ONLY_CONFLICT'):
+        resume(train, monkeypatch, mode)
+
+
+def test_a_new_same_vendor_verdict_round_trips(tmp_path, monkeypatch):
+    train, verdict = admission_train(tmp_path)
+    assert verdict.verdict == 'ADMITTED' and verdict.payload['warnings'] == ['CROSS_VENDOR_AUDITOR_PREFERRED']
+    assert land(train).sha256 == verdict.sha256 == resume(train, monkeypatch).sha256
+
+
 def test_a_work_run_shows_a_same_vendor_audit_that_counted():
     from relay.work_console import render
     shown = render('run', {'work_id': 'one', 'status': 'SETTLED', 'stage': 'landing', 'audit': {

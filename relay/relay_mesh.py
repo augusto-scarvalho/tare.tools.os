@@ -541,7 +541,7 @@ def prepare_admission_verdict(
     if verdict.verdict == "ADMITTED":
         path = train_dir / landing_policy.VERDICT_FILE
         if path.exists():
-            if landing_policy.read_verdict(path).canonical_bytes != verdict.canonical_bytes:
+            if not landing_policy.same_verdict(landing_policy.read_verdict(path), verdict):
                 raise landing_policy.LandingPolicyRejected("VERDICT_CREATE_ONLY_CONFLICT")
         else:
             landing_policy.write_verdict(path, verdict)

@@ -2127,8 +2127,8 @@
     {
       "name": "landing_policy.py",
       "path": "tare.tools.os/relay/landing_policy.py",
-      "size_bytes": 22001,
-      "sha256": "a9b1f9a25c0c67743fe8ece34ff172a3a2061f228266227b32d4b72cfec6d222",
+      "size_bytes": 22810,
+      "sha256": "fb881eae26050b3de105a6111cc4f4e305d42e7db66ac222f82b9969cef75d2a",
       "summary": "Deterministic smart admission with optional independent cross-model audit.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -2367,8 +2367,8 @@
     {
       "name": "relay_mesh.py",
       "path": "tare.tools.os/relay/relay_mesh.py",
-      "size_bytes": 87989,
-      "sha256": "6417f9e8f3c3b1c758e9d4ced83230a9c4147423d8bd1cc355e653a31201108b",
+      "size_bytes": 87988,
+      "sha256": "68467dab1461aed256442fe8a7eae2206eaac63d00401a366b711ee8d13379aa",
       "summary": "tare.tools Multi-Agent Relay Mesh (MARM) Core Engine v3.0 (TRAIN-06)",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
