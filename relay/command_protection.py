@@ -26,7 +26,7 @@ from .action_model_assessment import TareActionClassifier, TareActionReviewer, T
 from .command_permission import UNREVIEWED, unreviewed as allowed_this_turn, yolo
 from . import sandbox_secrets
 from .windows_isolation import windows_isolation_factory
-from .worker_wait import steady
+from .worker_wait import remove, steady
 
 REVIEWS = ('auto', 'tare', 'codex', 'both')
 BACKENDS = ('mxc', 'codex')
@@ -278,7 +278,7 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
             raise ActionRefused('Command review context exceeds 8 KiB; use a smaller demand.')
         return value
     root=Path(next(iter(config['repositories'].values()))).resolve(strict=True)
-    scratch=Path(custody)/'command-tmp';scratch.mkdir(exist_ok=True)
+    scratch=Path(custody)/'command-tmp'  # made by each binding, deleted when it closes
     journal=NativeJournal(Path(custody)/'command-reviews.jsonl')
     policy_text=json.dumps({'project':str(root),'writable':config['writable'],'protection':options},sort_keys=True)
     context='';context_sha=''
@@ -312,9 +312,15 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         capabilities,control,binding=session['capabilities'],session['control'],session['binding']
         if host_checks and set(capabilities.names)-{'read','verify'}:
             raise ValueError('Host check metadata requires read/verify-only capabilities.')
+        windows=sys.platform=='win32'
+        # A program that asks the environment for its data folder (Godot: APPDATA) gets this private profile's, laid
+        # out as Windows lays it out, never the user's. LOCALAPPDATA stays: inside the sandbox Windows replaces it with
+        # the container's own folder, <LOCALAPPDATA>\Packages\<container>\AC, and TEMP with its Temp, which exist only
+        # under the real one (measured 2026-11-14). Linux: HOME is this folder and XDG's defaults follow it.
+        profile={'APPDATA':str(scratch/'AppData'/'Roaming')} if windows else {}
         environment=isolated_child_environment({'TEMP':str(scratch),'TMP':str(scratch),
             'USERPROFILE':str(scratch),'HOME':str(scratch),'PYTHONDONTWRITEBYTECODE':'1',
-            'PYTHONUTF8':'1','PYTHONIOENCODING':'utf-8'})
+            'PYTHONUTF8':'1','PYTHONIOENCODING':'utf-8',**profile})
         # pytest's Windows tempfile retry loop treats sandbox-denied mkdir as a
         # name collision. Keep its cache in the admitted scratch directory.
         # Deep session custody plus pytest fixture/lock names can exceed MAX_PATH.
@@ -329,7 +335,6 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
                                                '--basetemp='+str(test_scratch/'tests')])
         # Linux (bubblewrap): these scratch folders and HOME are bound read-write at their own paths, over the
         # sandbox's own empty /tmp when they are in /tmp. Its loopback works: no shim there.
-        windows=sys.platform=='win32'
         if windows:
             # Both Windows backends deny loopback, where socket.socketpair (and so asyncio) would wait forever; this
             # sitecustomize gives Python an AF_UNIX pair instead. Codex's launcher passes the same environment on.
@@ -675,11 +680,42 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
                     before_effect()
                     return effect()
             gate=ConditionalExecutionReview()
+        for folder in (scratch,*map(Path,profile.values())):
+            folder.mkdir(parents=True,exist_ok=True)
         # Reviews and the Kernel gate read time.monotonic: each command gets the session's control on it, built
         # after any wait for the user (the session's own clock may have stopped meanwhile).
         mediator=CommandActionMediator(Broker(),snapshot,lambda a,c:context,authorize,guard,
             lambda:steady(control),result_handler=result,reviewed_execution=gate)
-        mediator.close=weakref.finalize(mediator,lambda:(held.close(),test_directory.cleanup()))
+        unsettled=set()  # commands that started and whose process cleanup is not verified: they may still run
+        execute=mediator.execute
+        def tracked(facts,effect):
+            def run():
+                started=object();unsettled.add(started)
+                process=effect()
+                if isinstance(process,dict) and process.get('cleanup_verified') is True:
+                    unsettled.discard(started)
+                return process
+            return execute(facts,run)
+        mediator.execute=tracked
+        def close():
+            """The binding's scratch ends with it: its tare-test folder, and its private folder (command-tmp) unless a
+            command of it may still run or its session waits for the user's folder answer (a waiting worker resumes
+            with it). What could not be deleted is recorded in its journal."""
+            from .folder_access import pending
+            held.close()
+            try:
+                test_directory.cleanup()
+            except OSError:
+                pass  # retried below
+            keep=bool(unsettled) or pending(custody) is not None
+            left=[str(p) for p in (test_scratch,*([] if keep else [scratch])) if not remove(p)]
+            if left or unsettled:
+                try:
+                    append({'kind':'command_scratch_left','paths':left+[str(scratch)]*bool(unsettled),
+                            'cleanup_unverified':bool(unsettled)})
+                except Exception:
+                    pass  # a closing binding has nowhere else to say it
+        mediator.close=weakref.finalize(mediator,close)
         mediator.policy=policy  # what its commands may read: a denial outside it is the sandbox's (sandbox_blocked)
         cli_options=({'codex_executable':pinned_cli['executable'],'codex_sha256':options['codex_sha256']}
                      if options['backend']=='codex' else {})

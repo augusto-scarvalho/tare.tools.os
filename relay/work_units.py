@@ -1440,10 +1440,9 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                         git(root, 'worktree', 'remove', '--force', str(tree), timeout=120)
                 except (ValueError, subprocess.SubprocessError):
                     pass
-                if tree.exists():
-                    from .worker_wait import discard
-                    try:discard(tree)
-                    except OSError:row['candidate_cleanup']='deferred: files are still in use'
+                from .worker_wait import discard
+                try:discard(tree)  # what Git left of the tree, and its pytest temporary root
+                except OSError:row['candidate_cleanup']='deferred: files are still in use'
     if refused and not visited:
         result['reason'] = refused[0]
     result['rungs'] = len(receipt['rungs'])

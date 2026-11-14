@@ -197,6 +197,10 @@ def test_linux_binds_checks_in_bubblewrap_and_windows_binds_what_it_did(host, mo
     assert policy.denied == (str(host.root/'.env'),)
     # The check's environment: its home and temporary folders are the scratch it may write, never the user's.
     assert environment['HOME'] == environment['TEMP'] == environment['TMP'] == scratch
+    # Windows: its APPDATA too, laid out as a profile's. LOCALAPPDATA stays (the sandbox gives the command its own), as
+    # does all of Linux's (XDG follows HOME).
+    assert environment.get('APPDATA') == (os.environ.get('APPDATA') if linux else str(Path(scratch, 'AppData', 'Roaming')))
+    assert environment.get('LOCALAPPDATA') == os.environ.get('LOCALAPPDATA')
     assert environment['RUSTUP_HOME'] == str(rustup.resolve())
     shim = {'PYTHONPATH': str(protection.SANDBOX_PYTHON), 'TARE_SANDBOX_SOCKETPAIR': '1',
             'NODE_OPTIONS': '--preserve-symlinks --preserve-symlinks-main'}
@@ -267,6 +271,51 @@ def test_protected_pytest_temp_is_explicitly_inside_writable_scratch(host, monke
     assert captured[0]['policy'].enumerate_only==()
     mediator.close()
     assert not test_root.exists()
+
+
+def test_a_bindings_private_profile_ends_with_it_unless_a_command_may_still_run(host,monkeypatch,tmp_path):
+    from test_sandbox_secrets import folder_link
+    host.config['command_protection']=protection.prepare({'review':'codex','max_reviews':9},host.deployment)
+    captured=[];original=protection.windows_isolation_factory
+    monkeypatch.setattr(protection,'windows_isolation_factory',lambda **kw:captured.append(kw) or original(**kw))
+    scratch=host.custody/'command-tmp'
+    kept=[host.custody/'journal.jsonl',host.custody/'patch-1.diff',host.custody/'effect-receipts'/'r.json']
+    for path in kept:
+        path.parent.mkdir(exist_ok=True);path.write_text('the user may need it')
+    outside=tmp_path/'outside';outside.mkdir();(outside/'own.txt').write_text('not scratch')
+    def run(effect,link=False):
+        mediator=host.build()
+        environment=captured[-1]['environment']
+        # The command's APPDATA: its private folder, laid out as a profile, there before it runs.
+        assert environment['APPDATA']==str(scratch/'AppData'/'Roaming') and Path(environment['APPDATA']).is_dir()
+        (scratch/'AppData'/'Roaming'/'Godot').mkdir(exist_ok=True)
+        if link:
+            folder_link(outside,scratch/'link')
+        try:
+            mediator.execute(host.facts(str(len(captured))),effect)
+        except RuntimeError:
+            pass
+        mediator.close()
+    def boom():
+        raise RuntimeError('the process was lost')
+    def left():
+        return [r.event() for r in protection.NativeJournal(host.custody/'command-reviews.jsonl').snapshot().records
+                if r.event()['kind']=='command_scratch_left']
+    run(host.effect,link=True)
+    assert not scratch.exists() and (outside/'own.txt').read_text()=='not scratch'  # the link went, not its target
+    assert all(p.exists() for p in kept) and not left()
+    run(lambda:{'exit_code':None,'cleanup_verified':False})  # a command that may still run keeps it
+    assert (scratch/'AppData'/'Roaming'/'Godot').is_dir() and left()[-1]['cleanup_unverified'] is True
+    run(boom)
+    assert scratch.exists() and len(left())==2
+    request=host.custody/'folder-access-request.json'
+    request.write_text(json.dumps({'path':str(outside),'reason':'Read it.'}))
+    run(host.effect)  # a waiting worker resumes with its profile
+    assert scratch.exists() and len(left())==2
+    request.unlink()
+    run(host.effect)
+    assert not scratch.exists() and all(p.exists() for p in kept)
+    assert (host.custody/'command-reviews.jsonl').exists()
 
 
 def test_staged_recovery_is_only_enabled_for_the_hosts_private_candidate(host,monkeypatch,tmp_path):

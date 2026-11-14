@@ -126,7 +126,8 @@ def restore(worker, custody, config, unit):
 
 
 def release(root, worker):
-    """Remove a waiting worker that a new plan replaced: its Git worktree entry and private tree."""
+    """Remove a waiting worker that a new plan replaced: its Git worktree entry, private tree and the sandbox profile
+    its session kept while it waited (restore validated that session's folder)."""
     import subprocess
     from .challenger import git
     tree = Path(worker['tree'])
@@ -134,8 +135,8 @@ def release(root, worker):
         git(root, 'worktree', 'remove', '--force', str(tree), timeout=120)
     except (ValueError, subprocess.SubprocessError):
         pass
-    if tree.exists():
-        discard(tree)
+    discard(tree)
+    remove(Path(worker['session'])/'command-tmp')
 
 
 def _conversation_clock(state, follow_up, instant, message_id):
@@ -226,13 +227,33 @@ def resume_clock(root, state, follow_up, instant, *, message_id=None):
 
 
 def discard(tree):
-    """Delete only the validated private candidate, including Git's read-only object files on Windows."""
+    """Delete only the validated private candidate and the pytest temporary root beside it (work_units.pytest_scratch),
+    including Git's read-only object files on Windows. Either may already be gone."""
     from .native_installation import storage_root
     if tree.resolve().parent != storage_root().resolve()/'wt' or not re.fullmatch('[0-9a-f]{8}',tree.name):
         raise ValueError('Refuse to remove a directory outside the private candidate root.')
+    for folder in (tree, tree.resolve().parent/('.'+tree.name+'-pytest')):
+        if not remove(folder):
+            raise OSError('Files are still in use in '+str(folder))
+
+
+def remove(folder):
+    """Delete a folder tare made, read-only files included; a link inside it is removed, never followed (rmtree). One
+    retry, a moment later, for a file a process that just ended still held. True when the folder is gone."""
+    folder = Path(folder)
     def readonly(function,path,error):
-        if not isinstance(error,PermissionError) or not Path(path).resolve().is_relative_to(tree.resolve()):
+        if not isinstance(error,PermissionError) or not Path(path).resolve().is_relative_to(folder.resolve()):
             raise error
         os.chmod(path,0o700)
         function(path)
-    shutil.rmtree(tree,onexc=readonly)
+    for attempt in range(2):
+        try:
+            shutil.rmtree(folder,onexc=readonly)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            if not attempt:
+                time.sleep(1)
+        if not os.path.lexists(folder):
+            return True
+    return False

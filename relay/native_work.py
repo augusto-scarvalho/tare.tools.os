@@ -65,6 +65,7 @@ def implement_native(*, worktree, descriptor, node, session_id, control, journal
         specgraph_edit_context=specgraph_edit_context,
         project_context=NativeProjectContext(repositories=roots, work_id=descriptor.work_id,
                                              state_dirs=index_state_dirs))
+    mediation = None
     if command_protection is not None:
         from .command_protection import factory, saved, prepare
         if command_protection_deployment is None:
@@ -96,9 +97,10 @@ def implement_native(*, worktree, descriptor, node, session_id, control, journal
         from .command_protection import checks_factory
         config = {'repositories': roots, 'verifiers': verifiers,
                   'writable': {descriptor.execution_repository: list(descriptor.tracked_paths)}}
-        tools.bind_command_mediation(checks_factory(config, scratch, session_id, on_activity)(
+        mediation = checks_factory(config, scratch, session_id, on_activity)(
             session_id=session_id, binding=control.binding, control=control,
-            config=config, custody=scratch, scratch=scratch, capabilities=tools))
+            config=config, custody=scratch, scratch=scratch, capabilities=tools)
+        tools.bind_command_mediation(mediation)
     exploration_tools = None
     if delegation_state:
         from .delegation_tools import ExplorationTools
@@ -207,6 +209,8 @@ def implement_native(*, worktree, descriptor, node, session_id, control, journal
             run_options['receive_message'] = receive
         outcome = session.run(control, **run_options)
     finally:
+        if callable(getattr(mediation, 'close', None)):
+            mediation.close()  # the sandbox's scratch (command-tmp) ends with the attempt
         if activity is not None:
             activity.finish()
         try:

@@ -145,6 +145,14 @@ plan's edit paths and its own scratch, and cannot read secret files. No model re
 these checks and none of your review budget is spent: tare registered them, no model
 typed them. A project with an **Action review** keeps its own policy for them.
 
+That scratch is a private folder that is also the check's profile: its `HOME`,
+`USERPROFILE`, temporary folders and, on Windows, `APPDATA` (inside the sandbox Windows
+gives it its own `LOCALAPPDATA` too). tare deletes it when the check run, unit, Work
+attempt or session turn that made it ends, together with a candidate's pytest
+temporary folder. So a check starts with an empty profile: a tool that needs something
+from your `AppData` or home folder (a cache, a global configuration, a login) does not
+find it there.
+
 A check can need what the sandbox denies: a test that starts a server on
 `127.0.0.1`, or one that reads `.env`. When every failure of a check is such a
 denial, tare does not call it a failure; it asks **Run this check outside the
@@ -182,7 +190,11 @@ them, because its packages find their dependencies through the links' real
 folders: its Node checks still fail on the drive's root folder and ask, as does
 a Node older than 12, which rejects those options. **`cargo test`** builds and
 runs a crate with no dependencies in the sandbox; a crate with dependencies
-cannot fetch them there, so it asks. A check that does not finish within its
+cannot fetch them there, so it asks. A Godot project's scripts run there (measured
+2026-11-14, Godot 4.7.2: `--headless -s tests/smoke.gd`, its `user://` files in the
+private `APPDATA`); its `--import` does not, because Godot's editor needs more than the
+256 MiB a process may use in the sandbox, and fails (exit 3221225477) without asking.
+A check that does not finish within its
 time limit in the sandbox asks too, after that limit, and stays unjudged: its
 output is not kept, and a `node --test` file whose server stays open after the
 sandbox refused the test's own connection to it waits there until the limit.
