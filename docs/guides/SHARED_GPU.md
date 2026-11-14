@@ -96,9 +96,15 @@ undoes a broader "off". A screen for it in `/routes` comes next.
     `--deployment` or `--native-deployment`), for the role it runs in;
   - a provider switch you review in the TUI;
   - a role pin (`--implementer`, `--auditor`, ...) of that route, for that role (an auditor pin also covers plan
-    reviews);
+    reviews, and an implementer pin a conversation on tare auto); an automatic path takes a pinned route as the
+    backstop does, it does not skip it;
   - `--coordinator`, for the conversation;
-  - the explorer and overflow explorer you set in `/delegation`.
+  - the explorer and overflow explorer you set in `/delegation`, as routes: a launch restriction that leaves them in
+    place keeps them yours.
+
+  A Work that pauses before its implementer starts (`--wait-before-implement`) remembers whether you named the
+  implementer, so its resume in a later process starts it as yours. A flow or plan review retried in a later
+  process (`--retry-review`) does not: pin the route to run it.
 
   Everything else is automatic and skips the route: tare auto's tiers and the escalation to a next tier, the role
   tables, the planner, auditor, vision, researcher and heads-up lists, a saved `routing.json` (the order file does
@@ -107,9 +113,13 @@ undoes a broader "off". A screen for it in `/routes` comes next.
   model when a unit falls back to it (it was picked for the conversation, not as implementer), and a planner
   reviewing its own plan when no independent reviewer is left (that is plan-auditor work). A choice is for one
   route in one role: picking a model for the conversation or pinning it as planner does not make it your auditor.
+  The relay mesh's chairs have no choice of yours: the profile decides for its implementer, planner, auditor and
+  plan-auditor chairs (a chair that is off is skipped like an exhausted one); its bookkeeper and overseer are not
+  roles of the profile.
 - **Two layers.** Each automatic path skips a route that is off and takes the next one, and says why (below).
-  Behind them, every new start of a role checks again where it starts (a session, or a vision, heads-up,
-  research, `tare explore` or `tare-copilot` call): a start the user did not choose is refused with
+  Behind them, every new start of a role checks again where it starts (a session, a Work's implementer, or a
+  vision, heads-up, research, `tare explore` or `tare-copilot` call, an edited last message included): a start the
+  user did not choose is refused with
   `SWITCHED_OFF_FOR_ROLE`, so a path that forgot to skip refuses loudly instead of running the route. A session
   that already started goes on: a follow-up turn or a resumed session keeps its route. A fresh session is a new
   start and is checked: after an edited earlier message, a mode change, a spent budget or an escalation,

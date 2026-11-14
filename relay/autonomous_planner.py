@@ -178,6 +178,11 @@ def execute_vendor(prompt: str, vendor_id: str | None = None,
     registry-driven and fails closed for an unregistered vendor."""
     vendor_id = vendor_id or active_vendor()
     cfg = resolve_executor(vendor_id)
+    import vendor_chairs
+    off = vendor_chairs.chair_off(vendor_id, "planner")
+    if off:  # the routing profile switches this planner off: no session starts; the caller quarantines the message
+        log(f"[{vendor_id}] SWITCHED_OFF_FOR_ROLE: {off}")
+        return subprocess.CompletedProcess([vendor_id], 1, "", f"SWITCHED_OFF_FOR_ROLE: {off}")
     exe = cfg["binary"]()
     reuse = reuse_session and bool(cfg.get("supports_reuse"))
     if reuse:

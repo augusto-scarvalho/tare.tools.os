@@ -503,8 +503,8 @@ def generate(root, graph_path, directory, instruction, deployment, *, unlimited=
         else:
             reviewer, review_route = select_route(reviewer_deployment, 'plan-auditor',
                 'OPERATOR_SELECTED_REVIEWER', deployment)
-        from .environment import switched_off
-        off = reviewer is None and reviewer_deployment is None and switched_off('plan-auditor', deployment)
+        from .execution_scope import refusal
+        off = reviewer is None and reviewer_deployment is None and refusal('plan-auditor', deployment)
         if off:  # a planner reviewing itself does plan-auditor work: off for that role, the plan has no reviewer
             review_route = {'reason': 'SWITCHED_OFF_FOR_ROLE', 'message': str(off), 'selection_attempt': review_route}
         elif reviewer is None and reviewer_deployment is None:

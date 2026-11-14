@@ -76,7 +76,8 @@ def _ranked(role, producer=None, *, check_resources=False):
             decision['reason'] = 'PROFILE_OR_IDENTITY_INVALID'; continue
         from .execution_scope import constrained
         deployment=constrained(deployment,role)
-        from .environment import allows, older, switched_off
+        from .environment import allows, older
+        from .execution_scope import refusal
         if not allows(deployment)[0]:
             decision['reason'] = 'NOT_USED_ON_THIS_MACHINE'; continue
         if older(deployment):
@@ -106,7 +107,7 @@ def _ranked(role, producer=None, *, check_resources=False):
                 credentials[key] = False
         if key and not credentials[key]:
             decision['reason'] = 'CREDENTIAL_UNAVAILABLE'; continue
-        if switched_off(role, deployment, row['id'], row.get('native_catalog', row['id'])):
+        if refusal(role, deployment, row['id'], row.get('native_catalog', row['id'])):
             decision['reason'] = 'SWITCHED_OFF_FOR_ROLE'; continue  # after the rules, before a live probe
         if check_resources:
             try:

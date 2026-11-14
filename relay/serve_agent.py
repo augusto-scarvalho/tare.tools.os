@@ -20,7 +20,7 @@ import uuid
 
 from . import turn_engine as engine  # the shared turn engine; this module adapts VS Code chats
 from . import ci_watch
-from .environment import switched_off
+from .execution_scope import refusal
 
 
 
@@ -390,7 +390,7 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
             session = Path(current['session'])
             # A fresh session (a fork, a mode change, a retry) is a new start: the routing profile decides again; a
             # resumed one continues on the route it started on.
-            off = deployment is not None and switched_off('implementer', deployment, current['route'])
+            off = deployment is not None and refusal('implementer', deployment, current['route'])
             if deployment is None:  # the route went away: continue on the next available one
                 session, result = escalate(state, root, current['tier'], instruction, emit, emit_text, activity,
                                            why=reason, same_tier_ok=True, mode=mode)

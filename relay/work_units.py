@@ -476,8 +476,7 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
     user's own choice); `refused` collects why."""
     from .delegation import experiments
     from .turn_engine import available, gpu_taken, policy, with_effort
-    from .environment import switched_off
-    from .execution_scope import current, execution_tiers, is_pro, kind
+    from .execution_scope import current, execution_tiers, is_pro, kind, refusal
     temporary=current()
     if temporary.pin('implementer'):
         from .execution_scope import pin_selection
@@ -510,7 +509,7 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
         gpu_busy = gpu_busy or gpu_taken(why)
         if deployment is None:
             continue
-        if off := switched_off('implementer', deployment, name):
+        if off := refusal('implementer', deployment, name):
             if name == chosen and refused is not None:
                 refused.append('SWITCHED_OFF_FOR_ROLE: ' + off)
             continue  # as an unavailable route: the chosen one is not replaced unless its GPU was busy
@@ -525,7 +524,7 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
         # Separate implementer role, same explicitly selected model/allowance.
         # Explicit route choices never silently fall back to this profile.
         # The conversation's model was picked for the conversation, not as implementer: the profile still decides.
-        if off := switched_off('implementer', parent, parent['id']):
+        if off := refusal('implementer', parent, parent['id']):
             if refused is not None:
                 refused.append('SWITCHED_OFF_FOR_ROLE: ' + off)
             return

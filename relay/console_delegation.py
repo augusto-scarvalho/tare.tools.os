@@ -219,10 +219,10 @@ def plan_reviewer_label(profile=None):
         from .planning_tools import configured
         if profile is None and not configured():
             return 'Plan review: selected from the effective planner when needed. Implementation candidates require an independent auditor.'
-        from .environment import switched_off
+        from .execution_scope import refusal
         planner = load_deployment(profile) if profile else next(
             (value for name in policy()['planner'] if (value := available(name, probe=False)[0])
-             and not switched_off('planner', value, name)), None)
+             and not refusal('planner', value, name)), None)
         if planner is None:
             return 'Plan review: choose an available planner to see its reviewer.'
         candidates, _ = reviewers(planner, 'plan-auditor', check_resources=False)

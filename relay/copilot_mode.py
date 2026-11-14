@@ -33,14 +33,14 @@ _turns, _chats, _guard = {}, {}, threading.Lock()
 
 def routes(start=0):
     """(tier, name, deployment) of the policy's available routes that carry client tools, from tier `start`."""
-    from .environment import switched_off
+    from .execution_scope import refusal
     for tier, names in enumerate(engine.policy()['implementer']):
         if tier < start:
             continue
         for name in names:
             deployment, _ = engine.available(name)
             if deployment is not None and deployment['native_profile']['protocol'] == 'openai-chat' and \
-                    not switched_off('implementer', deployment, name):
+                    not refusal('implementer', deployment, name):
                 yield tier, name, deployment
 
 
@@ -63,15 +63,24 @@ def turn_for(messages, root):
     with _guard:
         chat = _chats.setdefault(key, {'floor': 0, 'contexts': {}})
         turn = _turns.get(key)
+        from .execution_scope import admit
         if turn is None or turn['requests'] != len(requests):
             tier, name, deployment = route_from(chat['floor'])
-            from .execution_scope import admit
             admit(deployment, 'implementer')  # the routing profile's backstop: a new message is a new start
             start, why = engine.snapshot(root)
             turn = _turns[key] = {'requests': len(requests), 'route': name, 'tier': tier, 'start': start, 'why': why,
                                   'request': requests[-1] if requests else '',
                                   'conversation': engine.conversation_request(requests), 'fix': None, 'fix_start': None,
                                   'chat': chat}
+        elif requests and requests[-1] != turn.get('admitted', turn['request']) and turn['route']:
+            # An edited last message keeps its turn (the count is the same), but it is a new start for the routing
+            # profile: its route is admitted again; a route gone away is left to today's handling. Its tool rounds
+            # are not admitted again.
+            from .environment import profile
+            deployment = engine.available(turn['route'])[0] if profile()[0] else None
+            if deployment is not None:
+                admit(deployment, 'implementer')
+            turn['admitted'] = requests[-1]
     return turn
 
 

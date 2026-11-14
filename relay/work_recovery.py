@@ -93,11 +93,14 @@ def resume_execution(train, descriptor, origin, receipt, stage, cancellation, *,
             raise ValueError('WORK_RESUME_LEASE_UNAVAILABLE')
     custody = Path(origin['implementation_custody'])
     resuming = (custody/'host.json').exists()
-    runner = create_runner(None if resuming else origin['native_deployment'], descriptor.work_id, custody,
-        **({'shared_context': origin['shared_context']} if 'shared_context' in origin else {}),
-        resume=resuming, limits=limits['implementation'], max_compactions=limits['max_compactions_per_stage'],
-        cancellation=cancellation, verification_timeout=limits['candidate_verification_seconds'], graph_path=relay_mesh.RELAY_ROOT / descriptor.work_graph, **protection_options,
-        **work_control.ports(train, origin, custody))
+    from .execution_scope import user_choice
+    # A Work paused before implementing starts its implementer now: still the user's choice if it was at creation.
+    with user_choice('implementer', origin['native_deployment'] if origin.get('implementer_chosen') else None):
+        runner = create_runner(None if resuming else origin['native_deployment'], descriptor.work_id, custody,
+            **({'shared_context': origin['shared_context']} if 'shared_context' in origin else {}),
+            resume=resuming, limits=limits['implementation'], max_compactions=limits['max_compactions_per_stage'],
+            cancellation=cancellation, verification_timeout=limits['candidate_verification_seconds'], graph_path=relay_mesh.RELAY_ROOT / descriptor.work_graph, **protection_options,
+            **work_control.ports(train, origin, custody))
     accepted = False
     held = False
     try:

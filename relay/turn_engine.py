@@ -426,12 +426,12 @@ def available(name, probe=True):
 def choose(tiers, start=0, probe=True, role='implementer'):
     """First available route at or after tier `start` that the routing profile leaves on for `role`:
     (tier, name, deployment, skipped)."""
-    from .environment import switched_off
+    from .execution_scope import refusal
     skipped = []
     for tier in range(start, len(tiers)):
         for name in tiers[tier]:
             deployment, reason = available(name) if probe else available(name, probe=False)
-            if deployment is not None and not (reason := switched_off(role, deployment, name)):
+            if deployment is not None and not (reason := refusal(role, deployment, name)):
                 return tier, name, deployment, skipped
             row = {'route': name, 'reason': str(reason) if isinstance(reason, Unavailable) else reason}
             if isinstance(reason, Unavailable):
@@ -449,13 +449,13 @@ def initial_choice(tiers, text, start=0, role='implementer'):
     Tier labels are opaque policy positions, not a universal intelligence ranking. Only safe profile
     facts go to the judge, never endpoints, parameters, credential names or credential values.
     """
-    from .environment import switched_off
+    from .execution_scope import refusal
     eligible, exclusions, options = {}, [], {}
     for tier in range(start, len(tiers)):
         descriptions = []
         for name in tiers[tier]:
             deployment, why = available(name)
-            if deployment is None or (why := switched_off(role, deployment, name)):
+            if deployment is None or (why := refusal(role, deployment, name)):
                 row = {'route': name, 'reason': (
                     why.diagnostic['message'] if isinstance(why, Unavailable) else str(why))}
                 if isinstance(why, Unavailable):
@@ -1105,7 +1105,7 @@ def ask_cli(prompt, *, images=(), search=False, timeout=240, trace=None):
 
     An optional `trace` dict receives the visited routes, known skips and the dispatched deployment. It serves
     /research's web search, so the routing profile's researcher entries decide whether a route may answer."""
-    from .environment import switched_off
+    from .execution_scope import admit
     visited, skipped, refused = [], [], None
     for name in HELPER_ROUTES:
         visited.append(name)
@@ -1113,14 +1113,14 @@ def ask_cli(prompt, *, images=(), search=False, timeout=240, trace=None):
         if deployment is None:
             skipped.append((name, 'UNAVAILABLE'))
             continue
-        refused = switched_off('researcher', deployment, name)
-        if not refused:
+        try:  # this call starts no session: the routing profile's backstop is the gate (a researcher pin wins)
+            admit(deployment, 'researcher')
             break
-        skipped.append((name, 'SWITCHED_OFF_FOR_ROLE'))
+        except ValueError as exc:
+            refused = str(exc)
+            skipped.append((name, 'SWITCHED_OFF_FOR_ROLE'))
     else:
-        raise RuntimeError('no Codex CLI route is available' + (': SWITCHED_OFF_FOR_ROLE: ' + refused if refused else ''))
-    from .execution_scope import admit
-    admit(deployment, 'researcher')  # the routing profile's backstop: this call starts no session
+        raise RuntimeError('no Codex CLI route is available' + (': ' + refused if refused else ''))
     with tempfile.TemporaryDirectory(prefix='tare-serve-cli-') as folder:
         answer = Path(folder)/'answer.txt'
         argv = [deployment['native_cli']['executable'], *(['--search'] if search else []), 'exec',
@@ -1163,11 +1163,11 @@ def describe_files(paths, emit):
     if not paths:
         return ''
     emit(f'\n> `image` {len(paths)} attached')
-    from .environment import switched_off
+    from .execution_scope import refusal
     failures = []
     for name in policy().get('vision', DEFAULT_POLICY['vision']):
         deployment, why = available(name)
-        if deployment is None or (why := switched_off('vision', deployment, name)):
+        if deployment is None or (why := refusal('vision', deployment, name)):
             failures.append(f'{name}: {why}')
             continue
         try:
@@ -1404,7 +1404,7 @@ def _pick_auditors(implementer, names, *, probe=True, role='auditor'):
         return [(value['id'], value) for value in selected]
     from .landing_policy import LandingPolicyRejected
     from .work_audit import identity
-    from .environment import switched_off
+    from .execution_scope import refusal
     try:
         author = identity(implementer, 'implementer')
     except (LandingPolicyRejected, KeyError):
@@ -1422,7 +1422,7 @@ def _pick_auditors(implementer, names, *, probe=True, role='auditor'):
                 remap_required=True
                 continue  # The operator's temporary family override requires a new route.
         deployment, _ = available(name) if probe else available(name, probe=False)
-        if deployment is None or switched_off(role, deployment, name):
+        if deployment is None or refusal(role, deployment, name):
             continue  # the owner's order list does not override the routing profile
         try:
             auditor = identity(deployment, 'auditor')

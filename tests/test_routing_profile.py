@@ -17,6 +17,8 @@ from test_native_plan import proposal  # noqa: F401
 from test_planning_tools import execution, planner, request, stub_child, wrap  # noqa: F401
 from test_research_tools import effect, host, report  # noqa: F401
 from test_serve_agent import copilot, runtime  # noqa: F401
+from test_work_resume import host as work_host  # noqa: F401
+from test_work_run import os_root  # noqa: F401
 
 
 def saved(off=None, on=None, **extra):
@@ -175,7 +177,8 @@ def test_a_malformed_profile_is_ignored_with_a_diagnostic_and_grants_nothing(poo
     assert environment.profile() == ({}, ())
 
 
-def test_an_empty_profile_or_one_for_other_roles_changes_no_choice(pool):
+def test_an_empty_profile_or_one_for_other_roles_decides_as_no_profile(pool):
+    # Against no profile on this branch; parity with origin/main is the offline identity probe's to show.
     install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
     roles = {'planner': None, 'implementer': None, 'explorer': None, 'auditor': 'openai-api', 'plan-auditor': 'gemini-api'}
     plain = {role: ranked(role, producer) for role, producer in roles.items()}
@@ -619,6 +622,7 @@ def test_only_the_users_choice_of_this_route_for_this_role_passes_the_backstop(m
     # A pin of this route for this role; an auditor pin also covers plan reviews; another role or route does not.
     pin(monkeypatch, 'implementer', 'anthropic/claude-api-opus-5-5@high')
     assert not refused('implementer') and refused('auditor') and refused('implementer', other)
+    assert not refused('coordinator')  # a conversation on tare auto: the implementer's entries, and its pin
     pin(monkeypatch, 'auditor', 'anthropic/claude-api-opus-5-5@high')
     assert not refused('auditor') and not refused('plan-auditor') and refused('implementer')
     # --coordinator: the conversation's model, a launch flag; a conversation otherwise reads the implementer entries.
@@ -680,30 +684,156 @@ def test_the_routes_the_user_names_are_marked_for_their_own_role(tmp_path, monke
     assert seen[-1] == ('claude-api-opus-5-5', {('coordinator', 'claude-api-opus-5-5')})
 
 
-def test_the_explorers_set_in_delegation_are_the_users_choice_and_a_sampled_challenger_is_not(tmp_path, monkeypatch):
+def investigate(tmp_path, frozen, route, variant=None):
+    """One /delegation investigation on `route`, as delegation_tools runs it: its reason, or 'started'."""
     from types import SimpleNamespace
-    from relay import delegation, delegation_tools
-    saved(off={'explorer': ['fixture']})
+    from relay import delegation_tools
+    tools = object.__new__(delegation_tools.ExplorationTools)
+    tools.settings, tools.state, tools.route_class = {'seconds': 30}, {'deadline_utc': None, 'config': {}}, None
+    tools.frozen, tools.finish = frozen, lambda folder, row: None
+    folder = tmp_path/f'investigation-{len(list(tmp_path.glob("investigation-*")))}'
+    folder.mkdir()
+    row = {'repository': 'repo', 'repository_root': str(tmp_path), 'source_path': '.', 'question': 'Where?',
+           'calls_reserved': 4, 'status': 'RUNNING'}
+    tools.investigate(folder, row, native_catalog.select(route), variant or {'identity': {}},
+                      {'others': [], 'part': None, 'map': None}, SimpleNamespace(should_stop=lambda: False))
+    return row.get('reason', 'started')
+
+
+def test_the_explorers_set_in_delegation_are_the_users_choice_by_route(tmp_path, monkeypatch):  # round three, 5
+    from relay import delegation
+    saved(off={'explorer': ['*@api']})
     started = []
     monkeypatch.setattr(native_agent, 'run_session', execution_scope.session_role(
         lambda config, deployment, custody, *a, **k: started.append(deployment['id']) or {'status': 'PROPOSED'}))
     monkeypatch.setattr(delegation, 'experiments', lambda route: {'leaf_project_instructions': False})
-    variant = {'identity': {}}
-    outcomes = {}
-    for selection, experimental in (('CONFIGURED_EXPLORER', False), ('OVERFLOW_EXPLORER', False),
-                                    ('CONFIGURED_EXPLORER', True), ('TEMPORARY_TUI_EXECUTION_POLICY', False)):
-        tools = object.__new__(delegation_tools.ExplorationTools)
-        tools.settings, tools.state, tools.route_class = {'seconds': 30}, {'deadline_utc': None, 'config': {}}, None
-        tools.frozen = {'selection': selection, 'experimental': experimental, 'variant': variant}
-        tools.finish = lambda folder, row: None
-        folder = tmp_path/f'{selection}-{experimental}'
-        folder.mkdir()
-        row = {'repository': 'repo', 'repository_root': str(tmp_path), 'source_path': '.', 'question': 'Where?',
-               'calls_reserved': 4, 'status': 'RUNNING'}
-        tools.investigate(folder, row, deployment(), variant, {'others': [], 'part': None, 'map': None},
-                          SimpleNamespace(should_stop=lambda: False))
-        outcomes[(selection, experimental)] = row.get('reason', 'started')
-    assert outcomes[('CONFIGURED_EXPLORER', False)] == outcomes[('OVERFLOW_EXPLORER', False)] == 'started'
-    assert outcomes[('CONFIGURED_EXPLORER', True)].startswith('SWITCHED_OFF_FOR_ROLE: ')
-    assert outcomes[('TEMPORARY_TUI_EXECUTION_POLICY', False)].startswith('SWITCHED_OFF_FOR_ROLE: ')
-    assert started == ['fixture', 'fixture']
+    settings = {**delegation.DEFAULT, 'enabled': True, 'profile': 'openai-api', 'overflow': 'gemini-api-4-carbon'}
+    for selection in ('CONFIGURED_EXPLORER', 'OVERFLOW_EXPLORER', 'TEMPORARY_TUI_EXECUTION_POLICY'):
+        frozen = {'settings': settings, 'selection': selection, 'experimental': False}
+        # A launch restriction that leaves the configured explorer or overflow in place relabels it, not its route.
+        assert investigate(tmp_path, frozen, 'openai-api') == 'started', selection
+        assert investigate(tmp_path, frozen, 'gemini-api-4-carbon') == 'started', selection
+        # A route scoped() ranked itself, or a sampled challenger, is another route: the profile decides.
+        assert investigate(tmp_path, frozen, 'gemini-api').startswith('SWITCHED_OFF_FOR_ROLE: '), selection
+    # With /delegation off, its saved profile is tare's default, not a choice.
+    frozen = {'settings': {**settings, 'enabled': False}, 'selection': 'EXACT_TEMPORARY_PIN', 'experimental': False}
+    assert investigate(tmp_path, frozen, 'openai-api').startswith('SWITCHED_OFF_FOR_ROLE: ')
+    assert started == ['openai-api', 'gemini-api-4-carbon'] * 3
+
+
+# Review of 2026-11-14, round three: five more starts that did not pass the backstop, or skipped a pinned route.
+
+def test_a_work_resumed_before_its_implementer_starts_is_a_new_start(work_host, capsys):  # round three, 1
+    import tare_ops
+    from relay import human_wait, work_run
+    from test_work_resume import run
+    assert run(work_host, '--wait-before-implement', 'Proceed?') == 0  # --native-deployment: the user's route
+    assert json.loads(capsys.readouterr().out)['status'] == 'WAITING_FOR_HUMAN'
+    train = work_run.train_dir_for('work-one')
+    origin_file = train/'WORK_RUN.json'
+    origin = json.loads(origin_file.read_text(encoding='utf-8'))
+    assert origin['implementer_chosen'] is True
+    request = human_wait.inspect(train)['request_sha256']
+    assert tare_ops.main(['decision', 'work-one', '--decision', 'approve', '--expected', request, '--note', 'Go',
+                          '--format', 'json']) == 0
+    capsys.readouterr()
+    saved(off={'implementer': ['fixture']})
+    # Had tare chosen the implementer, the resume in a later process is a new start of it: refused, no model call.
+    origin_file.write_text(json.dumps({k: v for k, v in origin.items() if k != 'implementer_chosen'}), encoding='utf-8')
+    assert tare_ops.main(['run', 'work-one', '--resume']) != 0
+    assert 'SWITCHED_OFF_FOR_ROLE' in capsys.readouterr().out and not work_host[3].generations
+    # The user's own route stays theirs across the process change.
+    origin_file.write_text(json.dumps(origin), encoding='utf-8')
+    assert tare_ops.main(['run', 'work-one', '--resume']) == 0
+    assert json.loads(capsys.readouterr().out)['status'] == 'SETTLED' and work_host[3].generations
+
+
+def test_a_work_implementer_that_does_not_pass_run_session_is_admitted(monkeypatch, tmp_path):  # round three, 1
+    from relay import native_work_host
+
+    class Stop(Exception):
+        pass
+
+    def stop(**kwargs):
+        raise Stop()
+    monkeypatch.setattr('relay.landing_policy.attest_identity', stop)  # the first step after admission
+    saved(off={'implementer': ['claude/opus@api']})
+    route = native_catalog.select('claude-api-opus-5-5')
+    with pytest.raises(ValueError, match='^SWITCHED_OFF_FOR_ROLE: claude-api-opus-5-5 is switched off for implementer'):
+        native_work_host.create_runner(route, 'work-one', tmp_path/'implement')
+    assert not (tmp_path/'implement').exists()
+    with execution_scope.user_choice('implementer', route), pytest.raises(Stop):
+        native_work_host.create_runner(route, 'work-one', tmp_path/'implement')
+
+
+def test_the_relay_mesh_chairs_read_the_profile_of_their_role(tmp_path, monkeypatch):  # round three, 2
+    import subprocess
+    from relay import autonomous_auditor, autonomous_planner, vendor_chairs
+    from test_autonomous_auditor_identity import _strict_train
+    started = []
+    monkeypatch.setattr(vendor_chairs, 'is_vendor_healthy', lambda engine, host=None: (True, 'healthy'))
+    monkeypatch.setattr(vendor_chairs, '_resolve_engine_cmd', lambda engine, prompt, role: [engine])
+    monkeypatch.setattr(vendor_chairs, 'report_vendor_success', lambda engine, host=None: None)
+    monkeypatch.setattr(vendor_chairs.subprocess, 'run', lambda cmd, **k: started.append(cmd[0]) or
+                        subprocess.CompletedProcess(cmd, 0, 'report', ''))
+    saved(off={'auditor': ['*@*']})
+    result = vendor_chairs.dispatch_role('auditor', 'Audit.')
+    assert not result.ok and started == []
+    assert vendor_chairs.dispatch_role('bookkeeper', 'Keep the books.').engine == 'antigravity'  # not a profile role
+    saved(off={'auditor': ['gemini/*@agy']})  # Gemini on AGY, the auditor's first chair
+    assert vendor_chairs.dispatch_role('auditor', 'Audit.').engine == 'codex'
+    # The autonomous auditor never starts AGY for the role; its chair fallback is asked instead.
+    relay_dir, train = _strict_train(tmp_path, 'gpt-5.6-sol', 'codex', 'gpt-5.6-sol')
+    monkeypatch.setattr(autonomous_auditor.relay_mesh, 'RELAY_DIR', relay_dir)
+    monkeypatch.setattr(autonomous_auditor.relay_mesh, 'TRAINS_DIR', train.parent)
+    monkeypatch.setattr(autonomous_auditor, 'TRACKER_FILE', tmp_path/'tracker.json')
+    (train/'prompt.txt').write_text('Audit the change', encoding='utf-8')
+    monkeypatch.setattr(autonomous_auditor, '_run_agy', lambda *a: pytest.fail('AGY started for an off role'))
+    asked = []
+    chairs = autonomous_auditor.vendor_chairs
+    monkeypatch.setattr(chairs, 'dispatch_role', lambda role, *a, **k: asked.append(role) or chairs.DispatchResult(
+        ok=False, engine='none', returncode=-3, stdout='', stderr='', duration_s=0.0, error_reason='none'))
+    assert autonomous_auditor.audit('code-audit', train/'prompt.txt') == 1 and asked == ['auditor']
+    # The autonomous planner refuses before its vendor starts; the caller quarantines the message.
+    monkeypatch.setattr(autonomous_planner, '_run', lambda cmd: pytest.fail('planner started for an off role'))
+    saved(off={'planner': ['gpt/*@codex']})
+    refused = autonomous_planner.execute_vendor('Plan.', vendor_id='codex')
+    assert refused.returncode == 1 and refused.stderr.startswith('SWITCHED_OFF_FOR_ROLE: codex is switched off')
+
+
+def test_an_edited_copilot_message_is_admitted_again(tmp_path, monkeypatch):  # round three, 3
+    from relay import copilot_mode
+    route = {'id': 'local', 'native_profile': {'protocol': 'openai-chat', 'model': 'm',
+                                               'endpoint': 'https://gateway.example/v1'}}
+    monkeypatch.setattr(turn_engine, 'policy', lambda: {'implementer': [['local']]})
+    monkeypatch.setattr(turn_engine, 'available', lambda name: (copy.deepcopy(route), None))
+    monkeypatch.setattr(turn_engine, 'snapshot', lambda root: (None, 'test'))
+    monkeypatch.setattr(copilot_mode, '_turns', {})
+    monkeypatch.setattr(copilot_mode, '_chats', {})
+    project = tmp_path/'project'
+    project.mkdir()
+    turn = copilot_mode.turn_for(copilot(project, 'one', 'two'), project)
+    saved(off={'implementer': ['local']})
+    assert copilot_mode.turn_for(copilot(project, 'one', 'two'), project) is turn  # a tool round: not again
+    with pytest.raises(ValueError, match='^SWITCHED_OFF_FOR_ROLE: '):  # the same count, another message
+        copilot_mode.turn_for(copilot(project, 'one', 'two, edited'), project)
+    environment.save({})
+    edited = copilot_mode.turn_for(copilot(project, 'one', 'two, edited'), project)
+    assert edited is turn and edited['request'] == 'two'  # the turn itself is kept as it was
+
+
+def test_a_researcher_pin_wins_where_research_skips_a_route(monkeypatch):  # round three, 4
+    helper = {'id': 'codex-cli-gpt-6-luna', 'native_cli': {'executable': 'codex'},
+              'native_profile': {'protocol': 'vendor-cli', 'endpoint': 'cli://codex', 'model': 'gpt-6-luna'}}
+    monkeypatch.setattr(turn_engine, 'available', lambda name, probe=True: (copy.deepcopy(helper), None))
+    monkeypatch.setattr(turn_engine.subprocess, 'run', lambda argv, **kwargs: Path(
+        argv[argv.index('-o') + 1]).write_text('Answer.', encoding='utf-8'))
+    saved(off={'researcher': ['*@*']})
+    with pytest.raises(RuntimeError, match='SWITCHED_OFF_FOR_ROLE'):
+        turn_engine.ask_cli('What changed?', search=True)
+    assert turn_engine.choose([['codex-cli-gpt-6-luna']], role='researcher')[1] is None
+    pin(monkeypatch, 'researcher', 'openai/codex-cli-gpt-6-luna@medium')
+    assert turn_engine.ask_cli('What changed?', search=True) == ('Answer.', 'codex-cli-gpt-6-luna')  # web search
+    assert turn_engine.choose([['codex-cli-gpt-6-luna']], role='researcher')[1] == 'codex-cli-gpt-6-luna'  # summary
+    pin(monkeypatch, 'implementer', 'openai/codex-cli-gpt-6-luna@medium')  # a pin for another role does not count
+    assert turn_engine.choose([['codex-cli-gpt-6-luna']], role='researcher')[1] is None

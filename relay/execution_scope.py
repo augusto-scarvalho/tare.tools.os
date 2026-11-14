@@ -265,6 +265,12 @@ def user_choice(role,deployment):
     finally:CHOSEN.reset(token)
 
 
+def chosen(role,deployment):
+    """Whether user_choice() marks `deployment` for `role` now: a record that outlives this process (a paused Work's
+    origin) saves it, and its resume marks the route again."""
+    return isinstance(deployment,dict) and (role,deployment.get('id')) in CHOSEN.get()
+
+
 def pins_route(raw,deployment):
     """A role pin names this route (its connection, a catalog name), whatever effort the session then runs at."""
     if not raw:return False
@@ -273,25 +279,34 @@ def pins_route(raw,deployment):
     return parse(raw)[0][1]==str(connection).lower()
 
 
-def admit(deployment,role):
-    """The routing profile's backstop, where every new start of a role passes (session_role for sessions; the vision,
-    heads-up, research and tare-copilot calls that start no session call it themselves): refused with
-    SWITCHED_OFF_FOR_ROLE when the profile switches the route off for the role and the user did not choose it. The
-    user's choice is a pin of this route for this role, --coordinator for a conversation, or user_choice(); anything
-    else is automatic, including a path nobody marked. A conversation starts on tare auto's implementer tiers, so it
-    reads the implementer entries."""
+def refusal(role,deployment,*names):
+    """The one test for a start of `role` on `deployment`: the routing profile's SWITCHED_OFF_FOR_ROLE (an Unavailable)
+    when the profile switches the route off for the role and the user did not choose it, else None. Automatic paths
+    ask it to skip a route and take the next one; admit() asks it to refuse a start. The user's choice is a pin of this
+    route for the role whose entries decide, --coordinator for a conversation, or user_choice(); anything else is
+    automatic, including a path nobody marked. A conversation starts on tare auto's implementer tiers, so it reads the
+    implementer entries and an implementer pin. `names`: what the caller calls the route, for the message."""
     from .environment import PROFILE_ROLES,switched_off
     profile_role='implementer' if role=='coordinator' else role
-    if not deployment or profile_role not in PROFILE_ROLES:return
-    off=switched_off(profile_role,deployment)
-    if not off or (role,deployment.get('id')) in CHOSEN.get() or pins_route(current().pin(role),deployment):return
+    if not deployment or profile_role not in PROFILE_ROLES:return None
+    off=switched_off(profile_role,deployment,*names)
+    if not off or (role,deployment.get('id')) in CHOSEN.get() or pins_route(current().pin(profile_role),deployment):
+        return None
     raw=current().coordinator
     if role=='coordinator' and raw:
         from .inference_allowlist import matches,parse
         try:
-            if matches(raw,deployment.get('id',''),deployment,effort=parse(raw)[0][2][0]):return
+            if matches(raw,deployment.get('id',''),deployment,effort=parse(raw)[0][2][0]):return None
         except (ValueError,KeyError,TypeError,IndexError):pass
-    raise ValueError('SWITCHED_OFF_FOR_ROLE: '+off+'. No model call was made.')
+    return off
+
+
+def admit(deployment,role):
+    """The routing profile's backstop, where every new start of a role passes (session_role for sessions; the Work
+    implementer, vision, heads-up, research, explore and tare-copilot calls that start no session call it themselves):
+    a start refusal() refuses raises SWITCHED_OFF_FOR_ROLE."""
+    off=refusal(role,deployment)
+    if off:raise ValueError('SWITCHED_OFF_FOR_ROLE: '+str(off)+'. No model call was made.')
 
 
 def started(custody,deployment,role):

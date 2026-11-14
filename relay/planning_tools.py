@@ -363,8 +363,8 @@ class PlanningTools:
                     raise ValueError('This planner uses another provider or allowance. Enable other providers in /delegation.')
                 skipped.append((name, 'OTHER_PROVIDER_ALLOWANCE'))
                 continue
-            from .environment import switched_off
-            if off := switched_off('planner', frozen, name):  # a pin returned above; a model's choice is not the user's
+            from .execution_scope import refusal
+            if off := refusal('planner', frozen, name):  # a pin returned above; a model's choice is not the user's
                 skipped.append((name, 'SWITCHED_OFF_FOR_ROLE'))
                 if name == chosen:
                     refused = off

@@ -213,6 +213,10 @@ def audit(stage: str, prompt_file: Path, fresh: bool = False) -> int:
     report_text = ""
     conv_id = None
     try:
+        off = None if "antigravity" in excluded_engines else vendor_chairs.chair_off(
+            "antigravity", "plan-auditor" if stage == "plan-audit" else "auditor")
+        if off:  # the routing profile switches this chair off for the role: no session starts
+            raise RuntimeError(f"SWITCHED_OFF_FOR_ROLE: {off}")
         env = (
             {}
             if "antigravity" in excluded_engines

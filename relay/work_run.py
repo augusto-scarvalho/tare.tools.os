@@ -505,6 +505,7 @@ def _run_work(work_id, *, deployment="local-qwen", repository_root=None, workspa
         stage("descriptor", sha256=digest)
         if use_native_default:
             receipt.update(_review_metadata(node, native_deployment))
+            from .execution_scope import chosen
             save_json(train_dir/'WORK_RUN.json', {
                 'schema': 'tare.tools/work-run-origin/2' if shared_context is not None else 'tare.tools/work-run-origin/1',
                 'graph_path': selected_graph, 'work_id': work_id, 'run_id': run_id,
@@ -517,6 +518,8 @@ def _run_work(work_id, *, deployment="local-qwen", repository_root=None, workspa
                 'preparation_sessions': receipt.get('preparation_sessions', []),
                 'workflow_sha256': receipt['workflow_sha256'],
                 **({'shared_context': shared_context} if shared_context is not None else {}),
+                # The user named this implementer: a resume in a later process marks it again (routing profile).
+                **({'implementer_chosen': True} if chosen('implementer', native_deployment) else {}),
                 **protection_origin,
                 **({'prepared_implementation': receipt['prepared_implementation'],
                     'audit_custody': str((custody/'code-audit').resolve())} if prepared is not None else {})})

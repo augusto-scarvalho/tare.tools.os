@@ -553,6 +553,26 @@ class ExplorationTools:
         save_json(folder/'receipt.json', row)  # Durable dispatch intent, before provider work.
         return folder, row, deployment, variant
 
+    def configured(self, deployment):
+        """Whether this route is the explorer or overflow explorer set in /delegation, the user's own choice for the
+        routing profile, decided by the route itself: a launch restriction that leaves it in place relabels the
+        selection, not the route. A sampled challenger or a route ranked for the launch is another route."""
+        from .environment import profile
+        if not profile()[0]:
+            return False  # nothing is switched off: nothing to mark
+        from .native_catalog import select
+        settings = (self.__dict__.get('frozen') or {}).get('settings') or {}
+        if not settings.get('enabled'):
+            return False  # /delegation is off: its saved profile is tare's default, not a choice
+        for spec in (settings.get('profile'), settings.get('overflow')):
+            try:
+                if spec is not None and select(spec if isinstance(spec, str) else spec['profile'])['id'] == \
+                        deployment.get('id'):
+                    return True
+            except (ValueError, OSError, KeyError, TypeError):
+                continue
+        return False
+
     def run(self, folder, row, deployment, variant, brief, control):
         with slot(variant):
             self.investigate(folder, row, deployment, variant, brief, control)
@@ -612,13 +632,8 @@ class ExplorationTools:
             row['executed_decision'] = executed_decision(mode, deployment['id'], [deployment['id']])
             row['attempts'] = list(row.get('attempts') or []) + [executed_attempt(deployment, {'status': 'DISPATCHING'})]
             save_json(folder/'receipt.json', row)  # an interruption keeps this attempt with an unknown result
-            # The explorer and overflow explorer set in /delegation are the user's own choice; a sampled challenger
-            # and a route ranked for a restricted launch are not (the routing profile's backstop decides those).
-            frozen = self.__dict__.get('frozen') or {}
-            configured = frozen.get('selection') in ('CONFIGURED_EXPLORER', 'OVERFLOW_EXPLORER') and not (
-                frozen.get('experimental') and variant is frozen.get('variant'))
             from .execution_scope import user_choice
-            with user_choice('explorer', deployment if configured else None):
+            with user_choice('explorer', deployment if self.configured(deployment) else None):
                 outcome = run_session(config, deployment, folder/'session', instruction,
                              limits=execution_resources.limits(dict(max_model_calls=calls, max_seconds=seconds, max_model_retries=0, max_stagnant_turns=4),
                                                                ('stagnation',) if execution_resources.selected('stagnation') else ()),

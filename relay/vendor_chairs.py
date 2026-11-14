@@ -96,6 +96,19 @@ def runtime_pin(engine: str, role: str) -> tuple[str, str]:
     return "", ""
 
 
+CHAIR_ENDPOINTS = {"claude": "cli://claude", "antigravity": "cli://agy", "codex": "cli://codex"}
+
+
+def chair_off(engine: str, role: str):
+    """The routing profile's SWITCHED_OFF_FOR_ROLE for a mesh chair in a role it knows, else None. The mesh's chairs
+    are fixed, so the profile simply decides; bookkeeper and overseer are not its roles."""
+    from relay.environment import PROFILE_ROLES, switched_off
+    if role not in PROFILE_ROLES or engine not in CHAIR_ENDPOINTS:
+        return None
+    return switched_off(role, {"id": engine, "native_profile": {
+        "protocol": "vendor-cli", "endpoint": CHAIR_ENDPOINTS[engine], "model": runtime_pin(engine, role)[1]}})
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -264,6 +277,9 @@ def dispatch_role(
         if engine in (excluded_engines or set()):
             continue
         healthy, status_msg = is_vendor_healthy(engine, host=hostname)
+        off = healthy and chair_off(engine, role)
+        if off:
+            healthy, status_msg = False, f"SWITCHED_OFF_FOR_ROLE: {off}"
         if not healthy:
             print(f"[{time.strftime('%H:%M:%S')}] ⏭️ [CHAIR SKIP] '{engine}' skipped for role '{role}': {status_msg}", flush=True)
             continue
