@@ -2,7 +2,7 @@ import asyncio
 import json
 
 import pytest
-from textual.widgets import Button, Select, TextArea
+from textual.widgets import Button, Checkbox, Select, TextArea
 
 from relay import turn_engine
 from relay.console_routes import RoutesPanel, as_text, from_text
@@ -81,3 +81,41 @@ def test_auditor_editor_follows_selection_without_waiting_for_changed_messages(t
             assert choice.value == 'cross_vendor_frontier' and editor.disabled
             assert not app.backend.launches
     asyncio.run(scenario())
+
+
+def test_the_cross_vendor_checkbox_saves_one_key_only_while_it_is_off(tmp_path):
+    def saved():
+        return json.loads(turn_engine.policy_path().read_text(encoding='utf-8'))
+
+    async def scenario():
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(80, 24)) as pilot:
+            await app.workers.wait_for_complete()
+            assert app.dispatch_conversation_command('/routes', '')
+            await pilot.pause()
+            panel = app.screen
+            box = panel.query_one('#routes-cross-vendor-first', Checkbox)
+            assert box.value and str(box.label) == 'Put auditors of another vendor first'
+            await pilot.click('#routes-cross-vendor-first')
+            await pilot.click('#routes-save')
+            await pilot.pause()
+            assert not box.value and saved()['any_vendor_auditor'] is True
+            assert not turn_engine.cross_vendor_first()
+            await pilot.click('#routes-cross-vendor-first')
+            await pilot.click('#routes-save')
+            await pilot.pause()
+            assert box.value and 'any_vendor_auditor' not in saved() and turn_engine.cross_vendor_first()
+            assert not app.backend.launches
+    asyncio.run(scenario())
+    # A file without the key (every file saved before the checkbox) reads as on, in the panel and in routing.
+    turn_engine.policy_path().write_text(json.dumps({'auditor_selection': 'configured'}), encoding='utf-8')
+    assert turn_engine.cross_vendor_first()
+
+    async def reopened():
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(80, 24)) as pilot:
+            await app.workers.wait_for_complete()
+            assert app.dispatch_conversation_command('/routes', '')
+            await pilot.pause()
+            assert app.screen.query_one('#routes-cross-vendor-first', Checkbox).value
+    asyncio.run(reopened())

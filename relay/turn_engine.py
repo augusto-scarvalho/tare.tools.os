@@ -116,12 +116,21 @@ def policy():
     return DEFAULT_POLICY
 
 
+def cross_vendor_first():
+    """Whether auditor selection puts another vendor first: on, unless --any_vendor_auditor or /routes (the routing
+    policy's any_vendor_auditor, absent while on) turned it off."""
+    from .execution_scope import current
+    return not (current().any_vendor_auditor or policy().get('any_vendor_auditor') is True)
+
+
 ROUTE_ROLES = ('implementer', 'planner', 'auditor', 'researcher', 'vision', 'heads_up')
 
 
-def save_policy(roles, *, auditor_selection=None):
+def save_policy(roles, *, auditor_selection=None, any_vendor_auditor=None):
     """Save the owner's routes per role ({role: [[name, ...], ...]}, tiers in order; a role other than the implementer
-    keeps one flat list, in order). Every name must be a route tare knows; an empty role keeps tare's default."""
+    keeps one flat list, in order). Every name must be a route tare knows; an empty role keeps tare's default.
+    any_vendor_auditor: True stops putting auditors of another vendor first, False puts them first again (the key
+    goes), None keeps what is saved."""
     from .native_catalog import select
     defaults = {n for v in DEFAULT_POLICY.values() if isinstance(v, list) for t in v
                 for n in (t if isinstance(t, list) else [t])}  # tare's own names, installed here or not
@@ -145,8 +154,12 @@ def save_policy(roles, *, auditor_selection=None):
     saved['auditor_selection'] = mode
     path = policy_path()
     # The owner's reasoning levels (planner_effort, auditor_effort, heads_up_effort) outlive a change of routes.
-    saved.update({k: v for k, v in (json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}).items()
-                  if k.endswith('_effort')})
+    existing = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+    saved.update({k: v for k, v in existing.items() if k.endswith('_effort')})
+    if any_vendor_auditor is None:
+        any_vendor_auditor = existing.get('any_vendor_auditor') is True
+    if any_vendor_auditor:
+        saved['any_vendor_auditor'] = True
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(saved, indent=1), encoding='utf-8')
@@ -1388,8 +1401,8 @@ def pick_auditors(implementer, names, *, probe=True, role='auditor'):
 
 def _pick_auditors(implementer, names, *, probe=True, role='auditor'):
     """[(name, deployment)] of independent auditors: never the implementer's model or bias domain
-    (landing policy AUDITOR_NOT_INDEPENDENT); another vendor first (CROSS_VENDOR_AUDITOR_PREFERRED). `role` is the
-    routing profile's: plan-auditor for a plan review, auditor for a change."""
+    (landing policy AUDITOR_NOT_INDEPENDENT); another vendor first (CROSS_VENDOR_AUDITOR_PREFERRED) while
+    cross_vendor_first(). `role` is the routing profile's: plan-auditor for a plan review, auditor for a change."""
     from .execution_scope import current
     if current().pin('auditor'):
         from .execution_scope import pinned
@@ -1432,10 +1445,12 @@ def _pick_auditors(implementer, names, *, probe=True, role='auditor'):
         if kind == 'AUDITOR_NOT_INDEPENDENT':
             continue
         found.append((kind != 'INDEPENDENT', name, deployment))
-    found.sort(key=lambda item: item[0])
+    first = cross_vendor_first()  # off: the owner's order as it is (--any_vendor_auditor, /routes)
+    if first:
+        found.sort(key=lambda item: item[0])
     if not found and remap_required:
         return _pick_auditors(implementer,None,probe=probe,role=role)
-    if remap_required and all(same_vendor for same_vendor, _, _ in found):
+    if first and remap_required and all(same_vendor for same_vendor, _, _ in found):
         # The automatic choice replaces what is left of the owner's list only to bring in another vendor.
         from .work_audit import independence as standing
         remapped = _pick_auditors(implementer,None,probe=probe,role=role)

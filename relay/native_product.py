@@ -1355,7 +1355,7 @@ def console_arguments(argv):
     """The stdlib-only PATH manager forwards TUI flags before a command name."""
     values=list(sys.argv[1:] if argv is None else argv)
     options=('subscription_only','local_only','api_only','pro_planner','prefer_api',
-             'prefer_subscription','prefer_local','disable_judge','prefer_cli','cli_only','coordinator',
+             'prefer_subscription','prefer_local','disable_judge','any_vendor_auditor','prefer_cli','cli_only','coordinator',
              'planner','implementer','explorer','researcher','auditor','unlimited')
     flags={prefix+name for name in options for prefix in ('--',)} | {'--'+n.replace('_','-') for n in options}
     index=0
@@ -1403,7 +1403,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='TUI: tare [PROJECT] [--subscription_only | --local_only | --api_only] '
-            '[--prefer_api | --prefer_subscription | --prefer_local] [--pro_planner] [--disable_judge]. '
+            '[--prefer_api | --prefer_subscription | --prefer_local] [--pro_planner] [--disable_judge] [--any_vendor_auditor]. '
             'These switches apply only until this TUI exits. Details: tare console --help. '
             '--unlimited [calls time money compactions stagnation] removes selected execution ceilings '
             '(stagnation only loosens the no-progress pause); no list means all five. Example: tare --unlimited calls money --prefer_subscription. '
