@@ -123,8 +123,8 @@ def decides(name):
         not declined((section.get('items') or {}).get(name))
 
 
-# Which routes automatic routing may use, per role: `routing_profile`, set with tare setup --auto (the /routes matrix
-# comes next). tare's default is today's role rows (relay/role_deployments.json and the routing policy's lists); the
+# Which routes automatic routing may use, per role: `routing_profile`, set with tare setup --auto or the matrix tab of
+# /routes (relay/console_route_matrix.py). tare's default is today's role rows (relay/role_deployments.json and the routing policy's lists); the
 # profile keeps only the owner's differences, so it can only switch routes off, and an "on" entry only undoes a
 # broader "off". Rules above it (setup, qualification, older models, independence, credentials, quota) keep their
 # own reasons. switched_off() is the one answer to "is this route off for this role": automatic paths ask it to skip
@@ -287,14 +287,15 @@ def profile(value=None, role=None):
     return _profiles[stamp]
 
 
-def profile_state(role, deployment, value=None):
+def profile_state(role, deployment, value=None, key=None):
     """('off' or 'on', entry) of the most specific entry for this route and role (off wins a tie), or None: tare's
     default. A route is known by what it is, never by what it resembles: its line on its source when it has one, else
-    its own id (an alias is checked as the route it realised)."""
+    its own id (an alias is checked as the route it realised). `key` asks for a (family, line, version, source) instead,
+    which no version entry matches when its version is None (the /routes matrix asks for a line on a source)."""
     rules = profile(value, role)[0].get(role)
     if not rules:
         return None
-    key = route_key(deployment)
+    key = key or route_key(deployment)
 
     def matches(rule):
         if isinstance(rule, str):  # a route id of a route with no line
@@ -323,9 +324,9 @@ def switched_off(role, deployment, *names, value=None):
     return None
 
 
-def auto_rows(role, value=None):
-    """The routes automatic `role` routing considers here, checked without a live probe: their line on source, the
-    profile's state ('on' is tare's default; an entry is the owner's) and why one cannot be used now (a rule)."""
+def auto_routes(role, value=None):
+    """(name, route or None, now) of each route automatic `role` routing considers here, checked without a live probe:
+    `now` is 'usable' or why it cannot be used now (a rule). The routing profile does not change it."""
     from .cli_discovery import TEMPLATES
     from .execution_scope import current
     from .native_catalog import select
@@ -336,17 +337,25 @@ def auto_rows(role, value=None):
     table = {row.get('native_catalog', row['id']): row for row in configured()['deployments']
              if role in RANKED_ROLES and role in table_roles(row, current())}
     listed = [n for item in policy().get(role) or [] for n in (item if isinstance(item, list) else [item])]
-    rows = []
     for name in dict.fromkeys([*listed, *table]):
         deployment, why = available(name, probe=False)
         try:
             known = deployment or select(name)
         except (ValueError, OSError, KeyError, TypeError):
             known = templates.get(name)  # a CLI route not set up here: its shipped template names its line
-        state = known and profile_state(role, known, value=value)
         row = table.get(name, {})  # its rules (qualified, older) are the role table's; a routing list asks available()
-        now = (why.diagnostic['code'] if why is not None else 'NOT_QUALIFIED_PIN_ONLY' if row.get('qualified') is False
-               else 'OLDER_MODEL' if row and older(deployment, value) else 'usable')
+        yield name, known, (why.diagnostic['code'] if why is not None else 'NOT_QUALIFIED_PIN_ONLY'
+                            if row.get('qualified') is False else 'OLDER_MODEL' if row and older(deployment, value)
+                            else 'usable')
+
+
+def auto_rows(role, value=None):
+    """The routes automatic `role` routing considers here (auto_routes): their line on source, the profile's state
+    ('on' is tare's default; an entry is the owner's) and why one cannot be used now (a rule)."""
+    value = read() if value is None else value
+    rows = []
+    for name, known, now in auto_routes(role, value):
+        state = known and profile_state(role, known, value=value)
         rows.append({'route': name, 'line': route_label(known) if known else '?',
                      'profile': f'{state[0]} ({state[1]})' if state else 'on' if known else '?', 'now': now})
     return rows
@@ -395,6 +404,14 @@ def reset_auto(value, role=''):
         raise ValueError(f'Unknown role {role!r}: use ' + ', '.join(PROFILE_ROLES) + '.')
     saved = _editable(value)
     return _store_profile(value, {**saved, **{side: {r: t for r, t in saved[side].items() if r != role}
+                                              for side in ('off', 'on')}})
+
+
+def edit_auto(value, role, change):
+    """Rewrite `role`'s saved entries as written, readable or not: change(side, texts) returns the new list (the
+    /routes matrix removes what it cannot draw and copies a role)."""
+    saved = _editable(value)
+    return _store_profile(value, {**saved, **{side: {**saved[side], role: change(side, list(saved[side].get(role, [])))}
                                               for side in ('off', 'on')}})
 
 

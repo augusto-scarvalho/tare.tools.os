@@ -3,9 +3,10 @@ import asyncio
 
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Button, Select, Static, TextArea
+from textual.widgets import Button, Select, Static, TabbedContent, TabPane, TextArea
 
 from .console_panels import SupportPanel
+from .console_route_matrix import RouteMatrix
 
 ROLE_LABELS = {'implementer': 'Implementer · conversations, sessions and the units they delegate',
                'planner': 'Planner', 'auditor': 'Your auditor routes · used when you choose your list',
@@ -32,6 +33,8 @@ class RoutesPanel(SupportPanel):
     RoutesPanel .routes-label { height: auto; margin-top: 1; }
     RoutesPanel TextArea { height: 6; }
     RoutesPanel #routes-status { height: auto; max-height: 4; }
+    RoutesPanel #routes-tabs, RoutesPanel #routes-tabs > ContentSwitcher, RoutesPanel TabPane { height: 1fr; }
+    RoutesPanel TabPane { padding: 0; }
     '''
 
     def compose(self):
@@ -41,27 +44,31 @@ class RoutesPanel(SupportPanel):
             with Horizontal(classes='panel-header'):
                 yield Static('Routes and fallback', classes='panel-title')
                 yield Button('Back · Esc', id='routes-close')
-            with VerticalScroll(id='routes-scroll'):
-                yield Static('tare tries the routes in order: the first available one of the first line, then the '
-                             'next lines. A route is skipped when its CLI, credential or quota is missing, or when an '
-                             'image job holds the local GPU (nothing waits for it). One line per tier, routes '
-                             'separated by commas.', classes='routes-label')
-                yield Static('Who reviews plans and code?', classes='routes-label')
-                yield Select(AUDITOR_SELECTIONS, value=value['auditor_selection'], allow_blank=False,
-                             id='routes-auditor-selection')
-                yield Static('Automatic prefers another model provider. It uses enabled frontier connections, '
-                             'subscription quota before metered API, Sol before Astra and Opus before Fable. '
-                             'Google uses Argon. No extra model request is made to choose a reviewer.', classes='routes-label')
-                for role in ROUTE_ROLES:
-                    yield Static(ROLE_LABELS[role], classes='routes-label')
-                    yield TextArea(as_text(value.get(role) or []), id='routes-' + role,
-                                   disabled=role == 'auditor' and value['auditor_selection'] != 'configured')
-                yield Static('Explorers fall back to the overflow explorer of /delegation.', classes='routes-label')
-            yield Static('New sessions use these routes; new reviews use the reviewer choice. Saved reviews keep their model.', id='routes-status',
-                         markup=False)
-            with Horizontal(classes='panel-actions'):
-                yield Button('Save', id='routes-save', classes='panel-primary')
-                yield Button("tare's defaults", id='routes-default')
+            with TabbedContent(id='routes-tabs'):
+                with TabPane('Order', id='routes-order'):
+                    with VerticalScroll(id='routes-scroll'):
+                        yield Static('tare tries the routes in order: the first available one of the first line, then the '
+                                     'next lines. A route is skipped when its CLI, credential or quota is missing, or when an '
+                                     'image job holds the local GPU (nothing waits for it). One line per tier, routes '
+                                     'separated by commas.', classes='routes-label')
+                        yield Static('Who reviews plans and code?', classes='routes-label')
+                        yield Select(AUDITOR_SELECTIONS, value=value['auditor_selection'], allow_blank=False,
+                                     id='routes-auditor-selection')
+                        yield Static('Automatic prefers another model provider. It uses enabled frontier connections, '
+                                     'subscription quota before metered API, Sol before Astra and Opus before Fable. '
+                                     'Google uses Argon. No extra model request is made to choose a reviewer.', classes='routes-label')
+                        for role in ROUTE_ROLES:
+                            yield Static(ROLE_LABELS[role], classes='routes-label')
+                            yield TextArea(as_text(value.get(role) or []), id='routes-' + role,
+                                           disabled=role == 'auditor' and value['auditor_selection'] != 'configured')
+                        yield Static('Explorers fall back to the overflow explorer of /delegation.', classes='routes-label')
+                    yield Static('New sessions use these routes; new reviews use the reviewer choice. Saved reviews keep their model.', id='routes-status',
+                                 markup=False)
+                    with Horizontal(classes='panel-actions'):
+                        yield Button('Save', id='routes-save', classes='panel-primary')
+                        yield Button("tare's defaults", id='routes-default')
+                with TabPane('Models per role', id='routes-matrix'):
+                    yield RouteMatrix()
 
     def on_mount(self):
         # Derived controls follow the value even while Changed is queued or
@@ -95,5 +102,10 @@ class RoutesPanel(SupportPanel):
         if self.is_mounted:
             self.query_one('#routes-status', Static).update(message)
 
+    def on_tabbed_content_tab_activated(self, event):
+        if event.pane.id == 'routes-matrix':
+            self.query_one(RouteMatrix).open()
+
     def action_close(self):
-        self.dismiss(None)
+        if self.query_one(RouteMatrix).leave():
+            self.dismiss(None)

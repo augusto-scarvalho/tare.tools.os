@@ -89,7 +89,7 @@ for each role. It does not change the order. tare ships a default, and the profi
 from it (key `routing_profile` in this machine's `environment.json`, which the TUI, the CLI and `tare serve`
 share). A model that appears later follows the default, and an update of tare's default keeps your entries. For
 now the default is the routes each role uses today, so the profile can only switch routes off; an "on" entry
-undoes a broader "off". A screen for it in `/routes` comes next.
+undoes a broader "off". The **Models per role** tab of `/routes` edits it ([below](#the-models-per-role-tab-of-routes)).
 
 - **Only your own choices pass it.** These still start a route that is off:
   - the model you pick (the picker's concrete model for a conversation or a flow, or a route you name with
@@ -195,6 +195,34 @@ auditor: the routes automatic routing considers (tare setup --auto auditor:PATTE
 ```
 
 `tare models --role ROLE` shows the same state in its "Automatic for ROLE" column.
+
+### The Models per role tab of `/routes`
+
+The second tab of `/routes` edits the same profile. Pick a role; each row is a model line (grouped by vendor, a
+route with no line is a row of its own under Other, by its id) and each column a source that has a route for that
+role here. Space, Enter or a click on the selected cell ticks it. Nothing is written until Save, and Esc asks once
+before it discards unsaved changes. The file Save writes is the one the equivalent `tare setup --auto` commands
+write.
+
+| Cell | Means |
+|---|---|
+| `[x]` | on |
+| `[ ]` | off by you |
+| `!` after it | not usable now: a rule above the profile (not set up, `NOT_QUALIFIED_PIN_ONLY`, `OLDER_MODEL`, a missing credential, a spent quota) decides, the status line says which, and a tick cannot change it |
+| `~` after it | a version entry differs from the line's |
+| `.` | not carried by that source |
+| `n/a` | that source carries it, but not for this role |
+
+- Unticking writes `off` for the line on that source; ticking it back removes the entry. An `on` is written only to
+  undo a broader `off`. Ticking a cell also removes the version entries of that line on that source for that role,
+  and the status line names them before you save.
+- Bulk actions for the role: a vendor or a source on or off (`claude/*@*`, `*@openrouter`), subscriptions only
+  (`opencode-api`, `api`, `openrouter`, `bedrock` and `other-api` off), copy another role's entries, and tare's
+  defaults for the role.
+- The status line always says when the edited profile leaves a role with no eligible route and what then happens,
+  and when an implementer has no independent auditor left on.
+- Entries no cell can tick (`*@*`, a vendor, a version, a line on every source, a cell a rule decides, an entry tare
+  cannot read) are listed under the table; Enter or a click removes one.
 
 ## Reserving the GPU for a bench or a long run
 
