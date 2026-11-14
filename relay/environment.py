@@ -1024,6 +1024,20 @@ def main(argv=None):
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args(argv)
     if args.prove:
+        # What the TUI and tare serve do at start, and a proof right after an update needs: without the first a new
+        # CLI model has no route yet (native_deployment_unknown), without the second the cost line has no price.
+        if any(not name.startswith('cli:') and route_for(name)[0] is None for name in args.prove):
+            try:  # the installed CLIs' models as routes: no model call
+                from .cli_discovery import discover
+                discover()
+            except Exception:  # optional, as at start: the name then stays unknown and the proof says so
+                pass
+        try:  # the reference prices, at most once a day; no model call, no key sent
+            from .provider_prices import refresh_reading
+            refresh_reading()
+        except Exception:  # optional: the cost line then says the price is unknown, as before
+            pass
+
         def confirm(line):
             print(line)
             if args.yes:
