@@ -523,6 +523,18 @@ class ConversationWorkbench:
         except Exception:  # optional: without a reading tare learns a spent plan from the failed call, as before
             pass
 
+    def read_quota_for_demand(self):
+        """Redo the quota reading in the background when a turn starts, so the surplus is judged on a fresh one. The
+        turn never waits: routing uses the last finished reading. None while one runs or under a minute after the last."""
+        import time
+        from . import provider_quota
+        state = self.__dict__.setdefault('demand_quota', {'reading': False})
+        if (state['reading'] or not self.asks_providers or os.environ.get('TARE_CLI_DISCOVERY') == '0'
+                or time.time() - (provider_quota.cached() or {}).get('observed_at', 0) < 60):
+            return
+        state['reading'] = True
+        self.read_provider_quota(state)
+
     @work(thread=True, group='provider-quota')
     def read_provider_quota(self, state):
         try:  # no model call; the panel shows the saved reading until this one lands

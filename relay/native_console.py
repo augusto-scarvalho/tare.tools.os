@@ -2006,6 +2006,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         self.reviewed_plan = None
         self.reviewed_decision = None
         self.set_status('Preparing execution…')
+        self.read_quota_for_demand()
         self.run_command(args, self.active)
 
     def stopped_turn(self):

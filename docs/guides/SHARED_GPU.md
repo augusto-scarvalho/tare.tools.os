@@ -54,7 +54,8 @@ tare auto it orders the routes of the tier already chosen and never moves work t
 route the routing profile switches off and your own auditor list are untouched. The readings are those of
 `tare quota`; the Max plan's monthly API credit has no API, so state it: `tare quota --set anthropic-api 100 --renews 14`
 (the balance now, the day of the month it renews, and a third number if each cycle brings a different grant).
-`tare quota` marks such a line "used first" and `tare setup --auto-show ROLE` names the allowance.
+The TUI redoes the quota reading in the background at each demand (never waiting for it, at most once a minute), so
+the turn after it judges a fresh reading. `tare quota` marks such a line "used first" and `tare setup --auto-show ROLE` names the allowance.
 
 ## Initial tare auto choice
 

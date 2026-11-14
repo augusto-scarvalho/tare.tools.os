@@ -228,3 +228,40 @@ def test_render_marks_what_is_used_first_and_says_the_credit_renews():
     assert 'used first' not in next(line for line in lines if line.strip().startswith('5 h'))
     assert next(line for line in lines if 'Claude API' in line).endswith(
         'US$ 50.00 left of US$ 100.00 a cycle, renews Mon 14 Dec · used first: 50% left, 25% of the cycle left')
+
+
+def test_a_demand_in_the_tui_starts_one_quota_refresh_and_a_second_one_right_after_starts_none(tmp_path, monkeypatch):
+    import asyncio
+    from textual.widgets import TextArea
+    from relay.native_console import WorkConsole
+    from test_native_console import FakeBackend
+    monkeypatch.setattr('relay.native_agent.session_root', lambda: tmp_path/'custody')
+    monkeypatch.delenv('TARE_CLI_DISCOVERY', raising=False)
+    calls = []
+
+    def refresh():  # a stub: the real one asks the vendors' CLIs
+        calls.append(1)
+        save(reading('claude', bucket()))
+    monkeypatch.setattr(provider_quota, 'refresh', refresh)
+
+    async def demand(app, pilot, text):
+        app.query_one('#prompt', TextArea).load_text(text)
+        await pilot.click('#start'); await pilot.pause(0.3)  # the turn itself stays running until it is cancelled
+
+    async def scenario(asks):
+        (tmp_path/'project').mkdir(exist_ok=True)
+        app = WorkConsole(tmp_path/'project', backend=FakeBackend())
+        async with app.run_test(size=(130, 44)) as pilot:
+            await pilot.pause()
+            app.asks_providers = asks  # what the interactive entry sets
+            await demand(app, pilot, 'First task')
+            first = len(calls)
+            await pilot.click('#cancel')
+            for _ in range(30):
+                if not app.busy:
+                    break
+                await pilot.pause(0.05)
+            await demand(app, pilot, 'Second task')
+            return first, len(calls)
+    assert asyncio.run(scenario(False)) == (0, 0)  # tests and non-interactive entries never run the vendors' CLIs
+    assert asyncio.run(scenario(True)) == (1, 1)  # one for the first demand; the reading is under a minute old for the second

@@ -376,7 +376,8 @@ def surplus(deployment, now=None, cache=None):
                     found.append((bucket['remaining'] - time_left, bucket, time_left))
         except (KeyError, TypeError, AttributeError):
             return None
-        # ponytail: a reading old but inside its window is used as it is; the next refresh corrects it
+        # ponytail: the reading is the last finished one; a refresh started by a TUI demand lands for the next one (tare serve and
+        # tare agent refresh only where they already do)
         if not found or (worst := min(found, key=lambda row: row[0]))[0] <= 0:
             return None
         return {'lead': worst[0], 'remaining': worst[1]['remaining'], 'time_left': worst[2],
