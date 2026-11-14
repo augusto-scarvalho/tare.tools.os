@@ -399,7 +399,7 @@ def test_a_saved_reading_passes_the_same_check_as_a_fresh_one(keys, rates_value,
                                            'output_tokens')}, 'tiers': tiers, 'since': '2026-11-14'}}}
     prices.reading_path().parent.mkdir(parents=True, exist_ok=True)
     prices.reading_path().write_text(json.dumps(saved), encoding='utf-8')
-    assert prices.reading()['models'] == {} and rates(route('claude-fable-5-2')) is None
+    assert prices.reading() is None and rates(route('claude-fable-5-2')) is None  # nothing priced left: no reading
     with pytest.raises(ValueError, match='spend_limit_requires_matching_tariff_and_usage_contract'):
         settings({**route('claude-fable-5-2'), 'native_spend_policy': POLICY})
     assert prices.reference(route('claude-fable-5-2')['native_profile'], saved) is None  # however it is handed over
@@ -500,5 +500,46 @@ def test_setup_refresh_reports_a_failed_reading_and_still_saves_the_choices(keys
     from relay import environment
     monkeypatch.setattr(prices, 'refresh_reading', broken_refresh)
     assert environment.main(['--use', 'api', '--refresh']) == 0
-    assert 'tare setup: reference prices not read: RuntimeError: a bug in the refresh' in capsys.readouterr().err
+    assert ('tare setup: reference prices tried, not read (RuntimeError: a bug in the refresh); there is none yet.'
+            in capsys.readouterr().err)
     assert environment.read()['api_providers']['use'] is True
+
+
+@pytest.mark.parametrize('damaged', ['reference-prices.json', 'reference-prices-attempt.json'])
+def test_a_local_file_nested_too_deep_is_damaged_and_replaced(keys, damaged):
+    path = prices.reading_path().with_name(damaged)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('[' * 10000 + '0' + ']' * 10000, encoding='utf-8')  # past the JSON decoder's recursion limit
+    fetched = []
+    assert prices.refresh_reading(NOW, fetch=lambda: fetched.append(1) or models_dev())['read_at'] == NOW
+    assert fetched == [1] and prices.reading()['read_at'] == NOW
+
+
+def test_a_saved_reading_with_no_priced_model_is_no_reading(keys):
+    prices.reading_path().parent.mkdir(parents=True, exist_ok=True)
+    prices.reading_path().write_text(json.dumps({'schema': prices.READING, 'source': prices.MODELS_DEV,
+                                                 'read_at': NOW, 'models': {}}), encoding='utf-8')
+    fetched = []
+    assert prices.reading() is None
+    assert prices.refresh_reading(NOW + 7200, fetch=lambda: fetched.append(1) or models_dev())['read_at'] == NOW + 7200
+    assert fetched == [1]  # an empty saved reading held nothing back for a day
+
+
+def test_an_attempt_that_reads_nothing_says_why_to_its_caller(reading):
+    reasons = []
+    prices.refresh_reading(NOW + 2*86400, fetch=lambda: {}, failed=reasons.append)
+    assert reasons == ['the file was not shaped as expected']
+    prices.refresh_reading(NOW + 2*86400 + 7200, fetch=lambda: (_ for _ in ()).throw(OSError('offline')),
+                           failed=reasons.append)
+    assert reasons[1] == 'OSError: offline'
+
+
+def test_setup_refresh_says_when_the_network_read_failed(keys, monkeypatch, capsys):
+    from relay import environment
+
+    def unreachable():
+        raise OSError('network is unreachable')
+    monkeypatch.setattr(prices, 'fetch_models_dev', unreachable)
+    assert environment.main(['--refresh']) == 0
+    assert ('tare setup: reference prices tried, not read (OSError: network is unreachable); there is none yet.'
+            in capsys.readouterr().err)

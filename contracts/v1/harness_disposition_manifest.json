@@ -3561,8 +3561,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator interaction, workflow composition and evidence inspection; execution ports remain in Kernel and Runtime.",
-      "size_bytes": 25206,
-      "sha256": "ae467bebefd6c4fecdcf042ac9c361bf7bccf31515e9f44d88ccbfb574e1665c"
+      "size_bytes": 25923,
+      "sha256": "50d4d38a353347850552d55e7d71ae280798fa1fa93724c49428164fb5e72e7a"
     },
     {
       "name": "route_admission.py",
@@ -3821,8 +3821,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 36303,
-      "sha256": "9bb564f909082ba4899a3d09d0f76b1a8facd280956556eb5c1506c267e15e2a"
+      "size_bytes": 36595,
+      "sha256": "4ee148917194ac8b751e7e9786751704381afb8930634f502adfef72ffff54d5"
     },
     {
       "name": "console_setup.py",

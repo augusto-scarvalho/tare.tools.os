@@ -61,19 +61,28 @@ def reading():
         return None
     seen, value = _reading
     if seen != stamp:
-        try:
-            value = json.loads(path.read_text(encoding='utf-8'))
-        except (OSError, ValueError):
-            value = None
+        value = _local_json(path)
         # read_at must be a time every platform can show (Windows stops at the year 3000): else a damaged file. A
         # clock moved back is refresh_reading's concern, which reads again rather than wait.
         valid = isinstance(value, dict) and value.get('schema') == READING and \
             _when(value.get('read_at'), 32503680000) is not None and isinstance(value.get('models'), dict)
-        # The saved file passes the same check as a fresh reading: a damaged or edited entry prices nothing.
-        value = {**value, 'models': {k: e for k, v in value['models'].items() if (e := _valid(v))
-                                     and isinstance(e.get('since'), str) and e['since'].strip()}} if valid else None
+        # The saved file passes the same checks as a fresh reading: a damaged or edited entry prices nothing, and a
+        # file left without a priced model for each provider is no reading at all (so it is read again).
+        models = {k: e for k, v in value['models'].items() if (e := _valid(v))
+                  and isinstance(e.get('since'), str) and e['since'].strip()} if valid else {}
+        value = {**value, 'models': models} if all(any(k.startswith(p+'/') for k in models) for p in PROVIDERS) \
+            else None
         _reading = (stamp, value)
     return value
+
+
+def _local_json(path):
+    """One of tare's own files decoded, or None when it cannot be read or decoded for any reason (missing,
+    unreadable, not JSON, nested too deep for the decoder): a damaged file, which the next refresh replaces."""
+    try:
+        return json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError, RecursionError):
+        return None
 
 
 def _when(value, now):
@@ -177,11 +186,12 @@ def fetch_models_dev():
     return json.loads(raw)
 
 
-def refresh_reading(now=None, fetch=None, setup=None):
+def refresh_reading(now=None, fetch=None, setup=None, failed=None):
     """Read models.dev at most once a day (after an attempt that failed, at most once an hour) and keep it with the
     day it was read. A failed, empty or reshaped reading keeps the last good one; one that parses replaces it whole
     (a model it does not list is unknown until a later reading lists it). `setup`: the machine's choices as tare
-    setup is about to save them; else the saved ones."""
+    setup is about to save them; else the saved ones. `failed`: called with a few words when an attempt was made and
+    read nothing usable (tare setup says so; start-up stays quiet)."""
     global _reading
     now = time.time() if now is None else now
     saved = reading()
@@ -196,22 +206,22 @@ def refresh_reading(now=None, fetch=None, setup=None):
         return saved  # no route that would use it is set up here
     # Each attempt's time, so an outage costs one GET an hour, not one per start; the first reading never waits.
     attempt = reading_path().with_name('reference-prices-attempt.json')
-    try:  # an unusable record (unreadable, not a number, negative, after now) is no record
-        last = _when(json.loads(attempt.read_text(encoding='utf-8')).get('at'), now)
-    except (OSError, ValueError, AttributeError):
-        last = None
+    record = _local_json(attempt)  # an unusable record (damaged, not a number, negative, after now) is no record
+    last = _when(record.get('at'), now) if isinstance(record, dict) else None
     if last is not None and now - last < 3600:
         return saved
     from .relay_io import write_json_atomic
     attempt.parent.mkdir(parents=True, exist_ok=True)
     write_json_atomic(attempt, {'at': now})
     try:  # reading and parsing a third party's file is one step: whatever fails in it, the last good reading stays
-        models = parse_reading((fetch or fetch_models_dev)())
+        models, why = parse_reading((fetch or fetch_models_dev)()), 'the file was not shaped as expected'
     except AssertionError:
         raise  # a failed check (a test's, or tare's own) is a bug, never an outage
-    except Exception:  # the network (DNS, TLS, HTTP, a cut), or an answer shaped as nobody foresaw: no reading now
-        models = None
+    except Exception as exc:  # the network (DNS, TLS, HTTP, a cut), or an answer shaped as nobody foresaw: no reading now
+        models, why = None, (type(exc).__name__ + ': ' + str(exc))[:160]
     if not models:
+        if failed:
+            failed(why)
         return saved
     day, before = datetime.fromtimestamp(now, timezone.utc).date().isoformat(), (saved or {}).get('models', {})
     # A price keeps the day it was first read while it stays the same, so a session spending against it can resume.

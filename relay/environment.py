@@ -672,12 +672,18 @@ def main(argv=None):
         if args.refresh:
             for gateway in list((value.get('local_models') or {}).get('gateways') or []):
                 value = add_gateway(value, gateway['origin'])
+            from datetime import datetime, timezone
+            from .provider_prices import reading, refresh_reading
+
+            def unread(why):  # said in the output, like a gateway that does not answer; the choices still save
+                last = reading()
+                print(f'tare setup: reference prices tried, not read ({why}); ' + (
+                    f"the reading of {datetime.fromtimestamp(last['read_at'], timezone.utc).date()} stays."
+                    if last else 'there is none yet.'), file=sys.stderr)
             try:  # the models.dev reference prices, if not read today; no model call, no key sent
-                from .provider_prices import refresh_reading
-                refresh_reading(setup=value)  # with this command's --use / --no-use, not the saved choices
-            except Exception as exc:  # said in the output, like a gateway that does not answer; the choices still save
-                print(f'tare setup: reference prices not read: {type(exc).__name__}: {str(exc)[:200]}; '
-                      'the last reading stays.', file=sys.stderr)
+                refresh_reading(setup=value, failed=unread)  # with this command's --use / --no-use, not the saved ones
+            except Exception as exc:
+                unread(f'{type(exc).__name__}: {str(exc)[:200]}')
         if args.credential:
             value = store_credential(value, args.credential, sys.stdin)
         if args.old_models:
