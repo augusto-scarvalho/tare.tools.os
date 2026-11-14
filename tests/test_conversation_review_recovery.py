@@ -381,10 +381,13 @@ def test_execution_selection_records_host_choices_without_secrets_or_provider_cl
         'native_profile':{'model':'other-model','protocol':'anthropic-messages',
                           'parameters_json':json.dumps({'output_config':{'effort':'high'}})}}
     monkeypatch.setattr(work_audit,'identity',lambda d,r:SimpleNamespace(
-        vendor='openai' if r=='implementer' else 'anthropic',model_id=d['native_profile']['model'],bias_domain=r))
+        vendor='openai' if r=='implementer' else 'anthropic',model_id=d['native_profile']['model'],bias_domain=r,
+        payload={'line':'gpt-terra'} if r=='implementer' else {}))
     facts=conversation_review.execution_selection(author,reviewer)
     assert facts['implementer']['requested_reasoning']=='high' and facts['implementer']['vendor']=='openai'
     assert facts['auditor']['requested_reasoning']=='high' and facts['auditor']['vendor']=='anthropic'
+    # An identity derived from the model's line says so; a recorded one does not.
+    assert facts['implementer']['line']=='gpt-terra' and 'line' not in facts['auditor']
     assert facts['provider_internal_reasoning_attested'] is False and 'SECRET' not in json.dumps(facts)
     monkeypatch.setattr(work_audit,'identity',lambda *a:(_ for _ in ()).throw(ValueError('unknown lineage')))
     unknown=conversation_review.execution_selection(author,reviewer)

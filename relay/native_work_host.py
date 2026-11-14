@@ -206,7 +206,7 @@ def create_runner(deployment, work_id, custody, *, budget=None, timeout=native_l
         raise ValueError('native_work_requires_registered_model_identity')
     identity = attest_identity(roster_path=relay_mesh.RELAY_DIR/'round_table_roster.json',
         agent_id='tare-run:'+deployment['id'], role='implementer', model_id=model_id,
-        runtime_key='native', runtime_model=profile.model)
+        runtime_key='native', runtime_model=profile.model, endpoint=profile.endpoint)
     from .work_run import coordinator_path
     gate = CoordinatorAuthorityGate(CoordinatorDB(coordinator_path(graph_path)))
     with custody_lock(root):

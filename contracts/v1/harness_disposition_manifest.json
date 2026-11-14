@@ -2127,8 +2127,8 @@
     {
       "name": "landing_policy.py",
       "path": "tare.tools.os/relay/landing_policy.py",
-      "size_bytes": 18970,
-      "sha256": "b746232a173236a22f59e7f3938b7111f160b74b6f62687946bbfc930ccadb7b",
+      "size_bytes": 21127,
+      "sha256": "c3eba94a20939a542e9956ae1bc256804a5087e44350bac5944c242dcfd69bdd",
       "summary": "Deterministic smart admission with optional independent cross-model audit.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -2291,8 +2291,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 25089,
-      "sha256": "4df56ffd38e12acc40db9f75e105e6de04b7307e003c83de4e1414a9a75a7181"
+      "size_bytes": 25116,
+      "sha256": "1932f7e3a98d04ebc1c0453bd12e46721d3143f716a0b3e9fa8a414c840399e1"
     },
     {
       "name": "overseer_agent.py",
@@ -2591,8 +2591,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns vendor model discovery and selection; Runtime retains session execution.",
-      "size_bytes": 7328,
-      "sha256": "6ec2a27816d721bc44a8868a734e9f98740b69f8f7b7e8dfcf45f11cb7e59a9c"
+      "size_bytes": 8578,
+      "sha256": "e362384586179a111c8b8ecf8538b62d70ca52ef2d8a35cfc603d8cc544c23f7"
     },
     {
       "name": "watcher.py",
@@ -2781,8 +2781,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 12751,
-      "sha256": "2500cc4e3ef5fe270fee300ec2dc645195e235014d6967922beec0092149ea6a"
+      "size_bytes": 12814,
+      "sha256": "01f1f8016ab2522e1eac1303b5cc7bffe1e939a8eae3612dacf71a31d5e2b44e"
     },
     {
       "name": "work_change.py",
@@ -3361,8 +3361,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator model selection; Runtime retains session execution.",
-      "size_bytes": 31284,
-      "sha256": "5387ded7c06a42fcde21deb8aa41aa2b11293d4c5eb357f9a2d9facf7d786663"
+      "size_bytes": 31390,
+      "sha256": "973691956aaccd5932921e5c6316ee67728fd5b2a887aebad022c61702b3094d"
     },
     {
       "name": "model_picker.py",
@@ -3761,8 +3761,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS composes isolated Work preparation and existing admission; Kernel owns workspaces and Runtime owns model execution.",
-      "size_bytes": 18975,
-      "sha256": "6145d5a75dab1ad667bbbbbe5b300553d3bfe8d51b58a78aa107bdbe6a7d9b54"
+      "size_bytes": 19002,
+      "sha256": "71aab1a324b2f1872b17ebd68254a5649c5c8bc44c3593b35415911d933a6e2e"
     },
     {
       "name": "ci_watch.py",
@@ -4111,8 +4111,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 73660,
-      "sha256": "a4c622fd99d7e6d8777c322430239edaaf01df9f076bc91ed460a8d3ae0e8470"
+      "size_bytes": 73764,
+      "sha256": "76cea8b9ac07fa74d97db8e4a7dd7e633523a126d943432475e33fa88b3c6852"
     },
     {
       "name": "conversation_workspace.py",
