@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The disposition manifest is regenerated for the correction below (its three `relay` files); no behaviour changes.
 - Correction to the entry below on checks judged by activity: in a Work run, the candidate's verification before landing stops at 300 s (60 s before), not at 2 hours. The Kernel refuses a longer ceiling for that verification, and with 2 hours every such Work run failed before it started (caught by CI, never released). Its stop after 5 silent minutes applies as everywhere; `--unlimited time` removes the 300 s as before.
 - Kernel pin moved to 089ace9 (Kernel #23): any growth of a process tree's CPU time counts as activity. Before, less than 1% of a core in a second read as silence, so a check that mostly waits on disk or on another process could be taken for stalled.
 - Kernel pin moved to 827df14, the merge of the activity supervision (Kernel #22); the code is the same as at da6089f.
