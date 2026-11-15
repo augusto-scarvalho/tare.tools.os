@@ -57,6 +57,13 @@ class GraphTask(Record):
     # (with pytest, file::test names one test).
     verifiers: list[str] = Field(default_factory=list, max_length=16)
     test_paths: list[str] = Field(default_factory=list, max_length=64)
+    needs: Literal['cheap', 'middling', 'frontier'] | None = Field(default=None, description=(
+        'The least capable class of model that can implement this task well, judged from what you read: '
+        'cheap: a routine edit or small fix in one or two files, following patterns already in the code. '
+        'middling: a moderate change across several files, an unfamiliar library or API, or logic that needs care. '
+        'frontier: a complex refactor, a subtle bug, concurrency, security-sensitive or architecture work across '
+        'many files. tare gives the task to the cheapest available model of that class or above; when unsure '
+        'between two, say the higher.'))
 
 
 class Plan(Proposal):
@@ -99,6 +106,10 @@ def validate(role, value):
     result = MODELS[role].model_validate(value).model_dump()
     if role == 'planner' and 'tasks' not in value:
         result.pop('tasks')  # Preserve existing handoff bytes when graph planning is unused.
+    elif role == 'planner':
+        for task, given in zip(result['tasks'], value['tasks']):
+            if 'needs' not in given:
+                task.pop('needs')  # Likewise for a task that states no need: a plan saved before the field keeps its digest.
     if role == 'explorer':
         # Likewise for an explorer that lists no places, concludes nothing or marks no location.
         if 'locations' not in value:

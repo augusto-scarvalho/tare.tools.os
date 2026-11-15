@@ -630,7 +630,7 @@ def implementer_label(name, deployment):
         return str(name)  # presentation only
 
 
-def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None):
+def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None, needs=None):
     """The implementer routes to try, whichever account the conversation runs on (owner, 2026-11-14): the routes of
     the kind --prefer_* names first, then those whose allowance lapses in surplus (the sooner lapse first), then tare's
     implementer ladder, cheapest tier first (the owner's <storage>/serve/routing.json, else tare's). With nothing in
@@ -640,7 +640,10 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
     tried first and alone. Nothing waits for a busy GPU (owner, 2026-10-08): a local route whose GPU an image job holds
     is skipped, the coordinator's chosen one included, and the unit takes the next routes. A route the routing profile
     switches off for the implementer is never run, the coordinator's chosen one and the fallback to the session's own
-    model included (only a pin is the user's own choice); `refused` collects why."""
+    model included (only a pin is the user's own choice); `refused` collects why. `needs` is the class the plan says
+    the unit needs (cheap, middling, frontier): the routes whose class reaches it come first, in the order above, then
+    those one class short, then two, so a weaker one runs only when nothing nearer is available and a hard unit does
+    not go to a weak model because its allowance is free. A route the coordinator chose, or a pin, is not reordered."""
     from .native_catalog import select
     from .turn_engine import available, gpu_taken, policy, surplus_first, with_effort
     from .execution_scope import current, execution_tiers, is_pro, kind, refusal
@@ -666,6 +669,14 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
         allowed.append(parent_name)  # The conversation's own connection, in a separate role, after the ladder.
     if chosen and chosen not in allowed:
         raise ValueError("Choose one of tare's implementer routes: " + ', '.join(allowed))
+    if needs and not chosen:
+        from .model_signals import ORDER, short
+        def weaker(name):
+            try:
+                return short(select(name), needs)
+            except (ValueError, OSError, KeyError, TypeError):
+                return len(ORDER)
+        allowed.sort(key=weaker)  # stable: the routes that reach the need first, each part in its own order
     gpu_busy = False
     def names():
         yield from [chosen] if chosen else allowed
@@ -1200,7 +1211,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
     producer=candidate_producer(custody,candidate['producer']) if candidate and candidate.get('review_only') else None
     refused = []  # why the routing profile refused the coordinator's chosen route or the session's own model
     choices = [(worker['route'], worker['producer'])] if worker else [(producer['id'], producer)] if producer else routes(
-        state.get('deployment') or {}, args.get('route'), args.get('effort'), refused=refused,
+        state.get('deployment') or {}, args.get('route'), args.get('effort'), refused=refused, needs=unit.get('needs'),
         **({'allow_parent': True} if state.get('conversation_flow') else {}))
     visited = []  # rungs actually reached, for executed_decision only; selection is unchanged
     for rung, (name, deployment) in enumerate(choices):
@@ -1217,6 +1228,9 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                         and callable(getattr(review,'resume_tree',None)) else None)
         tree = waiting[0] if waiting else resumed_view or storage_root()/'wt'/uuid.uuid4().hex[:8]  # short: Windows paths stop at 260 characters
         row = {'route': name}
+        if unit.get('needs'):  # kept with the outcome: how each class of model did on each class of unit
+            from .model_signals import klass
+            row.update(needs=unit['needs'], route_class=(klass(deployment) or {}).get('class') or 'cheap')
         check_token = None
         keep_tree = bool(waiting)
         try:
@@ -1546,7 +1560,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 (job/f'patch-{rung+1}.diff').write_bytes(patch)
                 row['patch'] = str(job/f'patch-{rung+1}.diff')
             result = {'verdict': verdict_, 'reason': reason, 'route': name, 'files': sorted(changed),
-                      'checks_before': row['before'], 'checks_after': row['after']}
+                      'checks_before': row['before'], 'checks_after': row['after'],
+                      **{k: row[k] for k in ('needs', 'route_class') if k in row}}
             if was_red:
                 result['already_red'] = row['already_red'] = was_red
             if set_aside:
@@ -1665,11 +1680,13 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
         except CheckCleanupUnknown as exc:
             keep_tree=True
             row.update(verdict='INCONCLUSIVE',reason=str(exc)[:300])
-            result={'verdict':'INCONCLUSIVE','reason':row['reason'],'route':name,'retained_tree':str(tree)}
+            result={'verdict':'INCONCLUSIVE','reason':row['reason'],'route':name,'retained_tree':str(tree),
+                    **{k: row[k] for k in ('needs', 'route_class') if k in row}}
             break
         except (ValueError, OSError, KeyError, subprocess.SubprocessError) as exc:
             row.update(verdict='INCONCLUSIVE', reason=str(exc)[:300])
-            result = {'verdict': 'INCONCLUSIVE', 'reason': row['reason'], 'route': name}
+            result = {'verdict': 'INCONCLUSIVE', 'reason': row['reason'], 'route': name,
+                      **{k: row[k] for k in ('needs', 'route_class') if k in row}}
             if keep_tree and worker:
                 result['worker']={**worker,'producer':producer_reference(Path(worker['session']).parent,worker['producer'])}
             if state.get('conversation_flow') or 'R0' in row['reason'] or 'R5' in row['reason'] or candidate is not None:
