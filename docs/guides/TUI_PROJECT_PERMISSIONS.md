@@ -241,7 +241,9 @@ their output, before any model call of the implementer:
 - **Stop** (also Escape): no implementer starts and nothing is spent on one; the
   result names the checks that already failed, and the coordinator tells you.
 
-The dialog starts on **Stop**. One answer holds for the rest of the turn while the
+The dialog starts on **Stop**, unless every failing check is a test the plan itself
+names (a request to fix what an existing test catches): then it says so and starts
+on **Continue**, so a reflex Enter goes on to the fix. One answer holds for the rest of the turn while the
 same checks fail; a new turn, or other failing checks, asks again, and nothing is
 saved for the project. **Continue without** stays with the change it was given for:
 a correction the auditor asks for, a recheck or a resumed worker judges that kept
