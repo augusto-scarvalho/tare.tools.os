@@ -543,3 +543,18 @@ def test_the_matrix_rows_agree_with_the_paths_that_route(pool, monkeypatch):
     for name in set(rules['researcher']) - set(flat(rules['implementer'])) - set(turn_engine.HELPER_ROUTES):
         assert (rows[name] == 'ROLE_NOT_CONFIGURED') == ('admitted research' in snapshot['unavailable'].get(name, '')), name
         assert rows[name] != 'usable' or name in snapshot['routes'], name
+
+
+def test_a_row_shows_its_models_class_and_a_cell_the_routes_own_record_as_implementer(pool, tmp_path):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+    from relay.native_installation import storage_root
+    job = storage_root()/'agent-sessions'/'s1'/'units'/'a'
+    job.mkdir(parents=True)
+    (job/'receipt.json').write_text(json.dumps({'rungs': [{'route': 'claude-opus-5-5-cli', 'verdict': 'VERIFIED'}],
+        'result': {'route': 'claude-opus-5-5-cli', 'applied': True}}), encoding='utf-8')
+
+    async def steps(app, pilot, panel, cell, status):
+        assert 'Claude Opus · middling' in rendered(panel, 'claude/opus')
+        await cell('claude/opus', 'claude-code')
+        assert '(as implementer here: 1 runs; 1 passed the checks; 0 of 0 audits accepted; 1 applied)' in status()
+    journey(tmp_path, steps)
