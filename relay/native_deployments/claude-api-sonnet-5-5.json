@@ -9,7 +9,7 @@
     "protocol": "anthropic-messages",
     "model": "claude-sonnet-5-5",
     "endpoint": "https://api.anthropic.com/v1",
-    "context_window": 131072,
+    "context_window": 155648,
     "output_tokens": 32768,
     "parameters_json": "{\"cache_control\":{\"type\":\"ephemeral\"}}",
     "source": "https://platform.claude.com/docs/en/models/overview; conservative Tare context/output caps, not provider maxima; provider default adaptive thinking and effort; the output cap is 32,768, not 8,192, because thinking counts toward it: on 2026-11-15 a claude-api-opus-5-5 implementer spent 8,192 of 8,192 output tokens on thinking in one reply and returned nothing (PARTIAL_REPLY)"

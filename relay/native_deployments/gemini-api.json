@@ -4,7 +4,7 @@
   "native_reasoning_levels": ["low", "medium", "high"],
   "native_profile": {
     "protocol": "openai-chat", "model": "gemini-4-argon",
-    "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai", "context_window": 131072, "output_tokens": 32768,
+    "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai", "context_window": 155648, "output_tokens": 32768,
     "parameters_json": "{\"reasoning_effort\":\"medium\"}",
     "source": "https://ai.google.dev/gemini-api/docs/openai; conservative Tare context/output caps, not provider maxima; implicit cache only; the output cap is 32,768, not 8,192, because thinking counts toward it: on 2026-11-15 a claude-api-opus-5-5 implementer spent 8,192 of 8,192 output tokens on thinking in one reply and returned nothing (PARTIAL_REPLY)"
   },
