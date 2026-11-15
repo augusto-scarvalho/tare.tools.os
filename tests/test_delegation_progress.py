@@ -132,7 +132,7 @@ def test_the_row_names_the_check_then_the_implementer_before_its_session_then_th
     result = run([('worker', deployment())], worker, review=lambda *a: ACCEPT)
     assert result['verdict'] == 'VERIFIED'
     label = work_units.implementer_label('worker', deployment())
-    assert label.startswith('Implementer · ') and label != 'worker'
+    assert label != 'worker' and not label.startswith('Implementer')  # the row already says the role
     targets = [t for t, _ in said]
     assert targets[0] == label and 'check before: conversation-diff' in targets
     assert seen['when'][-1][0] == label and 'working' in seen['when'][-1][1]  # before any model session row

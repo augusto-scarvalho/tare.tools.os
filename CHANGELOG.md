@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The delegated implementation's row names its implementer by model, reasoning and connection, without repeating "Implementer": the row already says it delegates an implementation, and the repeated word pushed the connection out of a narrow title.
 - While tare delegates an implementation, its row in the conversation says what is happening instead of staying on "Awaiting result": the check running before the change (`check before: NAME`), the implementer as soon as tare has chosen it (role, model, reasoning and connection, as the "Model execution" row shows it, and the next route's when one fails), the check after the change, and the audit. A check that shows no output and uses no CPU time for 30 seconds adds `silent for N s` to the row, which refreshes at most every 10 seconds; the row's detail has the check's running time. Nothing changes where no screen can show it (`tare serve`, `tare agent`, a Work run), and the journal keeps what it kept.
 - Kernel pin moved to 089ace9 (Kernel #23): any growth of a process tree's CPU time counts as activity. Before, less than 1% of a core in a second read as silence, so a check that mostly waits on disk or on another process could be taken for stalled.
 - Kernel pin moved to 827df14, the merge of the activity supervision (Kernel #22); the code is the same as at da6089f.

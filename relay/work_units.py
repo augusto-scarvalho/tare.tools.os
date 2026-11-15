@@ -597,11 +597,13 @@ def lapsing_outside(ladder):
 
 
 def implementer_label(name, deployment):
-    """The implementer as the "Model execution" row names it: role, model, reasoning and connection."""
+    """The implementer as the "Model execution" row names it, without the role the row already says: model,
+    reasoning and connection."""
     try:
-        from .execution_team import actor, actor_label
+        from .execution_team import actor
+        from .model_choices import model_label
         person = actor({'deployment': deployment, 'config': {'role': 'implementer'}})
-        return actor_label(person)+' · '+person['connection']
+        return ' · '.join((model_label(person['model']) or person['model'], person['reasoning'], person['connection']))
     except Exception:
         return str(name)  # presentation only
 
