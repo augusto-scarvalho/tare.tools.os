@@ -142,6 +142,17 @@ def test_the_row_names_the_check_then_the_implementer_before_its_session_then_th
     assert label in before and 'before the change' in before
 
 
+def test_the_checks_before_applying_are_named_after_the_audit(unit_run):
+    run, said = unit_run
+
+    def review(*a):
+        work_units.PROGRESS.get().audit()  # as conversation_tasks' audit does
+        return ACCEPT
+    assert run([('worker', deployment())], writes, review=review)['verdict'] == 'VERIFIED'
+    targets = [t for t, _ in said]
+    assert 'check after: conversation-diff' in targets[targets.index('audit'):]
+
+
 def test_when_a_rung_fails_the_next_one_is_named(unit_run):
     run, said = unit_run
     second = {**deployment(), 'native_profile': {**deployment()['native_profile'], 'model': 'another-model'}}

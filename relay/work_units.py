@@ -1524,6 +1524,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     break
             if verdict_ == 'VERIFIED':
                 with batch.apply:  # each change is checked on the tree the earlier ones left, then applied
+                    if progress is not None:
+                        progress.begin('after')  # the checks before applying: the row leaves "audit"
                     moved = stale(tree, batch.applied)
                     again = run_checks(tree, commands) if moved else ('green', '')
                     if again[0] != 'green':
