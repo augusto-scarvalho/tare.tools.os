@@ -372,7 +372,26 @@ def own_items(storage, home, roots):
                     if re.fullmatch('command-tmp'+TOMB, p.name)]
 
 
-def own_reason(kind, path, size, gitfiles, observed, records, storage, busy):
+def running_turns(storage):
+    """When each turn still in progress in this storage started: a conversation's invocation with no end whose
+    process, on this host, is not provably gone. Such a turn can wait days for the user's answer with nothing open
+    in its candidate tree. A record from before invocations named their process is not counted."""
+    import socket
+    from .native_model_recovery import _gone, _moment
+    starts = []
+    for path in (storage/'agent-sessions').glob('*/native-agent.json'):
+        try:
+            invocations = read(path).get('invocations') or []
+        except (OSError, ValueError, AttributeError):
+            continue
+        starts += [row['started_at'] for row in invocations
+                   if isinstance(row, dict) and row.get('ended_at') is None and _moment(row.get('started_at'))
+                   and row.get('owner_host') == socket.gethostname() and type(row.get('owner_pid')) is int
+                   and not _gone(row['owner_pid'], row['started_at'])]
+    return starts
+
+
+def own_reason(kind, path, size, gitfiles, observed, records, storage, busy, turns=()):
     """Why tare still needs one of its own leftovers; None when it is orphaned; a Path when it is orphaned but Git
     still registers it with that project (run_unit's `git worktree remove` comes first)."""
     if not size['complete']:
@@ -383,6 +402,9 @@ def own_reason(kind, path, size, gitfiles, observed, records, storage, busy):
         return 'Changed within the last day.'
     if pid := in_use(path, observed):
         return 'In use by PID '+str(pid)+'.'
+    # Only what finished or interrupted work left: a turn that began before this item's last write may own it.
+    if kind in ('candidate', 'command-tmp', 'check') and any(start < size['newest'] for start in turns):
+        return 'A turn still in progress may be using it.'
     if busy:
         return 'An update or a launch holds the installation lock.'
     links = {}  # the .git files inside that point at a repository outside that still exists
@@ -443,6 +465,7 @@ def own_rows(storage, home, roots, *, seconds=60, remove=False, observed=None):
                    for p in (storage/'agent-sessions').glob('*/conversation-tasks.json')}
     except (OSError, ValueError):
         records = None  # one may name a waiting worker: every candidate tree and worker folder is kept
+    turns = running_turns(storage)
     rows = []
     for kind, group in itertools.groupby(items, key=lambda item: item[0]):
         with ExitStack() as held:
@@ -460,7 +483,7 @@ def own_rows(storage, home, roots, *, seconds=60, remove=False, observed=None):
                 try:
                     if time.monotonic() >= deadline:
                         raise ValueError("Not inspected: the sweep's time ran out; the next one goes on.")
-                    reason = own_reason(kind, path, size, gitfiles, observed, records, storage, busy)
+                    reason = own_reason(kind, path, size, gitfiles, observed, records, storage, busy, turns)
                     if isinstance(reason, str):
                         raise ValueError(reason)
                     if not remove:

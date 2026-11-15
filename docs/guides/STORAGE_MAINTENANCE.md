@@ -34,7 +34,12 @@ for at most a minute; a removal it has begun finishes (Git's own removal of a
 registered tree has two minutes). Nothing to configure. An item goes only
 when no record of tare can still need it **and** its newest file is more than a
 day old (a usage marker goes as soon as its process is dead, whatever its age);
-anything uncertain is kept.
+anything uncertain is kept. Only finished or interrupted work is swept: while a
+conversation's turn is still in progress (it can wait days for an answer with
+nothing open in its tree), every candidate tree, command folder and check
+scratch last written after that turn began is kept. A turn counts as in progress
+while its record has no end and its process, on this machine, is not provably
+gone.
 
 | Where | Made by | Deleted at a normal end by | Still needed after its process is gone by |
 |---|---|---|---|

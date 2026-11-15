@@ -3691,8 +3691,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns product storage inventory, cleanup previews and preservation of operator state.",
-      "size_bytes": 43280,
-      "sha256": "1bf5b3b9d7d02eb999246299a51fa9781f51f3ec50d332dfff9951db748bd653"
+      "size_bytes": 44639,
+      "sha256": "f44d85f63271eb72db97d5b8ddeb49fb694d5ebac6fbfbe0331fb67ce2c892b2"
     },
     {
       "name": "console_storage.py",

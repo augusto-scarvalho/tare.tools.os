@@ -311,6 +311,42 @@ def test_the_sweep_kills_a_stamped_process_whose_tare_is_dead_and_nothing_else(t
             process.kill(); process.wait()
 
 
+def test_a_turn_still_in_progress_keeps_its_idle_candidate_tree(tmp_path, monkeypatch):
+    # A conversation can wait days for the user's answer with nothing open in its tree: only finished or
+    # interrupted work is swept.
+    import socket
+    import subprocess
+    from relay import native_model_recovery
+    monkeypatch.setattr(storage, 'processes', lambda: [])
+    # This test's process stands for a tare that has run for days (it was really created a moment ago, which the
+    # real check reads as a reused pid).
+    monkeypatch.setattr(native_model_recovery, '_gone', lambda pid, born_before: pid != os.getpid())
+    root, home = tmp_path/'storage', tmp_path/'product'
+    tree = root/'wt'/'0123abcd'
+    (tree/'sub').mkdir(parents=True); (tree/'sub'/'edited.py').write_text('work in progress')
+    two_days_ago = time.time()-2*86400
+    for path in (tree/'sub'/'edited.py', tree/'sub', tree):
+        os.utime(path, (two_days_ago, two_days_ago))
+    record = root/'agent-sessions'/'conversation'/'native-agent.json'
+    record.parent.mkdir(parents=True)
+    ended = subprocess.Popen([sys.executable, '-c', '']); ended.wait()
+
+    def turn(**fields):  # the conversation's turn began before the tree's last write
+        row = {'id': 'i', 'started_at': time.time()-3*86400, 'owner_host': socket.gethostname(), **fields}
+        record.write_text(json.dumps({'invocations': [{'id': 'old', 'started_at': 1.0, 'ended_at': 2.0}, row]}))
+        return {Path(r['path']).name: r for r in storage.sweep(root, home, (tmp_path/'u', tmp_path/'t', tmp_path/'l'))}
+
+    rows = turn(owner_pid=os.getpid())  # waiting for the user: its process runs and the turn has no end
+    assert tree.exists() and 'in progress' in rows['0123abcd']['reason']
+    rows = turn(owner_pid=os.getpid(), started_at=time.time()-3600)  # a turn that began after the tree's last write
+    assert not tree.exists() and rows['0123abcd']['status'] == 'removed'
+    for fields in ({'owner_pid': os.getpid(), 'ended_at': time.time()}, {'owner_pid': ended.pid}, {}):
+        (tree/'sub').mkdir(parents=True)  # a finished turn, a dead process, a record with no process: all swept
+        for path in (tree/'sub', tree):
+            os.utime(path, (two_days_ago, two_days_ago))
+        assert turn(**fields)['0123abcd']['status'] == 'removed' and not tree.exists()
+
+
 def test_the_windows_sweep_never_looks_at_processes(tmp_path, monkeypatch):
     from compute_plane import managed_process
     monkeypatch.setattr(storage.os, 'name', 'nt')  # only kill_orphans runs here; the folder sweep is not called
