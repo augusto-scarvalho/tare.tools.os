@@ -231,7 +231,7 @@ their output, before any model call of the implementer:
 
 - **Continue: this change must make it pass**: as before. If it still fails after
   the change, nothing is applied, and the result says it already failed before.
-- **Continue without this check**: for this run only, tare leaves it out of the
+- **Continue without this check**: for this change only, tare leaves it out of the
   checks it runs after the change and of the implementer's checks, and judges the
   change by the others. The result names it (`checks_set_aside`, and "not judged
   by ..., which already failed before the change (the user's decision)"), and the
@@ -243,7 +243,9 @@ their output, before any model call of the implementer:
 
 The dialog starts on **Stop**. One answer holds for the rest of the turn while the
 same checks fail; a new turn, or other failing checks, asks again, and nothing is
-saved. Nobody is asked where no one can be (`tare serve`, Work runs): the unit runs
+saved for the project. **Continue without** stays with the change it was given for:
+a correction the auditor asks for, a recheck or a resumed worker judges that kept
+change without the same checks, in a later turn too, and is not asked again. Nobody is asked where no one can be (`tare serve`, Work runs): the unit runs
 as before. Nor is it asked when the only failing checks are tests the plan writes
 (a new test fails until it is written), or on a retained candidate, whose checks
 already ran on a change.
