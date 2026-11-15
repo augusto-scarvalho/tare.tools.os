@@ -106,6 +106,10 @@ def validate(role, value):
     result = MODELS[role].model_validate(value).model_dump()
     if role == 'planner' and 'tasks' not in value:
         result.pop('tasks')  # Preserve existing handoff bytes when graph planning is unused.
+    elif role == 'planner':
+        for task, given in zip(result['tasks'], value['tasks']):
+            if 'needs' not in given:
+                task.pop('needs')  # Likewise for a task that states no need: a plan saved before the field keeps its digest.
     if role == 'explorer':
         # Likewise for an explorer that lists no places, concludes nothing or marks no location.
         if 'locations' not in value:
