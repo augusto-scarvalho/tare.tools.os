@@ -160,8 +160,9 @@ routes. Codex is asked for its reasoning summaries, which put a row on stdout ev
 works (measured 2026-11-15; without them it printed nothing for 92 s of a 95 s call). AGY's stdout stays silent while
 the model works, so an AGY call is not judged while it works: AGY itself gives up on a connection after 5 silent
 minutes, retries and reports each failed attempt, and from the first such report its retries have 10 minutes to
-answer. Those reports (and Codex's "Reconnecting" rows) do not count as life. An AGY process that hangs without
-reporting anything is stopped only by the session's budget or by cancelling. A request that is not streamed keeps
+answer. Those reports (and Codex's "Reconnecting" rows) do not count as life. They are recognised by their text as
+AGY 1.5.9 wrote it, so an AGY call that reported nothing still has a ceiling: 30 minutes without a word on stdout,
+which also ends an AGY process that hangs without reporting; a working AGY call silent for longer is cut. A request that is not streamed keeps
 a finite request timeout. Claude Code's CPU time is not a signal either: a hung one still ticks it.
 
 `native-http` is the existing host selector; `vendor-cli` chooses the process
