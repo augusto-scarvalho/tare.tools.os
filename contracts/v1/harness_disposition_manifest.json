@@ -2651,8 +2651,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 6237,
-      "sha256": "616044a8c1461a580a9ea3e8b63f43d2203caf6dee31a02c7271da0f73aae313"
+      "size_bytes": 6151,
+      "sha256": "a81ffdfeaecdefbb3b2509d6e5436f400b602cdcd9f09391257cb5f53de2e0ac"
     },
     {
       "name": "console_backend.py",
@@ -4301,8 +4301,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 7343,
-      "sha256": "0fd2205e76854d606a2f312e3f409cc153f7d3807b5473150f19751f4c40fb1c"
+      "size_bytes": 7337,
+      "sha256": "03fdfd569950154655f79ee9bb3d65eee43aa70e1526154b3797876d4e439145"
     },
     {
       "name": "openrouter.py",

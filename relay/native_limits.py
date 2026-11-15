@@ -35,12 +35,12 @@ def validate(values):
 
 
 def streams(deployment):
-    """Whether this route shows life while the model works: a streaming HTTP request, or a vendor CLI whose stdout
-    does (the Kernel names the ones that print nothing until the reply is whole). Those get a silence window."""
+    """Whether this route shows life while the model works: a streaming HTTP request, or a vendor CLI (the Kernel
+    judges each by what its stdout says: rows while it works, or its report of a failed attempt). Those get a
+    silence window."""
     profile = deployment.get('native_profile') or {}
     if profile.get('protocol') == 'vendor-cli':
-        from compute_plane.native_cli import SILENT_BY_DESIGN
-        return profile.get('endpoint') not in SILENT_BY_DESIGN
+        return True
     from .native_generation import streaming
     return bool(profile) and streaming(deployment)
 

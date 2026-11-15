@@ -151,14 +151,18 @@ they spend AGY's allowance, not Claude's ([model picker](MODEL_PICKER.md)).
 ```
 
 A model call is judged by the silence of its stream, not by a fixed clock
-(`relay/native_limits.py`, `SILENCE_SECONDS`, 600). A streaming HTTP request and a Claude Code call have no
+(`relay/native_limits.py`, `SILENCE_SECONDS`, 600). A streaming HTTP request and a vendor CLI call have no
 request total of their own: bytes that keep arriving are never cut, a connection or call that sent nothing for
-10 minutes is stopped and reported as silent (`HTTP_*` as before; `CLI_SILENT_EXCHANGE` for Claude Code, with
+10 minutes is stopped and reported as silent (`HTTP_*` as before; `CLI_SILENT_EXCHANGE` for a vendor CLI, with
 `stalled` and `idle_ms` in its receipt), and recovery treats it like a timeout. The session's own budget
 (`max_seconds`, when set) still applies, and `request_seconds` in a deployment's limits no longer applies to these
-routes. Codex and AGY print nothing on stdout until the reply is whole (measured 2026-11-15: 92 s of a 95 s call
-and 376 s of a 381 s call), so their silence says nothing and they keep a finite request timeout, as does any
-request that is not streamed. Claude Code's CPU time is not a signal either: a hung one still ticks it.
+routes. Codex is asked for its reasoning summaries, which put a row on stdout every 10 to 21 s while the model
+works (measured 2026-11-15; without them it printed nothing for 92 s of a 95 s call). AGY's stdout stays silent while
+the model works, so an AGY call is not judged while it works: AGY itself gives up on a connection after 5 silent
+minutes, retries and reports each failed attempt, and from the first such report its retries have 10 minutes to
+answer. Those reports (and Codex's "Reconnecting" rows) do not count as life. An AGY process that hangs without
+reporting anything is stopped only by the session's budget or by cancelling. A request that is not streamed keeps
+a finite request timeout. Claude Code's CPU time is not a signal either: a hung one still ticks it.
 
 `native-http` is the existing host selector; `vendor-cli` chooses the process
 transport. Codex additionally requires `native_cli.model_catalog`, the exact

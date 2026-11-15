@@ -11,6 +11,8 @@ HTTP = {'native_profile': {'protocol': 'openai-chat', 'endpoint': 'https://model
 STREAMING = {**HTTP, 'native_streaming': True}
 CLAUDE = {'native_profile': {'protocol': 'vendor-cli', 'endpoint': 'cli://claude'},
           'native_execution_limits': {'request_seconds': 300}}
+CODEX = {**CLAUDE, 'native_profile': {'protocol': 'vendor-cli', 'endpoint': 'cli://codex'}}
+AGY = {**CLAUDE, 'native_profile': {'protocol': 'vendor-cli', 'endpoint': 'cli://agy'}}
 UNLIMITED = {name: None for name in ('max_seconds', 'request_seconds', 'connect_seconds', 'read_seconds')}
 # What each caller passes today: a limited session, the unlimited conversation, a planner, an auditor, a work unit.
 CALLERS = {'limited': {'max_seconds': 300}, 'unlimited': UNLIMITED,
@@ -20,7 +22,7 @@ CALLERS = {'limited': {'max_seconds': 300}, 'unlimited': UNLIMITED,
 
 
 @pytest.mark.parametrize('caller', CALLERS)
-@pytest.mark.parametrize('route', [STREAMING, CLAUDE], ids=['streaming-http', 'claude-cli'])
+@pytest.mark.parametrize('route', [STREAMING, CLAUDE, CODEX, AGY], ids=['streaming-http', 'claude-cli', 'codex-cli', 'agy-cli'])
 def test_a_streaming_route_has_no_total_and_waits_one_silence_window(route, caller):
     limits = resolve(route, CALLERS[caller])
     assert limits['request_seconds'] is None
@@ -32,10 +34,8 @@ def test_a_streaming_route_has_no_total_and_waits_one_silence_window(route, call
 @pytest.mark.parametrize('caller', CALLERS)
 @pytest.mark.parametrize('route', [
     HTTP,  # not streaming: the call cannot show life while it works
-    {**CLAUDE, 'native_profile': {'protocol': 'vendor-cli', 'endpoint': 'cli://codex'}},
-    {**CLAUDE, 'native_profile': {'protocol': 'vendor-cli', 'endpoint': 'cli://agy'}},
     {**STREAMING, 'native_profile': {'protocol': 'anthropic-messages', 'endpoint': 'https://models.example/v1'}}],
-    ids=['non-streaming-http', 'codex-cli', 'agy-cli', 'anthropic-messages'])
+    ids=['non-streaming-http', 'anthropic-messages'])
 def test_a_route_that_cannot_show_life_keeps_the_total_it_had(route, caller):
     limits = resolve(route, CALLERS[caller])
     expected = {'limited': 300, 'unlimited': None, 'planner': 600, 'auditor': 600, 'unit': 900}[caller]
@@ -60,10 +60,8 @@ def test_saved_sessions_and_calls_without_a_route_keep_what_they_resolved():
     assert resolve({}, UNLIMITED)['read_seconds'] is None
 
 
-@pytest.mark.parametrize('route,window', [(CLAUDE, SILENCE_SECONDS),
-    ({'native_profile': {'protocol': 'vendor-cli', 'endpoint': 'cli://codex'}}, None),
-    ({'native_profile': {'protocol': 'vendor-cli', 'endpoint': 'cli://agy'}}, None)])
-def test_the_cli_client_receives_the_window_only_where_its_stdout_can_judge(monkeypatch, route, window):
+@pytest.mark.parametrize('route,window', [(CLAUDE, SILENCE_SECONDS), (CODEX, SILENCE_SECONDS), (AGY, SILENCE_SECONDS)])
+def test_every_cli_client_receives_the_window(monkeypatch, route, window):
     import compute_plane.native_cli as native_cli
     seen = {}
     monkeypatch.setattr(native_cli, 'VendorCliClient', lambda endpoint, **kwargs: seen.update(kwargs))
@@ -72,7 +70,7 @@ def test_the_cli_client_receives_the_window_only_where_its_stdout_can_judge(monk
     native_generation.inference_client(deployment, profile, credential=lambda: None, metadata_only=True,
                                        **http_options(resolve(deployment, {'max_seconds': None, 'request_seconds': None})))
     assert seen['silence_seconds'] == window
-    assert seen['timeout_seconds'] is None  # no total from the OS; the Kernel keeps its own where it cannot judge
+    assert seen['timeout_seconds'] is None  # no total from the OS
 
 
 def test_a_call_stopped_on_silence_is_recovered_like_one_stopped_by_a_timeout():
@@ -86,6 +84,4 @@ def test_a_work_runs_stage_on_a_streaming_route_has_no_request_total(stage):
     limits = stage_limits(CLAUDE, stage)
     assert limits['request_seconds'] is None and limits['read_seconds'] == SILENCE_SECONDS
     assert limits['max_seconds'] == (240 if stage == 'plan' else 600)  # the stage's own budget is untouched
-    codex = {'native_profile': {'protocol': 'vendor-cli', 'endpoint': 'cli://codex'},
-             'native_execution_limits': {'request_seconds': 300}}
-    assert stage_limits(codex, stage)['request_seconds'] == 300  # prints nothing until the reply is whole
+    assert stage_limits(HTTP, stage)['request_seconds'] == 300  # not streamed: it cannot show life
