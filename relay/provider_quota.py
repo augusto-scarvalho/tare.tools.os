@@ -404,6 +404,13 @@ def surplus(deployment, now=None, cache=None):
             'allowance': name + ' credit'}
 
 
+def lapse_order(signal):
+    """Sort key for routes by `surplus`: one whose allowance lapses in surplus first, the sooner lapse first (what is
+    lost first is used first: a week ending today before a credit ending next week, whatever their leads), the larger
+    lead between two that lapse together; a route with nothing lapsing after them."""
+    return (0, signal['resets_at'], -round(signal['lead'], 2)) if signal else (1, 0, 0)
+
+
 def used_first(remaining, time_left, what='window'):
     """The mark `tare quota` puts on a line in surplus, or ''."""
     return (f" · in surplus: {remaining:.0%} left, {time_left:.0%} of the {what} left"

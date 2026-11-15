@@ -632,7 +632,7 @@ def implementer_label(name, deployment):
 
 def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None):
     """The implementer routes to try, whichever account the conversation runs on (owner, 2026-11-14): the routes of
-    the kind --prefer_* names first, then those whose allowance lapses in surplus (larger lead first), then tare's
+    the kind --prefer_* names first, then those whose allowance lapses in surplus (the sooner lapse first), then tare's
     implementer ladder, cheapest tier first (the owner's <storage>/serve/routing.json, else tare's). With nothing in
     surplus and the GPU free, a hosted conversation's unit starts on the local model. What may run is said by --*_only
     and --prefer_local (available() leaves the other routes out), the routing profile and pins, never by the
