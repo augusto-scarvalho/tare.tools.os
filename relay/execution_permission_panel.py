@@ -1,5 +1,6 @@
 """One question, in the conversation, before a worker needs edit access, a plan is implemented, (local-only
-mode) a change whose audit was not independent is applied, or a check the sandbox blocked runs outside it."""
+mode) a change whose audit was not independent is applied, a check the sandbox blocked runs outside it, or a check
+or command that shows no activity is stopped."""
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Input, Static
@@ -29,19 +30,35 @@ class ExecutionPermissionPanel(SupportPanel):
         command=value.get('kind')=='command'
         audit=value.get('kind')=='audit'  # local-only: apply a change whose audit was not independent?
         sandbox=value.get('kind')=='sandbox'  # a check the sandbox blocked: run it outside?
+        stall=value.get('stall') if value.get('kind')=='stall' else None  # a check or command with no activity
         turn=command and value.get('scope')=='turn'  # a yes also covers the turn's later unreviewed commands
         plan = value.get('plan_text')
         with Vertical(classes='support-body'):
             yield Static('Run commands without review this turn?' if turn else
                          'Run this command?' if command else 'Apply this change?' if audit else
                          'Run this check outside the sandbox?' if sandbox else
+                         ('Keep waiting for this check?' if stall['check'] else 'Keep waiting for this command?')
+                         if stall is not None else
                          'Implement this plan?' if plan is not None else
                          'Allow this task to change project files?', classes='panel-title')
             yield Static(value['objective'], markup=False)
             with VerticalScroll(classes='permission-detail'):
                 if plan is not None:
                     yield Static(plan+'\n', markup=False)
-                if sandbox:
+                if stall is not None:
+                    from .work_units import STALL_SECONDS
+                    from .conversation_permissions import duration
+                    name,argv=next(iter(value['checks'].items()))
+                    yield Static('Project: '+value['project']+('\nCheck: '+name if stall['check'] else '')+
+                        '\n\nExact command:\n'+repr(argv)+'\n\nKeep waiting: it keeps running, and tare asks again '
+                        'only after another '+duration(STALL_SECONDS)+' without activity. Stop it: '+
+                        ('the check stays unjudged.' if stall['check'] else 'the implementer is told it showed no '
+                         'activity and was stopped.')+
+                        ('\n\nStop it and run it outside the sandbox: outside, this program runs as you: it can use '
+                         'the network and read your files, secret files included. A test that waits for a connection '
+                         'the sandbox refused can wait silently like this; nothing here shows that this is the cause.'
+                         if stall['outside'] else ''), markup=False)
+                elif sandbox:
                     name,argv=next(iter(value['checks'].items()))
                     line=str((value.get('sandbox') or {}).get('line') or '')[:200]  # the check's own words: plain
                     yield Static('Project: '+value['project']+'\nCheck: '+name+'\n\nExact command:\n'+repr(argv)+
@@ -74,7 +91,7 @@ class ExecutionPermissionPanel(SupportPanel):
                 checks = '\n'.join('Validate Backlog Graph format' if n == BACKLOG_CHECK else n+': '+repr(argv)
                                    for n, argv in value.get('checks',{}).items())
                 from .execution_scope import current
-                if not command and not audit and not sandbox:yield Static('Checks: '+(checks or 'host diff check; any tests named in the plan')+
+                if not command and not audit and not sandbox and stall is None:yield Static('Checks: '+(checks or 'host diff check; any tests named in the plan')+
                     ('\nTest targets: '+', '.join(value['tests']) if value.get('tests') else '')+
                     ('\nThe candidate is checked and audited before applying; an audit by the same model family is '
                      'not independent, so tare asks you before applying it.' if current().only == 'local' else
@@ -83,6 +100,12 @@ class ExecutionPermissionPanel(SupportPanel):
                 yield Input(placeholder='What should change? (optional, sent with Change the plan)',
                             max_length=480, id='permission-changes')
             with Horizontal(classes='permission-buttons'):
+                if stall is not None:
+                    yield Button('Keep waiting', id='permission-once')
+                    yield Button('Stop it', id='permission-deny')
+                    if stall['outside']:
+                        yield Button('Stop it and run it outside the sandbox', id='permission-outside')
+                    return
                 if sandbox:
                     yield Button('Run it outside the sandbox this turn', id='permission-once')
                     if (value.get('sandbox') or {}).get('always') is not False:  # never for a local model's work
@@ -105,7 +128,8 @@ class ExecutionPermissionPanel(SupportPanel):
                 yield Button('Do not apply' if audit else 'Deny', id='permission-deny')
 
     def on_mount(self):
-        # A change no audit accepted, and a check the sandbox blocked, start on the safe answer.
+        # A change no audit accepted, and a check the sandbox blocked, start on the safe answer; a process with no
+        # activity starts on keeping it running.
         unaccepted=self.request.get('kind')=='audit' and self.request['audit']['verdict']!='ACCEPT'
         safe=unaccepted or self.request.get('kind')=='sandbox'
         self.query_one('#permission-deny' if safe else '#permission-once', Button).focus()
@@ -115,11 +139,12 @@ class ExecutionPermissionPanel(SupportPanel):
         self.query_one('#permission-change', Button).press()
 
     def on_button_pressed(self, event):
-        if event.button.id in {'permission-once', 'permission-project', 'permission-change', 'permission-deny'}:
+        if event.button.id in {'permission-once', 'permission-project', 'permission-change', 'permission-deny',
+                               'permission-outside'}:
             event.stop()
             if event.button.id == 'permission-change':
                 self.changes = self.query_one('#permission-changes', Input).value
             self.dismiss(event.button.id.removeprefix('permission-'))
 
     def action_deny(self):
-        self.dismiss('deny')
+        self.dismiss('once' if self.request.get('kind')=='stall' else 'deny')  # Escape never stops a process

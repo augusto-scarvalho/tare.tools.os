@@ -194,12 +194,23 @@ cannot fetch them there, so it asks. A Godot project's scripts run there (measur
 2026-11-14, Godot 4.7.2: `--headless -s tests/smoke.gd`, its `user://` files in the
 private `APPDATA`); its `--import` does not, because Godot's editor needs more than the
 256 MiB a process may use in the sandbox, and fails (exit 3221225477) without asking.
-A check that does not finish within its
-time limit in the sandbox asks too, after that limit, and stays unjudged: its
-output is not kept, and a `node --test` file whose server stays open after the
-sandbox refused the test's own connection to it waits there until the limit.
-For such projects choose **Always run this project's blocked checks outside
-it** if you trust their checks: they then run outside the sandbox, as before.
+
+**A check or command is judged by its activity, not by a clock.** One that writes
+output or uses CPU time keeps running, however long it takes. One that shows
+neither for 5 minutes is stalled. In the TUI's conversation tare then asks
+**Keep waiting for this check?** (or this command), says how long it has run and
+how long it has been silent, and stops nothing by itself: **Keep waiting** (asked
+again only after another 5 silent minutes), **Stop it** (the check stays
+unjudged), or, for a sandboxed check of a project without command protection,
+**Stop it and run it outside the sandbox**. A test that waits for a connection the
+sandbox refused (a `node --test` file whose server stays open after the sandbox
+refused the test's own connection to it) waits silently like this; the dialog
+does not claim that is the cause. Where nobody can be asked (`tare serve`, `tare
+agent` without the TUI, Work runs) tare stops a stalled check or command and
+says it showed no activity, and stops any other after 2 hours, saying it was
+still running; `--unlimited time` removes those 2 hours. A check that reaches a
+limit is unjudged and no longer asks whether to run it outside the sandbox: a
+limit is no sign of a sandbox block.
 
 **Always** is saved for the project on this machine (every frontend, `tare serve`
 and Work runs included) and shown in `/permissions` as **Run checks the sandbox

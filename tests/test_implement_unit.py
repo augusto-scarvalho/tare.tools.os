@@ -27,7 +27,7 @@ def test_host_checks_honor_the_operator_time_scope(tmp_path,monkeypatch,unbounde
         assert work_units.run_checks(tmp_path,{'test':['declared-check']})[0]=='green'
     finally:
         work_units.CHECK_PORT.reset(token)
-    assert observed==[None if unbounded else 300]
+    assert observed==[None if unbounded else work_units.UNATTENDED_SECONDS]  # nobody can be asked here
 
 
 @pytest.mark.parametrize('unbounded', [False, True])
@@ -41,7 +41,7 @@ def test_host_checks_run_a_real_managed_process_with_the_operator_time_scope(tmp
     monkeypatch.setattr(execution_scope,'current',lambda:scope)
     observed=[];original=managed_process.run_pipe_process
     def run(*args,**kwargs):
-        observed.append(kwargs['timeout'])
+        observed.append((kwargs['timeout'],kwargs['idle_timeout']))
         return original(*args,**kwargs)
     monkeypatch.setattr(managed_process,'run_pipe_process',run)
     token=work_units.CHECK_PORT.set(None)
@@ -50,8 +50,8 @@ def test_host_checks_run_a_real_managed_process_with_the_operator_time_scope(tmp
     finally:
         work_units.CHECK_PORT.reset(token)
     assert state=='green' and 'verified' in output
-    assert len(observed)==1
-    assert math.isinf(observed[0]) if unbounded else observed[0]==300
+    assert len(observed)==1 and observed[0][1]==work_units.STALL_SECONDS  # a stall is stopped either way
+    assert math.isinf(observed[0][0]) if unbounded else observed[0][0]==work_units.UNATTENDED_SECONDS
 
 
 @pytest.mark.parametrize('fault',['unplanned','ambiguous','missing','invalid','outside'])
@@ -244,8 +244,8 @@ def test_conversation_unit_runs_only_its_pytest_scope_through_final_application(
             from types import SimpleNamespace
             selected = [p for p in paths if p in argv]
             assert selected
-            assert kwargs['timeout'] == 300
-            if 120 * len(selected) > kwargs['timeout']:
+            assert kwargs['timeout'] == work_units.UNATTENDED_SECONDS
+            if 3000 * len(selected) > kwargs['timeout']:
                 raise subprocess.TimeoutExpired(argv, kwargs['timeout'])
             red = 'value = 2' not in (Path(kwargs['cwd'])/'a.py').read_text()
             return SimpleNamespace(returncode=int(red), stdout='', stderr='')

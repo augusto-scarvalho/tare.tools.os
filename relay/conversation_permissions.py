@@ -20,7 +20,7 @@ from .worker_wait import waiting_for_user
 
 SCHEMA = 'tare.tools/execution-permission/1'
 GRANT = ('session', 'task', 'plan', 'project', 'paths', 'checks', 'tests')
-CHOICES = {'once', 'project', 'deny', 'change'}
+CHOICES = {'once', 'project', 'deny', 'change', 'outside'}  # 'outside': the stall question's only
 
 
 class PlanChangeRequested(PermissionError):
@@ -98,6 +98,10 @@ def answer(root, request_id, choice, *, project, directory, control_root, change
             raise ValueError('This request shows no plan to change. Nothing was authorized.')
         if request.get('kind') == 'audit' and choice not in ('once', 'deny'):
             raise ValueError('Apply the change or do not apply it. Nothing was authorized.')
+        stall = request.get('kind') == 'stall'
+        if (stall and choice not in ('once', 'deny', 'outside')
+                or choice == 'outside' and not (stall and request['stall'].get('outside'))):
+            raise ValueError('Keep waiting or stop it. Nothing was stopped or authorized.')
         if request.get('kind') == 'sandbox' and choice == 'change':
             raise ValueError('Run the check outside the sandbox or do not run it. Nothing was authorized.')
         if request.get('kind') == 'sandbox' and choice == 'project' and request['sandbox'].get('always') is False:
@@ -304,7 +308,38 @@ def sandbox_question(limitation):
         what, _, line = detail.partition('. Output: ')
         return ('This check failed, and the sandbox blocked ' + what + ' during it, so the failure may come from the '
                 'sandbox rather than from the code. Run outside, its result decides.'), line[:200]
-    return (detail.split('. Not run')[0] if code in ('ISOLATION_UNAVAILABLE', 'ISOLATION_TIMEOUT') else limitation), ''
+    return (detail.split('. Not run')[0] if code == 'ISOLATION_UNAVAILABLE' else limitation), ''
+
+
+def duration(seconds):
+    minutes, seconds = divmod(round(seconds), 60)
+    return f'{minutes} min {seconds} s' if minutes else f'{seconds} s'
+
+
+def stall_question(root, state, task, effect_id, project, control, directory):
+    """work_units.STALL_ASK of a conversation: the question about a check or command that showed no activity for
+    work_units.STALL_SECONDS, asked while the turn's clock stops; None without a TUI (directory None: tare serve,
+    scripted runs), where nobody can be asked. ask(name, argv, sample, outside) -> 'once' (keep waiting), 'deny' (stop
+    it), 'outside' (stop it and run it outside the sandbox, offered only with `outside`), or None (the turn stopped).
+    It states facts only: a silent wait has many causes, a connection the sandbox refused among them."""
+    if directory is None:
+        return None
+    folder = regular(Path(root)/'execution-permission')
+
+    def ask(name, argv, sample, outside=False):
+        folder.mkdir(exist_ok=True)
+        request = {'schema': SCHEMA, 'kind': 'stall', 'session': state['session_id'], 'effect': effect_id,
+            'task': (task or {}).get('id', ''), 'plan': ((task or {}).get('plan') or {}).get('sha256', ''),
+            'project': str(Path(project).resolve()), 'paths': [], 'checks': {name or 'command': list(argv)},
+            'tests': [], 'status': 'WAITING',
+            'objective': (f'The check {name}' if name else 'The command')+f' has run for '
+                f'{duration(sample["elapsed_ms"]/1000)} and has shown no activity for the last '
+                f'{duration(sample["idle_ms"]/1000)}: in that time it wrote no output and used no CPU time. '
+                'tare has not stopped it.',
+            'stall': {'check': name or '', 'outside': bool(outside)}}
+        value = wait_for_answer(folder, request, control)
+        return value and value['choice']
+    return ask
 
 
 def local_work(local_producer):

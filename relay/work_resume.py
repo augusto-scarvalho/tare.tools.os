@@ -333,11 +333,13 @@ def materialize_prepared(train, descriptor, lease, cancellation, timeout):
         if cancellation.is_cancelled():
             raise ValueError('PREPARED_VERIFICATION_CANCELLED')
     def run(argv, *, cwd, timeout, env, **ignored):
+        from .work_units import STALL_SECONDS, stop_reason
         result, out, err = run_pipe_process(argv, cwd=cwd, env=env, timeout=float('inf') if timeout is None else timeout,
-            cancelled=cancellation.is_cancelled, max_output=1024*1024)
+            cancelled=cancellation.is_cancelled, max_output=1024*1024, idle_timeout=STALL_SECONDS)  # nobody is asked
         if (not result['cleanup_verified'] or result['cancelled'] or result['timeout']
                 or result['output_limit'] or result['exit_code'] is None):
-            raise ValueError('PREPARED_VERIFICATION_INTERRUPTED')
+            why = stop_reason(result)
+            raise ValueError('PREPARED_VERIFICATION_INTERRUPTED'+(': '+why if why else ''))
         return subprocess.CompletedProcess(argv, result['exit_code'], out, err)
     return materialize_verify_and_record_candidate(train, descriptor, lease, recover=True,
         verification_timeout=timeout, verification_runner=run, check_control=check)

@@ -14,7 +14,9 @@ def test_timeout_stops_a_real_grandchild_before_workspace_can_be_removed(tmp_pat
     result=work_units.managed_check([sys.executable,'-c',parent],cwd=tmp_path,timeout=1)
     assert started.exists(), 'The real grandchild must have started before the timeout.'
     assert result.process['cleanup_verified'] and result.process['timeout']
-    assert result.execution_limitation=='Check timeout; process tree cleanup verified.'
+    assert result.execution_limitation.startswith('Check stopped: it was still running (not stalled) when its time '
+                                                  'limit stopped it after ')
+    assert result.execution_limitation.endswith(' seconds; process tree cleanup verified.')
     time.sleep(2.1)
     assert not escaped.exists()
 

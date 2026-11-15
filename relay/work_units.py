@@ -18,12 +18,16 @@ import stat
 import subprocess
 import tempfile
 import threading
+import time
 import uuid
 
 from .work_forms import LEDGER, MAX_UNITS, lint, literal
 
-VERIFY_SECONDS = 300            # default per-check cap; explicit --unlimited time removes it
-MAX_RUNGS = 3                   # routes tried for one unit, cheapest first
+# A check or command is judged by its activity (owner, 2026-11-14): one with no output and no CPU time for
+# STALL_SECONDS is stalled; with nobody to ask it also stops at UNATTENDED_SECONDS, unless --unlimited time.
+STALL_SECONDS = 300
+UNATTENDED_SECONDS = 7200
+MAX_RUNGS = 3                  # routes tried for one unit, cheapest first
 MAX_FAILURES = 2                # NOT_VERIFIED runs of the same unit before tare refuses a third (R3)
 # NOT_REVIEWED runs in a row before tare refuses another: an audit finding the implementer cannot fix (a file its
 # tools cannot delete) otherwise loops; dogfooding the TUI, a local implementer and the auditor ran 7 rounds, 65 min.
@@ -42,6 +46,8 @@ OUTPUT_BYTES = 4096
 PARALLEL_CHILDREN = 2           # children at once with parallel on (D8); TARE_PARALLEL_CHILDREN changes it, 1 to 4
 LEDGER_LOCK = threading.Lock()  # units handed at once record their state in the same ledger
 CHECK_PORT = ContextVar('conversation_check_port', default=None)
+# conversation_permissions.stall_question of a TUI conversation that can show a question; unset: nobody can be asked
+STALL_ASK = ContextVar('stall_question', default=None)
 # A check the sandbox stopped (command_protection.verification_limitation), or one that could not run in it at all.
 SANDBOX_LIMITS = ('ISOLATION_INTERNAL_IPC_UNAVAILABLE', 'ISOLATION_NETWORK_DENIED', 'ISOLATION_SECRET_DENIED',
                   'ISOLATION_UNAVAILABLE')
@@ -352,6 +358,50 @@ class CheckCleanupUnknown(RuntimeError):
     """Keep the candidate until the check process tree is known to be stopped."""
 
 
+def supervision():
+    """What a check or command started now binds: (ask, ceiling, idle). Someone can be asked only in a TUI
+    conversation that can show a question (STALL_ASK; never tare serve, tare agent without one or a Work run): then no
+    ceiling and no automatic stop, and a StallWatch asks. Nobody: the Kernel stops a stall after STALL_SECONDS, and
+    UNATTENDED_SECONDS is the ceiling, none under --unlimited time."""
+    ask = STALL_ASK.get()
+    if ask is not None:
+        return ask, None, None
+    from .execution_resources import selected
+    return None, None if selected('time') else UNATTENDED_SECONDS, STALL_SECONDS
+
+
+class StallWatch:
+    """The Kernel's on_progress(effect_id, sample) for runs someone can be asked about. A run silent for STALL_SECONDS
+    is asked about (`ask(name, argv, sample, outside)`); 'once' keeps it running and it is asked again only after
+    another full window of silence; any other answer stops it (True). `choices` keeps each effect's last answer."""
+
+    def __init__(self, ask):
+        self.ask, self.runs, self.choices = ask, {}, {}
+
+    def watch(self, effect_id, name, argv, outside=False):
+        self.runs.setdefault(effect_id, [name, list(argv), outside, float('-inf')])  # the first caller names it
+
+    def __call__(self, effect_id, sample):
+        run = self.runs.get(effect_id)
+        if (run is None or sample['idle_ms'] < STALL_SECONDS*1000
+                or time.monotonic() - run[3] < STALL_SECONDS):
+            return False
+        self.choices[effect_id] = choice = self.ask(run[0], run[1], sample, run[2])
+        run[3] = time.monotonic()
+        return choice != 'once'
+
+
+def stop_reason(process):
+    """Why the Kernel stopped a check or command, from its process receipt, or None."""
+    if process.get('stalled'):
+        return (f'it showed no activity (no output, no CPU time) for {round(process.get("idle_ms", 0) / 1000)} seconds '
+                'and was stopped')
+    if process.get('timeout'):
+        return (f'it was still running (not stalled) when its time limit stopped it after '
+                f'{round(process.get("wall_ms", 0) / 1000)} seconds')
+    return None
+
+
 def managed_check(argv, *, cwd, timeout, env=None, cancelled=lambda:False, **ignored):
     from compute_plane.managed_process import run_pipe_process
     from compute_plane.workspace import isolated_child_environment
@@ -364,18 +414,23 @@ def managed_check(argv, *, cwd, timeout, env=None, cancelled=lambda:False, **ign
     try:
         child_env=isolated_child_environment({'PYTHONUTF8':'1','PYTHONDONTWRITEBYTECODE':'1'}) if env is None else dict(env)
         child_env.update(TEMP=str(scratch),TMP=str(scratch),TMPDIR=str(scratch))
+        ask,_,idle=supervision()  # the ceiling is `timeout`, run_checks' own supervision()
+        watch=StallWatch(ask) if ask else None
+        if watch:watch.watch(None,None,argv)
         process,out,err=run_pipe_process(argv,cwd=cwd,env=child_env,
             timeout=float('inf') if timeout is None else timeout,
-            cancelled=cancelled,max_output=1024*1024)
+            cancelled=cancelled,max_output=1024*1024,
+            **({'on_progress':lambda sample:watch(None,sample)} if watch else {'idle_timeout':idle}))
         if not process['cleanup_verified']:
             raise CheckCleanupUnknown('Check cleanup is unconfirmed; candidate and scratch retained: '+str(scratch))
         result=subprocess.CompletedProcess(argv,process['exit_code'] if process['exit_code'] is not None else -1,
             out.decode('utf8',errors='replace'),err.decode('utf8',errors='replace'))
         result.process=process
-        for key in ('timeout','cancelled','output_limit'):
-            if process.get(key):
-                result.execution_limitation='Check '+key+'; process tree cleanup verified.'
-                break
+        why=stop_reason(process)
+        why=('Check stopped: '+why if why else
+             next(('Check '+key for key in ('cancelled','output_limit') if process.get(key)),None))
+        if why:
+            result.execution_limitation=why+'; process tree cleanup verified.'
         return result
     finally:
         if process is not None and process.get('cleanup_verified'):
@@ -408,8 +463,7 @@ def run_checks(tree, commands):
 
     completed = set()
     state = 'green'
-    from .execution_resources import selected
-    timeout = None if selected('time') else VERIFY_SECONDS
+    _, timeout, _ = supervision()  # a sandboxed check's ceiling is its binding's (command_protection.factory)
     for name, argv in commands.items():
         try:
             port = CHECK_PORT.get()
@@ -563,7 +617,7 @@ def blocked_by_sandbox(receipt):
 def suite_allows(config, unit, repository, tree, changed, before=None):
     """D9b, before a VERIFIED change is applied: no check of the session that was not red before the change
     (`before`, {name: state}) fails with it, and when they all pass it is applied. A check red before as well (a
-    later unit of the plan makes it pass) or one longer than VERIFY_SECONDS settles nothing: then only a change
+    later unit of the plan makes it pass) or one stopped unfinished (stop_reason) settles nothing: then only a change
     the unit's tests cover is applied.
     ponytail: "cover" means a unit test file names the changed module, a coverage run would be exact; a check red
     before and after can hide a new failure in it."""

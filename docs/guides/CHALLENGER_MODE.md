@@ -550,9 +550,11 @@ There are no prompts, private arguments, keys, full profiles or code.
   that requalification, regenerates the fingerprints and requires new checks and audit.
   Code, patch, producer and earlier receipts stay preserved; any
   other mismatch is refused with the affected paths.
-- `--unlimited time` also removes the dedicated ceiling for the host's checks. The Work
-  deadline, cancellation, isolation, mediation and the limits on ordinary commands still
-  apply. Model transport timeouts stay finite; the planner
+- The host's checks and the implementer's commands are judged by their activity: nobody
+  can be asked in a Work run, so one with no output and no CPU time for 5 minutes is
+  stopped, and any other after 2 hours (60 s before 2026-11-14; 30 s for a command).
+  `--unlimited time` removes the 2 hours, not the stall stop. The Work deadline,
+  cancellation, isolation and mediation still apply. Model transport timeouts stay finite; the planner
   keeps the normal 600 s timeout when the stage's total time is unlimited.
 - Conversation audit (`conversation_review.review`): `reviews/*/receipt.json`
   first records the durable intent (`RUNNING`, `request_sha256`, invocation and

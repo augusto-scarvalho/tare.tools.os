@@ -353,35 +353,28 @@ def test_a_red_check_the_sandbox_blocked_asks_and_only_the_rerun_outside_decides
         assert ('no one could be asked' if answer == 'headless' else 'the user chose not to') in receipt
 
 
-@pytest.mark.parametrize('answer,platform', [('no', 'win32'), ('yes', 'win32'), ('no', 'linux')])
-def test_a_check_that_runs_out_of_time_in_the_sandbox_asks_and_stays_unjudged(host, monkeypatch, answer, platform):
-    # The Kernel keeps no output of a command stopped at its time limit (node_probe.py: hang/leak.test.mjs, 301 s).
+@pytest.mark.parametrize('process,reason', [
+    ({'timeout': True, 'wall_ms': 7200400}, 'it was still running (not stalled) when its time limit stopped it after '
+                                            '7200 seconds'),
+    ({'stalled': True, 'idle_ms': 300200}, 'it showed no activity (no output, no CPU time) for 300 seconds')])
+def test_a_check_stopped_in_the_sandbox_stays_unjudged_and_never_asks_about_the_sandbox(host, monkeypatch, process,
+                                                                                       reason):
+    # Reaching a limit is no evidence of a sandbox block: the old "did not finish in the sandbox" question is gone.
     from compute_plane.native_capabilities import NativeCapabilities
     from tare_tools_agent_runtime import EffectResult
-    from relay import conversation_permissions as permissions
     unprotected(host, monkeypatch)
     monkeypatch.setattr(NativeCapabilities, 'execute', lambda self, request, control: EffectResult(request.effect_id,
-        'failed', json.dumps({'error_type': 'CommandInterrupted', 'process': {'timeout': True}})))
-    reruns, asked = [], []
-    monkeypatch.setattr(work_units, 'managed_check', lambda argv, **kw: reruns.append(argv) or
-                        subprocess.CompletedProcess(argv, 0, 'passed outside\n', ''))
+        'failed', json.dumps({'error_type': 'CommandInterrupted', 'process': process})))
+    monkeypatch.setattr(work_units, 'managed_check', lambda *a, **kw: pytest.fail('Nothing runs outside.'))
     run = protection.conversation_verifier(host.control, host.custody, host.config, {}, host.root, UNIT,
-        {'tests': PASS}, outside=lambda name, argv, why: asked.append(why) or (answer == 'yes', 'the user chose'))
-    protection.sys.platform = platform  # after binding: the factory refuses another platform before it binds
+        {'tests': PASS}, outside=lambda *a: pytest.fail('No sandbox question.'))
     token = work_units.CHECK_PORT.set(run)
     try:
         state, receipt = work_units.run_checks(host.root, {'tests': PASS})
     finally:
         work_units.CHECK_PORT.reset(token)
-    # Not a raised "verification was refused: tests: timed out".
-    assert asked == [protection.SANDBOX_TIMEOUT_LINUX if platform == 'linux' else protection.SANDBOX_TIMEOUT]
-    assert permissions.sandbox_question(asked[0])[0].startswith('this check did not finish within its time limit')
-    if answer == 'yes':
-        assert state == 'green' and reruns == [PASS] and 'passed outside' in receipt
-    else:  # Linux: the sandbox has its own loopback, so a test's own server is not what it waits for
-        assert state == 'inconclusive' and reruns == []
-        assert ('services of this machine' if platform == 'linux' else 'node --test does') in receipt
-        assert not work_units.blocked_by_sandbox(receipt)  # a timeout settles nothing, as before (D9b)
+    assert state == 'inconclusive' and 'tests: Check stopped: '+reason in receipt
+    assert 'ISOLATION_TIMEOUT' not in receipt and not work_units.blocked_by_sandbox(receipt)  # settles nothing (D9b)
 
 
 def test_the_question_for_a_red_check_shows_the_line_and_says_the_rerun_decides():

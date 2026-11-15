@@ -39,16 +39,6 @@ SANDBOX_PYTHON = Path(__file__).resolve().parent/'sandbox-python'
 CHECKS_ONLY = {**DEFAULTS, 'review': 'none', 'backend': 'mxc'}
 SANDBOXED_CHECK = 'Host-registered check, run in the sandbox by default; no model review.'
 BLOCKED_DURING = 'ISOLATION_BLOCKED_DURING'  # a red check during which the sandbox blocked something (asks; stays red)
-# A check of a project without command protection that hit its time limit in the sandbox, whose output the Kernel does
-# not keep then. Unjudged (as a timeout is), it asks. Measured 2026-11-13: a `node --test` file whose test leaves its
-# server listening after the sandbox refused the test's own connection to it waits until the limit.
-SANDBOX_TIMEOUT = ('ISOLATION_TIMEOUT: this check did not finish within its time limit in the sandbox, and its output '
-    'was not kept. The sandbox refuses every connection, loopback included: a test that leaves its server open after '
-    'its own connection to it was refused (node --test does) waits there until the limit. Outside the sandbox it may '
-    'finish.')
-SANDBOX_TIMEOUT_LINUX = ('ISOLATION_TIMEOUT: this check did not finish within its time limit in the sandbox, and its '
-    'output was not kept. The sandbox has its own loopback, but it cannot reach the network or the services of this '
-    'machine: a test that waits for one of them waits there until the limit. Outside the sandbox it may finish.')
 
 
 LINUX_SANDBOX_GUIDE = 'https://github.com/augusto-scarvalho/tare.tools.os/blob/main/docs/guides/LINUX_SANDBOX.md'
@@ -665,7 +655,8 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
                 report['usage'].setdefault('codex',None)
             append({'kind':'command_protected_effect','effect_id':action.effect_id,
                     'action_sha256':action.action_sha256,'process':process,'protection':report})
-            return {**process,'command_protection':report}
+            why=stop_reason(process)  # no activity, or a time limit while it was still active: the model reads which
+            return {**process,'command_protection':report,**({'reason':'The process '+why[3:]+'.'} if why else {})}
         if (jev or automatic) and gate is not None:
             native_gate=gate
             class ConditionalExecutionReview:
@@ -686,9 +677,15 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         # after any wait for the user (the session's own clock may have stopped meanwhile).
         mediator=CommandActionMediator(Broker(),snapshot,lambda a,c:context,authorize,guard,
             lambda:steady(control),result_handler=result,reviewed_execution=gate)
+        from .work_units import StallWatch, stop_reason, supervision
+        asker,ceiling,idle=supervision()  # not `ask`: that is the command question above
+        watch=StallWatch(asker) if asker else None
         unsettled=set()  # commands that started and whose process cleanup is not verified: they may still run
         execute=mediator.execute
         def tracked(facts,effect):
+            if watch is not None:  # a registered check by its name; otherwise the implementer's command (None)
+                watch.watch(facts.effect_id,next((n for n,row in config.get('verifiers',{}).items()
+                                                  if tuple(row['argv'])==tuple(facts.argv)),None),facts.argv)
             def run():
                 started=object();unsettled.add(started)
                 process=effect()
@@ -717,13 +714,15 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
                     pass  # a closing binding has nowhere else to say it
         mediator.close=weakref.finalize(mediator,close)
         mediator.policy=policy  # what its commands may read: a denial outside it is the sandbox's (sandbox_blocked)
+        mediator.stall=watch  # conversation_verifier names its checks there first, and reads the user's answer
         cli_options=({'codex_executable':pinned_cli['executable'],'codex_sha256':options['codex_sha256']}
                      if options['backend']=='codex' else {})
-        from .work_units import VERIFY_SECONDS
-        from .execution_resources import selected
+        # The implementer's command and every check: no ceiling with someone to ask (or --unlimited time), else the
+        # unattended one. `seconds` also bounds the read-only search: 30 s when the command has no ceiling.
         windows_isolation_factory(backend=options['backend'],policy=policy,cwd=str(root),
-            environment=environment,seconds=30,verification_seconds=VERIFY_SECONDS,staged_effects=staged_effects,
-            unbounded_verification=selected('time'),
+            environment=environment,seconds=ceiling or 30,verification_seconds=ceiling,staged_effects=staged_effects,
+            unbounded_command=ceiling is None,unbounded_verification=ceiling is None,
+            idle_seconds=idle,on_progress=watch,
             mediation_factory=lambda **kw:mediator,
             **cli_options)(**session)
         if 'command' in capabilities.names:
@@ -781,7 +780,7 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
     without it nothing runs outside. A protected project is never asked: it keeps its policy."""
     import subprocess
     from uuid import uuid4
-    from .work_units import SANDBOX_LIMITS, managed_check
+    from .work_units import SANDBOX_LIMITS, managed_check, stop_reason
     protected = config.get('command_protection') is not None
     cancelled = cancelled or control.should_stop
 
@@ -859,7 +858,10 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
             limitation = done.execution_limitation or ''
             if protected:
                 return done
-            if not limitation.startswith((*SANDBOX_LIMITS, SANDBOX_TIMEOUT, SANDBOX_TIMEOUT_LINUX)):
+            if getattr(done, 'stalled_outside', None):  # the user's answer to the stall question, not the sandbox's
+                return unsandboxed(name, argv, kwargs, 'run outside the sandbox by the user\'s decision, because in the '
+                                   'sandbox '+done.stalled_outside)
+            if not limitation.startswith(SANDBOX_LIMITS):
                 return blocked_during(name, argv, kwargs, done) if done.sandbox_blocked else done
         allowed, why = outside(name, argv, limitation) if outside else (False, 'no one could be asked')
         if not allowed:
@@ -884,21 +886,25 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
                            f'sandbox blocked {what} during it; this run\'s result decides')
 
     def sandboxed(name, argv, kwargs):
-        result = caps.execute(EffectRequest(session_id, 'verify-'+uuid4().hex,
+        effect_id, stall = 'verify-'+uuid4().hex, getattr(port, 'stall', None)
+        if stall is not None:  # someone can be asked; "run it outside" only where the sandbox question could be
+            stall.watch(effect_id, name, argv, outside=outside is not None and not protected)
+        result = caps.execute(EffectRequest(session_id, effect_id,
             ToolCall('verify', 'verify', json.dumps({'name': name}))), control)
         value = object_json(result.output_json)
         if result.status not in {'succeeded', 'failed'} or 'returncode' not in value:
             process = value.get('process') or {}
+            why = stop_reason(process)
+            if why:  # unjudged, as a check that did not finish; reaching a limit shows no sandbox block
+                done = subprocess.CompletedProcess(argv, 1, '', '')
+                done.execution_limitation = 'Check stopped: '+why+'.'
+                done.sandbox_blocked = None
+                done.stalled_outside = why if stall is not None and stall.choices.get(effect_id) == 'outside' else None
+                return done
             stopped = next((label for key, label in (('cancelled', 'cancelled'),
-                ('timeout', 'timed out'), ('output_limit', 'exceeded its output limit'))
-                if process.get(key)), None)
+                ('output_limit', 'exceeded its output limit')) if process.get(key)), None)
             reason = (stopped or value.get('reason') or getattr(port, 'launch_refused', None)  # windows_isolation
                       or value.get('error_type') or result.status)
-            if stopped == 'timed out' and not protected:  # the sandbox may be why: unjudged, and the user is asked
-                done = subprocess.CompletedProcess(argv, 1, '', '')
-                done.execution_limitation = SANDBOX_TIMEOUT_LINUX if sys.platform == 'linux' else SANDBOX_TIMEOUT
-                done.sandbox_blocked = None
-                return done
             raise ValueError(('Protected' if protected else 'Sandboxed')+f' verification was refused: {name}: {reason}')
         completed = subprocess.CompletedProcess(argv, value.get('returncode', 1),
                                                 value.get('output', ''), '')
@@ -1138,10 +1144,11 @@ def protected_work_verifier(control, train_dir, *, descriptor, settings, outside
         class HostCapabilities:
             names = ()
             terminal = None
-            launcher = None
+            launcher = idle = None
 
             def bind_command_confinement(self, launcher, environment, seconds, *, verification_seconds=None,
-                                         staged_effects=False,unbounded_verification=False):
+                                         staged_effects=False,unbounded_verification=False,
+                                         verification_idle_seconds=None,**command):  # only checks run here
                 from compute_plane.mediated_tools import validate_command_confinement
                 if self.launcher is not None:
                     raise ValueError('command_confinement_binding_invalid')
@@ -1150,6 +1157,7 @@ def protected_work_verifier(control, train_dir, *, descriptor, settings, outside
                 self.environment, self.seconds = validate_command_confinement(launcher, environment, verification_seconds or seconds)
                 if unbounded_verification:
                     self.seconds=float('inf')
+                self.idle = verification_idle_seconds  # nobody can be asked in a Work run: a stall stops it
                 self.launcher = launcher
 
             def claim_action(self, action, authorization):
@@ -1186,7 +1194,8 @@ def protected_work_verifier(control, train_dir, *, descriptor, settings, outside
                 return run_process(list(argv), cwd=str(root), dest=dest,
                     timeout=min(wall, control.remaining_seconds()), env=capabilities.environment,
                     cancelled=control.should_stop, max_output=1024*1024,
-                    process_factory=capabilities.launcher)
+                    process_factory=capabilities.launcher,
+                    **({'idle_timeout': capabilities.idle} if capabilities.idle else {}))
             try:
                 process = mediator.execute(facts, effect)
             finally:
@@ -1195,7 +1204,9 @@ def protected_work_verifier(control, train_dir, *, descriptor, settings, outside
             if (not process['cleanup_verified'] or process['cancelled'] or process['timeout']
                     or process['output_limit'] or process.get('isolation_violation')
                     or process['exit_code'] is None):
-                raise ValueError('NATIVE_CANDIDATE_VERIFIER_INTERRUPTED')
+                from .work_units import stop_reason
+                why = stop_reason(process)
+                raise ValueError('NATIVE_CANDIDATE_VERIFIER_INTERRUPTED'+(': '+why if why else ''))
             out = (Path(dest) / 'stdout.txt').read_bytes()
             err = (Path(dest) / 'stderr.txt').read_bytes()
             if len(out) + len(err) > 1024*1024:

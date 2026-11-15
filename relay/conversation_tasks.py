@@ -1121,7 +1121,7 @@ class ConversationTools:
                 # A closed verification request needs no planning ceremony. It
                 # never authorizes implementation or changes the saved goal.
                 value = load(self.root); task = current(value)
-                from .work_units import CHECK_PORT, run_checks, checks as planned_checks, test_file
+                from .work_units import CHECK_PORT, STALL_ASK, run_checks, checks as planned_checks, test_file
                 from .conversation_workspace import snapshot
                 from .challenger import git
                 from .native_installation import storage_root
@@ -1187,7 +1187,7 @@ class ConversationTools:
                     config['repositories'][repository], relay_mesh.RELAY_ROOT)
                 commands = {n: config['verifiers'][n]['argv'] for n in names}
                 tree = storage_root()/'wt'/uuid4().hex[:8]
-                token = None
+                token = stall = None
                 try:
                     snapshot(config['repositories'][repository], tree)
                     if unit and unit['repository']==repository:
@@ -1196,13 +1196,15 @@ class ConversationTools:
                     # Protected: the project's command gate. Otherwise the sandbox, no model review; a check it blocks
                     # (and, with no sandbox here, any check of a read-only project) runs outside only if the user says.
                     from .command_protection import conversation_verifier
-                    from .conversation_permissions import outside_sandbox
+                    from .conversation_permissions import outside_sandbox, stall_question
                     from .turn_engine import project_permission_mode
                     check_unit = {'repository': repository, 'target_paths': [],
                         'title': task['objective'] if task else 'Verify configured project checks',
                         'criteria': task['criteria'] if task else []}
                     from . import execution_scope
                     project = config['repositories'][repository]
+                    stall = STALL_ASK.set(stall_question(self.root, self.state, task, request.effect_id, project,
+                                                         control, self.permission_directory))
                     # No implementer here: the project's files, which this conversation's implementers may have
                     # changed. They are local in local-only mode (outside_sandbox) and with --prefer_local.
                     token = CHECK_PORT.set(conversation_verifier(control, self.root/'checks', config,
@@ -1224,6 +1226,8 @@ class ConversationTools:
                         check_runner=CHECK_PORT.get()
                         CHECK_PORT.reset(token)
                         if callable(getattr(check_runner,'close',None)):check_runner.close()
+                    if stall is not None:
+                        STALL_ASK.reset(stall)
                     try: git(config['repositories'][repository], 'worktree', 'remove', '--force', str(tree), timeout=120)
                     except (ValueError, OSError): pass
                     from .worker_wait import discard
@@ -1489,17 +1493,23 @@ class ConversationTools:
                 audit.preflight = lambda producer: available(producer, self)
                 audit.packet_preflight = packet_preflight
                 audit.resume_tree = lambda: resume_tree(self, task)
+                from .conversation_permissions import outside_sandbox, stall_question
+                from .work_units import STALL_ASK
+                project = config['repositories'][plan['unit']['repository']]
+                # The unit's checks and its implementer's commands ask this conversation's user about a stall.
+                stall = STALL_ASK.set(stall_question(self.root, self.state, task, request.effect_id, project, control,
+                                                     self.permission_directory))
                 try:
-                    from .conversation_permissions import outside_sandbox
                     output = run_unit(self.root, state, {'unit': task['id'], **args}, control.should_stop, review=audit,
                                       candidate=candidate, worker=(task.get('delivery') or {}).get('worker'),
                                       control=control, spend_model=self.parent_model, review_effect=request.effect_id,
                                       outside=outside_sandbox(self.root, self.state, task, request.effect_id,
-                                          config['repositories'][plan['unit']['repository']], control,
-                                          self.permission_directory, self.invocation_id))
+                                          project, control, self.permission_directory, self.invocation_id))
                 except (ValueError, OSError, KeyError, TypeError):
                     task['stage'] = 'PENDING'; save(self.root, value)
                     raise
+                finally:
+                    STALL_ASK.reset(stall)
                 if output.get('applied'):
                     task['verification'] = {'status': 'green', 'checks': output.get('checks_after', ''), 'applied': True}
                     output['targets'] = proof_paths(config, plan['unit'], [*plan.get('sources', []),

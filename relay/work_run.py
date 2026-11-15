@@ -22,6 +22,7 @@ import sys
 import time
 from uuid import uuid4
 from . import native_limits
+from .work_units import UNATTENDED_SECONDS  # a check's ceiling: nobody can be asked in a Work run
 
 RUN_SCHEMA = "tare.tools/work-run/1"
 AGENT_ID = "tare-run"
@@ -434,7 +435,7 @@ def _run_work(work_id, *, deployment="local-qwen", repository_root=None, workspa
                                                 unlimited=unlimited, budget=budget),
                 'max_compactions_per_stage': compaction_limit(unlimited, max_compactions)}
             receipt['effective_limits']['candidate_verification_seconds'] = (
-                None if execution_resources.selected('time', unlimited) or receipt['effective_limits']['implementation']['max_seconds'] is None else 60)
+                None if execution_resources.selected('time', unlimited) or receipt['effective_limits']['implementation']['max_seconds'] is None else UNATTENDED_SECONDS)
         node = load_node(graph_path, work_id)
         receipt.update(_review_metadata(node, None))
         if prepared is not None and work_prepared._node(node) != prepared['node']:
@@ -486,7 +487,7 @@ def _run_work(work_id, *, deployment="local-qwen", repository_root=None, workspa
                         implementation=stage_limits(native_deployment, 'implement', limits=limits,
                             unlimited=unlimited, budget=budget))
                     receipt['effective_limits']['candidate_verification_seconds'] = (
-                        None if execution_resources.selected('time', unlimited) or receipt['effective_limits']['implementation']['max_seconds'] is None else 60)
+                        None if execution_resources.selected('time', unlimited) or receipt['effective_limits']['implementation']['max_seconds'] is None else UNATTENDED_SECONDS)
                 receipt['adaptive_routing'] = assessment_summary(observation, custody)
                 stage('route_assessment', status=observation['status'], applied=observation.get('applied', False))
             if cancellation.is_cancelled():

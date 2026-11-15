@@ -32,7 +32,8 @@ included). The verdict is tare's, never the child's:
   with it (D9b; else **HELD**). A check red before as well settles nothing; then the unit's tests must cover the
   change.
 - **NOT_VERIFIED**: the checks fail after the change. **INCONCLUSIVE**: nothing changed, the checks themselves
-  changed, or a check did not finish within 300 s.
+  changed, or a check was stopped unfinished: it showed no activity (no output, no CPU time) for 5 minutes
+  and someone stopped it, or nobody could be asked; or nobody could be asked and it ran past 2 hours.
 
 A change that is not applied keeps its patch in the session's custody; `tare serve` names it in the answer.
 
