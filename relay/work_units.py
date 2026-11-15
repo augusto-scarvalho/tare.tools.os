@@ -288,9 +288,10 @@ def pytest_scope(argv, python):
     return tuple(targets) if targets else None
 
 
-def checks(config, unit, repository, tree):
+def checks(config, unit, repository, tree, planned=None):
     """{name: argv} that tare runs in the child's tree: the unit's named verifiers, and each ecosystem's runner on
-    the unit's test files (pytest, npm with jest/vitest/mocha, cargo, go, maven, gradle, dotnet)."""
+    the unit's test files (pytest, npm with jest/vitest/mocha, cargo, go, maven, gradle, dotnet). `planned`, a dict,
+    receives {name: [test file]} for the checks built from the unit's test files."""
     from .work_forms import ecosystems
     from .turn_engine import project_python
     automatic_default = False
@@ -338,8 +339,10 @@ def checks(config, unit, repository, tree):
             if eco['name'] == 'pytest':
                 if 'pytest-tests' not in found:
                     add_pytest(mine)
-            else:
-                found.setdefault(f"{eco['name']}-tests", argv)
+            elif f"{eco['name']}-tests" not in found:
+                found[f"{eco['name']}-tests"] = argv
+                if planned is not None:
+                    planned[f"{eco['name']}-tests"] = [test_file(t) for t in mine]
             tests = [t for t in tests if t not in mine]
     if config.get('conversation_flow'):
         for name, selectors in automatic.items():
@@ -355,6 +358,8 @@ def checks(config, unit, repository, tree):
     if config.get('conversation_flow') and not config.get('command_protection'):
         for name, argv in found.items():
             found[name] = pytest_scratch(argv, python, tree)
+    if planned is not None:
+        planned.update({n: [test_file(t) for t in s] for n, s in automatic.items() if n in found})
     return found
 
 
@@ -518,11 +523,27 @@ def managed_check(argv, *, cwd, timeout, env=None, cancelled=lambda:False, **ign
             if scratch.exists():raise OSError('Check scratch cleanup did not finish: '+str(scratch))
 
 
+class Checked(tuple):
+    """run_checks' (state, output), with each check's own state in `.states` (a check not reached has none)."""
+
+    def __new__(cls, state, output, states):
+        self = super().__new__(cls, (state, output))
+        self.states = states
+        return self
+
+
+def already_red(before, after):
+    """The checks red after a change that were red before it as well, from two run_checks results."""
+    was, now = getattr(before, 'states', {}), getattr(after, 'states', {})
+    return [name for name, state in now.items() if state == 'red' and was.get(name) == 'red']
+
+
 def run_checks(tree, commands):
     """('green' | 'red' | 'inconclusive', output): every command must pass; a timeout or a command that cannot
     start settles nothing."""
     outputs = []
     statuses = []
+    states = {}
 
     def receipt():
         # Clip only logs; exceptional outcomes and pending commands remain complete afterward.
@@ -550,21 +571,22 @@ def run_checks(tree, commands):
         except subprocess.TimeoutExpired as exc:
             completed.add(name)
             statuses.append(f'{name}: more than {exc.timeout} s (timeout)')
-            return 'inconclusive', receipt()
+            return Checked('inconclusive', receipt(), {**states, name: 'inconclusive'})
         except OSError as exc:
             completed.add(name)
             statuses.append(f'{name}: could not start: {exc}')
-            return 'inconclusive', receipt()
+            return Checked('inconclusive', receipt(), {**states, name: 'inconclusive'})
         completed.add(name)
         outputs.append(f'$ {name} (exit {done.returncode})\n{check_output(done.stdout + done.stderr)}')
         if getattr(done, 'isolation', None):  # not sandboxed: no sandbox here, or run outside it by the user's choice
             statuses.append(f'{name}: {done.isolation}')
         if getattr(done, 'execution_limitation', None):
             statuses.append(f'{name}: {done.execution_limitation}')
-            return 'inconclusive', receipt()
+            return Checked('inconclusive', receipt(), {**states, name: 'inconclusive'})
+        states[name] = 'red' if done.returncode else 'green'
         if done.returncode:
             state = 'red'
-    return state, receipt()
+    return Checked(state, receipt(), states)
 
 
 def verdict(before, after, changed, protected, retry):
@@ -699,14 +721,16 @@ def blocked_by_sandbox(receipt):
     return any(f': {code}:' in receipt for code in SANDBOX_LIMITS)
 
 
-def suite_allows(config, unit, repository, tree, changed, before=None):
+def suite_allows(config, unit, repository, tree, changed, before=None, aside=()):
     """D9b, before a VERIFIED change is applied: no check of the session that was not red before the change
     (`before`, {name: state}) fails with it, and when they all pass it is applied. A check red before as well (a
     later unit of the plan makes it pass) or one stopped unfinished (stop_reason) settles nothing: then only a change
     the unit's tests cover is applied.
+    `aside` names the checks, red before any change, that the user chose to judge this change without
+    (run_unit's red_baseline): they are not run and do not count, or that answer would end in a held change.
     ponytail: "cover" means a unit test file names the changed module, a coverage run would be exact; a check red
     before and after can hide a new failure in it."""
-    after = suite_states(tree, session_suite(config, repository))
+    after = suite_states(tree, {n: a for n, a in session_suite(config, repository).items() if n not in aside})
     broken = [n for n, (state, _) in after.items() if state == 'red' and (before or {}).get(n) != 'red']
     if broken:
         return False, 'the session\'s checks fail with the change:\n' + '\n'.join(after[n][1] for n in broken)
@@ -1116,11 +1140,13 @@ def verification_evidence(session):
 
 
 def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=None, worker=None, control=None, spend_model=None, review_effect=None,
-             outside=None, check_control=None):
+             outside=None, check_control=None, red_baseline=None):
     """Run one unit up the route ladder until VERIFIED or out of rungs; apply a VERIFIED change. The receipt and
     the patch stay under the session's custody; the ledger records the unit's state. Without command protection the
     host checks run in the sandbox (command_protection.conversation_verifier) on the execution control (`control`, or
-    `check_control` where the child must not share the parent's clock); `outside` decides a check the sandbox blocks."""
+    `check_control` where the child must not share the parent's clock); `outside` decides a check the sandbox blocks.
+    `red_baseline` (conversation_permissions.red_baseline) asks the user what to do when checks fail before any
+    change, before the implementer starts."""
     from .challenger import git
     from .challenger_workspace import snapshot
     from .native_agent import run_session
@@ -1255,7 +1281,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     break  # no baseline suite, implementer or paid review for an inadmissible unchanged packet
             verification_config = scoped_verifiers(config, unit, repository, tree)
             # Compile from the original defaults, before scoping erases their origin.
-            commands = checks(config, unit, repository, tree)
+            planned = {}
+            commands = checks(config, unit, repository, tree, planned)
             if not commands:
                 raise ValueError('This unit names no verifier of the session and no tests tare can run (R0).')
             worker_commands={n:a for n,a in commands.items()
@@ -1310,7 +1337,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 if n.endswith('.gd') and not (tree/(n+'.uid')).exists()] if 'godot-import' in commands else []
             if progress is not None:
                 progress.begin('before')
-            before, row['before'] = run_checks(tree, commands)
+            checked_before = run_checks(tree, commands)
+            before, row['before'] = checked_before
             base, generated = imported_uid_baseline(tree, base, missing_uids)
             if generated:
                 row['verification_metadata'] = generated
@@ -1319,7 +1347,39 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 known=before if before=='green' or len(suite)==1 else 'inconclusive'
                 suite_before={n:known for n in suite}
             else:
-                suite_before={n:s for n,(s,_) in suite_states(tree,suite).items()}
+                # The run above already says which of the session's checks is red: only one it did not run (another
+                # command, or not reached) is run now, not the whole red suite a second time.
+                known={n:s for n,s in getattr(checked_before,'states',{}).items() if suite.get(n)==commands[n]}
+                suite_before={**known,**{n:s for n,(s,_) in suite_states(tree,
+                    {n:a for n,a in suite.items() if n not in known}).items()}}
+            set_aside = []
+            # Checks red on the unchanged project, after any sandbox question settled: ask before paying an
+            # implementer. Not on a retained candidate or a waiting worker (their tree already holds a change),
+            # nor for a test the plan writes itself (red by construction).
+            red = []
+            if red_baseline is not None and before == 'red' and not candidate and not waiting:
+                from .conversation_permissions import paths_allowed
+                red = [n for n, s in getattr(checked_before, 'states', {}).items() if s == 'red' and not (
+                    n in planned and all(paths_allowed([t], unit['target_paths']) or not (Path(tree)/t).exists()
+                                         for t in planned[n]))]
+            if red:
+                offered = bool(set(worker_commands) - set(red))  # the host's diff check alone judges no change
+                choice = red_baseline({n: commands[n] for n in red}, row['before'], offered)
+                row['red_before'] = {'checks': red, 'answer': choice or 'none'}
+                if choice == 'aside' and offered:
+                    # By name, only this baseline's red checks, for this run: they leave the unit's checks here
+                    # and the session-suite gate before applying (suite_allows' `aside`).
+                    set_aside = row['checks_set_aside'] = red
+                    commands = {n: a for n, a in commands.items() if n not in red}
+                    worker_commands = {n: a for n, a in worker_commands.items() if n not in red}
+                    before = 'red' if any(checked_before.states[n] == 'red' for n in commands) else 'green'
+                    instruction, inputs = worker_brief(brief_unit, worker_commands, args.get('note'), **brief_options)
+                elif choice != 'once':
+                    result = {'verdict': 'INCONCLUSIVE', 'route': name, 'checks_before': row['before'],
+                              'already_red': red, 'reason': 'These checks already failed before any change: '
+                              + ', '.join(red) + '. The user chose to stop; no implementer started.'}
+                    row.update(verdict='INCONCLUSIVE', reason=result['reason'], model_calls=0, calls_reserved=0)
+                    break
             child = {'schema': 'tare.tools/native-agent-config/1', 'role': 'implementer',
                      'repositories': {repository: str(tree)}, 'writable': {repository: list(unit['target_paths'])},
                      'verifiers': {n: {'repository': repository, 'argv': a} for n, a in worker_commands.items()},
@@ -1431,12 +1491,14 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
             elif candidate and candidate.get('review_only'):
                 # No writer ran between these two phases. Keep the named check
                 # evidence; the independent audit and application gates remain.
+                checked_after=checked_before
                 after,row['after']=before,row['before']
                 row['host_recheck_verification_reused']=True
             else:
                 if progress is not None:
                     progress.begin('after')
-                after, row['after'] = run_checks(tree, commands)
+                checked_after = run_checks(tree, commands)
+                after, row['after'] = checked_after
             if row.get('host_baseline_metadata'):
                 from .candidate_checks import MANIFEST
                 checked_changes=changed_files(tree,base)
@@ -1446,10 +1508,19 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     raise ValueError('Host verification changed authored candidate files; nothing was applied.')
                 changed=checked_changes
             verdict_, reason = verdict(before, after, changed, [] if review else protected, lambda: run_checks(tree, commands)[0])
+            was_red = already_red(checked_before, checked_after) if verdict_ == 'NOT_VERIFIED' else []
             if state.get('conversation_flow'):
                 from .conversation_permissions import paths_allowed
                 if not paths_allowed(changed,unit['target_paths']):
-                    verdict_,reason='NOT_VERIFIED','Candidate changed files outside the saved plan; nothing was applied.'
+                    verdict_,reason,was_red='NOT_VERIFIED','Candidate changed files outside the saved plan; nothing was applied.',[]
+            if was_red:
+                # Said apart: a check the project already failed is not a check the change broke.
+                reason = ('the checks that fail after the change already failed before it: '
+                          if len(was_red) == list(checked_after.states.values()).count('red') else
+                          'the checks fail after the change; already failing before it: ') + ', '.join(was_red)
+            if set_aside and verdict_ == 'VERIFIED':
+                reason += ('; not judged by ' + ', '.join(set_aside) +
+                           ', which already failed before the change (the user\'s decision)')
             row.update(verdict=verdict_, reason=reason, before_state=before, after_state=after, files=sorted(changed))
             if changed:
                 if row.get('host_baseline_metadata'):
@@ -1461,6 +1532,10 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 row['patch'] = str(job/f'patch-{rung+1}.diff')
             result = {'verdict': verdict_, 'reason': reason, 'route': name, 'files': sorted(changed),
                       'checks_before': row['before'], 'checks_after': row['after']}
+            if was_red:
+                result['already_red'] = row['already_red'] = was_red
+            if set_aside:
+                result['checks_set_aside'] = set_aside
             if outcome['status']!='PROPOSED':
                 result['implementation_stop']=interruption_feedback(session_path,row)
             report=outcome.get('output')
@@ -1493,6 +1568,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     if previous_job.resolve().is_relative_to(Path(custody).resolve()/'units') and sessions:
                         observed=[*verification_evidence(sessions[-1]),*observed]
                 assessment = review(tree, deployment, unit, changed, {'before': row['before'], 'after': row['after'],
+                    **({'checks_set_aside': {'checks': set_aside, 'why': 'red before any change; the user chose to '
+                        'judge the change without them, so they did not run after it'}} if set_aside else {}),
                     **({'host_baseline_metadata':row['host_baseline_metadata']} if row.get('host_baseline_metadata') else {}),
                     **({'host_recheck':{'mode':'CHECKS_AND_AUDIT_ONLY','implementer_calls_started':0,
                         'candidate_sha256':candidate['sha256']}} if candidate and candidate.get('review_only') else {}),
@@ -1532,7 +1609,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                         applied, files = 'CONFLICT', sorted(changed)
                         why = 'its checks fail with the units applied before it (' + ', '.join(moved) + '):\n' + again[1]
                     else:
-                        allowed, why = suite_allows(verification_config, unit, repository, tree, changed, suite_before)
+                        allowed, why = suite_allows(verification_config, unit, repository, tree, changed, suite_before, set_aside)
                         if review is not None and changed_files(tree, base) != changed:
                             from .conversation_review import label_of
                             label = label_of(result.get('audit'))

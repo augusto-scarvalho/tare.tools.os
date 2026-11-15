@@ -20,7 +20,7 @@ from .worker_wait import waiting_for_user
 
 SCHEMA = 'tare.tools/execution-permission/1'
 GRANT = ('session', 'task', 'plan', 'project', 'paths', 'checks', 'tests')
-CHOICES = {'once', 'project', 'deny', 'change', 'outside'}  # 'outside': the stall question's only
+CHOICES = {'once', 'project', 'deny', 'change', 'outside', 'aside'}  # outside: the stall question's; aside: red_baseline's
 
 
 class PlanChangeRequested(PermissionError):
@@ -102,6 +102,11 @@ def answer(root, request_id, choice, *, project, directory, control_root, change
         if (stall and choice not in ('once', 'deny', 'outside')
                 or choice == 'outside' and not (stall and request['stall'].get('outside'))):
             raise ValueError('Keep waiting or stop it. Nothing was stopped or authorized.')
+        baseline = request.get('kind') == 'baseline'
+        if (baseline and choice not in ('once', 'deny', 'aside')
+                or choice == 'aside' and not (baseline and request['baseline'].get('aside'))):
+            raise ValueError('Continue, continue without the failing checks where offered, or stop. '
+                             'Nothing was authorized.')
         if request.get('kind') == 'sandbox' and choice == 'change':
             raise ValueError('Run the check outside the sandbox or do not run it. Nothing was authorized.')
         if request.get('kind') == 'sandbox' and choice == 'project' and request['sandbox'].get('always') is False:
@@ -383,3 +388,41 @@ def outside_sandbox(root, state, task, effect_id, project, control, directory, i
             return True, 'for this turn, as the user chose'
         return True, 'always for this project, as the user chose'
     return decide
+
+
+BASELINE_TURN = 'baseline-turn.json'  # this turn's answer: {'invocation', 'checks': [names], 'choice'}
+
+
+def red_baseline(root, state, task, effect_id, project, control, directory, invocation_id):
+    """run_unit's `red_baseline` for a conversation: checks fail on the unchanged project, before the implementer
+    starts. ask(checks, output, aside) -> 'once' (continue: the change must make them pass), 'aside' (continue
+    without them, offered only with `aside`), 'deny' (stop) or None (the turn stopped). An answer holds for the rest
+    of the turn for the same failing checks, and is never saved beyond it. None without a TUI (directory None:
+    tare serve, scripted runs): nobody is asked and nothing changes."""
+    if directory is None:
+        return None
+    from .native_agent import read_json
+    folder = regular(Path(root)/'execution-permission')
+
+    def ask(checks, output, aside):
+        turn = {'invocation': invocation_id, 'checks': sorted(checks)}
+        saved = regular(folder/BASELINE_TURN)
+        if saved.is_file():
+            value = read_json(saved, 32768)
+            if {k: value.get(k) for k in turn} == turn and value.get('choice') in CHOICES:
+                return value['choice']
+        folder.mkdir(exist_ok=True)
+        names = ', '.join(sorted(checks))
+        request = {'schema': SCHEMA, 'kind': 'baseline', 'session': state['session_id'], 'effect': effect_id,
+            'task': (task or {}).get('id', ''), 'plan': ((task or {}).get('plan') or {}).get('sha256', ''),
+            'project': str(Path(project).resolve()), 'paths': [], 'checks': {n: list(a) for n, a in checks.items()},
+            'tests': [], 'status': 'WAITING',
+            'objective': ('Before any change, the project already fails ' + ('this check: ' if len(checks) == 1
+                          else 'these checks: ') + names + '. No implementer has started.')[:2000],
+            'baseline': {'aside': bool(aside), 'output': output[-4000:]}}
+        value = wait_for_answer(folder, request, control)
+        if not value:
+            return None  # the turn stopped: no answer to remember
+        save_json(saved, {**turn, 'choice': value['choice']})
+        return value['choice']
+    return ask
