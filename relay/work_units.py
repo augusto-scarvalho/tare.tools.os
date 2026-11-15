@@ -27,6 +27,9 @@ from .work_forms import LEDGER, MAX_UNITS, lint, literal
 # STALL_SECONDS is stalled; with nobody to ask it also stops at UNATTENDED_SECONDS, unless --unlimited time.
 STALL_SECONDS = 300
 UNATTENDED_SECONDS = 7200
+# ponytail: the Kernel's Work verification refuses a ceiling over 300 s (managed_work.VerificationCommand), so a
+# Work run's candidate check stops there until the Kernel accepts more; its stop on silence is the same as elsewhere.
+WORK_CHECK_SECONDS = min(UNATTENDED_SECONDS, 300)
 MAX_RUNGS = 3                  # routes tried for one unit, cheapest first
 MAX_FAILURES = 2                # NOT_VERIFIED runs of the same unit before tare refuses a third (R3)
 # NOT_REVIEWED runs in a row before tare refuses another: an audit finding the implementer cannot fix (a file its
