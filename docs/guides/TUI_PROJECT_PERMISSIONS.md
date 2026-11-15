@@ -223,6 +223,31 @@ and without the TUI they do not run outside.
 Without the TUI (`tare serve`, headless runs, Work runs) nobody can be asked: such a
 check stays unjudged unless the project has **Always**.
 
+**A check that already fails before any change** is asked about before the
+implementer starts. tare runs a unit's checks on the unchanged project first; when
+one is red there (after any sandbox question above settled), the TUI's conversation
+asks **Implement with a check that already fails?**, names the checks and shows
+their output, before any model call of the implementer:
+
+- **Continue: this change must make it pass**: as before. If it still fails after
+  the change, nothing is applied, and the result says it already failed before.
+- **Continue without this check**: for this run only, tare leaves it out of the
+  checks it runs after the change and of the implementer's checks, and judges the
+  change by the others. The result names it (`checks_set_aside`, and "not judged
+  by ..., which already failed before the change (the user's decision)"), and the
+  audit is told. The project's other checks still run before the change is applied;
+  the one set aside does not, so a new failure inside it would go unseen. Not
+  offered when no other check would remain.
+- **Stop** (also Escape): no implementer starts and nothing is spent on one; the
+  result names the checks that already failed, and the coordinator tells you.
+
+The dialog starts on **Stop**. One answer holds for the rest of the turn while the
+same checks fail; a new turn, or other failing checks, asks again, and nothing is
+saved. Nobody is asked where no one can be (`tare serve`, Work runs): the unit runs
+as before. Nor is it asked when the only failing checks are tests the plan writes
+(a new test fails until it is written), or on a retained candidate, whose checks
+already ran on a change.
+
 A project whose checks cannot run in the sandbox at all (more than 32 secret files
 or nested repositories, folders more than 32 levels deep, a check program that is
 not found) gets the same question for each check, with that reason, rather than

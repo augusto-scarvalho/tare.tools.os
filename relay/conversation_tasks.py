@@ -265,7 +265,7 @@ def delivery_view(value, *, config=None, unit=None):
     """Actionable facts for the coordinator; custody paths remain in the host records."""
     result = {k: value[k] for k in ('verdict', 'applied', 'application', 'application_files',
                                   'reason', 'files', 'route', 'checks', 'suite',
-                                  'checks_before', 'checks_after', 'review_edits', 'source_state', 'implementer_report',
+                                  'checks_before', 'checks_after', 'already_red', 'checks_set_aside', 'review_edits', 'source_state', 'implementer_report',
                                   'verification', 'summary', 'remaining', 'next', 'folder_access_request','last_attempt','implementation_stop') if k in value}
     from .conversation_review import label_of, labelled
     from .work_units import AUDIT_INCOMPLETE, AUDIT_REFUSED
@@ -320,8 +320,23 @@ def delivery_view(value, *, config=None, unit=None):
     elif value.get('verdict') == 'NOT_VERIFIED':
         result['next'] = 'Preserve this demand and plan. Diagnose checks_after, then use relation=correct and implement '
         result['next'] += 'to repair only the failed part; the host supplies the candidate and verifier feedback. '
+        if value.get('already_red'):
+            # A failure the project already had: the implementer is not sent to repair what the plan never touched.
+            result['next'] = ('Preserve this demand and plan. These checks failed before the change as well (compare '
+                'checks_before and checks_after): '+', '.join(value['already_red'])+'. Where this plan is meant to '
+                'make one pass (a test it adds, a bug it fixes), use relation=correct and implement to repair only '
+                'that part. Where one fails for a reason this plan does not address (the same failure as before, a '
+                'tool that cannot start, the environment), the implementer cannot repair it: do not send it back. '
+                'Tell the user which check already failed in their project before any change and the line of its '
+                'output that shows why, and that the candidate is kept and nothing was applied. ')
         result['next'] += 'For Backlog fields use product_help(backlog). Never guess enum values, open a replacement '
         result['next'] += 'task, request installation access, or suggest direct edits to escape a failure guard.'
+    elif value.get('verdict') == 'INCONCLUSIVE' and value.get('already_red'):
+        # The user's stop on the red-baseline question: nothing ran, so nothing is there to repair.
+        result['next'] = ('No implementer started: before any change the project already failed these checks: '
+            + ', '.join(value['already_red']) + ', and the user chose to stop. Tell the user, in the language of '
+            'their request, which check failed and the line of checks_before that shows why. Do not implement again '
+            'unchanged: the check, the project or its environment needs a fix first, unless the user asks to go on.')
     elif (value.get('verdict')=='INCONCLUSIVE' and not value.get('files')
             and (value.get('implementation_stop') or {}).get('provider_stop_reason')=='error'):
         result['reason']='The inference provider ended the implementer response with an error; no files changed.'
@@ -1496,7 +1511,7 @@ class ConversationTools:
                 audit.preflight = lambda producer: available(producer, self)
                 audit.packet_preflight = packet_preflight
                 audit.resume_tree = lambda: resume_tree(self, task)
-                from .conversation_permissions import outside_sandbox, stall_question
+                from .conversation_permissions import outside_sandbox, red_baseline, stall_question
                 from .work_units import PROGRESS, Progress, STALL_ASK
                 project = config['repositories'][plan['unit']['repository']]
                 # The implement row says what is running (its checks, its implementer) where a screen can show it.
@@ -1510,6 +1525,8 @@ class ConversationTools:
                                       candidate=candidate, worker=(task.get('delivery') or {}).get('worker'),
                                       control=control, spend_model=self.parent_model, review_effect=request.effect_id,
                                       outside=outside_sandbox(self.root, self.state, task, request.effect_id,
+                                          project, control, self.permission_directory, self.invocation_id),
+                                      red_baseline=red_baseline(self.root, self.state, task, request.effect_id,
                                           project, control, self.permission_directory, self.invocation_id))
                 except (ValueError, OSError, KeyError, TypeError):
                     task['stage'] = 'PENDING'; save(self.root, value)

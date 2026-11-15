@@ -89,6 +89,10 @@ class ProjectPermissions:
                     self.set_status('Not run outside the sandbox · the check stays unjudged' if choice in (None, 'deny')
                                     else 'Running the check outside the sandbox'+(' · saved for this project'
                                     if choice == 'project' else ' · for this turn'))
+                elif request.get('kind') == 'baseline':
+                    self.set_status('Continuing without the checks that already fail' if choice == 'aside' else
+                                    'Continuing · the change must make the failing checks pass' if choice == 'once'
+                                    else 'Stopped · no implementer started')
                 elif request.get('kind') == 'audit':
                     self.set_status('Not applied · the candidate is kept' if choice == 'deny' else
                                     'Applying the change you confirmed' if request['audit']['verdict'] == 'ACCEPT' else
