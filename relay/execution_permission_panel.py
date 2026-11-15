@@ -67,7 +67,7 @@ class ExecutionPermissionPanel(SupportPanel):
                     yield Static('Project: '+value['project']+'\n\nFailing before any change:\n'+
                         '\n'.join(n+': '+repr(argv) for n,argv in value['checks'].items())+
                         '\n\nContinue: the change must make '+them+' pass, or nothing is applied.'+
-                        ('\nContinue without '+them+': this run judges the change by its other checks only, and '
+                        ('\nContinue without '+them+': this change is judged by its other checks only, corrections included, and '
                          'its result says so.' if baseline.get('aside') else '')+
                         '\nStop: no implementer starts and nothing is spent on one.'+
                         '\n\nTheir output before any change:\n'+str(baseline.get('output') or ''), markup=False)
