@@ -214,6 +214,43 @@ def klass(deployment, saved=None):
     return {'class': known['class'], 'from': 'line', **numbers}
 
 
+def own_record(storage=None):
+    """How each route did as implementer on this machine, from the unit receipts: {route: {'ran', 'passed',
+    'audited', 'accepted', 'applied', and per class a unit needed ('needs', class): [ran, passed]}}. Raw counts,
+    shown and never steering: harder work already goes to stronger models, so they do not compare two."""
+    from collections import Counter, defaultdict
+    if storage is None:
+        from .native_installation import storage_root
+        storage = storage_root()
+    found = defaultdict(Counter)
+    for path in storage.glob('agent-sessions/*/units/*/receipt.json'):
+        try:
+            value = json.loads(path.read_text(encoding='utf-8'))
+            for row in value['rungs']:
+                tally, passed = found[row['route']], row.get('verdict') == 'VERIFIED'
+                tally.update(ran=1, passed=passed, audited='audit' in row,
+                             accepted=(row.get('audit') or {}).get('verdict') == 'ACCEPT')
+                if row.get('needs') in ORDER:
+                    tally.update({('needs', row['needs'], 'ran'): 1, ('needs', row['needs'], 'passed'): passed})
+            if value['result'].get('applied'):
+                found[value['result']['route']]['applied'] += 1
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            continue  # a receipt still being written, or of another shape, is not a record
+    return found
+
+
+def describe_record(tally):
+    """One line of `tare models`: a route's own record as implementer, or None when it never ran here."""
+    if not tally or not tally['ran']:
+        return None
+    text = (f"{tally['ran']} runs; {tally['passed']} passed the checks; "
+            f"{tally['accepted']} of {tally['audited']} audits accepted; {tally['applied']} applied")
+    for needed in ORDER:
+        if tally['needs', needed, 'ran']:
+            text += f"; needed {needed}: {tally['needs', needed, 'passed']} of {tally['needs', needed, 'ran']} passed"
+    return text
+
+
 def short(deployment, needs):
     """How many classes a route's class falls short of the class a unit needs: 0 when it reaches it. A model with
     no line (a local, reseller or Bedrock id) counts as cheap: nothing known places it higher."""

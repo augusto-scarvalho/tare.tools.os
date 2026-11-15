@@ -194,3 +194,33 @@ def test_tare_models_shows_the_class_numbers_source_and_attribution(capsys, keye
     assert 'Class: cheap (reading; openrouter 2026-11-14: intelligence 30.8)' in out  # AGY Flash, high
     assert 'Class: frontier (line default)' in out  # Carbon at medium: the reading is at high
     assert 'Source: Artificial Analysis (artificialanalysis.ai) via OpenRouter' in out
+
+
+def receipt(storage, session, unit, rungs, **result):
+    job = storage/'agent-sessions'/session/'units'/unit
+    job.mkdir(parents=True)
+    (job/'receipt.json').write_text(json.dumps({'unit': {'key': unit}, 'rungs': rungs, 'result': result}), encoding='utf-8')
+
+
+def test_a_routes_own_record_as_implementer_is_counted_from_the_unit_receipts_and_shown(tmp_path, monkeypatch, capsys):
+    receipt(tmp_path, 's1', 'a', [{'route': 'gemini-api-3-8-flash', 'verdict': 'VERIFIED', 'needs': 'middling',
+                                   'route_class': 'cheap', 'audit': {'verdict': 'ACCEPT'}}],
+            verdict='VERIFIED', route='gemini-api-3-8-flash', applied=True)
+    receipt(tmp_path, 's1', 'b', [{'route': 'gemini-api-3-8-flash', 'verdict': 'NOT_VERIFIED', 'needs': 'middling'}],
+            verdict='NOT_VERIFIED', route='gemini-api-3-8-flash')
+    receipt(tmp_path, 's2', 'c', [{'route': 'gemini-api-3-8-flash', 'verdict': 'VERIFIED', 'audit': {'verdict': 'REJECT'}}],
+            verdict='NOT_REVIEWED', route='gemini-api-3-8-flash')
+    (tmp_path/'agent-sessions'/'s2'/'units'/'torn').mkdir()
+    (tmp_path/'agent-sessions'/'s2'/'units'/'torn'/'receipt.json').write_text('{"rungs": [', encoding='utf-8')
+    record = signals.own_record(tmp_path)
+    line_ = '3 runs; 2 passed the checks; 1 of 2 audits accepted; 1 applied; needed middling: 1 of 2 passed'
+    assert list(record) == ['gemini-api-3-8-flash'] and signals.describe_record(record['gemini-api-3-8-flash']) == line_
+    assert signals.describe_record(record.get('never-ran')) is None
+    from relay import model_choices
+    monkeypatch.setattr('relay.native_installation.storage_root', lambda: tmp_path)
+    model_choices.main(['--include-unconfigured', '--vendor', 'Google'])
+    out = capsys.readouterr().out
+    assert out.count('As implementer on this machine: ' + line_) == 1 and 'does not compare two models' in out
+    model_choices.main(['--include-unconfigured', '--vendor', 'Google', '--json'])
+    rows = {row['deployment']: row for row in json.loads(capsys.readouterr().out)['models']}
+    assert rows['gemini-api-3-8-flash']['implementer_record']['needs.middling.ran'] == 2

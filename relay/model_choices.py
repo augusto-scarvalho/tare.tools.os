@@ -335,8 +335,11 @@ def main(argv=None):
                           include_unconfigured=args.include_unconfigured, scope=scope)
     except ValueError as error:
         parser.error(str(error)+' Consult tare models --help for valid alternatives.')
+    record = signals.own_record()
     if args.json:
-        print(json.dumps({'models': rows, 'availability': 'UNVERIFIED', 'quota': 'UNVERIFIED'}, indent=2))
+        print(json.dumps({'models': [{**row, 'implementer_record': {'.'.join(k) if isinstance(k, tuple) else k: v
+            for k, v in record[row['deployment']].items()}} for row in rows] if record else rows,
+            'availability': 'UNVERIFIED', 'quota': 'UNVERIFIED'}, indent=2))
     else:
         print('Offline connections — live availability and quota UNVERIFIED')
         print('Configuration = loaded profile + local setup eligibility only; authentication UNVERIFIED.')
@@ -350,6 +353,8 @@ def main(argv=None):
                   ' | Reasoning permitted: '+(', '.join(row['allowed_reasoning']) or 'none')+
                   (' | Automatic for '+args.role+': '+row['automatic'] if 'automatic' in row else ''))
             print('  Class: '+signals.describe(row['class']))
+            if own := signals.describe_record(record.get(row['deployment'])):
+                print('  As implementer on this machine: '+own)
             if (row.get('openrouter') or {}).get('notice'):
                 print('  Data use: '+row['openrouter']['notice'])
             for role, arguments in row['role_arguments'].items():
@@ -359,6 +364,9 @@ def main(argv=None):
                     print('  Copy: tare console ./project '+arguments[0])
         if saved := signals.reading():
             print(saved['citation']+', as of '+str(saved.get('as_of'))+'. Classes place a model; they do not choose a route.')
+        if record:
+            print('The implementer record counts raw outcomes of delegated units on this machine. Harder work goes to '
+                  'stronger models, so it does not compare two models and chooses no route.')
     return 0
 
 
