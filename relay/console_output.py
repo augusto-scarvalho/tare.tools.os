@@ -352,7 +352,7 @@ class ToolActivity(Collapsible):
             if stage.plain:
                 operation = stage.plain+' · '+operation
         room = max(1, min(70, (self.size.width or 80)-cell_len(operation+state+duration)-8))
-        if cell_len(target) > room and value['operation'] == 'explore':
+        if cell_len(target) > room and value['operation'] in {'explore', 'implement'}:
             shown = Text(target)  # a question reads from its start; a path from its end
             shown.truncate(room, overflow='ellipsis')
             target = shown.plain

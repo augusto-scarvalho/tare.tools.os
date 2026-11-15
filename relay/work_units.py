@@ -51,6 +51,10 @@ LEDGER_LOCK = threading.Lock()  # units handed at once record their state in the
 CHECK_PORT = ContextVar('conversation_check_port', default=None)
 # conversation_permissions.stall_question of a TUI conversation that can show a question; unset: nobody can be asked
 STALL_ASK = ContextVar('stall_question', default=None)
+# A Progress of a conversation's `implement` row; unset (tare serve, tare agent, a Work run): nothing is republished.
+PROGRESS = ContextVar('delegation_progress', default=None)
+PROGRESS_SECONDS = 10      # a running check's row is republished at most this often
+SILENT_NOTE_SECONDS = 30   # a check silent this long says so on the row (the user is asked at STALL_SECONDS)
 # A check the sandbox stopped (command_protection.verification_limitation), or one that could not run in it at all.
 SANDBOX_LIMITS = ('ISOLATION_INTERNAL_IPC_UNAVAILABLE', 'ISOLATION_NETWORK_DENIED', 'ISOLATION_SECRET_DENIED',
                   'ISOLATION_UNAVAILABLE')
@@ -373,18 +377,84 @@ def supervision():
     return None, None if selected('time') else UNATTENDED_SECONDS, STALL_SECONDS
 
 
+class Progress:
+    """What the row of a conversation's delegated implementation says now, through `publish(target, detail)`: a short
+    phrase for its title and a sentence. Presentation only: nothing here fails or delays the work. A step change is
+    published at once; a running check's samples (StallWatch) at most every PROGRESS_SECONDS."""
+
+    def __init__(self, publish, clock=time.monotonic):
+        self.publish, self.clock, self.lock = publish, clock, threading.Lock()
+        self.who = ''        # the implementer of the rung being run: its label and connection
+        self.phase = None    # 'before' or 'after': the checks run_checks announces; None: none
+        self.check = None    # (title, sentence) of the check running now: its samples add to them
+        self.sent = 0
+
+    def _say(self, target, detail):
+        self.sent = self.clock()
+        try:
+            self.publish(target, detail)
+        except Exception:
+            pass
+
+    def rung(self, who):
+        with self.lock:
+            self.who, self.phase, self.check = who, None, None
+            self._say(who, f'Implementer chosen: {who}. Preparing a copy of the project.')
+
+    def begin(self, phase):
+        with self.lock:
+            self.phase = phase
+
+    def running(self, name):
+        with self.lock:
+            if self.phase is None:
+                return
+            before = self.phase == 'before'
+            self.check = (f'check {self.phase}: {name}',
+                          ('Checking the project before the change' if before else 'Checking the change')
+                          + f': {name}.' + (f' The implementer will be {self.who}.' if before else ''))
+            self._say(*self.check)
+
+    def working(self):
+        with self.lock:
+            self.phase = self.check = None
+            self._say(self.who, f'The implementer is working on the change: {self.who}.')
+
+    def audit(self):
+        with self.lock:
+            self.phase = self.check = None
+            self._say('audit', 'An independent audit of the change is running.')
+
+    def sample(self, sample):
+        """The Kernel's sample of the check running now: its time and, once silent, for how long."""
+        try:
+            with self.lock:
+                if self.check is None or self.clock()-self.sent < PROGRESS_SECONDS:
+                    return
+                title, sentence = self.check
+                running, silent = round(sample['elapsed_ms']/1000), round(sample['idle_ms']/1000)
+                loud = silent >= SILENT_NOTE_SECONDS
+                self._say(f'silent for {silent} s: {title}' if loud else title,
+                          f'{sentence} Running for {running} s'+(f', silent for {silent} s.' if loud else '.'))
+        except Exception:
+            pass
+
+
 class StallWatch:
     """The Kernel's on_progress(effect_id, sample) for runs someone can be asked about. A run silent for STALL_SECONDS
     is asked about (`ask(name, argv, sample, outside)`); 'once' keeps it running and it is asked again only after
-    another full window of silence; any other answer stops it (True). `choices` keeps each effect's last answer."""
+    another full window of silence; any other answer stops it (True). `choices` keeps each effect's last answer.
+    It also hands each sample to the conversation's Progress, which is read here: samples arrive on another thread."""
 
     def __init__(self, ask):
-        self.ask, self.runs, self.choices = ask, {}, {}
+        self.ask, self.runs, self.choices, self.progress = ask, {}, {}, PROGRESS.get()
 
     def watch(self, effect_id, name, argv, outside=False):
         self.runs.setdefault(effect_id, [name, list(argv), outside, float('-inf')])  # the first caller names it
 
     def __call__(self, effect_id, sample):
+        if self.progress is not None:
+            self.progress.sample(sample)
         run = self.runs.get(effect_id)
         if (run is None or sample['idle_ms'] < STALL_SECONDS*1000
                 or time.monotonic() - run[3] < STALL_SECONDS):
@@ -467,7 +537,10 @@ def run_checks(tree, commands):
     completed = set()
     state = 'green'
     _, timeout, _ = supervision()  # a sandboxed check's ceiling is its binding's (command_protection.factory)
+    progress = PROGRESS.get()
     for name, argv in commands.items():
+        if progress is not None:
+            progress.running(name)
         try:
             port = CHECK_PORT.get()
             run = port or managed_check
@@ -524,6 +597,18 @@ def lapsing_outside(ladder):
         return []
     marked = {c['deployment'] for c in selection['candidates'] if c.get('expiring')}
     return [row['id'] for row in rows if row['id'] in marked and row['id'] not in ladder]
+
+
+def implementer_label(name, deployment):
+    """The implementer as the "Model execution" row names it, without the role the row already says: model,
+    reasoning and connection."""
+    try:
+        from .execution_team import actor
+        from .model_choices import model_label
+        person = actor({'deployment': deployment, 'config': {'role': 'implementer'}})
+        return ' · '.join((model_label(person['model']) or person['model'], person['reasoning'], person['connection']))
+    except Exception:
+        return str(name)  # presentation only
 
 
 def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None):
@@ -1102,6 +1187,9 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
             result = {'verdict': 'NOT_REVIEWED', 'reason': 'No independent auditor is available; implementation has not started.'}
             break
         visited.append(name)
+        progress = PROGRESS.get()
+        if progress is not None:
+            progress.rung(implementer_label(name, deployment))
         resumed_view = (review.resume_tree() if candidate and candidate.get('review_only')
                         and callable(getattr(review,'resume_tree',None)) else None)
         tree = waiting[0] if waiting else resumed_view or storage_root()/'wt'/uuid.uuid4().hex[:8]  # short: Windows paths stop at 260 characters
@@ -1223,6 +1311,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
             # missing sidecars before the trusted host checks, never worker edits.
             missing_uids = [n+'.uid' for n in git(tree, 'ls-files', '--cached', '-z').decode().split('\0')
                 if n.endswith('.gd') and not (tree/(n+'.uid')).exists()] if 'godot-import' in commands else []
+            if progress is not None:
+                progress.begin('before')
             before, row['before'] = run_checks(tree, commands)
             base, generated = imported_uid_baseline(tree, base, missing_uids)
             if generated:
@@ -1277,6 +1367,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 selected_limits = child_limits(custody,state,batch.share,deployment=deployment)
                 row['calls_reserved'] = selected_limits['max_model_calls']
                 (job/'receipt.json').write_text(json.dumps({**receipt, 'rungs': receipt['rungs'] + [row]}), encoding='utf-8')
+                if progress is not None:
+                    progress.working()
                 with local_slot(deployment):
                     from .execution_resources import selected
                     if selected('money'):
@@ -1345,6 +1437,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 after,row['after']=before,row['before']
                 row['host_recheck_verification_reused']=True
             else:
+                if progress is not None:
+                    progress.begin('after')
                 after, row['after'] = run_checks(tree, commands)
             if row.get('host_baseline_metadata'):
                 from .candidate_checks import MANIFEST
@@ -1433,6 +1527,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     break
             if verdict_ == 'VERIFIED':
                 with batch.apply:  # each change is checked on the tree the earlier ones left, then applied
+                    if progress is not None:
+                        progress.begin('after')  # the checks before applying: the row leaves "audit"
                     moved = stale(tree, batch.applied)
                     again = run_checks(tree, commands) if moved else ('green', '')
                     if again[0] != 'green':
