@@ -152,6 +152,10 @@ class StoragePanel(SupportPanel):
                 group[2] |= not row['complete']
             for name, (total, removable, partial) in sorted(groups.items(), key=lambda item: -item[1][0]):
                 lines.append(f'{name}: {amount(total)}'+('+' if partial else '')+f' · cleanup {amount(removable)}')
+            if sweep := report.get('own_sweep'):
+                lines.append(f"Last sweep of tare's own leftovers: removed {amount(sweep['removed_bytes'])} in "
+                             f"{len(sweep['removed'])} item(s), kept {len(sweep['kept'])}, "
+                             f"killed {len(sweep.get('killed', ()))} orphaned process(es).")
             lines.extend(['', 'All measured paths (logical bytes; linked targets excluded):'])
             for row in sorted(report['rows'], key=lambda r: -r['bytes']):
                 lines.append(f"{amount(row['bytes'])}{'+' if not row['complete'] else ''} | "

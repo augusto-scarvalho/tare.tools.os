@@ -579,6 +579,8 @@ def main(argv=None):
         return 2
     if not args.no_discovery:
         threading.Thread(target=discover_clis, daemon=True).start()
+    from .storage import sweep_in_background
+    sweep_in_background()  # what an interrupted run of tare left, on a thread of its own
     server = ThreadingHTTPServer((args.host, args.port), handler(models, api_key, args.root, admission))
     print(f'tare serve on http://{args.host}:{args.port}/v1 models: {", ".join((*AGENT_MODELS, *COPILOT_MODELS, *models))}', flush=True)
     try:

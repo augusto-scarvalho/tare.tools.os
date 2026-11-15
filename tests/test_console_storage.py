@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import pytest
 from textual.widgets import Button, Checkbox, Input, SelectionList, TextArea
@@ -52,6 +53,11 @@ def test_root_edit_invalidates_preview(owned, monkeypatch):
     root, home, old, build = owned
     monkeypatch.setenv('TARE_STORAGE_ROOT', str(root))
     monkeypatch.setenv('TARE_PRODUCT_HOME', str(home))
+    from relay import storage
+    monkeypatch.setattr(storage, 'sweep_in_background', lambda: None)  # this test's receipt stays as written
+    (root/'storage-maintenance').mkdir()
+    (root/'storage-maintenance'/'last-own-sweep.json').write_text(json.dumps(
+        {'removed_bytes': 3*1024**2, 'removed': [{}, {}], 'kept': [{}], 'killed': [{}]}))
     async def scenario():
         app = WorkConsole(root, backend=FakeBackend(), initial_mode='assistant')
         async with app.run_test(size=(80, 24)) as pilot:
@@ -59,6 +65,9 @@ def test_root_edit_invalidates_preview(owned, monkeypatch):
             app.dispatch_conversation_command('/storage', '')
             await pilot.pause(); await app.workers.wait_for_complete()
             panel = app.screen
+            assert ("Last sweep of tare's own leftovers: removed 3.0 MiB in 2 item(s), kept 1, "
+                    "killed 1 orphaned process(es)."
+                    in panel.query_one('#storage-origins', TextArea).text)
             panel.query_one('#storage-items', SelectionList).select_all()
             await pilot.pause()
             panel.query_one('#storage-confirm', Checkbox).value = True

@@ -10,7 +10,7 @@ import re
 import shutil
 import time
 
-from compute_plane.native_journal import regular, read_json
+from compute_plane.native_journal import io_path, regular, read_json
 
 
 class TurnClock:
@@ -239,8 +239,9 @@ def discard(tree):
 
 def remove(folder):
     """Delete a folder tare made, read-only files included; a link inside it is removed, never followed (rmtree). One
-    retry, a moment later, for a file a process that just ended still held. True when the folder is gone."""
-    folder = Path(folder)
+    retry, a moment later, for a file a process that just ended still held. True when the folder is gone. Through
+    the long-path form: test trees in a candidate pass Windows' 260 characters."""
+    folder = io_path(folder)
     def readonly(function,path,error):
         if not isinstance(error,PermissionError) or not Path(path).resolve().is_relative_to(folder.resolve()):
             raise error

@@ -250,3 +250,12 @@ def test_a_discarded_candidate_takes_its_pytest_root_and_nothing_outside_its_fol
     tree.mkdir()
     worker_wait.release(tmp_path, {'tree': str(tree), 'session': str(session)})
     assert not tree.exists() and not (session/'command-tmp').exists() and (session/'journal.jsonl').exists()
+    # A test tree inside a candidate passes Windows' 260 characters.
+    from compute_plane.native_journal import io_path
+    deep = io_path(tree)
+    for i in range(30):
+        deep = deep/('segment%02d' % i)
+    os.makedirs(deep); (deep/'f.txt').write_text('x')
+    assert len(str(deep)) > 260
+    worker_wait.discard(tree)
+    assert not os.path.lexists(io_path(tree))
