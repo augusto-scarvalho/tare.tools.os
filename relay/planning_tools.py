@@ -96,7 +96,10 @@ def snapshot():
             routes[name] = native_catalog.select(name)
         except (ValueError, OSError, KeyError, TypeError):
             continue
-    return {'routes': routes, 'route_order': list(routes)}
+    # An allowance that lapses in surplus is used first here too, among the routes the profile leaves on for the
+    # planner: a Claude week ending today was left unused while planning went to a Codex week with 6% left.
+    from .turn_engine import surplus_first
+    return {'routes': routes, 'route_order': surplus_first(list(routes))}
 
 
 def record(path):

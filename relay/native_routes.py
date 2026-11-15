@@ -137,7 +137,7 @@ def _ranked(role, producer=None, *, check_resources=False):
     table = configured(); decisions = []; eligible = []; credentials = {}; seen = set()
     from . import route_facts
     from .execution_scope import current
-    from .provider_quota import surplus
+    from .provider_quota import lapse_order, surplus
     lapsing = {}  # one ranking reads the quota file and each account's spend once
     fact_cache = {}; evidence = route_facts.supplied_evidence(); observed_facts = {}
     from .turn_engine import cross_vendor_first
@@ -193,7 +193,7 @@ def _ranked(role, producer=None, *, check_resources=False):
         # An independent auditor always precedes an admitted same-family one, and another vendor precedes the same
         # vendor before any preference, tier or priority: a same-vendor auditor runs only when no other is eligible.
         # With `first` off the vendor leaves the order: preference, lapsing allowance, tier, priority, primary, CLI backup, table order.
-        rank = (same_family, first and not cross, current().preference(deployment,role), -round(signal['lead'], 2) if signal else 0, COST[row['cost_tier']], priority, row['kind'] != 'primary', cli_backup, order)
+        rank = (same_family, first and not cross, current().preference(deployment,role), lapse_order(signal), COST[row['cost_tier']], priority, row['kind'] != 'primary', cli_backup, order)
         eligible.append((rank, deployment, decision))
     if check_resources:
         kept = []
