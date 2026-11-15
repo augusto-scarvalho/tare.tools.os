@@ -28,6 +28,7 @@ ARENA = ('https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderb
 CUTS = {'openrouter': ((56, 'frontier'), (40, 'middling')), 'arena': ((0.14, 'frontier'), (0.05, 'middling'))}
 CITATIONS = {'openrouter': 'Source: Artificial Analysis (artificialanalysis.ai) via OpenRouter (openrouter.ai/rankings)',
              'arena': 'Source: LMArena agent leaderboard, CC BY 4.0 (huggingface.co/datasets/lmarena-ai/leaderboard-dataset)'}
+ORDER = ('cheap', 'middling', 'frontier')  # ascending: a route reaches a need when its class is not before it
 BRACKET = re.compile(r'(.+?)\s*\(([^()]*)\)')
 
 
@@ -211,6 +212,17 @@ def klass(deployment, saved=None):
     if before and band(saved['source'], before['intelligence']) == chosen:
         return {'class': chosen, 'from': 'reading', **numbers}
     return {'class': known['class'], 'from': 'line', **numbers}
+
+
+def short(deployment, needs):
+    """How many classes a route's class falls short of the class a unit needs: 0 when it reaches it. A model with
+    no line (a local, reseller or Bedrock id) counts as cheap: nothing known places it higher."""
+    found = klass(deployment) or {}
+    return max(0, ORDER.index(needs) - ORDER.index(found.get('class') or 'cheap'))
+
+
+def reaches(deployment, needs):
+    return short(deployment, needs) == 0
 
 
 def describe(result):

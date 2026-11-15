@@ -262,6 +262,42 @@ def test_the_planner_takes_the_route_whose_allowance_lapses_first_among_those_it
     assert planning_tools.snapshot()['route_order'] == ['claude-fable-5-2', 'codex-cli']  # the week ending today
 
 
+def test_a_unit_that_needs_a_class_goes_first_to_the_routes_that_reach_it(unit, monkeypatch):
+    # Fable is a frontier line; the local model and the reseller's have no line and count as cheap.
+    from relay import model_signals
+    monkeypatch.setattr(model_signals, 'klass', lambda d: {'class': 'frontier'} if 'fable' in d['native_profile']['model'] else None)
+    assert unit(needs='cheap') == LADDER  # every route reaches it: the order is the ladder's
+    hard = unit(needs='frontier')
+    assert hard == ['claude-fable-5-2', 'api', 'cheap', 'openrouter-deepseek']  # weaker ones stay, last
+    assert unit(needs='middling')[0] == 'claude-fable-5-2'
+    assert unit(chosen='cheap', needs='frontier') == ['cheap']  # the coordinator's own choice is not reordered
+    # No route reaches the need: the nearest class goes first, not the plain order (the local model would lead).
+    monkeypatch.setattr(model_signals, 'klass', lambda d: {'class': 'middling'} if 'fable' in d['native_profile']['model'] else None)
+    assert unit(needs='frontier') == ['claude-fable-5-2', 'api', 'cheap', 'openrouter-deepseek']
+    monkeypatch.setattr(model_signals, 'klass', lambda d: {'class': 'frontier'} if 'fable' in d['native_profile']['model'] else None)
+    lapsing_credit()  # an allowance that lapses first still does not put a weaker model before the need
+    save(reading('claude', bucket('week', 0.23, 6*DAY)))
+    assert unit(needs='frontier')[-2:] == ['cheap', 'openrouter-deepseek']
+
+
+def test_the_plans_task_may_say_the_class_it_needs_and_the_unit_takes_the_hardest():
+    from relay import model_signals
+    from relay.native_artifacts import GraphTask
+    task = dict(key='a', title='t', summary='s', cluster='c', priority='P1', criteria=['x'], target_paths=['a.py'],
+                depends_on=[])
+    assert GraphTask(**task).needs is None and GraphTask(**task, needs='middling').needs == 'middling'
+    with pytest.raises(ValueError):
+        GraphTask(**task, needs='genius')
+    assert max(['cheap', 'frontier', 'middling'], key=model_signals.ORDER.index) == 'frontier'
+    assert model_signals.reaches(cli(model='claude-fable-5-2'), 'frontier')  # by its line, with no reading
+    assert not model_signals.reaches(cli(model='claude-haiku-5-5'), 'middling') and not model_signals.reaches(CHEAP, 'middling')
+    assert model_signals.reaches(CHEAP, 'cheap')
+    from relay.conversation_tasks import delivery_view
+    view = delivery_view({'verdict': 'INCONCLUSIVE', 'reason': 'r', 'needs': 'frontier', 'route_class': 'cheap'})
+    assert view['class_note'] == 'The plan says this unit needs a frontier model; the route that ran is a cheap one.'
+    assert 'class_note' not in delivery_view({'verdict': 'VERIFIED', 'reason': 'r', 'needs': 'cheap', 'route_class': 'middling'})
+
+
 def test_a_hosted_conversations_unit_takes_the_whole_ladder_cheapest_first_with_nothing_in_surplus(unit):
     assert unit() == LADDER  # the local model first while its GPU is free
     assert unit(allow_parent=True) == [*LADDER, 'openrouter-muse']  # the conversation's own model after the ladder

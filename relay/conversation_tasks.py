@@ -265,8 +265,14 @@ def delivery_view(value, *, config=None, unit=None):
     """Actionable facts for the coordinator; custody paths remain in the host records."""
     result = {k: value[k] for k in ('verdict', 'applied', 'application', 'application_files',
                                   'reason', 'files', 'route', 'checks', 'suite',
-                                  'checks_before', 'checks_after', 'already_red', 'checks_set_aside', 'review_edits', 'source_state', 'implementer_report',
+                                  'checks_before', 'checks_after', 'already_red', 'checks_set_aside', 'needs', 'route_class', 'review_edits', 'source_state', 'implementer_report',
                                   'verification', 'summary', 'remaining', 'next', 'folder_access_request','last_attempt','implementation_stop') if k in value}
+    if value.get('needs') and value.get('route_class'):
+        from .model_signals import ORDER
+        if ORDER.index(value['route_class']) < ORDER.index(value['needs']):
+            # Said as observed (the route may have been a choice): a failure is then not read as the task's alone.
+            result['class_note'] = (f"The plan says this unit needs a {value['needs']} model; the route that ran is "
+                                    f"a {value['route_class']} one.")
     from .conversation_review import label_of, labelled
     from .work_units import AUDIT_INCOMPLETE, AUDIT_REFUSED
     value = {**value, 'audit': labelled(value['audit'])} if value.get('audit') else value  # also a saved delivery
@@ -700,6 +706,10 @@ def task_plan(root, config, task, result):
                                            *(c for t in tasks for c in t['criteria'])])), 'depends_on': [],
             'test_paths': list(dict.fromkeys(p for t in tasks for p in t.get('test_paths', []))),
             'verifiers': list(dict.fromkeys(p for t in tasks for p in t.get('verifiers', [])))}
+    from .model_signals import ORDER
+    needs = [t['needs'] for t in tasks if t.get('needs') in ORDER]
+    if needs:  # the hardest task decides: one implementer does them all
+        unit['needs'] = max(needs, key=ORDER.index)
     # A promised Python test module is part of the executable check selection,
     # even when the planner listed only existing tests in test_paths. Its missing
     # baseline is red; it must exist and pass after implementation.
