@@ -33,10 +33,12 @@ def job_limits(base, total=None):
 def windows_isolation_factory(*, backend, policy, cwd, environment, seconds,
                               mediation_factory, codex_executable=None,
                               codex_sha256=None, verification_seconds=None, staged_effects=False,
-                              unbounded_verification=False):
+                              unbounded_verification=False, unbounded_command=False, idle_seconds=None,
+                              on_progress=None):
     """Return a native_agent command_mediation_factory; no execution or new authority.
 
-    The host supplies the existing assessment/authorization/receipt mediator.
+    `idle_seconds` stops a protected command or a verification with no activity for that long; `on_progress` watches
+    both (the Kernel's bind_command_confinement). The host supplies the existing assessment/authorization/receipt mediator.
     Each binding gets one launcher and the existing capabilities own its lifetime.
     There is no backend fallback, CLI discovery or model-selected configuration.
     """
@@ -92,6 +94,9 @@ def windows_isolation_factory(*, backend, policy, cwd, environment, seconds,
         capabilities.bind_command_confinement(launcher, environment, seconds,
             **({'verification_seconds':verification_seconds} if verification_seconds is not None else {}),
             **({'unbounded_verification':True} if unbounded_verification else {}),
+            **({'unbounded_command':True} if unbounded_command else {}),
+            **({'idle_seconds':idle_seconds,'verification_idle_seconds':idle_seconds} if idle_seconds else {}),
+            **({'on_progress':on_progress} if on_progress is not None else {}),
             **({'staged_effects':True} if staged_effects else {}))
         return mediator
 

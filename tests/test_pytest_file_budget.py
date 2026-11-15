@@ -10,6 +10,12 @@ from relay import work_units
 from relay.execution_scope import Scope, activated
 
 
+@pytest.fixture(autouse=True)
+def ceiling(monkeypatch):
+    # These cases are written against a 300-second ceiling per file; the unattended ceiling is 2 hours.
+    monkeypatch.setattr(work_units, 'UNATTENDED_SECONDS', 300)
+
+
 def compile_checks(tmp_path, monkeypatch, *, discovered=False, default=False):
     monkeypatch.setattr('relay.turn_engine.project_python', lambda path: sys.executable)
     monkeypatch.setattr('relay.work_forms.ecosystems', lambda path: (

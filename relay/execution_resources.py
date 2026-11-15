@@ -13,7 +13,9 @@ ALIASES = {'turns': 'calls', 'budget': 'money', 'cost': 'money', 'usd': 'money',
 HELP = ('Remove selected execution ceilings for this instance and its workers: '
         'calls time money compactions stagnation (stagnation loosens the no-progress pause to '
         f'{UNLIMITED_STAGNANT_TURNS} replies; --max-stagnant-turns unlimited removes it). No list means all; '
-        'use spaces or commas. Provider limits, request timeouts and permissions still apply.')
+        'use spaces or commas. time also removes the 2-hour ceiling of a check or command nobody can be asked about; '
+        'one with no activity for 5 minutes is still asked about, or stopped when nobody can be asked. '
+        'Provider limits, request timeouts and permissions still apply.')
 
 
 def parse(value):

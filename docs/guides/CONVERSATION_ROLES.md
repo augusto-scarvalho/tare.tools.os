@@ -114,14 +114,19 @@ for this turn or always for this project (never "always" for a local model's wor
 [Project permissions](TUI_PROJECT_PERMISSIONS.md#checks-run-in-the-sandbox));
 a yes reruns it outside and its receipt says so. Without a yes, a session check
 stopped by the sandbox holds the change, like any unverified change; only a
-timeout still settles nothing (a change whose own checks pass is then applied
+check stopped unfinished still settles nothing (a change whose own checks pass is then applied
 only when its unit's tests cover every changed file). A check of any other
 runner that fails while its output shows a block (a refused connection, a
 secret or outside file, Node's drive-root `lstat` where `node_modules` holds
 links, a missing Rust toolchain) stays red and asks the same question; only the
 rerun outside can turn it green, and without one the receipt says the failure
-may come from the sandbox. A check that runs out of time in the sandbox asks
-too and stays unjudged, as a timeout does.
+may come from the sandbox. Checks and the implementer's commands are judged by
+their activity, not by a clock: one with no output and no CPU time for 5 minutes
+is asked about in the TUI (keep waiting, stop it, or, where a blocked check could
+run outside, stop it and run it outside the sandbox) and stopped where nobody can
+be asked, which also stops any check or command after 2 hours unless
+`--unlimited time` ([Project permissions](TUI_PROJECT_PERMISSIONS.md#checks-run-in-the-sandbox)).
+A check stopped either way stays unjudged.
 
 The sandbox also denies the project's secrets, at any depth and in folders granted
 to the project: `.env` and `.env.*` files (samples such as `.env.example` stay

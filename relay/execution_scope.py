@@ -482,8 +482,12 @@ def session_role(function):
         with for_role(role):
             candidate=deployment or saved.get('deployment')
             # Saved policy is evidence of an earlier invocation, not authorization
-            # for this instance. Only its concrete coordinator deployment persists.
-            scope=current().intersect(Scope(unlimited=kwargs.get('unlimited_resources',())))
+            # for this instance. Only its concrete coordinator deployment persists, and the
+            # ceilings it lifted that its own saved limits already carry: a resumed turn of a
+            # TUI conversation gets no --unlimited, and its checks and units lost the lift.
+            from .execution_resources import LEGACY
+            lifted=kwargs.get('unlimited_resources') or [r for r in saved.get('unlimited_resources') or () if r in LEGACY]
+            scope=current().intersect(Scope(unlimited=lifted))
             if scope.pin(role) and not saved:
                 if role in ('auditor','plan-auditor'):
                     require(candidate,role)  # Independence was checked with the producer by the routing owner.

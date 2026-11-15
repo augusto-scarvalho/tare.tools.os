@@ -108,8 +108,7 @@ def test_host_metadata_exception_cannot_be_used_by_command_capabilities(host):
             capabilities=host.capabilities,control=host.control,binding=host.binding)
 
 
-@pytest.mark.parametrize('key,reason',[('timeout','timed out'),('cancelled','cancelled'),
-                                     ('output_limit','exceeded its output limit')])
+@pytest.mark.parametrize('key,reason',[('cancelled','cancelled'),('output_limit','exceeded its output limit')])
 def test_interrupted_host_check_names_the_check_and_cause(host,monkeypatch,key,reason):
     from compute_plane.native_capabilities import NativeCapabilities
     from tare_tools_agent_runtime import EffectResult
@@ -121,3 +120,16 @@ def test_interrupted_host_check_names_the_check_and_cause(host,monkeypatch,key,r
             'process':{key:True,'secret_or_noisy_payload':'x'*3000}})))
     with pytest.raises(ValueError,match='tests: '+reason) as error:run(command)
     assert len(str(error.value))<130
+
+
+@pytest.mark.parametrize('process',[{'timeout':True,'wall_ms':7200000},{'stalled':True,'idle_ms':300000}])
+def test_a_protected_check_stopped_at_its_limit_or_for_no_activity_is_unjudged(host,monkeypatch,process):
+    from compute_plane.native_capabilities import NativeCapabilities
+    from tare_tools_agent_runtime import EffectResult
+    command=[str(host.executable),'-c','print(1)']
+    run=protection.conversation_verifier(host.control,host.custody,host.config,host.deployment,
+        host.root,{'title':'Run tests','criteria':[],'target_paths':[]},{'tests':command})
+    monkeypatch.setattr(NativeCapabilities,'execute',lambda self,request,control:
+        EffectResult(request.effect_id,'failed',json.dumps({'error_type':'CommandInterrupted','process':process})))
+    done=run(command)  # no longer a raised "verification was refused: tests: timed out"
+    assert done.returncode==1 and done.execution_limitation.startswith('Check stopped: it ')

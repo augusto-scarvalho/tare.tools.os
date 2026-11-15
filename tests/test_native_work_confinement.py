@@ -236,6 +236,7 @@ def host_verifier(work, monkeypatch, tmp_path):
         def bind(**session):
             session['capabilities'].bind_command_confinement(
                 launcher, options['environment'], options['seconds'],
+                verification_idle_seconds=options.get('idle_seconds'),  # as windows_isolation passes it
                 **{key:options[key] for key in ('verification_seconds','unbounded_verification') if key in options})
         return bind
 
@@ -298,12 +299,12 @@ def test_work_host_verifier_honors_time_scope_and_keeps_mediation(host_verifier,
     result=run(verifier.argv,cwd=verifier.host.root,timeout=None,env={})
     assert result.returncode==0 and result.stdout==verifier.output
     wall=verifier.calls[0][1]['timeout']
-    if not unbounded:
-        assert wall==300
-    elif math.isfinite(parent_seconds):
-        assert 990<wall<=1000
+    if math.isfinite(parent_seconds):
+        assert 990<wall<=1000  # the Work's own clock: the unattended ceiling (2 h) is longer
     else:
         assert math.isinf(wall)
+    from relay import work_units
+    assert verifier.calls[0][1]['idle_timeout']==work_units.STALL_SECONDS  # nobody can be asked in a Work run
     assert verifier.scopes[0]['unbounded_verification'] is unbounded
     assert len(verifier.host.native)==1
     with pytest.raises(Exception):

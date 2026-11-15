@@ -170,14 +170,16 @@ class NativeWorkRunner:
         def run(argv, *, cwd, timeout, env, **ignored):
             from compute_plane.managed_process import run_pipe_process
             from compute_plane.native_journal import regular, save_json
+            from .work_units import STALL_SECONDS, stop_reason
             if control.should_stop():
                 raise ValueError('NATIVE_CANDIDATE_CONTROL_STOPPED')
             receipt, out, err = run_pipe_process(argv, cwd=cwd, env=env,
                 timeout=min(float('inf') if timeout is None else timeout, control.remaining_seconds()), cancelled=control.should_stop,
-                max_output=1024*1024)
+                max_output=1024*1024, idle_timeout=STALL_SECONDS)  # nobody can be asked in a Work run
             save_json(regular(Path(train_dir)/'NATIVE_VERIFIER_PROCESS.json'), receipt)
             if (not receipt['cleanup_verified'] or receipt['cancelled'] or receipt['timeout']
                     or receipt['output_limit'] or receipt['exit_code'] is None):
-                raise ValueError('NATIVE_CANDIDATE_VERIFIER_INTERRUPTED')
+                why = stop_reason(receipt)
+                raise ValueError('NATIVE_CANDIDATE_VERIFIER_INTERRUPTED'+(': '+why if why else ''))
             return subprocess.CompletedProcess(argv, receipt['exit_code'], out, err)
         return run
