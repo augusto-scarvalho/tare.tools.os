@@ -45,7 +45,9 @@ def stage_limits(deployment, stage, *, limits=None, unlimited=False, budget=None
     if timeout is not native_limits.UNSET:
         values['max_seconds'] = timeout
     values.update(native_limits.validate(limits or {}))
-    return native_limits.resolve({}, values)
+    # The route says whether its calls are judged by their silence (native_limits.streams); its declared limits
+    # are already in `values`.
+    return native_limits.resolve({k: v for k, v in deployment.items() if k != 'native_execution_limits'}, values)
 
 
 def plan_audit(deployment, train_dir, repository, repository_root, custody, *,

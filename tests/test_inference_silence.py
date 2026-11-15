@@ -78,3 +78,14 @@ def test_the_cli_client_receives_the_window_only_where_its_stdout_can_judge(monk
 def test_a_call_stopped_on_silence_is_recovered_like_one_stopped_by_a_timeout():
     from relay.native_model_recovery import RECOVERABLE_ERRORS
     assert {'CLI_INCOMPLETE_EXCHANGE', 'CLI_SILENT_EXCHANGE'} <= RECOVERABLE_ERRORS
+
+
+@pytest.mark.parametrize('stage', ['plan', 'implement'])
+def test_a_work_runs_stage_on_a_streaming_route_has_no_request_total(stage):
+    from relay.native_work_host import stage_limits
+    limits = stage_limits(CLAUDE, stage)
+    assert limits['request_seconds'] is None and limits['read_seconds'] == SILENCE_SECONDS
+    assert limits['max_seconds'] == (240 if stage == 'plan' else 600)  # the stage's own budget is untouched
+    codex = {'native_profile': {'protocol': 'vendor-cli', 'endpoint': 'cli://codex'},
+             'native_execution_limits': {'request_seconds': 300}}
+    assert stage_limits(codex, stage)['request_seconds'] == 300  # prints nothing until the reply is whole

@@ -2291,8 +2291,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 25421,
-      "sha256": "c9ac670f81b8ceea3a2f501f25f8295682f38110abbc52f2f45c8569ca3ce436"
+      "size_bytes": 25633,
+      "sha256": "6a585a351eb02d5d2869cdf6db9b81d3a3ec89dc3c0d5c46bcc389bf2742b532"
     },
     {
       "name": "overseer_agent.py",
