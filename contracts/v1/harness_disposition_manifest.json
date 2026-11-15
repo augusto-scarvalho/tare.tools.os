@@ -2,7 +2,7 @@
   "$schema": "https://tare.tools/schemas/v1/disposition-manifest.json",
   "version": "1.0.0",
   "generated_at": "2026-10-04T03:10:28.054735+00:00",
-  "total_modules": 447,
+  "total_modules": 448,
   "modules": [
     {
       "name": "consent_decisions.py",
@@ -2991,8 +2991,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator-facing entry points; Runtime retains session execution.",
-      "size_bytes": 27778,
-      "sha256": "b495dfbf661066265755a23463570961d0f39302319a7f0dabe038b8fed8ef94"
+      "size_bytes": 28085,
+      "sha256": "e0f4a5a5b18e4aad9fdbecb67365a986e35bd0aeb916f23b17a667461dd8d4a5"
     },
     {
       "name": "copilot_mode.py",
@@ -3361,8 +3361,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator model selection; Runtime retains session execution.",
-      "size_bytes": 32026,
-      "sha256": "bedb3163a97fccc1d2eea3b8a794931737fcc9a901a900a561f87d13a1cd3c79"
+      "size_bytes": 32391,
+      "sha256": "b6867c38142440cc7486beb4b1ed9d433fd876241d1cd5581244da6027cf4450"
     },
     {
       "name": "model_picker.py",
@@ -3421,8 +3421,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator views and draft composition; Runtime retains execution authority.",
-      "size_bytes": 41801,
-      "sha256": "b17339137019909aacc15f666c0c55f0c2a2888696ef1081318ee524a30bea83"
+      "size_bytes": 42128,
+      "sha256": "f1be1c8ac0065ddace44529ec784448cbe07b430c488ed55c0c36d05f186ce75"
     },
     {
       "name": "adaptive_routes.py",
@@ -3821,8 +3821,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 63243,
-      "sha256": "3b20790551bd380b026949efe093785ac61b787a97036ca8d1bfec6d250d8cd0"
+      "size_bytes": 63600,
+      "sha256": "d33d4f03ce1ca4eceac2bd3057029f226711cca41ac185617e85821379aed9a7"
     },
     {
       "name": "console_setup.py",
@@ -4473,6 +4473,16 @@
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
       "size_bytes": 3337,
       "sha256": "f995fad1114111786ecaee83636883fc2259240b9d49ffefa760d39ae551ce32"
+    },
+    {
+      "name": "model_signals.py",
+      "path": "tare.tools.os/relay/model_signals.py",
+      "summary": "Reads public model benchmark signals (OpenRouter's relay of Artificial Analysis, then the LMArena agent dataset), matches rows to model lines without guessing, saves the reading and gives each route a class by absolute cut points",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
+      "size_bytes": 11519,
+      "sha256": "f2cde3e534837d8efcd97e1f963a69e881fd7ea58297acfb000f7a19a4968195"
     }
   ]
 }

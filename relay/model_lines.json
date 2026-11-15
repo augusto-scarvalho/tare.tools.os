@@ -3,6 +3,7 @@
     "vendor": "Anthropic",
     "bias_domain": "anthropic/fable",
     "label": "Claude Fable {version}",
+    "class": "frontier",
     "claude_code_alias": "fable",
     "efforts": ["low", "medium", "high", "xhigh", "max"]
   },
@@ -10,6 +11,7 @@
     "vendor": "Anthropic",
     "bias_domain": "anthropic/opus",
     "label": "Claude Opus {version}",
+    "class": "middling",
     "claude_code_alias": "opus",
     "efforts": ["low", "medium", "high", "xhigh", "max"]
   },
@@ -17,6 +19,7 @@
     "vendor": "Anthropic",
     "bias_domain": "anthropic/sonnet",
     "label": "Claude Sonnet {version}",
+    "class": "middling",
     "claude_code_alias": "sonnet",
     "efforts": ["low", "medium", "high", "xhigh", "max"]
   },
@@ -24,6 +27,7 @@
     "vendor": "Anthropic",
     "bias_domain": "anthropic/haiku",
     "label": "Claude Haiku {version}",
+    "class": "cheap",
     "claude_code_alias": "haiku",
     "efforts": ["low", "medium", "high", "xhigh", "max"]
   },
@@ -31,48 +35,56 @@
     "vendor": "OpenAI",
     "bias_domain": "openai/gpt",
     "label": "GPT-{version} Astra",
+    "class": "frontier",
     "efforts": ["low", "medium", "high", "xhigh", "max"]
   },
   "gpt-sol": {
     "vendor": "OpenAI",
     "bias_domain": "openai/gpt",
     "label": "GPT-{version} Sol",
+    "class": "middling",
     "efforts": ["low", "medium", "high", "xhigh", "max"]
   },
   "gpt-terra": {
     "vendor": "OpenAI",
     "bias_domain": "openai/gpt",
     "label": "GPT-{version} Terra",
+    "class": "middling",
     "efforts": ["low", "medium", "high", "xhigh", "max"]
   },
   "gpt-luna": {
     "vendor": "OpenAI",
     "bias_domain": "openai/gpt",
     "label": "GPT-{version} Luna",
+    "class": "cheap",
     "efforts": ["low", "medium", "high", "xhigh", "max"]
   },
   "gemini-flash": {
     "vendor": "Google",
     "bias_domain": "google/gemini",
     "label": "Gemini {version} Flash",
+    "class": "cheap",
     "efforts": ["low", "medium", "high"]
   },
   "gemini-argon": {
     "vendor": "Google",
     "bias_domain": "google/gemini",
     "label": "Gemini {version} Argon",
+    "class": "middling",
     "efforts": ["low", "medium", "high"]
   },
   "gemini-carbon": {
     "vendor": "Google",
     "bias_domain": "google/gemini",
     "label": "Gemini {version} Carbon",
+    "class": "frontier",
     "efforts": ["low", "medium", "high"]
   },
   "gemini-hydrogen": {
     "vendor": "Google",
     "bias_domain": "google/gemini",
     "label": "Gemini {version} Hydrogen",
+    "class": "middling",
     "efforts": ["low", "medium", "high"]
   }
 }

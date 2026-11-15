@@ -519,6 +519,11 @@ def discover_clis():
         refresh_reading()
     except Exception:  # optional: the last good reading stays, or none (no reference price, as before)
         pass
+    try:  # the benchmark signals behind each route's class, at most once a day; no model call
+        from .model_signals import refresh_reading as refresh_signals
+        refresh_signals()
+    except Exception:  # optional: the last good reading stays, or none (each class is its line's own)
+        pass
     try:  # what each provider has left, so a spent plan is not chosen; no model call
         from . import provider_quota
         provider_quota.refresh()

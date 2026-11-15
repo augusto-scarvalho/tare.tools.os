@@ -176,6 +176,7 @@ def projection(*, role=None, via=None, vendor=None, provider=None, include_uncon
     from .native_routes import configured, roles as table_roles
     from .turn_engine import policy
     from .web_research import DEFAULT_ROUTES
+    from . import model_signals as signals
     if role is not None and role not in ROLES:
         raise ValueError('Unknown role; consult tare models --help.')
     scope = current() if scope is None else scope
@@ -262,6 +263,7 @@ def projection(*, role=None, via=None, vendor=None, provider=None, include_uncon
                        'availability': 'UNVERIFIED', 'quota': 'UNVERIFIED'})
         if route.get('openrouter'):
             result[-1]['openrouter'] = route['openrouter']
+        result[-1]['class'] = signals.klass(value)
         if role in PROFILE_ROLES:  # the routing profile's state for this role's automatic routing (tare setup --auto)
             state = profile_state(role, value, value=setup)
             result[-1]['automatic'] = f'{state[0]} ({state[1]})' if state else 'on'
@@ -326,6 +328,7 @@ def main(argv=None):
     parser.add_argument('--json', action='store_true')
     add_arguments(parser)
     args = parser.parse_args(normalize_arguments(sys.argv[1:] if argv is None else argv))
+    from . import model_signals as signals
     try:
         scope = from_arguments(args, discovery=True)
         rows = projection(role=args.role, via=args.via, vendor=args.vendor, provider=args.provider,
@@ -346,6 +349,7 @@ def main(argv=None):
                   ' | Reasoning supported: '+(', '.join(row['supported_reasoning']) or 'none')+
                   ' | Reasoning permitted: '+(', '.join(row['allowed_reasoning']) or 'none')+
                   (' | Automatic for '+args.role+': '+row['automatic'] if 'automatic' in row else ''))
+            print('  Class: '+signals.describe(row['class']))
             if (row.get('openrouter') or {}).get('notice'):
                 print('  Data use: '+row['openrouter']['notice'])
             for role, arguments in row['role_arguments'].items():
@@ -353,6 +357,8 @@ def main(argv=None):
                     base = arguments[0].rsplit('@', 1)[0]
                     print('  '+role+' syntax: '+base+'@LEVEL; permitted levels: '+', '.join(a.rsplit('@', 1)[1] for a in arguments))
                     print('  Copy: tare console ./project '+arguments[0])
+        if saved := signals.reading():
+            print(saved['citation']+', as of '+str(saved.get('as_of'))+'. Classes place a model; they do not choose a route.')
     return 0
 
 
