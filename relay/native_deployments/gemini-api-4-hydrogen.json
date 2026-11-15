@@ -14,9 +14,9 @@
     "model": "gemini-4-hydrogen",
     "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai",
     "context_window": 131072,
-    "output_tokens": 8192,
+    "output_tokens": 32768,
     "parameters_json": "{\"reasoning_effort\":\"medium\"}",
-    "source": "https://ai.google.dev/gemini-api/docs/models/gemini-4-hydrogen (read 2026-11-13; it also lists xhigh, which the compatibility protocol here does not offer); conservative Tare context/output caps, not provider maxima; existing compatibility protocol and implicit cache"
+    "source": "https://ai.google.dev/gemini-api/docs/models/gemini-4-hydrogen (read 2026-11-13; it also lists xhigh, which the compatibility protocol here does not offer); conservative Tare context/output caps, not provider maxima; existing compatibility protocol and implicit cache; the output cap is 32,768, not 8,192, because thinking counts toward it: on 2026-11-15 a claude-api-opus-5-5 implementer spent 8,192 of 8,192 output tokens on thinking in one reply and returned nothing (PARTIAL_REPLY)"
   },
   "native_usage_contract": {
     "layout": "gemini-chat",
