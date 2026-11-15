@@ -26,12 +26,15 @@ def continuation_text(state, message_id, text):
 
 
 OBSERVED = 'Host-observed changes to previously read files.'
+HOST = '[tare host] '  # a message the host wrote on its own (a recovery): never the user's words
 FOLLOW_UP = '\nUser follow-up:\n'
 
 
 def user_words(text):
     """The user's own words in a journal message: the follow-up after a host observation, or None when the message
-    is the host's observation alone."""
+    is the host's observation alone. A message the host wrote itself has none: it never answers a consent question."""
+    if text.startswith(HOST):
+        return None
     if not text.startswith(OBSERVED):
         return text
     return text.split(FOLLOW_UP, 1)[1] if FOLLOW_UP in text else None
