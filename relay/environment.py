@@ -1108,6 +1108,11 @@ def main(argv=None):
                 refresh_reading(setup=value, failed=unread)  # with this command's --use / --no-use, not the saved ones
             except Exception as exc:
                 unread(f'{type(exc).__name__}: {str(exc)[:200]}')
+            try:  # the benchmark signals behind each route's class, if not read today; no model call
+                from .model_signals import refresh_reading as refresh_signals
+                refresh_signals(setup=value)
+            except Exception:  # optional: the last good reading stays, or none (each class is its line's own)
+                pass
         if args.credential:
             value = store_credential(value, args.credential, sys.stdin)
         if args.old_models:
