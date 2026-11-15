@@ -62,6 +62,9 @@ def disable_installed_flow_assessor(monkeypatch, tmp_path_factory, request):
     tools = state_dir('tools')
     monkeypatch.setattr('relay.storage.tool_roots', lambda: (tools, tools, tools))
     monkeypatch.setenv('TARE_STORAGE_AUTO', str(tools/'storage-auto.json'))
+    # The sweep a TUI or tare serve starts on a thread would outlive the test that started it and read the next
+    # one's folders. Tests of the sweep call it themselves (test_storage keeps the real starter).
+    monkeypatch.setattr('relay.storage.sweep_in_background', lambda: None)
     # Auto-update syncs the operator's VS Code model list from the running serve: never from a test.
     monkeypatch.setattr('relay.native_product.published_models', lambda: [])
     # Tests exercising activation explicitly supply their own policy/worker.

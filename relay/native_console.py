@@ -721,6 +721,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         self.set_interval(30, lambda: self.sync_header(force=True))
         self.set_interval(60, self.check_storage_space)
         self.call_after_refresh(self.check_storage_space)
+        from .storage import sweep_in_background
+        sweep_in_background()  # what an interrupted run of tare left, on a thread of its own
         self.set_interval(1800, self.check_product_update)
         self.set_interval(60, self.check_ci_alerts)
         self.set_interval(1.0, self.poll_message_observations)

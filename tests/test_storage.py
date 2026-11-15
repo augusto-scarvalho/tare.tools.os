@@ -10,6 +10,8 @@ import time
 import pytest
 
 from relay import native_product as product, storage
+
+sweep_in_background = storage.sweep_in_background  # the real one: conftest switches the starter off for every test
 from test_native_product import bundle
 
 
@@ -181,6 +183,179 @@ def test_low_space_stays_in_the_header_and_only_critical_space_notifies(tmp_path
             free[0] = 80.0; app.check_storage_space(); await pilot.pause()
             assert 'Low disk' not in header() and len(shown) == 1
     asyncio.run(scenario())
+
+
+def aged(path, days=2):
+    """Every file and folder under `path` last changed `days` ago (long paths included)."""
+    from compute_plane.native_journal import io_path
+    when = time.time() - days*86400
+    for base, folders, files in os.walk(io_path(path)):
+        for name in files + folders:
+            os.utime(os.path.join(base, name), (when, when))
+    os.utime(io_path(path), (when, when))
+    return path
+
+
+def test_the_sweep_removes_only_tares_own_orphans_and_keeps_what_a_record_or_a_process_needs(tmp_path, monkeypatch):
+    import subprocess
+    from relay.challenger import git
+    from compute_plane.native_journal import io_path
+    storage_root, home, user, temp = (tmp_path/n for n in ('storage', 'product', 'user', 'temp'))
+    for p in (storage_root, home/'releases', user, temp): p.mkdir(parents=True)
+    monkeypatch.setattr(storage, 'processes', lambda: [])
+    roots = (user, temp, tmp_path/'local')
+
+    def folder(path, age=2):
+        (path/'sub').mkdir(parents=True)
+        (path/'sub'/'f.txt').write_bytes(b'x'*100)
+        return aged(path, age) if age else path
+    wt = storage_root/'wt'
+    orphan, pytest_root = folder(wt/'0123abcd'), folder(wt/'.0123abcd-pytest')
+    waiting = folder(wt/'feedbeef')  # a waiting worker's tree, named by its conversation's record
+    experiment = folder(wt/'0123456789abcdef')  # challenger workspaces have another shape
+    project = tmp_path/'project'; project.mkdir()
+    git(project, 'init', '-q'); (project/'a.txt').write_text('a')
+    git(project, 'add', '.'); git(project, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'a')
+    git(project, 'worktree', 'add', '-q', '--detach', str(wt/'abcd0123'))
+    registered = aged(wt/'abcd0123')
+    conversation = storage_root/'agent-sessions'/'c1'
+    kept_session, left_session = conversation/'units'/'task-1-aaaaaa'/'session-1', conversation/'units'/'task-2-bbbbbb'/'session-1'
+    for session in (kept_session, left_session):
+        folder(session/'command-tmp')
+    (conversation/'conversation-tasks.json').write_text(json.dumps({'tasks': [{'delivery': {'worker': {
+        'tree': str(waiting), 'session': str(kept_session)}}}]}), encoding='utf-8')
+    deep = io_path(temp/'tare-test-abcdefgh')
+    for i in range(30):
+        deep = deep/('segment%02d' % i)
+    os.makedirs(deep); (deep/'f.txt').write_bytes(b'x'*50)
+    assert len(str(deep)) > 260
+    long_tree = aged(temp/'tare-test-abcdefgh')
+    recent, unknown = folder(temp/'tare-vision-recent01', age=0), folder(temp/'tare-other-abcdefgh')
+    held = folder(temp/'tare-snapshot-held0pen')
+    check = folder(user/'.tare'/'tmp'/'k3x9q2zw' if os.name == 'nt' else temp/'tc-k3x9q2zw')
+    download = folder(home/'download-abcdefgh')
+    ended = subprocess.Popen([sys.executable, '-c', '']); ended.wait()
+    dead, live = (home/'releases'/f'.use.{"0"*16}.{pid}' for pid in (ended.pid, os.getpid()))
+    for marker, pid in ((dead, ended.pid), (live, os.getpid())):
+        marker.write_text(str(pid), encoding='ascii')  # fresh: a dead process's marker goes whatever its age
+
+    preview = storage.own_rows(storage_root, home, roots)
+    assert {Path(r['path']).name for r in preview if r['status'] == 'orphan'} >= {'0123abcd', 'abcd0123', 'download-abcdefgh'}
+    assert orphan.exists() and dead.exists()  # a preview removes nothing
+    with open(held/'sub'/'f.txt', 'rb'):  # another process's open file: Windows refuses the rename
+        rows = {Path(r['path']): r for r in storage.sweep(storage_root, home, roots)}
+    for gone in (orphan, pytest_root, registered, long_tree, check, download, dead, left_session/'command-tmp'):
+        assert not os.path.lexists(io_path(gone)) and rows[gone]['status'] == 'removed', rows.get(gone, {}).get('reason')
+    assert 'abcd0123' not in git(project, 'worktree', 'list').decode()  # its registration went the way run_unit does it
+    for kept in (waiting, experiment, recent, unknown, live, kept_session/'command-tmp'):
+        assert kept.exists(), kept
+    assert 'record' in rows[waiting]['reason'] and 'waiting worker' in rows[kept_session/'command-tmp']['reason']
+    assert 'last day' in rows[recent]['reason'] and 'running' in rows[live]['reason']
+    assert experiment not in rows and unknown not in rows
+    if os.name == 'nt':
+        assert held.exists() and rows[held]['status'] == 'kept'
+    receipt = json.loads((storage_root/'storage-maintenance'/'last-own-sweep.json').read_text())
+    assert receipt['removed_bytes'] == sum(r['bytes'] for r in rows.values() if r['status'] == 'removed') > 0
+    assert {k['path']: k['reason'] for k in receipt['kept']}[str(waiting)] == rows[waiting]['reason']
+    report = storage.scan(storage_root, home)
+    assert report['own_sweep']['removed_bytes'] == receipt['removed_bytes']
+    # An update holding the installation lock owns its download folder.
+    download = folder(home/'download-12345678')
+    with product.exclusive(home):
+        rows = {Path(r['path']): r for r in storage.sweep(storage_root, home, roots)}
+    assert 'lock' in rows[download]['reason'] and download.exists()
+
+
+def test_the_startup_sweep_runs_on_its_own_thread_and_never_raises(tmp_path, monkeypatch):
+    import threading
+    ran = threading.Event()
+
+    def failing(*arguments):
+        ran.set()
+        raise OSError('disk gone')
+    monkeypatch.setattr(storage, 'sweep', failing)
+    sweep_in_background()
+    assert ran.wait(5)
+    monkeypatch.setenv('TARE_STORAGE_ROOT', 'relative')  # storage_root() refuses it: no sweep, no error
+    sweep_in_background()
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='stamps are read from Linux /proc')
+def test_the_sweep_kills_a_stamped_process_whose_tare_is_dead_and_nothing_else(tmp_path, monkeypatch):
+    import signal
+    import subprocess
+    from compute_plane.managed_process import owner_stamp
+    monkeypatch.setattr(storage, 'processes', lambda: [])
+    ended = subprocess.Popen(['sleep', '30'])
+    dead = f'{ended.pid}:{Path(f"/proc/{ended.pid}/stat").read_text().rsplit(")", 1)[1].split()[19]}'
+    ended.kill(); ended.wait()
+    sleeper = [sys.executable, '-c', 'import time; time.sleep(30)', 'x' * 300]
+    # Each leads a group of its own, as a command tare starts does, and names it the way the Kernel's shim does
+    # (the shell's pid is the group; `detached` names another group, as a daemon that left tare's would).
+    grouped = lambda group: ['sh', '-c', f'TARE_GROUP={group} exec "$@"', 'sh', *sleeper]
+    started = [subprocess.Popen(grouped(group), env=dict(os.environ, **extra), start_new_session=True)
+               for group, extra in (('$$', {'TARE_OWNER': dead}), ('$$', {'TARE_OWNER': owner_stamp()}), ('$$', {}),
+                                    ('1', {'TARE_OWNER': dead}))]
+    orphan, living, unstamped, detached = started
+    until = time.monotonic()+10
+    while any(b'TARE_GROUP=' not in Path(f'/proc/{p.pid}/environ').read_bytes() for p in started):
+        assert time.monotonic() < until  # the shell has not exec'd the sleeper yet
+        time.sleep(.05)
+    try:
+        storage.sweep(tmp_path/'storage', tmp_path/'product', (tmp_path/'user', tmp_path/'temp', tmp_path/'local'))
+        assert orphan.wait(5) == -signal.SIGKILL
+        assert living.poll() is None and unstamped.poll() is None and detached.poll() is None
+        killed = json.loads((tmp_path/'storage'/'storage-maintenance'/'last-own-sweep.json').read_text())['killed']
+        assert killed == [dict(pid=orphan.pid, name=Path(sys.executable).name[:15],
+                               command=' '.join(sleeper)[:200])]
+    finally:
+        for process in started:
+            process.kill(); process.wait()
+
+
+def test_a_turn_still_in_progress_keeps_its_idle_candidate_tree(tmp_path, monkeypatch):
+    # A conversation can wait days for the user's answer with nothing open in its tree: only finished or
+    # interrupted work is swept.
+    import socket
+    import subprocess
+    from relay import native_model_recovery
+    monkeypatch.setattr(storage, 'processes', lambda: [])
+    # This test's process stands for a tare that has run for days (it was really created a moment ago, which the
+    # real check reads as a reused pid).
+    monkeypatch.setattr(native_model_recovery, '_gone', lambda pid, born_before: pid != os.getpid())
+    root, home = tmp_path/'storage', tmp_path/'product'
+    tree = root/'wt'/'0123abcd'
+    (tree/'sub').mkdir(parents=True); (tree/'sub'/'edited.py').write_text('work in progress')
+    two_days_ago = time.time()-2*86400
+    for path in (tree/'sub'/'edited.py', tree/'sub', tree):
+        os.utime(path, (two_days_ago, two_days_ago))
+    record = root/'agent-sessions'/'conversation'/'native-agent.json'
+    record.parent.mkdir(parents=True)
+    ended = subprocess.Popen([sys.executable, '-c', '']); ended.wait()
+
+    def turn(**fields):  # the conversation's turn began before the tree's last write
+        row = {'id': 'i', 'started_at': time.time()-3*86400, 'owner_host': socket.gethostname(), **fields}
+        record.write_text(json.dumps({'invocations': [{'id': 'old', 'started_at': 1.0, 'ended_at': 2.0}, row]}))
+        return {Path(r['path']).name: r for r in storage.sweep(root, home, (tmp_path/'u', tmp_path/'t', tmp_path/'l'))}
+
+    rows = turn(owner_pid=os.getpid())  # waiting for the user: its process runs and the turn has no end
+    assert tree.exists() and 'in progress' in rows['0123abcd']['reason']
+    rows = turn(owner_pid=os.getpid(), started_at=time.time()-3600)  # a turn that began after the tree's last write
+    assert not tree.exists() and rows['0123abcd']['status'] == 'removed'
+    for fields in ({'owner_pid': os.getpid(), 'ended_at': time.time()}, {'owner_pid': ended.pid}, {}):
+        (tree/'sub').mkdir(parents=True)  # a finished turn, a dead process, a record with no process: all swept
+        for path in (tree/'sub', tree):
+            os.utime(path, (two_days_ago, two_days_ago))
+        assert turn(**fields)['0123abcd']['status'] == 'removed' and not tree.exists()
+
+
+def test_the_windows_sweep_never_looks_at_processes(tmp_path, monkeypatch):
+    from compute_plane import managed_process
+    monkeypatch.setattr(storage.os, 'name', 'nt')  # only kill_orphans runs here; the folder sweep is not called
+    monkeypatch.setattr(managed_process, 'owner_alive', lambda stamp: pytest.fail('read a stamp'))
+    monkeypatch.setattr(storage.os, 'kill', lambda *a: pytest.fail('signalled a process'))
+    monkeypatch.setattr(storage.Path, 'iterdir', lambda self: pytest.fail('listed '+str(self)))
+    assert storage.kill_orphans() == []
 
 
 def tools_tree(tmp_path, monkeypatch):
