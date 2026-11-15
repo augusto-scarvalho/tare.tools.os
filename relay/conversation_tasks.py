@@ -773,8 +773,9 @@ def recover_completed_plan(root, config, value):
 
 
 class ConversationTools:
-    def __init__(self, tools, root, state, invocation_id, *, permission_directory=None):
+    def __init__(self, tools, root, state, invocation_id, *, permission_directory=None, describe=None):
         self.tools, self.root, self.state = tools, Path(root), state
+        self.describe = describe  # ActivityJournal.describe: what a running delegated implementation is doing
         self.invocation_id, self.parent_model = invocation_id, None
         self.permission_directory = permission_directory
         value=load(self.root)
@@ -1481,6 +1482,8 @@ class ConversationTools:
                 save(self.root, value)
                 def audit(tree, producer, unit, changed, checks):
                     task['stage'] = 'AUDITING'; save(self.root, value)
+                    if progress is not None:
+                        progress.audit()
                     result = review(self, task, tree, producer, unit, changed, checks, control)
                     # The checks passed (run_unit reviews only then). A same-family ACCEPT, or a completed one that
                     # left only open items, is the user's decision; findings take the ordinary correction path.
@@ -1494,8 +1497,11 @@ class ConversationTools:
                 audit.packet_preflight = packet_preflight
                 audit.resume_tree = lambda: resume_tree(self, task)
                 from .conversation_permissions import outside_sandbox, stall_question
-                from .work_units import STALL_ASK
+                from .work_units import PROGRESS, Progress, STALL_ASK
                 project = config['repositories'][plan['unit']['repository']]
+                # The implement row says what is running (its checks, its implementer) where a screen can show it.
+                progress = Progress(lambda target, detail: self.describe(request.effect_id, target, detail)) if self.describe else None
+                said = PROGRESS.set(progress)
                 # The unit's checks and its implementer's commands ask this conversation's user about a stall.
                 stall = STALL_ASK.set(stall_question(self.root, self.state, task, request.effect_id, project, control,
                                                      self.permission_directory))
@@ -1510,6 +1516,7 @@ class ConversationTools:
                     raise
                 finally:
                     STALL_ASK.reset(stall)
+                    PROGRESS.reset(said)
                 if output.get('applied'):
                     task['verification'] = {'status': 'green', 'checks': output.get('checks_after', ''), 'applied': True}
                     output['targets'] = proof_paths(config, plan['unit'], [*plan.get('sources', []),
