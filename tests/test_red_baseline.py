@@ -89,8 +89,11 @@ def test_a_unit_says_which_failing_check_already_failed_and_runs_the_red_suite_o
 BROKEN = [sys.executable, '-B', '-c', 'raise SystemExit(3)']
 
 
-def asked_unit(setup, tmp_path, monkeypatch, answer, *, test_paths=()):
-    """A conversation unit whose check `broken` fails before any change; `answer` is the user's to the question."""
+def asked_unit(setup, tmp_path, monkeypatch, answer, *, test_paths=(), verdicts=('ACCEPT',), written=True,
+               verifiers=('unit', 'broken')):
+    """A conversation unit whose check `broken` fails before any change; `answer` is the user's to the question.
+    `written` False: the plan names its tests without writing them (they exist and fail, a bug to fix).
+    asked_unit.named holds, per question, whether it said the plan names every failing check."""
     config, custody, root = setup
     repository(root)
     config.update(conversation_flow=True)
@@ -108,25 +111,35 @@ def asked_unit(setup, tmp_path, monkeypatch, answer, *, test_paths=()):
 
     def check(argv, **kwargs):  # broken always fails, a planned test until it is written; unit always passes
         planned = next((t for t in test_paths if t in argv), None)
-        code = 1 if argv == BROKEN else int(not (Path(kwargs['cwd'])/planned).exists()) if planned else 0
+        code = 1 if argv == BROKEN else int(not written or not (Path(kwargs['cwd'])/planned).exists()) if planned else 0
         return subprocess.CompletedProcess(argv, code, '', '')
     real = work_units.run_checks
     monkeypatch.setattr(work_units, 'run_checks', lambda tree, commands: ran.append(sorted(commands)) or real(tree, commands))
 
-    def question(checks, output, aside):
+    asked_unit.named = []
+
+    def question(checks, output, aside, named):
         asked.append((sorted(checks), output, aside))
+        asked_unit.named.append(named)
         return answer
 
     def review(tree, deployment, unit, changed, checks):
         audits.append(checks)
-        return {'verdict': 'ACCEPT', 'sources': [], 'reference_sources': []}
+        return {'verdict': verdicts[len(audits)-1], 'sources': [], 'reference_sources': [], 'summary': 'Reviewed.',
+                'findings': [{'claim': 'Tighten it.'}]}
+
+    def run(candidate=None):
+        return work_units.run_unit(custody, {'config': config, 'conversation_flow': True, 'deployment': deployment(),
+            'limits': {'max_model_calls': 30}, 'deadline_utc': None},
+            {'title': 'Set two', 'target_paths': ['a.py', *(test_paths if written else ())],
+             'criteria': ['value equals two'], 'verifiers': list(verifiers), 'test_paths': list(test_paths)},
+            lambda: False, review=review,
+            red_baseline=question, candidate=candidate)
     token = work_units.CHECK_PORT.set(check)
     try:
-        result = work_units.run_unit(custody, {'config': config, 'conversation_flow': True, 'deployment': deployment(),
-            'limits': {'max_model_calls': 30}, 'deadline_utc': None},
-            {'title': 'Set two', 'target_paths': ['a.py', *test_paths], 'criteria': ['value equals two'],
-             'verifiers': ['unit', 'broken'], 'test_paths': list(test_paths)}, lambda: False, review=review,
-            red_baseline=question)
+        result = run()
+        for _ in verdicts[1:]:  # a correction round on the candidate the review sent back
+            result = run({**result['candidate'], 'review_only': False})
     finally:
         work_units.CHECK_PORT.reset(token)
     receipt = json.loads(Path(result['receipt']).read_text(encoding='utf-8'))
@@ -159,6 +172,16 @@ def test_continue_without_it_sets_aside_only_the_red_check_and_applies_on_the_ot
     assert ran[2:] == [['unit']] and result['application'] == 'APPLIED'
     assert result['suite'] == "the session's checks pass with the change"
     assert delivery_view(result)['checks_set_aside'] == ['broken']
+
+
+def test_the_choice_travels_with_the_change_into_its_correction(setup, tmp_path, monkeypatch):
+    result, receipt, workers, asked, audits, ran = asked_unit(setup, tmp_path, monkeypatch, 'aside',
+                                                              verdicts=('REVISE', 'ACCEPT'))
+    assert len(asked) == 1 and len(workers) == 2  # the correction is not asked again: its tree already holds a change
+    assert set(workers[1][0]['verifiers']) == {'unit'} and audits[1]['checks_set_aside']['checks'] == ['broken']
+    assert receipt['input_candidate']['checks_set_aside'] == ['broken']  # the choice is in the candidate's record
+    assert result['verdict'] == 'VERIFIED' and result['checks_set_aside'] == ['broken']
+    assert result['application'] == 'APPLIED'
 
 
 def test_continue_keeps_todays_behaviour(setup, tmp_path, monkeypatch):
@@ -212,7 +235,7 @@ def test_the_question_is_asked_once_per_turn_and_failing_checks_and_never_headle
 
     got, seen, errors = ask('turn-1', ['broken'], 'aside')
     assert got == 'aside' and seen[0]['kind'] == 'baseline' and seen[0]['checks'] == {'broken': ['run', 'broken']}
-    assert seen[0]['baseline'] == {'aside': True, 'output': '$ broken (exit 3)'} and 'broken' in seen[0]['objective']
+    assert seen[0]['baseline'] == {'aside': True, 'named': False, 'output': '$ broken (exit 3)'} and 'broken' in seen[0]['objective']
     assert len(errors) == 3 and all('Nothing was' in e for e in errors)  # no saved "always" on this question
     assert ask('turn-1', ['broken'])[:2] == ('aside', [])  # the same turn and checks: no second question
     got, _, errors = ask('turn-1', ['broken', 'lint'], 'deny', aside=False)  # other failing checks ask again
@@ -231,6 +254,35 @@ def test_continue_without_it_answers_only_the_question_that_offers_it(tmp_path):
     with pytest.raises(ValueError, match='Nothing was authorized'):
         permissions.answer(root, request['id'], 'aside', project=tmp_path, directory=tmp_path/'console',
                            control_root=relay_mesh.RELAY_ROOT)
+
+
+def test_a_failing_test_the_plan_names_starts_the_dialog_on_continue(setup, tmp_path, monkeypatch):
+    from textual.app import App
+    from relay.execution_permission_panel import ExecutionPermissionPanel
+    # A request to fix what an existing test catches: the plan names the test and does not write it. It is asked
+    # about, and the question says the plan names it; with a check the plan does not name (broken) it does not.
+    (setup[2]/'tests').mkdir()
+    (setup[2]/'tests'/'test_old.py').write_text('def test_old(): assert False\n')
+    old = dict(test_paths=('tests/test_old.py',), written=False)
+    _, _, workers, asked, _, _ = asked_unit(setup, tmp_path, monkeypatch, 'once', verifiers=('unit',), **old)
+    assert [a[0] for a in asked] == [['pytest-tests:tests/test_old.py']] and asked_unit.named == [True]
+    assert len(workers) == 1  # Continue: the implementer runs, as before the question existed
+    request = {'kind': 'baseline', 'objective': 'o', 'project': str(tmp_path), 'checks': {'t': BROKEN},
+               'baseline': {'aside': True, 'named': True, 'output': 'x'}}
+
+    async def scenario():
+        app, answers = App(), []
+        async with app.run_test(size=(120, 40)) as pilot:
+            app.push_screen(ExecutionPermissionPanel(request), answers.append)
+            await pilot.pause()
+            await pilot.press('enter'); await pilot.pause()
+        assert answers == ['once']  # a reflex Enter goes on to the fix; it does not stop it
+    asyncio.run(scenario())
+
+
+def test_a_check_the_plan_does_not_name_keeps_the_dialog_on_stop(setup, tmp_path, monkeypatch):
+    asked_unit(setup, tmp_path, monkeypatch, 'deny')
+    assert asked_unit.named == [False]
 
 
 @pytest.mark.parametrize('aside', [True, False])

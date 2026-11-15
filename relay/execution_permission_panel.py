@@ -66,8 +66,10 @@ class ExecutionPermissionPanel(SupportPanel):
                     them='it' if one else 'them'
                     yield Static('Project: '+value['project']+'\n\nFailing before any change:\n'+
                         '\n'.join(n+': '+repr(argv) for n,argv in value['checks'].items())+
+                        ('\n\nThe plan names '+('this test' if one else 'these tests')+' as its own: a failure here is '
+                         'usually what the change is meant to fix.' if baseline.get('named') else '')+
                         '\n\nContinue: the change must make '+them+' pass, or nothing is applied.'+
-                        ('\nContinue without '+them+': this run judges the change by its other checks only, and '
+                        ('\nContinue without '+them+': this change is judged by its other checks only, corrections included, and '
                          'its result says so.' if baseline.get('aside') else '')+
                         '\nStop: no implementer starts and nothing is spent on one.'+
                         '\n\nTheir output before any change:\n'+str(baseline.get('output') or ''), markup=False)
@@ -149,9 +151,11 @@ class ExecutionPermissionPanel(SupportPanel):
 
     def on_mount(self):
         # A change no audit accepted, a check the sandbox blocked, and checks that already fail (Stop spends
-        # nothing) start on the safe answer; a process with no activity starts on keeping it running.
+        # nothing) start on the safe answer; a process with no activity starts on keeping it running, and failing
+        # tests the plan itself names start on Continue (a bug fix: the change is meant to make them pass).
         unaccepted=self.request.get('kind')=='audit' and self.request['audit']['verdict']!='ACCEPT'
-        safe=unaccepted or self.request.get('kind') in ('sandbox', 'baseline')
+        safe=unaccepted or self.request.get('kind')=='sandbox' or (
+            self.request.get('kind')=='baseline' and not self.request['baseline'].get('named'))
         self.query_one('#permission-deny' if safe else '#permission-once', Button).focus()
 
     def on_input_submitted(self, event):

@@ -1357,6 +1357,13 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
             # implementer. Not on a retained candidate or a waiting worker (their tree already holds a change),
             # nor for a test the plan writes itself (red by construction).
             red = []
+            # A change the user chose to judge without some checks keeps that choice in its later rounds (a
+            # correction, a recheck, a resumed worker): they were red on the unchanged project, and a tree that
+            # already holds a change cannot tell a check the change broke from one that always failed.
+            # `chosen` is every name the user set aside for this change and stays in its record; this round sets
+            # aside those red now (one that is green, or was not reached this time, keeps the choice for later).
+            chosen = list(((worker if waiting else candidate) or {}).get('checks_set_aside') or [])
+            carried = [n for n in chosen if getattr(checked_before, 'states', {}).get(n) == 'red']
             if red_baseline is not None and before == 'red' and not candidate and not waiting:
                 from .conversation_permissions import paths_allowed
                 red = [n for n, s in getattr(checked_before, 'states', {}).items() if s == 'red' and not (
@@ -1364,22 +1371,29 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                                          for t in planned[n]))]
             if red:
                 offered = bool(set(worker_commands) - set(red))  # the host's diff check alone judges no change
-                choice = red_baseline({n: commands[n] for n in red}, row['before'], offered)
+                # A failing test the plan itself names is usually the bug it fixes: the dialog then starts on
+                # Continue, not on Stop, so a request to fix a failing test is not stopped by a reflex Enter.
+                choice = red_baseline({n: commands[n] for n in red}, row['before'], offered,
+                                      all(n in planned for n in red))
                 row['red_before'] = {'checks': red, 'answer': choice or 'none'}
                 if choice == 'aside' and offered:
-                    # By name, only this baseline's red checks, for this run: they leave the unit's checks here
-                    # and the session-suite gate before applying (suite_allows' `aside`).
-                    set_aside = row['checks_set_aside'] = red
-                    commands = {n: a for n, a in commands.items() if n not in red}
-                    worker_commands = {n: a for n, a in worker_commands.items() if n not in red}
-                    before = 'red' if any(checked_before.states[n] == 'red' for n in commands) else 'green'
-                    instruction, inputs = worker_brief(brief_unit, worker_commands, args.get('note'), **brief_options)
+                    chosen = carried = red
                 elif choice != 'once':
                     result = {'verdict': 'INCONCLUSIVE', 'route': name, 'checks_before': row['before'],
                               'already_red': red, 'reason': 'These checks already failed before any change: '
                               + ', '.join(red) + '. The user chose to stop; no implementer started.'}
                     row.update(verdict='INCONCLUSIVE', reason=result['reason'], model_calls=0, calls_reserved=0)
                     break
+            if carried and set(worker_commands) - set(carried):
+                # By name, only checks red on the unchanged project: they leave the unit's checks here and the
+                # session-suite gate before applying (suite_allows' `aside`), for this change.
+                set_aside = row['checks_set_aside'] = carried
+                commands = {n: a for n, a in commands.items() if n not in carried}
+                worker_commands = {n: a for n, a in worker_commands.items() if n not in carried}
+                if before == 'red':  # an unfinished check keeps the baseline inconclusive
+                    before = 'red' if any(checked_before.states.get(n) == 'red' for n in commands) else 'green'
+                if not (candidate and candidate.get('review_only')):
+                    instruction, inputs = worker_brief(brief_unit, worker_commands, args.get('note'), **brief_options)
             child = {'schema': 'tare.tools/native-agent-config/1', 'role': 'implementer',
                      'repositories': {repository: str(tree)}, 'writable': {repository: list(unit['target_paths'])},
                      'verifiers': {n: {'repository': repository, 'argv': a} for n, a in worker_commands.items()},
@@ -1508,7 +1522,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     raise ValueError('Host verification changed authored candidate files; nothing was applied.')
                 changed=checked_changes
             verdict_, reason = verdict(before, after, changed, [] if review else protected, lambda: run_checks(tree, commands)[0])
-            was_red = already_red(checked_before, checked_after) if verdict_ == 'NOT_VERIFIED' else []
+            was_red = ([n for n in already_red(checked_before, checked_after) if n in commands]
+                       if verdict_ == 'NOT_VERIFIED' else [])
             if state.get('conversation_flow'):
                 from .conversation_permissions import paths_allowed
                 if not paths_allowed(changed,unit['target_paths']):
@@ -1546,7 +1561,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 from .conversation_tasks import source_state
                 result['candidate'] = {'patch': row['patch'],
                     'sha256': hashlib.sha256(Path(row['patch']).read_bytes()).hexdigest(),
-                    'producer': producer_reference(job,deployment), 'targets': proof, 'basis': basis}
+                    'producer': producer_reference(job,deployment), 'targets': proof, 'basis': basis,
+                    **({'checks_set_aside': chosen} if chosen else {})}  # the choice travels with the change
             if state.get('conversation_flow') and stop():
                 result.update(verdict='INCONCLUSIVE', reason='Execution was stopped; no candidate was applied.', patch=row.get('patch'))
                 break
@@ -1556,7 +1572,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 from .worker_wait import retain
                 result.update(verdict='INCONCLUSIVE',reason='The implementer is waiting for read access; its context and private candidate are preserved.',
                     folder_access_request=outcome['folder_access_request'],
-                    worker=retain(tree,base,session_path,unit,deployment,name,proof,basis,outcome))
+                    worker={**retain(tree,base,session_path,unit,deployment,name,proof,basis,outcome),
+                            **({'checks_set_aside': chosen} if chosen else {})})
                 row.update(verdict='INCONCLUSIVE',reason=result['reason'])
                 keep_tree=True
                 break  # consent cannot be replaced by checks or an audit of partial work

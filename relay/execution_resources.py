@@ -16,7 +16,8 @@ HELP = ('Remove selected execution ceilings for this instance and its workers: '
         'use spaces or commas. time also removes the 2-hour ceiling of a check or command nobody can be asked about; '
         'one with no activity for 5 minutes is still asked about, or stopped when nobody can be asked. '
         'Provider limits and permissions still apply. A model call that streams has no total timeout, only a stop after '
-        '10 minutes of silence (AGY: 10 minutes after its first failed attempt); a request that is not streamed keeps '
+        '10 minutes of silence (AGY: 10 minutes after its first failed attempt, or 30 minutes without a word); a request '
+        'that is not streamed keeps '
         'its request timeout.')
 
 
