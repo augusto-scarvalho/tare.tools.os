@@ -10,6 +10,8 @@ import time
 import pytest
 
 from relay import native_product as product, storage
+
+sweep_in_background = storage.sweep_in_background  # the real one: conftest switches the starter off for every test
 from test_native_product import bundle
 
 
@@ -272,10 +274,10 @@ def test_the_startup_sweep_runs_on_its_own_thread_and_never_raises(tmp_path, mon
         ran.set()
         raise OSError('disk gone')
     monkeypatch.setattr(storage, 'sweep', failing)
-    storage.sweep_in_background()
+    sweep_in_background()
     assert ran.wait(5)
     monkeypatch.setenv('TARE_STORAGE_ROOT', 'relative')  # storage_root() refuses it: no sweep, no error
-    storage.sweep_in_background()
+    sweep_in_background()
 
 
 @pytest.mark.skipif(not sys.platform.startswith('linux'), reason='stamps are read from Linux /proc')
