@@ -151,6 +151,8 @@ class RouteMatrix(Vertical):
             self.message = ('This machine\'s setup cannot be read: ' + value['error'] + ' (tare setup --reset starts '
                             'again)' if 'error' in value else 'Space, Enter or a click on the selected cell ticks it.')
         self.routes, self.labels, self.identities = routes, labels, {}  # a route may run another model under its id
+        from .model_signals import own_record
+        self.record = await asyncio.to_thread(own_record)  # each route's outcomes as implementer on this machine
         self.sources = {route['id']: key[3] for rows in routes.values() for _, route, _, key in rows if not key[0]}
         self.cells = {role: {} for role in routes}
         for role, rows in routes.items():
@@ -170,6 +172,21 @@ class RouteMatrix(Vertical):
             return None
         own = self.state({}, (*row.split('/'), None, where)) if '/' in row else self.state(routes[0][1])
         return own, any(self.state(r) != own for _, r, _, _ in routes), any(now == 'usable' for _, _, now, _ in routes)
+
+    def klass(self, row):
+        """The class of a row's model as `tare models` gives it (two when its routes differ), '' with no line."""
+        from .model_signals import ORDER, klass
+        found = set()
+        for (name, _), routes in self.cells[self.role].items():
+            for _, route, _, _ in routes if name == row else ():
+                try:
+                    found.add((klass(route) or {}).get('class'))
+                except (ValueError, OSError, KeyError, TypeError):
+                    pass  # a route with no model to read has no class
+        return '/'.join(c for c in reversed(ORDER) if c in found)
+
+    def named(self, row):
+        return self.labels.get(row, row) + (' · ' + self.klass(row) if self.klass(row) else '')
 
     def glyph(self, row, where):
         seen = self.look(row, where)
@@ -198,16 +215,16 @@ class RouteMatrix(Vertical):
         sources, groups, keep = self.columns(), self.groups(), self.query_one(Matrix).cursor_coordinate
         table.clear(columns=True)  # widths given: the table measures cells only once it next gets a message
         table.add_column('Model', key='model', width=max((len(name) + 1 for vendor, rows in groups for name in (
-            vendor, *(self.labels.get(r, r) for r in rows))), default=5))
+            vendor, *(self.named(r) for r in rows))), default=5))
         for where in sources:
             label = SOURCE_LABELS.get(where, where)
             table.add_column(label, key=where, width=max(len(label), 5))
         for vendor, rows in groups:
-            rows = [r for r in rows if any(query in text.lower() for text in (r, self.labels.get(r, r), vendor))]
+            rows = [r for r in rows if any(query in text.lower() for text in (r, self.named(r), vendor))]
             if rows:  # names come from routes and files: plain text, never markup
                 table.add_row(Text(vendor.upper()), *[''] * len(sources), key='#' + vendor)
                 for row in rows:
-                    table.add_row(Text(' ' + self.labels.get(row, row)), *[''] * len(sources), key=row)
+                    table.add_row(Text(' ' + self.named(row)), *[''] * len(sources), key=row)
         table.move_cursor(row=keep.row, column=keep.column, animate=False)
         families = sorted({row.split('/')[0] for row, _ in self.cells[self.role] if '/' in row})
         others = [r for r in ROLES if r != self.role]
@@ -344,6 +361,7 @@ class RouteMatrix(Vertical):
                                    if (row, where) in self.carried else 'this source does not carry it here.')
         own, _, usable = seen
         routes = self.cells[self.role][row, where]
+        from .model_signals import describe_record
         reasons = ', '.join(sorted({now for _, _, now, _ in routes} - {'usable'}))
         lead = 'on' if own == 'on' else 'off by you'
         if not usable:
@@ -352,6 +370,7 @@ class RouteMatrix(Vertical):
         return f'{title} {self.glyph(row, where)}: {lead}. ' + '; '.join(
             f'{n} {self.state(r)}, {now}' + (f' (prove it once: tare setup --prove {n})'
                                             if now == 'NOT_QUALIFIED_PIN_ONLY' and k[0] else '')
+            + (f' (as implementer here: {did})' if (did := describe_record(self.record.get(n))) else '')
             for n, r, now, k in routes)
 
     def targets(self, rule):
