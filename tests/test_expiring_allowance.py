@@ -169,7 +169,7 @@ def order(role='implementer'):
 CHEAP = {'id': 'cheap', 'native_profile': {'endpoint': 'http://127.0.0.1:1', 'model': 'q', 'protocol': 'openai-chat'}}
 
 
-def test_a_route_in_surplus_goes_before_a_cheaper_tier_and_the_larger_lead_first(routes):
+def test_a_route_in_surplus_goes_before_a_cheaper_tier_and_the_sooner_lapse_first(routes):
     routes(CHEAP, 'free'); routes(cli(), 'metered'); routes(CODEX, 'metered')
     assert order()[0] == ['cheap', 'claude-fable-5-2', 'codex-direct']  # no reading: cost then table order
     save(reading('claude', bucket('week', 0.23, DAY)))
@@ -179,7 +179,11 @@ def test_a_route_in_surplus_goes_before_a_cheaper_tier_and_the_larger_lead_first
     seen = {c['deployment']: c for c in selection['candidates']}
     assert seen['claude-fable-5-2']['expiring']['allowance'] == 'claude week, all models' and 'expiring' not in seen['cheap']
     save(reading('claude', bucket('week', 0.23, DAY)), reading('codex', bucket('week', 0.9, 3*DAY, id='codex:week')))
-    assert order()[0] == ['codex-direct', 'claude-fable-5-2', 'cheap']  # lead 0.47 before 0.09
+    # Claude's week ends in a day, Codex's in three: what is lost first is used first, though Codex's lead is larger
+    # (0.47 against 0.09). The owner's Claude week ended unused that way while a credit a week from lapsing was spent.
+    assert order()[0] == ['claude-fable-5-2', 'codex-direct', 'cheap']
+    save(reading('claude', bucket('week', 0.23, DAY)), reading('codex', bucket('week', 0.9, DAY, id='codex:week')))
+    assert order()[0] == ['codex-direct', 'claude-fable-5-2', 'cheap']  # lapsing together: the larger lead first
 
 
 def test_no_surplus_anywhere_leaves_the_order_and_the_selection_as_they_were(routes):
@@ -247,13 +251,24 @@ def lapsing_credit():
     provider_spend.declare('anthropic-api', 100, renews=(tomorrow, 100))
 
 
+def test_the_planner_takes_the_route_whose_allowance_lapses_first_among_those_it_may_use(monkeypatch):
+    from relay import native_catalog, planning_tools
+    astra = {'id': 'codex-cli', 'native_profile': {'endpoint': 'cli://codex', 'model': 'gpt-6-astra', 'protocol': 'vendor-cli'}}
+    table = {'codex-cli': astra, 'claude-fable-5-2': cli()}
+    monkeypatch.setattr(turn_engine, 'policy', lambda: {'planner': ['codex-cli', 'claude-fable-5-2', 'gone']})
+    monkeypatch.setattr(native_catalog, 'select', lambda name: table[name])
+    assert planning_tools.snapshot()['route_order'] == ['codex-cli', 'claude-fable-5-2']  # tare's order
+    save(reading('claude', bucket('week', 0.3, DAY/12)), reading('codex', bucket('week', 0.06, 6*DAY, id='codex:week')))
+    assert planning_tools.snapshot()['route_order'] == ['claude-fable-5-2', 'codex-cli']  # the week ending today
+
+
 def test_a_hosted_conversations_unit_takes_the_whole_ladder_cheapest_first_with_nothing_in_surplus(unit):
     assert unit() == LADDER  # the local model first while its GPU is free
     assert unit(allow_parent=True) == [*LADDER, 'openrouter-muse']  # the conversation's own model after the ladder
     assert unit(chosen='claude-fable-5-2') == ['claude-fable-5-2']  # a route on another account, as the coordinator chose
 
 
-def test_a_route_in_surplus_on_another_account_goes_first_the_larger_lead_first(unit):
+def test_a_route_in_surplus_on_another_account_goes_first_the_sooner_lapse_first(unit):
     save(reading('claude', bucket('week', 0.23, DAY)))  # lead 0.09
     assert unit() == ['claude-fable-5-2', 'cheap', 'openrouter-deepseek', 'api']
     lapsing_credit()  # lead about 0.97

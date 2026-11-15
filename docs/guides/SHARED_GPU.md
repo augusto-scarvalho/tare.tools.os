@@ -53,8 +53,10 @@ term sits after the `--prefer_*` preference and the same-family and other-vendor
 tare auto it orders the routes of the tier already chosen and never moves work to another tier. An implementer a
 conversation delegates (a unit) tries, on any account, the routes of the kind `--prefer_*` names, then those in
 surplus, then tare's implementer ladder, cheapest tier first: with nothing in surplus and the GPU free, a hosted
-conversation's unit starts on the local model. Pins, `--*_only`, a route the routing profile switches off and your
-own auditor list are untouched. The readings are those of
+conversation's unit starts on the local model. Among routes in surplus, the one whose allowance lapses first goes
+first (a week ending today before a credit ending next week); the larger lead decides only between two that lapse
+together. The planner follows the same rule among the routes the routing profile leaves on for it. Pins, `--*_only`,
+a route the routing profile switches off and your own auditor list are untouched. The readings are those of
 `tare quota`; the Max plan's monthly API credit has no API, so state it: `tare quota --set anthropic-api 100 --renews 14`
 (the balance now, the day of the month it renews, and a third number if each cycle brings a different grant).
 The TUI redoes the quota reading in the background at each demand (never waiting for it, at most once a minute), so

@@ -437,17 +437,17 @@ def available(name, probe=True):
 
 
 def surplus_first(names):
-    """One tier's routes with those whose allowance is lapsing in surplus first (larger lead first), the owner's order
-    for the rest (a stable sort). A route moves inside its tier only."""
+    """One tier's routes with those whose allowance is lapsing in surplus first (the sooner lapse first), the owner's
+    order for the rest (a stable sort). A route moves inside its tier only."""
     from .native_catalog import select
-    from .provider_quota import surplus
-    cache, lead = {}, {}
+    from .provider_quota import lapse_order, surplus
+    cache, signal = {}, {}
     for name in names:
         try:
-            lead[name] = (surplus(select(name), cache=cache) or {}).get('lead', 0)
+            signal[name] = surplus(select(name), cache=cache)
         except (ValueError, OSError, KeyError, TypeError):
-            lead[name] = 0
-    return sorted(names, key=lambda name: -round(lead[name], 2))
+            signal[name] = None
+    return sorted(names, key=lambda name: lapse_order(signal[name]))
 
 
 def choose(tiers, start=0, probe=True, role='implementer'):
