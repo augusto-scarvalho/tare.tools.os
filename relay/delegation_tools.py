@@ -14,7 +14,7 @@ import time
 from compute_plane.native_journal import NativeJournal, regular, save_json
 from compute_plane.native_models import encode, object_json
 from tare_tools_agent_runtime import EffectResult, ModelFailure
-from . import execution_resources
+from . import execution_resources, native_limits
 
 from . import delegation
 
@@ -625,7 +625,9 @@ class ExplorationTools:
                 from .native_generation import inference_client, deployment_profile, vault_secret
                 client = inference_client(deployment, deployment_profile(deployment, deployment['native_profile']['model']),
                     credential=lambda: vault_secret(deployment.get('native_credential_env')) if deployment.get('native_credential_env') else None,
-                    timeout_seconds=seconds, connect_timeout_seconds=seconds, read_timeout_seconds=seconds)
+                    **(native_limits.http_options(native_limits.resolve(deployment, {'max_seconds': seconds}))
+                       if native_limits.streams(deployment) else   # a streaming call has no total of its own
+                       dict(timeout_seconds=seconds, connect_timeout_seconds=seconds, read_timeout_seconds=seconds)))
                 options.update(client=IdentityClient(client, variant['identity']), local_counter=client)
             from .native_routes import executed_attempt, executed_decision, settle_attempt
             mode = self.__dict__.get('_dispatch_modes', {}).get(folder.name, 'UNKNOWN')

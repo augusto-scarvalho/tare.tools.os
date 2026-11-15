@@ -12,6 +12,10 @@ BUDGET_DEFAULTS = {'max_model_calls': 16, 'max_stagnant_turns': 3, 'max_model_re
 # any message continues it.
 UNLIMITED_STAGNANT_TURNS = 6
 TIME_FIELDS = ('max_seconds', 'request_seconds', 'connect_seconds', 'read_seconds')
+# A model call is judged by the silence of its stream, not by a clock of its own (owner, 2026-11-14): a call whose
+# bytes keep arriving is never stopped by a total, one that sent nothing for this long is. The session's own budget
+# (max_seconds) still applies.
+SILENCE_SECONDS = 600
 FIELDS = {*BUDGET_DEFAULTS, *TIME_FIELDS}
 
 
@@ -30,16 +34,36 @@ def validate(values):
     return values
 
 
+def streams(deployment):
+    """Whether this route shows life while the model works: a streaming HTTP request, or a vendor CLI whose stdout
+    does (the Kernel names the ones that print nothing until the reply is whole). Those get a silence window."""
+    profile = deployment.get('native_profile') or {}
+    if profile.get('protocol') == 'vendor-cli':
+        from compute_plane.native_cli import SILENT_BY_DESIGN
+        return profile.get('endpoint') not in SILENT_BY_DESIGN
+    from .native_generation import streaming
+    return bool(profile) and streaming(deployment)
+
+
 def resolve(deployment, overrides=None):
-    values = {**validate(deployment.get('native_execution_limits', {})), **validate({} if overrides is None else overrides)}
+    overrides = {} if overrides is None else overrides
+    values = {**validate(deployment.get('native_execution_limits', {})), **validate(overrides)}
     resolved = {**BUDGET_DEFAULTS, 'max_seconds': 300, **values}
+    # urllib tries DNS candidates in order. One unreachable address must
+    # yield to the next before the whole inference deadline expires.
+    codex = deployment.get('native_profile', {}).get('protocol') == 'openai-codex-responses'
+    if streams(deployment):
+        # No total of its own, from any source; connecting and reading wait one silence window, unless the caller
+        # named a number. A null (the unlimited conversation) is no choice: a hung connection must end.
+        resolved['request_seconds'] = None
+        for name, window in (('connect_seconds', 5 if codex else SILENCE_SECONDS), ('read_seconds', SILENCE_SECONDS)):
+            if overrides.get(name) is None:
+                resolved[name] = window
     # Preserve the old default relationship, without turning explicit null into
     # a numeric fallback. Shorter enclosing deadlines still constrain requests.
     resolved.setdefault('request_seconds', resolved['max_seconds'])
     connect = resolved['request_seconds']
-    if deployment.get('native_profile', {}).get('protocol') == 'openai-codex-responses':
-        # urllib tries DNS candidates in order. One unreachable address must
-        # yield to the next before the whole inference deadline expires.
+    if codex:
         connect = 5 if connect is None else min(5, connect)
     resolved.setdefault('connect_seconds', connect)
     resolved.setdefault('read_seconds', resolved['request_seconds'])

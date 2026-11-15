@@ -4,7 +4,7 @@ import time
 from uuid import uuid4
 from . import native_limits
 from . import execution_resources as resources
-from .work_units import WORK_CHECK_SECONDS
+from .work_units import UNATTENDED_SECONDS
 
 
 def compaction_limit(unlimited, value=native_limits.UNSET):
@@ -233,7 +233,7 @@ def create_runner(deployment, work_id, custody, *, budget=None, timeout=native_l
                     'identity_sha256': identity.sha256,
                     'deadline_utc': None if seconds is None else time.time()+seconds,
                     'verification_timeout': ((None if resources.selected('time', unlimited) or seconds is None
-                                              else float(WORK_CHECK_SECONDS))
+                                              else float(UNATTENDED_SECONDS))
                         if verification_timeout is native_limits.UNSET else verification_timeout)}
                 if command_protection is not None:
                     from .command_protection import digest

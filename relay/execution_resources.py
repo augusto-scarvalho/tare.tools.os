@@ -15,7 +15,9 @@ HELP = ('Remove selected execution ceilings for this instance and its workers: '
         f'{UNLIMITED_STAGNANT_TURNS} replies; --max-stagnant-turns unlimited removes it). No list means all; '
         'use spaces or commas. time also removes the 2-hour ceiling of a check or command nobody can be asked about; '
         'one with no activity for 5 minutes is still asked about, or stopped when nobody can be asked. '
-        'Provider limits, request timeouts and permissions still apply.')
+        'Provider limits and permissions still apply. A model call that streams has no total timeout, only a stop after '
+        '10 minutes of silence; one that cannot show life while it works (a request that is not streamed, Codex, AGY) '
+        'keeps its request timeout.')
 
 
 def parse(value):
