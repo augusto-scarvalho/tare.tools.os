@@ -343,6 +343,15 @@ def delivery_view(value, *, config=None, unit=None):
         result['next']='Do not repeat the same failed route unchanged. Preserve the same plan, prior calls and '
         result['next']+='charges. Explain the provider failure; a fresh authorized continuation can select another '
         result['next']+='available implementer route within the current execution policy. This is not an output-token limit.'
+    elif (value.get('verdict')=='INCONCLUSIVE' and not value.get('files')
+            and (value.get('implementation_stop') or {}).get('provider_stop_reason') in {'length','max_tokens'}):
+        # The host already told the model and let it go on (output_limit_recovery); it was cut again.
+        result['reason']=("The implementer's replies were cut by the route's output limit before it changed any file; "
+                          'the host asked it to continue and it was cut again.')
+        result['next']=('Tell the user, in the language of their request, that the model ran out of its output '
+            'allowance on this route before writing anything. That is a limit of the route, not proof that the '
+            'task is too large: do not split the plan or drop criteria on your own. Preserve the same plan, prior '
+            'calls and charges; a fresh authorized continuation can run it on another implementer route.')
     from .conversation_permissions import paths_allowed
     missing = [p for p in value.get('scope_needed') or []
                if not value.get('applied') and not (unit and paths_allowed([p], unit['target_paths']))]

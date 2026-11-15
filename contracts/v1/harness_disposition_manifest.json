@@ -2,7 +2,7 @@
   "$schema": "https://tare.tools/schemas/v1/disposition-manifest.json",
   "version": "1.0.0",
   "generated_at": "2026-10-04T03:10:28.054735+00:00",
-  "total_modules": 446,
+  "total_modules": 447,
   "modules": [
     {
       "name": "consent_decisions.py",
@@ -2151,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 129994,
-      "sha256": "27100813c0253675d95fefb8879ad3843a9851450b0001146f5586b0a7ca01c7"
+      "size_bytes": 130288,
+      "sha256": "1c2288503644611a4047375b1b66f47c1a570fa3b08a0afc6f025717ff7badca"
     },
     {
       "name": "native_artifacts.py",
@@ -2711,8 +2711,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 3560,
-      "sha256": "7c1cf42aa23adbeeca3b91c5bce11b918493a5e3511b0f22d8f0d3f94162aed7"
+      "size_bytes": 3787,
+      "sha256": "fa0b79f77ffc4f850cca7617a00cbd27bdd2a28edc486ad83f00acdbb64b956b"
     },
     {
       "name": "native_review.py",
@@ -4101,8 +4101,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 117396,
-      "sha256": "a65a4fb5609463be1f7f25e5c30dbf4f3e1de3f4c9e0243595ae110833ff2444"
+      "size_bytes": 118336,
+      "sha256": "f4defdcd81be10b14e49d2e14a104bcda6b3eb5d84a0774851778288dd771ce1"
     },
     {
       "name": "conversation_review.py",
@@ -4463,6 +4463,16 @@
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
       "size_bytes": 8416,
       "sha256": "9d7cf1ccbc918a3df43f861289115f48e509163c06a13c65ac5de0be840f5562"
+    },
+    {
+      "name": "output_limit_recovery.py",
+      "path": "tare.tools.os/relay/output_limit_recovery.py",
+      "summary": "Continues a session after a reply the route's output limit cut: one host message, at most two cuts in a row.",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
+      "size_bytes": 3337,
+      "sha256": "f995fad1114111786ecaee83636883fc2259240b9d49ffefa760d39ae551ce32"
     }
   ]
 }

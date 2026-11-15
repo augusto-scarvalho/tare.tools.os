@@ -1154,6 +1154,9 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                     invocation['host_action'] = host_action
                 else:
                     outcome = session.run(control, **run_options)
+                    from .output_limit_recovery import recover as recover_output_limit
+                    outcome = recover_output_limit(session, control, journal, outcome,
+                        lambda: session.run(control, **run_options), deployment['native_profile'].get('output_tokens'))
                 if outcome.status != 'paused' and state.get('plan_source_recovery'):
                     from .plan_source_recovery import recover
                     outcome = recover(session, control, tools, journal, root, config['repositories'], outcome,
