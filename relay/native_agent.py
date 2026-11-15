@@ -829,7 +829,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 from .conversation_tasks import ConversationTools, GUIDANCE
                 conversation_guidance = state.get('conversation_flow_guidance', GUIDANCE)
                 tools = conversation_tools = ConversationTools(tools, root, state, invocation_id,
-                    permission_directory=permission_directory)
+                    permission_directory=permission_directory, describe=journal.describe)
                 if 'conversation_tool_specs' in state:
                     # Frozen coordinator schemas cannot supply host consent authority.
                     tools.tool_specs_json = state['conversation_tool_specs']

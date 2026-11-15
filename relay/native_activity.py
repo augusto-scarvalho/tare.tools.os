@@ -282,6 +282,17 @@ class ActivityJournal:
             except Exception:
                 self.observation_failures += 1
 
+    def describe(self, effect_id, target, detail):
+        """Say what a running tool is doing now (a delegated implementation): the row is republished still running,
+        for the screen only. The journal's own row keeps its target and detail, which its result replaces."""
+        row = self.rows.get(effect_id)
+        if row is None or row['state'] != 'running' or self.callback is None:
+            return
+        try:
+            self.callback({'channel': 'activity', 'activity': activity_view({**row, 'target': target, 'detail': detail})})
+        except Exception:
+            self.observation_failures += 1
+
     def observe(self, record):
         event = record.event()
         if event['kind'] == 'model_returned':
