@@ -76,14 +76,18 @@ def test_untick_and_tick_back_store_what_tare_setup_auto_stores_and_nothing_more
 
 async def saved(pilot, panel):
     """Press Save and wait for its answer: it reads and writes the file in a worker thread, under a lock. The status
-    is cleared first, so the answer waited for is this Save's and not the "Saved." an earlier one left there."""
+    is cleared first, so the answer waited for is this Save's and not the "Saved." an earlier one left there.
+    The button is pressed, not clicked at its place on screen: clearing a status of several lines moves the button,
+    and a click sent before that layout landed on nothing, so no Save ran and the file was read as it was (the
+    Windows shards failed that way on three pull requests on 2026-11-15)."""
     panel.query_one('#matrix-status', Static).update('')
-    await pilot.click('#matrix-save')
-    for _ in range(200):
+    panel.query_one('#matrix-save', Button).press()
+    for _ in range(600):
         await pilot.pause(0.05)
         answer = str(panel.query_one('#matrix-status', Static).render())
         if any(s in answer for s in ('Saved.', 'Not saved', 'Nothing to save')):
             return
+    raise AssertionError('Save gave no answer in 30 s')
 
 
 def rendered(panel, row):
