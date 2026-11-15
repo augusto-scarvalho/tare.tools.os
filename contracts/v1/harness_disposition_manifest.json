@@ -4301,8 +4301,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 7337,
-      "sha256": "03fdfd569950154655f79ee9bb3d65eee43aa70e1526154b3797876d4e439145"
+      "size_bytes": 7378,
+      "sha256": "22c212101a2ceb58389afd7e01a1d21ab01a20db049536db942412e0f716b29b"
     },
     {
       "name": "openrouter.py",
