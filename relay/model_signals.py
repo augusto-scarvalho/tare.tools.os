@@ -228,10 +228,11 @@ def own_record(storage=None):
             value = json.loads(path.read_text(encoding='utf-8'))
             for row in value['rungs']:
                 tally, passed = found[row['route']], row.get('verdict') == 'VERIFIED'
-                tally.update(ran=1, passed=passed, audited='audit' in row,
-                             accepted=(row.get('audit') or {}).get('verdict') == 'ACCEPT')
+                # int: an empty Counter keeps a first bool as it is
+                tally.update(ran=1, passed=int(passed), audited=int('audit' in row),
+                             accepted=int((row.get('audit') or {}).get('verdict') == 'ACCEPT'))
                 if row.get('needs') in ORDER:
-                    tally.update({('needs', row['needs'], 'ran'): 1, ('needs', row['needs'], 'passed'): passed})
+                    tally.update({('needs', row['needs'], 'ran'): 1, ('needs', row['needs'], 'passed'): int(passed)})
             if value['result'].get('applied'):
                 found[value['result']['route']]['applied'] += 1
         except (OSError, ValueError, KeyError, TypeError, AttributeError):

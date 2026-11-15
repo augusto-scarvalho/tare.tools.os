@@ -216,6 +216,9 @@ def test_a_routes_own_record_as_implementer_is_counted_from_the_unit_receipts_an
     line_ = '3 runs; 2 passed the checks; 1 of 2 audits accepted; 1 applied; needed middling: 1 of 2 passed'
     assert list(record) == ['gemini-api-3-8-flash'] and signals.describe_record(record['gemini-api-3-8-flash']) == line_
     assert signals.describe_record(record.get('never-ran')) is None
+    receipt(tmp_path, 's3', 'd', [{'route': 'once', 'verdict': 'VERIFIED'}], verdict='VERIFIED', route='once')
+    once = signals.describe_record(signals.own_record(tmp_path)['once'])
+    assert once == '1 runs; 1 passed the checks; 0 of 0 audits accepted; 0 applied'
     from relay import model_choices
     monkeypatch.setattr('relay.native_installation.storage_root', lambda: tmp_path)
     model_choices.main(['--include-unconfigured', '--vendor', 'Google'])
