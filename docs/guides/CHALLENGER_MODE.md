@@ -553,7 +553,9 @@ There are no prompts, private arguments, keys, full profiles or code.
 - The host's checks and the implementer's commands are judged by their activity: nobody
   can be asked in a Work run, so one with no output and no CPU time for 5 minutes is
   stopped, and any other after 2 hours (60 s before 2026-11-14; 30 s for a command).
-  `--unlimited time` removes the 2 hours, not the stall stop. The Work deadline,
+  `--unlimited time` removes the 2 hours, not the stall stop. One exception: the
+  candidate's verification before landing stops at 300 s (60 s before), the most the
+  Kernel accepts for it today. The Work deadline,
   cancellation, isolation and mediation still apply. Model transport timeouts stay finite; the planner
   keeps the normal 600 s timeout when the stage's total time is unlimited.
 - Conversation audit (`conversation_review.review`): `reviews/*/receipt.json`
