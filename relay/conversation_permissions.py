@@ -395,7 +395,7 @@ BASELINE_TURN = 'baseline-turn.json'  # this turn's answer: {'invocation', 'chec
 
 def red_baseline(root, state, task, effect_id, project, control, directory, invocation_id):
     """run_unit's `red_baseline` for a conversation: checks fail on the unchanged project, before the implementer
-    starts. ask(checks, output, aside) -> 'once' (continue: the change must make them pass), 'aside' (continue
+    starts. ask(checks, output, aside, named) -> 'once' (continue: the change must make them pass), 'aside' (continue
     without them, offered only with `aside`), 'deny' (stop) or None (the turn stopped). An answer holds for the rest
     of the turn for the same failing checks, and is never saved beyond it. None without a TUI (directory None:
     tare serve, scripted runs): nobody is asked and nothing changes."""
@@ -404,7 +404,7 @@ def red_baseline(root, state, task, effect_id, project, control, directory, invo
     from .native_agent import read_json
     folder = regular(Path(root)/'execution-permission')
 
-    def ask(checks, output, aside):
+    def ask(checks, output, aside, named=False):  # named: every failing check is a test the plan names
         turn = {'invocation': invocation_id, 'checks': sorted(checks)}
         saved = regular(folder/BASELINE_TURN)
         if saved.is_file():
@@ -419,7 +419,7 @@ def red_baseline(root, state, task, effect_id, project, control, directory, invo
             'tests': [], 'status': 'WAITING',
             'objective': ('Before any change, the project already fails ' + ('this check: ' if len(checks) == 1
                           else 'these checks: ') + names + '. No implementer has started.')[:2000],
-            'baseline': {'aside': bool(aside), 'output': output[-4000:]}}
+            'baseline': {'aside': bool(aside), 'named': bool(named), 'output': output[-4000:]}}
         value = wait_for_answer(folder, request, control)
         if not value:
             return None  # the turn stopped: no answer to remember

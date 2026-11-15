@@ -1371,7 +1371,10 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                                          for t in planned[n]))]
             if red:
                 offered = bool(set(worker_commands) - set(red))  # the host's diff check alone judges no change
-                choice = red_baseline({n: commands[n] for n in red}, row['before'], offered)
+                # A failing test the plan itself names is usually the bug it fixes: the dialog then starts on
+                # Continue, not on Stop, so a request to fix a failing test is not stopped by a reflex Enter.
+                choice = red_baseline({n: commands[n] for n in red}, row['before'], offered,
+                                      all(n in planned for n in red))
                 row['red_before'] = {'checks': red, 'answer': choice or 'none'}
                 if choice == 'aside' and offered:
                     chosen = carried = red
