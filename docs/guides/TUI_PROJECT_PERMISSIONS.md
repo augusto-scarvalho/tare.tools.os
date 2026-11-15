@@ -209,7 +209,7 @@ does not claim that is the cause. Where nobody can be asked (`tare serve`, `tare
 agent` without the TUI, Work runs) tare stops a stalled check or command and
 says it showed no activity, and stops any other after 2 hours, saying it was
 still running; `--unlimited time` removes those 2 hours (a Work run's candidate
-verification stops at 300 s, the most the Kernel accepts for it today). A check that reaches a
+verification follows the same rule). A check that reaches a
 limit is unjudged and no longer asks whether to run it outside the sandbox: a
 limit is no sign of a sandbox block.
 

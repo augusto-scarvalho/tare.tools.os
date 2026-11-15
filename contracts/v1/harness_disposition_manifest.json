@@ -2151,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 129846,
-      "sha256": "c6775235a8b238c41cf1c9ab0b3ac86bf1f0f14f0b4adf54a66205d3a1eaa23c"
+      "size_bytes": 129994,
+      "sha256": "27100813c0253675d95fefb8879ad3843a9851450b0001146f5586b0a7ca01c7"
     },
     {
       "name": "native_artifacts.py",
@@ -2231,8 +2231,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 22187,
-      "sha256": "5c0e2c9b1454104cdbd2913b959a59dadcf9a945826a9be588e69b1f2ce3682a"
+      "size_bytes": 22536,
+      "sha256": "81ecfe4745840451ad0065824a88ed591207e3d3e8e8d9da254e7c0407d0e031"
     },
     {
       "name": "native_installation.py",
@@ -2291,8 +2291,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 25421,
-      "sha256": "af759d1ccd79c1cebea2373e87ce0dd36c5cbdec96dc964b16189821f904b2a5"
+      "size_bytes": 25633,
+      "sha256": "6a585a351eb02d5d2869cdf6db9b81d3a3ec89dc3c0d5c46bcc389bf2742b532"
     },
     {
       "name": "overseer_agent.py",
@@ -2638,7 +2638,7 @@
       "name": "work_run.py",
       "path": "tare.tools.os/relay/work_run.py",
       "size_bytes": 54853,
-      "sha256": "c1d542bfb494aa959c14c3a551748293ce77fec6089095e0321dcbd0e18a253f",
+      "sha256": "c9a186eddb3f20db77b05cac60ef5c676d835aa74279785e62044ec6fba08c36",
       "summary": "`tare run <WorkId>`: execute and settle one explicit Work through the existing train lifecycle.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -2651,8 +2651,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 4848,
-      "sha256": "9e6a1854f220e7cd92e1a2a46d05afba591a519855c2d1fed5a0fb7924405e9c"
+      "size_bytes": 6237,
+      "sha256": "616044a8c1461a580a9ea3e8b63f43d2203caf6dee31a02c7271da0f73aae313"
     },
     {
       "name": "console_backend.py",
@@ -3541,8 +3541,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator interaction, workflow composition and evidence inspection; execution ports remain in Kernel and Runtime.",
-      "size_bytes": 9328,
-      "sha256": "63daa757ae35ca66b3eaa83bc332b71b141e9d40c4a96c1fb2bf43ca65239dc3"
+      "size_bytes": 9351,
+      "sha256": "344d66918363a867af59694c7c09f030b31100d425f5970c457a2e1f9991361e"
     },
     {
       "name": "native_product.py",
@@ -3661,8 +3661,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded experiment scheduling, evidence comparison and operator controls; execution ports remain in Kernel and Runtime.",
-      "size_bytes": 17835,
-      "sha256": "853efada3397d374fd96c3d970d62f33f3e24d761eba6a4502596d622cf7b27f"
+      "size_bytes": 17876,
+      "sha256": "e6b50ca4b4da1d76446ed2e8141f765ca81d34af19911d23a2a364977804f8bb"
     },
     {
       "name": "challenger_workspace.py",
@@ -3731,8 +3731,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 86233,
-      "sha256": "5e7a377bc5e648a78e2f0b404568ccce9d1c7097bea4dcf246dd8fd59b6b6595"
+      "size_bytes": 86479,
+      "sha256": "a9f6323562be352240e30e265a0228b091478759a16af784f847f4b5b63bbf99"
     },
     {
       "name": "audit_delivery.py",
@@ -3841,8 +3841,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 113423,
-      "sha256": "60c413951ea786ff0cc06f49a99850821ad061a63823ec1cea005b9bedad383b"
+      "size_bytes": 113142,
+      "sha256": "0cf154d991d7fc7258df73e52f223ea06b2db2af0671b8a8f44830f60f0e1196"
     },
     {
       "name": "gpu.py",
@@ -4301,8 +4301,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 7137,
-      "sha256": "3b72658bdac84da95177868e544db38009c9400fe5633a1d6a1350e9faa18b12"
+      "size_bytes": 7343,
+      "sha256": "0fd2205e76854d606a2f312e3f409cc153f7d3807b5473150f19751f4c40fb1c"
     },
     {
       "name": "openrouter.py",

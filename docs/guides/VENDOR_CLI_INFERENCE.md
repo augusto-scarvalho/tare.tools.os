@@ -150,6 +150,16 @@ they spend AGY's allowance, not Claude's ([model picker](MODEL_PICKER.md)).
 }
 ```
 
+A model call is judged by the silence of its stream, not by a fixed clock
+(`relay/native_limits.py`, `SILENCE_SECONDS`, 600). A streaming HTTP request and a Claude Code call have no
+request total of their own: bytes that keep arriving are never cut, a connection or call that sent nothing for
+10 minutes is stopped and reported as silent (`HTTP_*` as before; `CLI_SILENT_EXCHANGE` for Claude Code, with
+`stalled` and `idle_ms` in its receipt), and recovery treats it like a timeout. The session's own budget
+(`max_seconds`, when set) still applies, and `request_seconds` in a deployment's limits no longer applies to these
+routes. Codex and AGY print nothing on stdout until the reply is whole (measured 2026-11-15: 92 s of a 95 s call
+and 376 s of a 381 s call), so their silence says nothing and they keep a finite request timeout, as does any
+request that is not streamed. Claude Code's CPU time is not a signal either: a hung one still ticks it.
+
 `native-http` is the existing host selector; `vendor-cli` chooses the process
 transport. Codex additionally requires `native_cli.model_catalog`, the exact
 selected record from its local model catalog. The adapter overrides that

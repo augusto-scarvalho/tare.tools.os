@@ -1454,7 +1454,8 @@ def main(argv=None):
                         help='Explicit total call cap for a saved coordinator; all previous calls remain charged')
     for flag in ('request-seconds', 'connect-seconds', 'read-seconds'):
         parser.add_argument('--'+flag, type=native_limits.cli_limit(float), default=argparse.SUPPRESS,
-                            help='Seconds or unlimited; omitted inherits the deployment/default')
+                            help='Seconds or unlimited; omitted inherits the deployment/default. A streaming model call has no '
+                                 'request total (--request-seconds does not apply) and waits 10 minutes of silence')
     parser.add_argument('--command-review', choices=('auto', 'tare', 'codex', 'both'),
                         help='Review noninteractive commands using Tare, native Codex or both')
     parser.add_argument('--command-isolation', choices=('mxc', 'codex'), default='mxc')

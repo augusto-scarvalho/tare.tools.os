@@ -165,9 +165,13 @@ def inference_client(deployment, profile, *, credential, metadata_only=False, co
         from compute_plane.native_cli import VendorCliClient
         from .cli_qualification import Store  # each machine probes a new CLI release once, not each session
         from .guidance import vendor_choices  # the owner's choices about what this CLI adds on its own (/guidance)
+        from .native_limits import SILENCE_SECONDS, streams
+        # A CLI that shows life while it works is judged by its silence, with no total of its own when the limits
+        # resolved none; the others keep their total (native_limits.streams).
         return VendorCliClient(profile.endpoint, **deployment['native_cli'], qualification=Store(profile.endpoint),
                                vendor_guidance=vendor_choices(profile.endpoint,
                                                               context=context_guidance),
+                               silence_seconds=SILENCE_SECONDS if streams(deployment) else None,
                                **transport)
     from compute_plane.native_models import NativeHttpClient
     from .challenger import client_headers
