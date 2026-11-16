@@ -3,14 +3,18 @@
 A CLI is 'found' when installed and 'ready' once it answered a proof the owner asked for (tare setup --prove,
 /setup): one real, tiny generation through the normal inference path, cached per executable file.
 Codex models come from Codex's own per-account cache (~/.codex/models_cache.json) when it
-exists, otherwise from the shipped templates. Discovery keeps the profiles it wrote current (the
+exists, otherwise from the shipped templates. Claude Code has no listing: a model id that one of its family aliases
+resolves to and no template names yet is offered too (alias_models), read once per executable file.
+Discovery keeps the profiles it wrote current (the
 cache records each written file's hash); a profile the user wrote or edited is never replaced.
 """
+from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 from compute_plane.managed_process import host_executable
 import subprocess
 import tempfile
@@ -55,7 +59,56 @@ def codex_catalog():
     return models if isinstance(models, list) and models else None
 
 
-def desired_profiles(templates, endpoint, executable):
+def claude_aliases(executable):
+    """Which model id each Claude Code family alias resolves to, read with zero tokens (four CLI starts)."""
+    from compute_plane.vendor_guidance import claude_models
+    from .vendor_models import LINES
+    return claude_models(executable, [r['claude_code_alias'] for r in LINES.values() if 'claude_code_alias' in r])
+
+
+def alias_models(cache, executable):
+    """The alias reading of this executable file: taken once, then kept in the cache until the file changes. A
+    reading that fails is kept as empty (the templates alone are used) so a broken CLI is not started on every
+    discovery; the next Claude Code update reads again."""
+    held = cache.get('claude_aliases')
+    if not (isinstance(held, dict) and held.get('fingerprint') == fingerprint(executable)):
+        try:
+            reading = claude_aliases(executable)
+            held = {'cli_version': reading['cli_version'], 'models': reading['models']}
+        except Exception:
+            held = {'cli_version': '', 'models': {}}
+        held['fingerprint'] = fingerprint(executable)
+        cache['claude_aliases'] = held
+    return held
+
+
+def alias_profiles(wanted, reading):
+    """Profiles for the models Claude Code's aliases resolve to that are a newer version of a line the templates
+    have (claude-fable-5-3 beside claude-fable-5-2-cli), copied from that line's newest template."""
+    from .vendor_models import line, parse
+    found = {}
+    models = reading.get('models') if isinstance(reading.get('models'), dict) else {}
+    for alias, model in sorted(models.items()):
+        # The id becomes a file name: only claude-<line>-<one or two numbers>.
+        if not isinstance(model, str) or not re.fullmatch(r'claude-[a-z]+-\d+(-\d+)?', model) or not line(model):
+            continue
+        vendor, name, version = parse(model)
+        same = {n: parse(t['native_profile']['model'])[2] for n, t in wanted.items()
+                if parse(t['native_profile']['model'])[:2] == (vendor, name)}
+        if not same or version <= max(same.values()):
+            continue
+        base = max(same, key=lambda n: (same[n], n))  # claude-opus-5-5-cli before the claude-cli base
+        value = deepcopy(wanted[base])
+        value['id'] = model+'-cli'
+        value['model'] = value['native_profile']['model'] = model
+        value['native_profile'].pop('expected_response_model', None)
+        value['native_profile']['source'] = (f"Claude Code {reading.get('cli_version')} alias reading ({alias} -> {model}), "
+                                             f"copied from {base}; account availability unchecked")
+        found[value['id']] = value
+    return found
+
+
+def desired_profiles(templates, endpoint, executable, reading=None):
     wanted = {name: deployment(template, executable) for name, template in templates.items()
               if template['native_profile']['endpoint'] == endpoint}
     models = codex_catalog() if endpoint == 'cli://codex' else None
@@ -69,6 +122,8 @@ def desired_profiles(templates, endpoint, executable):
         if local_path('codex-native').is_file():  # the owner's direct ChatGPT route: its models follow Codex too
             bases['codex-native'] = load_deployment(local_path('codex-native'))
         wanted.update(expand(bases, models))
+    if endpoint == 'cli://claude' and reading:
+        wanted.update(alias_profiles(wanted, reading))
     return wanted
 
 
@@ -199,7 +254,8 @@ def discover():
             continue
         row['status'] = 'ready' if cache.get(endpoint, {}).get('fingerprint') == fingerprint(executable) else 'found'
         managed = cache.setdefault('managed', {})
-        wanted = desired_profiles(templates, endpoint, executable)
+        reading = alias_models(cache, executable) if endpoint == 'cli://claude' else None
+        wanted = desired_profiles(templates, endpoint, executable, reading)
         for name, value in sorted(wanted.items()):
             state = write_profile(name, value, managed)
             if state:

@@ -166,7 +166,8 @@ Implementer", one step). With no coordinator entries, a conversation is routed a
   pin-only. Proving a model's CLI route does not lift its API route, and a route with no line stays pin-only. A proof
   recorded before the role check existed still counts.
 - **A newer version needs no release of tare.** When a vendor's CLI lists a new version of a known line (Codex lists
-  `gpt-6.2-sol`, and discovery writes `codex-cli-gpt-6-2-sol`), the route gets its role row when tare loads the role
+  `gpt-6.2-sol`, and discovery writes `codex-cli-gpt-6-2-sol`; for Claude Code, discovery writes
+  `claude-fable-5-3-cli` when the `fable` alias resolves to it, see [model picker](MODEL_PICKER.md)), the route gets its role row when tare loads the role
   table: a copy of the row of the newest version of that line on the same source (same endpoint and protocol; here
   `codex-cli-gpt-6-1-sol`), with the same roles and cost tier, pin only. So it can be pinned at once, shows `!` in the
   matrix and can be proven; after a proof it is used automatically and becomes its line's newest version, so the
