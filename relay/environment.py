@@ -844,6 +844,11 @@ def show(value, found):
                  'through the Claude in Chrome extension; needs Claude Code signed in and a browser signed in to the Console; '
                  'one reading is one Haiku call on the Claude subscription (about a cent of quota, half a minute, a tab that '
                  'opens and closes). tare quota --sync reads it once.')
+    energy = value.get('local_energy') or {}
+    lines.append('  Local energy: ' + (f"US$ {energy['price_kwh']:g} per kWh" if energy.get('price_kwh') else 'no price')
+                 + (f", {energy['watts']:g} W under load when the node reports none" if energy.get('watts') else '')
+                 + ' (tare setup --energy-price US$_PER_KWH, --local-watts W; off clears). tare quota shows the '
+                 'energy the GPU drew for local calls in the last 7 days.')
     rules, problems = profile(value)
     if rules or problems:
         lines.append('  automatic routing: your changes for ' + (', '.join(sorted(rules)) or 'no role')
@@ -868,6 +873,27 @@ def old_models(value, on):
     section = {k: v for k, v in (value.get('clis') or {}).items() if k != 'old_models'}
     value['clis'] = {**section, 'old_models': True} if on else section
     return value
+
+
+# What tare setup accepts for the energy of local models: the key, and the largest value that is not a typo.
+ENERGY_LIMITS = {'price_kwh': 100, 'watts': 5000}
+
+
+def set_local_energy(value, key, text):
+    """--energy-price (US$ per kWh) and --local-watts (the GPU's watts under load, used only when the node reports
+    none): a positive number saves it, 'off' clears it."""
+    section = {k: v for k, v in (value.get('local_energy') or {}).items() if k != key}
+    if text.strip().lower() != 'off':
+        try:
+            number = float(text)
+        except ValueError:
+            number = 0
+        if not 0 < number < ENERGY_LIMITS[key]:  # also refuses nan
+            raise ValueError(f"{'--energy-price' if key == 'price_kwh' else '--local-watts'} takes a number above zero "
+                             f"and below {ENERGY_LIMITS[key]}, or off, not {text!r}.")
+        section[key] = number
+    value = {k: v for k, v in value.items() if k != 'local_energy'}
+    return {**value, 'local_energy': section} if section else value
 
 
 def add_gateway(value, url):
@@ -1131,6 +1157,13 @@ def main(argv=None):
     parser.add_argument('--console-credit', choices=('on', 'off'), help=(
         "Read the Claude API credit from the Console's Billing page when the TUI starts, at most every 12 hours (off by "
         'default); tare quota --sync reads it once without this'))
+    parser.add_argument('--energy-price', metavar='US$_PER_KWH', help=(
+        "Your electricity price: tare quota shows the local models' GPU energy in dollars at it ('off' clears it). "
+        'Nothing routes by it'))
+    parser.add_argument('--local-watts', metavar='W', help=(
+        "The GPU's watts under load, counted only when the node reports no power reading (an old node, no nvidia-smi), for the whole time a session "
+        "ran, so the figure is then an upper bound; "
+        "'off' clears it"))
     parser.add_argument('--credential', metavar='ENV_NAME', help='Store an API key in the vault, read from stdin')
     parser.add_argument('--meta-contributor', choices=('on', 'off'),
                         help='Allow Meta to use prompts, code and responses sent to Muse Spark Contributor')
@@ -1188,7 +1221,8 @@ def main(argv=None):
         if 'error' in value:
             raise ValueError(value['error'] + ' (tare setup --reset starts again)')
         changes = bool(args.use or args.no_use or args.undecide or args.local_gateway or args.refresh or args.credential
-                       or args.old_models or args.console_credit or args.replace_older or args.keep_older or args.meta_contributor)
+                       or args.old_models or args.console_credit or args.replace_older or args.keep_older or args.meta_contributor
+                       or args.energy_price or args.local_watts)
         edits = bool(args.auto) or args.auto_reset is not None
         shown = list(dict.fromkeys([*(spec.partition(':')[0] for spec in args.auto), *args.auto_show,
                                     *([args.auto_reset] if args.auto_reset else [])]))
@@ -1241,6 +1275,9 @@ def main(argv=None):
             value = {k: v for k, v in value.items() if k != 'console_credit'}
             if args.console_credit == 'on':  # off is the default: no entry at all
                 value['console_credit'] = {'use': True}
+        for key, text in (('price_kwh', args.energy_price), ('watts', args.local_watts)):
+            if text:
+                value = set_local_energy(value, key, text)
         if args.meta_contributor:
             value['model_data_use'] = {**(value.get('model_data_use') or {}),
                                      'meta_contributor': args.meta_contributor == 'on'}

@@ -190,6 +190,30 @@ routing.
 - **Where.** `tare quota --json` has it as `consumption` on each bucket: `state`, `usd_per_percent`, `measured_from`,
   `measured_to` (the span the figure comes from) and `covered_usd`.
 
+## What a local model's energy cost
+
+A local model is not free: its GPU draws power. tare measures that and shows it; nothing routes by it.
+
+- **Measured.** The node samples the card's power (`nvidia-smi`) every 5 seconds and keeps an hour in memory. After
+  each invocation that made new calls on a local route, tare asks the node (`GET /v1/gpu/power`, 2 seconds, one
+  request) for the average watts between the invocation's start and end, and adds one row to `provider-spend.jsonl`
+  for the account `local`: `energy_wh = watts * seconds / 3600`, the model, and `source` (`measured`, or `declared`).
+  The span is the whole invocation, so tool time and preparation count at the card's draw then, and a GPU shared with
+  an image job or another agent counts their draw too. No reading and no declared watts: no row. A failure never
+  touches the call.
+- **Declared.** `tare setup --local-watts W` states the GPU's watts under load. It is used only when the node gives no
+  reading (an old node, no `nvidia-smi`, a span with no sample). It is applied to the whole invocation, idle time
+  included, so the figure is then an upper bound and the line says how much of the energy came from it. `off` clears
+  it.
+- **The price.** `tare setup --energy-price US$_PER_KWH` states your electricity price (`off` clears it). Rows hold
+  watt-hours, never dollars: the cost is computed when `tare quota` shows it, at the price set then.
+- **Shown.** `local: 0.41 kWh in 7 days, about US$ 0.07 at US$ 0.18/kWh (GPU only)`; without a price the kWh and the
+  command to set one; with no row, nothing. "GPU only" stays: `nvidia-smi` measures the card, not the machine.
+  `tare quota --json` has it as `energy` on the account `local` (`kind: local`): `days`, `kwh`, `declared_kwh`,
+  `price_kwh`, `usd`.
+- **Never money spent.** The row has `energy_wh` and no `usd`: `spent()`, a declared balance and a spending cap do not
+  see it.
+
 ## The saved readings
 
 Each `tare quota` saves its readings in `<storage>/serve/provider-quota.json` (schema
