@@ -59,39 +59,51 @@ def post(deployment, usage, session, now=None, since=None):
 
 
 def node_watts(deployment, began, ended):
-    """The average watts the model's node measured for its GPU between two times, or None (an old node, no
-    nvidia-smi, unreachable, no reading in the span). One request, 2 s."""
+    """(average watts, seconds they cover) the model's node measured for its GPU between two times, or None (an old
+    node, no nvidia-smi, unreachable, no reading in the span). The node's record is finite and a restart empties it:
+    the average is of the readings it still holds, which may start after `began`, and then covers only from its first
+    reading on. One request, 2 s."""
     from urllib.request import urlopen
     base = deployment['native_profile']['endpoint'].rstrip('/').rsplit('/v1', 1)[0]
     try:
         with urlopen(f'{base}/v1/gpu/power?since={began}&until={ended}', timeout=2) as reply:
-            watts = float(json.load(reply)['watts'])
+            found = json.load(reply)
+        watts = float(found['watts'])
+        # A node from before it said where its readings start kept one hour of them.
+        first = float(found['from']) if 'from' in found else max(began, ended - 3600)
     except Exception:  # any failure is no reading, never an error in the call's result
         return None
-    return watts if 0 < watts < 10000 else None  # also drops nan and the null of "no reading"
+    if not 0 < watts < 10000 or not first <= ended:  # also drops nan and the null of "no reading"
+        return None
+    # The first reading of a span the record covers comes within a sampling period of its start (5 s; 30 allows for
+    # the two clocks): then the whole span counts. Later than that, the start is not measured.
+    return watts, ended - began if first - began <= 30 else ended - first
 
 
 def record_energy(deployment, began, ended):
     """Add the energy a local route's GPU drew between two times to the ledger, as an 'energy_wh' row for the
     account 'local' (watt-hours, not dollars: the price is read when it is shown). Never money spent: it has no 'usd',
     so spent(), a declared balance and a spending cap do not see it. The watts are the node's measurement; failing
-    that, the ones `tare setup --local-watts` declared; failing both, nothing. Measured only once the user set a price
+    that, the ones `tare setup --local-watts` declared; failing both, nothing. When the node's readings cover only
+    the end of the span (a session longer than its record, or a node restarted meanwhile), only that part is counted
+    and the row says how many seconds were not ('unmeasured_seconds'): the average of the end is never stretched over
+    the start (an hour at 50 W then an hour at 300 W is 350 Wh, not 600). Measured only once the user set a price
     or watts: until then no local endpoint gets a request it did not ask for (a loopback server that is not a tare
     node would answer 404, or cost its timeout, after every invocation). Rows added."""
     from .challenger import local
     seconds = ended - began
     if not (settings := local_energy()) or not local(deployment) or not 0 < seconds < 7 * 86400:
         return 0
-    watts, source = node_watts(deployment, began, ended), 'measured'
-    if watts is None:
-        watts, source = settings.get('watts'), 'declared'
+    measured = node_watts(deployment, began, ended)
+    watts, covered, source = (*measured, 'measured') if measured else (settings.get('watts'), seconds, 'declared')
     if watts is None:
         return 0
     folder().mkdir(parents=True, exist_ok=True)
     with open(folder()/'provider-spend.jsonl', 'a', encoding='utf-8') as ledger:
         ledger.write(json.dumps({'at': ended, 'account': LOCAL, 'deployment': deployment.get('id'),
                                  'model': str(deployment['native_profile'].get('model') or '').lower(),
-                                 'energy_wh': watts*seconds/3600, 'watts': watts, 'seconds': seconds,
+                                 'energy_wh': watts*covered/3600, 'watts': watts, 'seconds': covered,
+                                 **({'unmeasured_seconds': seconds - covered} if covered < seconds else {}),
                                  'source': source}) + '\n')
     return 1
 
@@ -106,14 +118,16 @@ def local_energy():
 
 def energy_report(now, days=7):
     """The local account's energy of the last `days` days for `tare quota`, or None without a row: kWh (and how much
-    of it at declared watts) and, when a price is set, its cost at that price."""
+    of it at declared watts), the hours of sessions no reading covered (not in the kWh) and, when a price is set, the
+    cost at that price."""
     since = now - days*86400
     measured, declared = (spent(LOCAL, since, 'energy_wh', source=s) / 1000 for s in ('measured', 'declared'))
     if not measured + declared:
         return None
     price = local_energy().get('price_kwh')
     kwh = measured + declared
-    return {'days': days, 'kwh': round(kwh, 4), 'declared_kwh': round(declared, 4), 'price_kwh': price,
+    return {'days': days, 'kwh': round(kwh, 4), 'declared_kwh': round(declared, 4),
+            'unmeasured_hours': round(spent(LOCAL, since, 'unmeasured_seconds') / 3600, 2), 'price_kwh': price,
             'usd': round(kwh*price, 4) if price else None, 'scope': 'GPU only'}
 
 

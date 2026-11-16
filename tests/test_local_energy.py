@@ -84,6 +84,34 @@ def test_nothing_is_asked_or_recorded_until_a_price_or_watts_is_set(providers, n
     assert post(providers) == 0 and node.asked == [] and ledger() == []
 
 
+def test_readings_that_cover_only_the_end_of_a_session_are_never_stretched_over_its_start(providers, node):
+    """Two hours, the first at 50 W and the second at 300 W, on a node that held only the second: 300 Wh measured and
+    an hour said to be unmeasured, never 600 Wh for a true 350."""
+    node.answer = {'watts': 300.0, 'samples': 720, 'from': NOW + 3600, 'to': NOW + 7195}
+    post(providers, seconds=7200)
+    (row,) = ledger()
+    assert row['energy_wh'] == pytest.approx(300) and row['seconds'] == 3600 and row['unmeasured_seconds'] == 3600
+    report = provider_quota.refresh(now=NOW + 7200)
+    energy = next(a for a in report['accounts'] if a['account'] == 'local')['energy']
+    assert energy['kwh'] == pytest.approx(0.3) and energy['unmeasured_hours'] == 1
+    assert '; 1 h of sessions not counted (the node no longer held their readings: a partial total)' in         provider_quota.render(report, now=NOW + 7200)
+
+
+def test_readings_that_start_with_the_session_count_for_all_of_it(providers, node):
+    node.answer = {'watts': 175.0, 'samples': 1440, 'from': NOW + 4, 'to': NOW + 7199}  # the first within a sampling period
+    post(providers, seconds=7200)
+    (row,) = ledger()
+    assert row['energy_wh'] == pytest.approx(350) and row['seconds'] == 7200 and 'unmeasured_seconds' not in row
+    assert 'not counted' not in provider_quota.render(provider_quota.refresh(now=NOW + 7200), now=NOW + 7200)
+
+
+def test_a_node_that_does_not_say_where_its_readings_start_kept_one_hour(providers, node):
+    node.answer = {'watts': 300.0, 'samples': 720}  # a node from before the answer carried 'from'
+    post(providers, seconds=7200)
+    (row,) = ledger()
+    assert row['energy_wh'] == pytest.approx(300) and row['unmeasured_seconds'] == 3600
+
+
 def test_a_failing_node_never_fails_the_post(providers, node, monkeypatch):
     environment.save(environment.set_local_energy({}, 'watts', '200'))
     node.answer = ConnectionResetError()
@@ -134,7 +162,7 @@ def test_tare_quota_says_the_energy_of_seven_days_with_and_without_a_price(provi
     assert '  local: 2.00 kWh in 7 days, about US$ 0.36 at US$ 0.18/kWh (GPU only)' in text
     (local,) = [a for a in report['accounts'] if a['account'] == 'local']
     assert local['kind'] == 'local' and local['energy'] == {
-        'days': 7, 'kwh': 2.0, 'declared_kwh': 0.0, 'price_kwh': 0.18, 'usd': 0.36, 'scope': 'GPU only'}
+        'days': 7, 'kwh': 2.0, 'declared_kwh': 0.0, 'unmeasured_hours': 0.0, 'price_kwh': 0.18, 'usd': 0.36, 'scope': 'GPU only'}
     assert provider_quota.main(['--cached', '--json']) == 0
     assert [a['energy']['usd'] for a in json.loads(capsys.readouterr().out)['accounts'] if a['account'] == 'local'] == [0.36]
     # A row older than 7 days is not in it; the price read now prices the stored energy.

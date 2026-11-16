@@ -139,10 +139,11 @@ def gpu_sample():
 
 
 class PowerLog:
-    """The board's recent power readings, in memory (the gateway's /v1/gpu/power answers from it). ponytail: one
-    reading per sampling period, so a call shorter than the period can fall between two and get no average."""
+    """The board's recent power readings, in memory (the gateway's /v1/gpu/power answers from it): a day of them
+    (17 thousand at one every 5 s), since a Work run lasts hours. ponytail: one reading per sampling period, so a call
+    shorter than the period can fall between two and get no average."""
 
-    def __init__(self, keep=3600.0, clock=time.time):
+    def __init__(self, keep=86400.0, clock=time.time):
         self.keep, self.clock, self.readings, self.lock = keep, clock, deque(), threading.Lock()
 
     def add(self, watts):
@@ -153,10 +154,13 @@ class PowerLog:
                 self.readings.popleft()
 
     def average(self, since, until):
-        """{'watts': mean, 'samples': n} of the readings from `since` to `until` (Unix seconds), None without one."""
+        """{'watts': mean, 'samples': n, 'from', 'to'} of the readings from `since` to `until` (Unix seconds), None
+        without one. 'from' and 'to' are the first and last reading's times: the record is finite and a restart empties
+        it, so the mean may cover only the end of the span asked for, and the caller must not stretch it over the rest."""
         with self.lock:
-            inside = [w for t, w in self.readings if since <= t <= until]
-        return {'watts': round(statistics.fmean(inside), 1), 'samples': len(inside)} if inside else None
+            inside = [(t, w) for t, w in self.readings if since <= t <= until]
+        return {'watts': round(statistics.fmean(w for _, w in inside), 1), 'samples': len(inside),
+                'from': inside[0][0], 'to': inside[-1][0]} if inside else None
 
 
 class IdleWatch:

@@ -195,13 +195,16 @@ routing.
 A local model is not free: its GPU draws power. tare measures that and shows it; nothing routes by it. It measures
 from the day you set a price (or declared watts): until then a local endpoint gets no request for it.
 
-- **Measured.** The node samples the card's power (`nvidia-smi`) every 5 seconds and keeps an hour in memory. After
+- **Measured.** The node samples the card's power (`nvidia-smi`) every 5 seconds and keeps a day in memory. After
   each invocation that made new calls on a local route, tare asks the node (`GET /v1/gpu/power`, 2 seconds, one
   request) for the average watts between the invocation's start and end, and adds one row to `provider-spend.jsonl`
   for the account `local`: `energy_wh = watts * seconds / 3600`, the model, and `source` (`measured`, or `declared`).
   The span is the whole invocation, so tool time and preparation count at the card's draw then, and a GPU shared with
   an image job or another agent counts their draw too. No reading and no declared watts: no row. A failure never
-  touches the call.
+  touches the call. The node says where its readings for the span start: when they cover only its end (a session
+  longer than the node's record, or a node restarted meanwhile, which empties it), tare counts only that part, keeps
+  the rest as `unmeasured_seconds`, and `tare quota` says the total is partial. The average of the end is never
+  stretched over the start.
 - **Declared.** `tare setup --local-watts W` states the GPU's watts under load. It is used only when the node gives no
   reading (an old node, no `nvidia-smi`, a span with no sample). It is applied to the whole invocation, idle time
   included, so the figure is then an upper bound and the line says how much of the energy came from it. `off` clears

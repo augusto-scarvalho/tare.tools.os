@@ -19,9 +19,10 @@ qualification evidence the catalog cites.
   `comfy_routes.py`, `qualified_fleet.py` (our catalog, the owner's fleet), `fleet_count.py`, `install.py`, and
   `config/` (the catalog of qualified models, image routes).
 - `GET /v1/gpu/power?since=<unix>&until=<unix>` (gateway, read-only, like `/v1/fleet/status`): the average board watts
-  over that interval, `{"watts": 312.4, "samples": 17}`, or `{"watts": null, "samples": 0}` when no reading falls in
-  it (or the node has no `nvidia-smi`). The gateway samples `nvidia-smi` every 5 seconds and keeps the last hour in
-  memory (`PowerLog` in `gpu_lease_run.py`); tare uses it to show the energy of local calls (`tare quota`).
+  over that interval, `{"watts": 312.4, "samples": 17, "from": <unix>, "to": <unix>}` (the first and last reading's
+  times: the record may cover only the end of the interval asked for), or `{"watts": null, "samples": 0}` when no
+  reading falls in it (or the node has no `nvidia-smi`). The gateway samples `nvidia-smi` every 5 seconds and keeps
+  the last day in memory (`PowerLog` in `gpu_lease_run.py`); tare uses it to show the energy of local calls (`tare quota`).
 - `ops/`: systemd drop-ins and the Windows firewall rule for Tailscale.
 - `docs/SHARED_GPU.md`: operating the shared GPU; `docs/QUALIFIED_MODEL_FLEET.md`: the catalog and the
   owner's fleet (`~/.config/tare-node/fleet.json`: which models the node serves is the owner's choice).
