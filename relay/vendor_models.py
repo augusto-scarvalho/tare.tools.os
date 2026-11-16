@@ -92,10 +92,11 @@ def same_model(a, b):
 def older(slugs):
     """The models a vendor still lists that a newer version of the same line replaces (gpt-6-sol beside
     gpt-6.1-sol, gpt-5.6-luna beside gpt-6-luna). Versions move per line: a line without a newer version, such as
-    gpt-6-astra beside gpt-6.1-sol, is never older."""
+    gpt-6-astra beside gpt-6.1-sol, is never older. A model from before its vendor named lines (gpt-5.5) is older
+    once the vendor lists any named line at a newer version: a newer generation replaced it (owner, 2026-11-16)."""
     parsed = {s: parse(s) for s in slugs if parse(s)[2]}
     return {s for s, (vendor, line, version) in parsed.items()
-            if any(v == vendor and l == line and n > version for v, l, n in parsed.values())}
+            if any(v == vendor and n > version and (l == line or not line and l) for v, l, n in parsed.values())}
 
 
 def newest(slugs, slug):

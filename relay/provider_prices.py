@@ -186,6 +186,14 @@ def fetch_models_dev():
     return json.loads(raw)
 
 
+def _subscription_here():
+    """Whether a vendor CLI tare may use is installed: its plan's use is valued at these prices (plan_consumption)."""
+    from .cli_discovery import ACK_PROFILE, locate
+    from .environment import allows
+    return any(allows({'native_profile': {'protocol': 'vendor-cli', 'endpoint': endpoint}})[0] and locate(endpoint)
+               for endpoint in ACK_PROFILE)
+
+
 def refresh_reading(now=None, fetch=None, setup=None, failed=None):
     """Read models.dev at most once a day (after an attempt that failed, at most once an hour) and keep it with the
     day it was read. A failed, empty or reshaped reading keeps the last good one; one that parses replaces it whole
@@ -201,8 +209,10 @@ def refresh_reading(now=None, fetch=None, setup=None, failed=None):
     from .provider_quota import secret
     setup = read() if setup is None else setup
     api = setup.get('api_providers') or {}
-    if 'error' in setup or api.get('use') is False or not any(
-            not declined((api.get('items') or {}).get(key)) and secret(key) for key in REFERENCE_KEYS):
+    if 'error' in setup or api.get('use') is False:
+        return saved  # the machine's choice (tare setup --no-use api): nothing leaves it for a reading
+    keyed = any(not declined((api.get('items') or {}).get(key)) and secret(key) for key in REFERENCE_KEYS)
+    if not (keyed or _subscription_here()):
         return saved  # no route that would use it is set up here
     # Each attempt's time, so an outage costs one GET an hour, not one per start; the first reading never waits.
     attempt = reading_path().with_name('reference-prices-attempt.json')

@@ -77,7 +77,8 @@ def test_a_route_with_no_class_is_the_last_resort_of_tier_0_and_in_no_higher_tie
     for role in ('implementer', 'coordinator'):
         tiers = turn_engine.implementer_tiers(role)
         none = [n for n in tiers[0] if class_of(n) is None and n != 'local-qwen']  # no reading here: no class
-        assert {'codex-cli-gpt-5-5', 'openrouter-glm-5-3'} <= set(none)
+        assert {'openrouter-mimo-v2-6-pro', 'openrouter-glm-5-3'} <= set(none)
+        assert 'codex-cli-gpt-5-5' not in tiers[0]  # from before the named lines: an older model, no candidate
         assert tiers[0][-len(none):] == none  # after every route that has a class, a pay-per-token one included
         assert not set(none) & set(tiers[1])
         assert [cost_of(n) for n in none] == sorted(cost_of(n) for n in none)  # in the same cost order
@@ -99,7 +100,7 @@ def test_a_subscription_of_a_higher_class_precedes_a_pay_per_token_route_of_the_
         tiers = turn_engine.implementer_tiers(role)
         for subscription in ('claude-sonnet-5-5-cli', 'claude-opus-5-5-cli', 'claude-fable-5-1-cli'):
             assert tiers[0].index(subscription) < tiers[0].index(cheap) < tiers[0].index(middling)
-        assert tiers[0].index(middling) < tiers[0].index('codex-cli-gpt-5-5')  # a class before none, metered or not
+        assert tiers[0].index(middling) < tiers[0].index('openrouter-mimo-v2-6-pro')  # a class before none, metered or not
         assert middling in tiers[1] and cheap not in tiers[1] and middling not in tiers[2]  # placed by its class
         assert tiers[1].index('claude-opus-5-5-cli') < tiers[1].index(middling) < tiers[1].index('claude-api-fable-5-1')
 

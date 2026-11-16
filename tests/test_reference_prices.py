@@ -255,14 +255,24 @@ def test_the_reading_respects_the_machine_setup(monkeypatch, tmp_path):
     def fetch():
         calls.append(1)
         return models_dev()
+    here = [False]  # whether a vendor CLI tare may use is installed (never the developer's own machine's)
+    monkeypatch.setattr(prices, '_subscription_here', lambda: here[0])
     monkeypatch.setattr('relay.provider_quota.secret', lambda name: None)
-    assert prices.refresh_reading(NOW, fetch=fetch) is None  # no API key of a route that would use it
+    assert prices.refresh_reading(NOW, fetch=fetch) is None  # no API key and no subscription that would use it
     monkeypatch.setattr('relay.provider_quota.secret', lambda name: 'key')
     for setup in ({'use': False}, {'items': {k: False for k in prices.REFERENCE_KEYS}}):
         environment.store().parent.mkdir(parents=True, exist_ok=True)
         environment.store().write_text(json.dumps({'schema': environment.SCHEMA, 'api_providers': setup}))
         assert prices.refresh_reading(NOW, fetch=fetch) is None
+    # tare setup --no-use api stands even with a subscription installed: nothing leaves the machine for a reading
+    here[0] = True
+    environment.store().write_text(json.dumps({'schema': environment.SCHEMA, 'api_providers': {'use': False}}))
+    assert prices.refresh_reading(NOW, fetch=fetch) is None
     assert calls == [] and prices.reading() is None
+    # a machine with only a subscription (no key, APIs not declined) reads the prices: they value the plan's use
+    environment.store().write_text(json.dumps({'schema': environment.SCHEMA}))
+    monkeypatch.setattr('relay.provider_quota.secret', lambda name: None)
+    assert prices.refresh_reading(NOW, fetch=fetch) and calls == [1]
 
 
 def test_without_a_reading_every_consumer_is_as_before(keys):

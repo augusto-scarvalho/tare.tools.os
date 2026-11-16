@@ -291,6 +291,7 @@ def refresh(now=None):
     """Ask every configured provider now, in parallel, and keep the answers for `cached()`."""
     from .cli_discovery import locate
     now = time.time() if now is None else now
+    began = time.monotonic()
     jobs = [(account, name, 'subscription', reader, executable)
             for endpoint, (account, name, reader) in CLIS.items() if (executable := locate(endpoint))]
     if key := secret('OPENROUTER_API_KEY'):
@@ -332,6 +333,10 @@ def refresh(now=None):
         for reading in accounts:
             if reading['account'] == ACCOUNT:
                 reading.setdefault('notes', []).append(text)
+    from . import plan_consumption
+    # This reading joins the history the estimate is taken from, with the time the sampling took.
+    plan_consumption.keep(accounts, now, done=now + (time.monotonic() - began))
+    plan_consumption.annotate(accounts, now)
     report = {'schema': SCHEMA, 'observed_at': now, 'accounts': accounts}
     from .relay_io import write_json_atomic
     path = cache_path()
@@ -484,6 +489,7 @@ def clock(epoch, now):
 
 
 def render(report, now=None):
+    from . import plan_consumption
     now = time.time() if now is None else now
     lines = []
     for kind, title in (('subscription', 'Subscriptions'), ('credit', 'API credit')):
@@ -525,6 +531,7 @@ def render(report, now=None):
                         and now - FRESH <= account['observed_at'] <= now)
                 mark = used_first(row['remaining'], (row['resets_at'] - now) / LENGTHS[row['window']]) if pace else ''
                 lines.append(f"    {row['label']:<32}{left:>10}   {resets}{mark}".rstrip())
+                lines.append('      ' + plan_consumption.line(row.get('consumption')))
             lines += ['    ' + note for note in account.get('notes', [])]
     lines += ['', 'Read ' + clock(report['observed_at'], now) + ' from each provider; no model call was made.']
     return '\n'.join(lines)
