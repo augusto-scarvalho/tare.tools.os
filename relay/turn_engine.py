@@ -28,24 +28,11 @@ import time
 from urllib.parse import urlsplit
 import uuid
 
-# Tiers ordered by API price (USD per million tokens, input/output, OpenRouter 2026-09-28):
-# local $0; GPT-6 Luna 0.10/0.50, GPT-5.6 Luna 0.20/1.20, DeepSeek V4.1 Flash 0.30/1.20;
-# Claude Sonnet 5.5 / 5 2/10, GPT-6.1 Sol 2/10 (near Astra, 2026-09-29), GPT-6 Sol 2/10, GLM 5.3 1.4/4.4. Planners/auditors: GPT-6 Astra or Opus 5.5 at high.
-# Each tier climbs one vendor's intelligence ladder (GPT-6 Luna -> GPT-6.1 Sol -> GPT-6 Astra) and holds the other
-# vendor's equivalent beside it: Luna = Sonnet 5.5, Sol = Opus 5.5, Astra = Fable 5.1.
 from .openrouter import RESEARCH_ROUTES
 
 DEFAULT_POLICY = {
-    'implementer': [
-        ['local-default'],  # the default of the node's fleet (tare fleet), measured profile when tare ships one
-        # Bedrock routes spend free AWS credits, so they lead their tier while the credits last.
-        # Older models a newer one replaces (gpt-6-sol, the gpt-5.6 line) are left out: tare setup --old-models.
-        ['bedrock-sonnet', 'codex-native-gpt-6-luna', 'codex-cli-gpt-6-luna', 'claude-sonnet-5-5-cli',
-         'openrouter-deepseek-v4-1-flash-1017'],
-        ['bedrock-opus', 'codex-native-gpt-6-1-sol', 'codex-cli-gpt-6-1-sol', 'claude-opus-5-5-cli',
-         'openrouter-glm-5-3'],
-        ['codex-native', 'codex-cli', 'claude-fable-5-1-cli', 'agy-gemini-4-argon-cli'],
-    ],
+    # No 'implementer' list: unless the owner saves one, tare auto's tiers are the role table's classes
+    # (implementer_tiers), so a newly proven model version is used with no edit here.
     # No 'planner' list: unless the owner saves one, the planner is chosen from the role table (planner_routes).
     'planner_effort': 'high',
     # Frontier auditors review each turn that changed code; a vendor other than the implementer's goes first.
@@ -125,6 +112,36 @@ def planner_routes():
     return [names[value['id']] for value in deployments]
 
 
+def implementer_tiers(role='implementer'):
+    """tare auto's tiers for a start in `role`: the owner's saved implementer list (/routes Order tab), else three
+    nested floors of intelligence, [at least cheap, middling, frontier] (model_signals.ORDER). Tier i holds the role
+    table's implementer routes (the conversation's, role coordinator, or the implementer's, as the routing profile
+    leaves them on) whose class reaches ORDER[i], in native_routes.ranked order: the cheapest sufficient route first.
+    A route with no class reaches no floor above cheap and is the last of tier 0. A start takes tier 0, a failure
+    raises the floor one tier; an empty tier stays so that an index names its floor. The fleet's default local model
+    leads tier 0 (local-default when no row names it)."""
+    if saved := policy().get('implementer'):
+        return saved
+    from . import native_catalog
+    from .execution_scope import for_role
+    from .model_signals import ORDER, klass
+    from .native_routes import _ranked
+    rank = 'coordinator' if role == 'coordinator' else 'implementer'
+    with for_role(rank):  # never pinned here: execution_tiers applies an implementer pin where an implementer runs
+        deployments, selection = _ranked(rank)
+    names = {row['selected_deployment']: row['catalog'] for row in selection['candidates'] if row.get('eligible')}
+    classes = [(klass(value) or {}).get('class') for value in deployments]
+    tiers = [[names[value['id']] for value, found in zip(deployments, classes)
+              if floor == 0 or found and ORDER.index(found) >= floor] for floor in range(len(ORDER))]
+    try:
+        fleet = native_catalog.local_default()
+    except (OSError, ValueError, KeyError, TypeError):
+        fleet = None  # unreadable setup: local-default as before, available() judges it
+    if fleet not in {native_catalog.LOCAL.get(name, name) for name in tiers[0]}:
+        tiers[0].insert(0, native_catalog.LOCAL_DEFAULT)
+    return tiers
+
+
 def cross_vendor_first():
     """Whether auditor selection puts another vendor first: on, unless --any_vendor_auditor or /routes (the routing
     policy's any_vendor_auditor, absent while on) turned it off."""
@@ -141,8 +158,10 @@ def save_policy(roles, *, auditor_selection=None, any_vendor_auditor=None):
     any_vendor_auditor: True stops putting auditors of another vendor first, False puts them first again (the key
     goes), None keeps what is saved."""
     from .native_catalog import select
+    from .native_routes import configured
     defaults = {n for v in DEFAULT_POLICY.values() if isinstance(v, list) for t in v
                 for n in (t if isinstance(t, list) else [t])}  # tare's own names, installed here or not
+    defaults |= {row.get('native_catalog', row['id']) for row in configured()['deployments']}  # and its role table's
     unknown = []
     for name in {n for tiers in roles.values() for tier in tiers for n in tier} - defaults:
         try:
@@ -461,14 +480,17 @@ def surplus_first(names):
 
 def choose(tiers, start=0, probe=True, role='implementer'):
     """First available route at or after tier `start` that the routing profile leaves on for `role`:
-    (tier, name, deployment, skipped)."""
+    (tier, name, deployment, skipped). The tier returned is the highest one that holds the route: tare auto's computed
+    tiers are nested floors (implementer_tiers), so a route found in the first floor may reach the next ones too, and a
+    failure must move above what failed (tier + 1), never to the same route again. In an owner's saved list a route is
+    in one tier, which is then the tier returned, as before."""
     from .execution_scope import refusal
     skipped = []
     for tier in range(start, len(tiers)):
         for name in surplus_first(tiers[tier]):
             deployment, reason = available(name) if probe else available(name, probe=False)
             if deployment is not None and not (reason := refusal(role, deployment, name)):
-                return tier, name, deployment, skipped
+                return max(i for i in range(tier, len(tiers)) if name in tiers[i]), name, deployment, skipped
             row = {'route': name, 'reason': str(reason) if isinstance(reason, Unavailable) else reason}
             if isinstance(reason, Unavailable):
                 row['diagnostic'] = reason.diagnostic
@@ -582,8 +604,8 @@ def initial_choice(tiers, text, start=0, role='implementer'):
 def resolve_auto(deployment, start=0, request=None, role='implementer'):
     """Resolve tare auto once. A supplied initial request permits bounded hosted advice; legacy callers
     and successor routing keep deterministic selection. Save the choice for the existing fallback ladder.
-    `role`: the role the route will run in, whose routing profile entries decide (tare auto's tiers are the
-    implementer's; a conversation reads the coordinator's, /research the researcher's)."""
+    `role`: the role the route will run in, whose routing profile entries decide (implementer_tiers: a conversation's
+    tiers are the coordinator's, every other role's the implementer's; /research skips by the researcher's)."""
     from .execution_scope import current, pinned, ROLE
     if current().pin(ROLE.get()):
         if start:
@@ -592,11 +614,12 @@ def resolve_auto(deployment, start=0, request=None, role='implementer'):
     if 'native_auto_routes' not in deployment and start == 0:
         return deployment
     from .execution_scope import execution_tiers
-    tiers = execution_tiers(policy()['implementer'])
+    tiers = execution_tiers(implementer_tiers(role))
     tier, name, chosen, skipped = (initial_choice(tiers, request, start, role=role) if request is not None
                                     else choose(tiers, start, role=role))
     if chosen is None:
         raise UnschedulableError('tare_auto_no_route_available', skipped)
+    tier = max(i for i in range(tier, len(tiers)) if name in tiers[i])  # as choose: the judge's pick is a floor too
     keep = {k: deployment[k] for k in ('native_model_choice',) if k in deployment}
     selection = chosen.get('native_auto_selection', {'tier': tier, 'route': name, 'skipped': skipped})
     return {**chosen, **keep, 'native_auto_selection': selection}
@@ -1333,7 +1356,7 @@ def read_links(question, urls, emit, *, mode, max_pages, max_depth, fetch=None):
     """Pages read locally (Trafilatura) and summarized by the first available route, citing URLs."""
     from .native_installation import storage_root
     from .research import research
-    tier, name, deployment, skipped = choose(policy()['implementer'], role='researcher')
+    tier, name, deployment, skipped = choose(implementer_tiers('researcher'), role='researcher')
     if deployment is None:
         return None, 'tare: no route is available for /research: ' + json.dumps(skipped)
     emit(f'_tare /research · reading {len(urls)} link(s) with {name}_\n\n')

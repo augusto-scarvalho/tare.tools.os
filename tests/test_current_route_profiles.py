@@ -31,8 +31,10 @@ def installed(tmp_path, monkeypatch):
 
 def test_installed_versions_efforts_and_sources_reach_actual_route_observer(installed):
     selected, receipt = native_routes.ranked('implementer', check_resources=True)
-    assert [d['id'] for d in selected] == ['claude-cli', 'claude-sonnet-5-5-cli']
+    # Fable 5.1 is an implementer row too: the frontier class, after the middling ones on the same allowance.
+    assert [d['id'] for d in selected] == ['claude-cli', 'claude-sonnet-5-5-cli', 'claude-fable-5-1-cli']
     assert all(d['native_profile']['protocol'] == 'vendor-cli' for d in selected)
+    selected = selected[:2]  # the observation below compares Opus and Sonnet
     missing = next(d for d in receipt['candidates'] if d['deployment'] == 'agy-cli')
     assert missing['reason'] == 'PROFILE_NOT_INSTALLED'
     requests = []

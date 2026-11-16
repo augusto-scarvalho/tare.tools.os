@@ -33,8 +33,15 @@ On the node (from another machine prefix `ssh <gpu-node> "wsl -e bash -lc '...'"
   (`HTTP_503` with `busy_reason` `gpu_busy`, `gpu_lease_timeout` or `gpu_lease_cancelled` in its receipt) costs no
   pause before the next route.
 - **You decide the fallback.** Explorers fall back to the overflow explorer of `/delegation overflow` (the judge
-  picks the tier). A conversation and its implementers follow the routing policy, which `/routes` in the TUI
-  edits per role (one tier per line; saved to `<storage>/serve/routing.json`, "tare's defaults" goes back);
+  picks the tier). A conversation and its implementers follow tare auto's tiers: three nested floors of
+  intelligence, at least cheap, at least middling and at least frontier, each holding the implementer routes of the
+  role table that "Models per role" in `/routes` leaves on for the conversation (coordinator) or the implementer
+  whose class reaches the floor, the cheapest sufficient route first (an allowance in surplus, then free, flat,
+  free credit and pay-per-token, the class nearest the floor first inside each); a start takes the first floor,
+  which holds every route (one with no class comes last in it), and a failure raises the floor one tier. The
+  fleet's default local model leads the first floor.
+  A list you write in the Order tab of `/routes` (one tier per line; saved to `<storage>/serve/routing.json`, an
+  empty box or "tare's defaults" goes back to the floors) replaces them;
   a unit tries the coordinator's chosen route first and, when its GPU is busy, the policy's next routes.
 - **Leaving the GPU to others:** `/local-gpu off` in a chat (or `/local-gpu off default` for the machine) keeps tare
   off the local models; `--no-local-models` does the same for one run.
@@ -259,9 +266,10 @@ equivalent `tare setup --auto` commands write.
 
 The rows, like `--auto-show`, are the routes the role's automatic path considers, each checked as the paths that
 reach it check it, under that role (so `--prefer_local` and the other launch restrictions read as at run time), and
-read again each time the tab is shown or the Order tab saves: coordinator tare auto's tiers (the Order tab's
-Implementer list), each by availability as a conversation's tare auto takes it; implementer its list in the Order tab, planner the list you saved there if any
-(availability), and both their role table (the rules that rank it, qualification and older models included); explorer its
+read again each time the tab is shown or the Order tab saves: coordinator and implementer the Implementer list you
+saved in the Order tab (none: the fleet's default local model), planner the list you saved there if any
+(availability), and all three their role table (the rules that rank it, qualification and older models included; the
+coordinator on the implementer rows); explorer its
 role table; auditor and plan-auditor your auditor routes when "Use my auditor routes" is chosen in the Order tab,
 and their role table otherwise, never both; researcher its list (availability and the research tool's own
 admission), the implementer tiers (the `/research` link summary) and the Codex web search helper; vision and

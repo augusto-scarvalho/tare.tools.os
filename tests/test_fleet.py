@@ -55,12 +55,15 @@ def test_tare_auto_runs_the_default_of_the_nodes_fleet(monkeypatch):
     def saved(default=None):
         gateway = {'origin': ORIGIN, 'models': ['qwen38-gsq', 'hauhaucs', 'mine'], **({'default': default} if default else {})}
         return {'local_models': {'use': True, 'gateways': [gateway]}}
-    assert turn_engine.DEFAULT_POLICY['implementer'][0] == ['local-default']
     assert native_catalog.local_default(saved()) == 'qwen38-gsq'  # the node has not said
     assert native_catalog.local_default(saved('hauhaucs')) == 'hauhaucs'  # tare's measured profile
     assert native_catalog.local_default(saved('mine')) == 'local-gpu-node-test-8080-mine'  # the generic one
     monkeypatch.setattr(environment, 'read', lambda: saved('hauhaucs'))
     assert native_catalog.select('local-default')['native_profile']['model'] == 'hauhaucs'
+    # No role-table row names hauhaucs: the fleet's default leads tare auto's cheap class.
+    assert turn_engine.implementer_tiers()[0][0] == 'local-default'
+    monkeypatch.setattr(environment, 'read', lambda: saved())
+    assert 'local-default' not in turn_engine.implementer_tiers()[0]  # qwen38-gsq has its row, local-qwen
 
 
 def test_setup_remembers_the_default_the_gateway_says(monkeypatch):

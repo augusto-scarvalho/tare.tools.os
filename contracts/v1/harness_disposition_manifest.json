@@ -2461,8 +2461,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator-facing entry points and route policy; Runtime retains session execution.",
-      "size_bytes": 37604,
-      "sha256": "c8a24979b390afc938515c27d701437e3cb4b7b280575a558bc8c1bc1f04104d"
+      "size_bytes": 37677,
+      "sha256": "b1fca67426d1edbadb56ca63d3542226987c551cb762774e5e054b2cc2c09205"
     },
     {
       "name": "turn_capabilities.py",
@@ -2481,8 +2481,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns the product turn coordination shared by its frontends; the agent loop stays in the runtime.",
-      "size_bytes": 99846,
-      "sha256": "909cbb51cfe9235b73fe939447ec5e277932313a0c996fa55fbbd0b62ef0fbed"
+      "size_bytes": 101502,
+      "sha256": "0b56c6b7d84418acaa285f74d7c149da9eec5c49609400be8a49f92a2565a7fd"
     },
     {
       "name": "audit_report.py",
@@ -2861,8 +2861,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns experience and flow selection; native text inference and execution owners are reused.",
-      "size_bytes": 18879,
-      "sha256": "dc55250ada9293651ee6740ced448b386f96c0c2ed16c7f59fc2e3989ecbd209"
+      "size_bytes": 18886,
+      "sha256": "f7c974b5f3779080c9a6cf87b9e8ab1e202d516d128fa02f574657a706a83a65"
     },
     {
       "name": "work_intake.py",
@@ -2981,8 +2981,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS selects configured eligible role routes and persists the rationale; existing native Work owner executes and recovers them.",
-      "size_bytes": 27355,
-      "sha256": "87e639444ae20d309be9ab8dd440fbd920b0df7bd6ab0c84d7bfc0d69063a5be"
+      "size_bytes": 28527,
+      "sha256": "98d32a2708a46020defd73471cf7e14d64674d1d297929b3321d0403028cbad9"
     },
     {
       "name": "native_serve.py",
@@ -3001,8 +3001,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator-facing entry points and route policy; the editor keeps tool execution and approval.",
-      "size_bytes": 23235,
-      "sha256": "67333f9687c75c14aa52e1721963a19e70a929d1144e8342d1eb9809ad5b4f85"
+      "size_bytes": 23606,
+      "sha256": "a3461894ace348a7b3707f6cf80dd0cb6ec65ae0457fc57ae4f2e0beea8bb31c"
     },
     {
       "name": "planning_findings.py",
@@ -3361,8 +3361,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator model selection; Runtime retains session execution.",
-      "size_bytes": 32982,
-      "sha256": "e4b7a544c81b12bbac92ec559365d31581db1cbee9b60fb2c111bcac40664864"
+      "size_bytes": 33058,
+      "sha256": "9fd7f155289550cac12813a3d50f4595742775aaa1d9b5765b1b34c9c1edd18a"
     },
     {
       "name": "model_picker.py",
@@ -3821,8 +3821,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 70562,
-      "sha256": "da27d8826e40d0f4feaccd2c60ac77f2697d80e0d37756d7426af6378a178e08"
+      "size_bytes": 70826,
+      "sha256": "2dc1f33c96989029e7e5104d12761ac185d3145cc2448cbbfa235076f17c7c52"
     },
     {
       "name": "console_setup.py",
@@ -3841,8 +3841,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 121706,
-      "sha256": "b9591b134c91bbcb106bf191021d01bc7bf76513cc064908392e0665e3855f10"
+      "size_bytes": 122251,
+      "sha256": "2d772320619bdf85b64da967e5a914e394deafd164a2a82f22ace1f0695b2e2b"
     },
     {
       "name": "gpu.py",
@@ -3861,8 +3861,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 7468,
-      "sha256": "87b087b3ccd8edaf325c82feb25404023ac470ec7f492bb6aa8e857dc1a46c2e"
+      "size_bytes": 7766,
+      "sha256": "e8a0dba1fede73bdbb96bdc8e0e7db0a4343bb2b0a0b828f4c7a3a4a14487f5e"
     },
     {
       "name": "fleet.py",

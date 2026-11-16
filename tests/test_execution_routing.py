@@ -26,8 +26,10 @@ def test_auto_resolves_current_profile_and_reserve(selection, role):
     for row in selection['deployments']:
         if row['model'] == 'qwen-3.8-27b': row['roles'].remove(role)
     reserve = native_catalog.select('auto', role=role)
-    # A subscription reserve comes before credit: the first OpenCode subscription model in the operator's order.
-    assert reserve['native_profile'] == native_catalog.select('opencode-sub-deepseek-v4-1-flash')['native_profile']
+    # A subscription reserve comes before credit: the first OpenCode subscription model in the operator's order; the
+    # implementer wants the cheap class (native_routes.WANTED), where a model of a known line (GPT-6 Luna) comes first.
+    first = 'opencode-sub-gpt-6-luna' if role == 'implementer' else 'opencode-sub-deepseek-v4-1-flash'
+    assert reserve['native_profile'] == native_catalog.select(first)['native_profile']
     for row in selection['deployments']:
         if row['id'].startswith('opencode-sub-'): row['roles'].remove(role)
     reserve = native_catalog.select('auto', role=role)

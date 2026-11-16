@@ -48,7 +48,8 @@ def test_routes_in_the_tui_save_and_go_back_to_tares_defaults_without_a_model_ca
             await pilot.pause()
             assert not turn_engine.policy_path().exists()
             assert panel.query_one('#routes-auditor-selection', Select).value=='cross_vendor_frontier'
-            assert from_text(panel.query_one('#routes-implementer', TextArea).text) == turn_engine.DEFAULT_POLICY['implementer']
+            assert from_text(panel.query_one('#routes-implementer', TextArea).text) == []  # empty: automatic, by class
+            assert 'implementer' not in turn_engine.policy()
             assert not app.backend.launches
             await pilot.press('escape')
             assert app.screen is not panel

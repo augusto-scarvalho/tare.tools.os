@@ -208,12 +208,12 @@ def propose(selection, cancellation, *, history=(), questions=(), directory=None
         if direct is None and suggestion is None:
             name = None if selection.profile else selection.deployment
             if name and name != 'auto':
-                from .turn_engine import available, choose, policy
+                from .turn_engine import available, choose, implementer_tiers
                 if available(name, probe=False)[0] is None:
                     # The picker's route may not exist in this installation (a CLI not installed, no credential,
                     # its account out of usage, declined in tare setup): classify with the first route tare auto
                     # would take; with none, say so instead of trying.
-                    name = choose(policy()['implementer'], probe=False)[1]
+                    name = choose(implementer_tiers(), probe=False)[1]
                     if name is None:
                         raise ValueError('No model route is available on this machine to suggest a flow (see '
                                          '/setup). Choose /session, /explore, /plan or /research to continue.')

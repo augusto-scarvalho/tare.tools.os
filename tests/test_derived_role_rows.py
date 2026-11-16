@@ -46,8 +46,8 @@ def test_a_new_version_on_its_vendors_cli_copies_the_newest_sibling_row_pin_only
         # The newest version on the same source: not 5.6 Sol's implementer roles, not Fable's metered API rows.
         assert {k: v for k, v in row.items() if k not in ('id', 'native_catalog', 'model', 'qualified', 'note')} == \
             {k: v for k, v in theirs.items() if k not in ('id', 'native_catalog', 'model', 'qualified', 'note')}
-    assert table[SOL]['roles'] == ['planner', 'plan-auditor', 'auditor'] and table[SOL]['cost_tier'] == 'flat'
-    assert table[FABLE]['roles'] == ['planner', 'plan-auditor', 'auditor', 'explorer']
+    assert table[SOL]['roles'] == ['planner', 'plan-auditor', 'auditor', 'implementer'] and table[SOL]['cost_tier'] == 'flat'
+    assert table[FABLE]['roles'] == ['planner', 'plan-auditor', 'auditor', 'explorer', 'implementer']
     assert table[FABLE]['cost_tier'] == 'flat' and table[FABLE]['endpoint_domain'] == 'anthropic-cli'
 
 

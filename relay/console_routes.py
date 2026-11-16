@@ -8,7 +8,10 @@ from textual.widgets import Button, Checkbox, Select, Static, TabbedContent, Tab
 from .console_panels import SupportPanel
 from .console_route_matrix import RouteMatrix
 
-ROLE_LABELS = {'implementer': 'Implementer · conversations, sessions and the units they delegate',
+ROLE_LABELS = {'implementer': 'Implementer · conversations, sessions and the units they delegate · empty: automatic, '
+                              'the routes switched on for it in Models per role, the cheapest one that is clever '
+                              'enough first, a higher floor of class when a route fails; write tiers to fix the '
+                              'order yourself',
                'planner': 'Planner · empty: automatic, the routes switched on for it in Models per role, frontier models first; '
                          'write routes to fix the order yourself',
                'auditor': 'Your auditor routes · used when you choose your list',

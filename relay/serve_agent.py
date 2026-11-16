@@ -198,7 +198,7 @@ def run_flow(kind, text, root, emit, activity):
             # The role table's order already holds class and lapsing allowance: one route per tier keeps it. The
             # owner's saved list stays one tier, where choose() puts a lapsing allowance first.
             names = engine.planner_routes() if role == 'planner' else None
-            tiers = rules['implementer'] if names is None else [names] if rules.get('planner') else [[n] for n in names]
+            tiers = engine.implementer_tiers(role) if names is None else [names] if rules.get('planner') else [[n] for n in names]
             tier, name, deployment, skipped = engine.choose(tiers, role=role)
             if deployment is None:
                 return None, 'tare: no route is available for /' + kind + ': ' + json.dumps(skipped)
@@ -251,7 +251,7 @@ def _run_turn(messages, emit, default_root=None, local_models=None):
     with lock:
         store = chat_store(key)
         state = json.loads(store.read_text(encoding='utf-8')) if store.exists() else None
-        tiers = engine.policy()['implementer']
+        tiers = engine.implementer_tiers('coordinator')  # every session of a chat is a conversation
         progress = lambda event: emit(event['text']) if (event.get('kind') == 'delta' and event.get('channel') == 'text'
                                                         and event.get('purpose') != 'summary') else None
         activity = lambda event: (lambda line: emit(line) if line else None)(activity_line(event))
@@ -604,7 +604,7 @@ def escalate(state, root, start_tier, text, emit, emit_text, activity, *, why, s
     is spent (`renew`, engine.successor) or the chat holds a terminal."""
     from . import native_agent
     from .native_continuity import preview, save_request
-    tiers = engine.policy()['implementer']
+    tiers = engine.implementer_tiers('coordinator')
     current = state['sessions'][-1]
     tier, name, deployment, skipped = engine.choose(tiers, start_tier, role='coordinator')
     if deployment is None or (name == current['route'] and not same_tier_ok):
