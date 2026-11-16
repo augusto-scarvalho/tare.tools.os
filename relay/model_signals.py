@@ -409,6 +409,22 @@ def _match(saved, deployment):
     return top[0] if one and '(' not in top[0]['name'] else None
 
 
+MIN_LINES = 8  # a task-type board places models only with this many known lines at their newest version
+
+
+def _place_ranked(anchors, score):
+    """(class, anchor name) on a task-type board, where the known lines are a ranking and not their general labels. A
+    line that leads in general may be weak at one type of work, and as its class's weakest anchor it would drop that
+    class's floor (the general leader, eighth on a competition-mathematics board, put 8 of 11 lines at frontier). The
+    lines split 3 : 6 : 3 in general, so on a board frontier is the top quarter of its lines, middling the top three
+    quarters, the rest cheap. None with fewer than MIN_LINES lines: a quarter of five lines is one line."""
+    ranked = sorted(anchors, key=lambda a: -a[0])
+    if len(ranked) < MIN_LINES:
+        return None
+    bars = [(name, ranked[math.ceil(len(ranked)*share) - 1]) for name, share in (('frontier', .25), ('middling', .75))]
+    return next(((name, bar[2]) for name, bar in bars if score >= bar[0]), ('cheap', bars[1][1][2]))
+
+
 def _placed(saved, deployment):
     row = _match(saved, deployment)
     placed = row and _place(_anchors(saved), row['intelligence'])
@@ -804,7 +820,7 @@ def refresh_boards(now, fetch, setup=None):
 
 def type_class(deployment, kind, kept):
     """A route's class for a task type (`kind`, a row of TYPES; `kept`, `boards()`): from the first source of the type
-    whose board places the model, with the same anchors as for a model with no line ({'class', 'type', 'label',
+    whose board places the model, by its rank among the known lines there (`_place_ranked`) ({'class', 'type', 'label',
     'general': False, 'source', 'board', 'kind', 'read_at', 'effort'}); else the general class, marked general
     ({'class' or None, 'type', 'label', 'general': True}). A board without the newest versions of the known lines
     places nobody: an aged source drops out by itself."""
@@ -813,7 +829,7 @@ def type_class(deployment, kind, kept):
         board = kept.get(source_key(source))
         rows = board.get('rows') if isinstance(board, dict) else None
         row = isinstance(rows, list) and _on_board(board, deployment, bare=True)
-        placed = row and _place(_anchors(board, current), row['intelligence'])
+        placed = row and _place_ranked(_anchors(board, current), row['intelligence'])
         if placed:
             relation = measured_as(deployment)[1]
             return {'class': placed[0], 'type': kind['id'], 'label': kind['label'], 'general': False,
@@ -842,7 +858,7 @@ def describe_type(found):
 def types_report(kept):
     """The catalogue with what each source holds now: [{'id', 'label', 'description', 'sources': [{'name', 'reader',
     'board', 'kind', 'citation', 'read_at', 'as_of', 'anchors', 'known_lines', 'places'}]}]. `anchors` counts the
-    known lines whose newest version the board holds; with none (or no middling one) it places no model."""
+    known lines whose newest version the board holds; with fewer than MIN_LINES it places no model."""
     report, current = [], _current(kept)
     for kind in TYPES:
         rows = []
@@ -851,7 +867,7 @@ def types_report(kept):
             anchors = _anchors(board, current) if isinstance(board.get('rows'), list) else []
             rows.append({**{k: s[k] for k in ('name', 'reader', 'board', 'kind', 'citation')},
                          'read_at': board.get('read_at'), 'as_of': board.get('as_of'), 'anchors': len(anchors),
-                         'known_lines': len(LINES), 'places': _place(anchors, 0) is not None})
+                         'known_lines': len(LINES), 'places': len(anchors) >= MIN_LINES})
         report.append({'id': kind['id'], 'label': kind['label'], 'description': kind['description'], 'sources': rows})
     return report
 
@@ -859,4 +875,4 @@ def types_report(kept):
 def describe_source(row):
     text = f"{row['name']} ({row['kind']}): " + (f"read {_day(row['read_at'])}, " if row['read_at'] else 'not read yet, ')
     text += f"{row['anchors']} of {row['known_lines']} known lines"
-    return text + ('' if row['places'] else '; ' + ('no anchors' if not row['anchors'] else 'no middling anchor') + ': places no model')
+    return text + ('' if row['places'] else f'; fewer than {MIN_LINES}: places no model')
