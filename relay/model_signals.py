@@ -311,6 +311,19 @@ def _place(anchors, score):
     return 'cheap', weakest['middling'][1]
 
 
+RELATIONS = {'quantized': 'a quantized build', 'fine-tune': 'a fine-tuned build', 'variant': 'a variant'}
+
+
+def measured_as(deployment):
+    """(model id, relation) a profile declares in `native_measured_as`: a string is the same weights under another id
+    (relation None); {'model', 'relation'} names the base model of a build that is not it (RELATIONS): the reading's
+    numbers are then the base model's, and everything that shows or uses them says so. (None, None) without it."""
+    value = deployment.get('native_measured_as')
+    if isinstance(value, dict) and isinstance(value.get('model'), str) and value.get('relation') in RELATIONS:
+        return value['model'], value['relation']
+    return (value, None) if isinstance(value, str) else (None, None)
+
+
 def _match(saved, deployment):
     """The row of a route's model among those with no line, at the highest effort the reading lists for it, or None.
     Exact or nothing: an OpenRouter route's model id is the row's permaslug, with or without its `-YYYYMMDD`; any
@@ -321,7 +334,7 @@ def _match(saved, deployment):
     profile = deployment['native_profile']
     # A profile may say which measured model it serves when its own id is a variant of it with the same weights
     # (meta/muse-spark-1.3-contributor is Muse Spark 1.3 under a data-sharing term).
-    model = deployment.get('native_measured_as') or profile.get('model')
+    model = measured_as(deployment)[0] or profile.get('model')
     if not isinstance(model, str):
         return None
     openrouter = urlsplit(profile.get('endpoint') or '').hostname == 'openrouter.ai'
@@ -364,9 +377,10 @@ def _by_anchors(deployment, saved):
     if now and isinstance(before, dict) and (before.get('source'), before.get('version')) == (saved['source'], saved.get('version')):
         before = _placed(before, deployment)
         if before and before[0] == now[0]:
+            relation = measured_as(deployment)[1]
             return {'class': now[0], 'from': 'anchors', 'source': saved['source'], 'as_of': saved.get('as_of'),
                     'intelligence': now[2]['intelligence'], 'cost_per_task_usd': now[2].get('cost_per_task_usd'),
-                    'anchor': now[1]}
+                    'anchor': now[1], **({'base': now[2]['name'], 'relation': relation} if relation else {})}
 
 
 def _version_effort(deployment, model):
@@ -440,15 +454,26 @@ def task(deployment, saved=None):
     score, cost = row and _number(row.get('intelligence')), row and _number(row.get('cost_per_task_usd'))
     if score is None or cost is None or cost <= 0:
         return None
+    relation = measured_as(deployment)[1]
+    if relation:
+        from .challenger_variants import accounting
+        if accounting(deployment) == 'local':
+            return None  # the board's cost is what the full model costs by an API: a local build costs its energy
     lowest = min(s for r in board['rows'] if isinstance(r, dict) and (s := _number(r.get('intelligence'))) is not None)
     return {'score': score, 'cost_per_task_usd': cost, 'value': (score - lowest)/cost, 'source': 'arena',
-            'as_of': board['as_of'], 'effort': row.get('effort')}
+            'as_of': board['as_of'], 'effort': row.get('effort'),
+            **({'base': row['name'], 'relation': relation} if relation else {})}
 
 
 def describe_task(found):
     """One phrase for `tare models` and the matrix: what a task costs on the board, with its source and date; '' when
     the board has no figure. A public figure of the board, never tare's own measurement."""
-    return f"about US$ {found['cost_per_task_usd']:.2f} per task" + (f" at {found['effort']} effort" if found['effort'] else '')         + f" on the LMArena agent board, {found['as_of']}" if found else ''
+    return f"about US$ {found['cost_per_task_usd']:.2f} per task" + (f" at {found['effort']} effort" if found['effort'] else '')         + f" on the LMArena agent board, {found['as_of']}" + _of_base(found) if found else ''
+
+
+def _of_base(found):
+    """' (of its base model X; this route runs a quantized build)' when the numbers are a base model's, else ''."""
+    return f" (of its base model {found['base']}; this route runs {RELATIONS[found['relation']]})" if found.get('relation') else ''
 
 
 def own_record(storage=None):
@@ -506,7 +531,7 @@ def describe(result):
         return 'none (no model line, and no benchmark row to place it by)'
     if result['from'] == 'anchors':
         return (f"{result['class']}: {'falls below' if result['class'] == 'cheap' else 'reaches'} {result['anchor']} "
-                f"on {result['source']}, {result['as_of']}")
+                f"on {result['source']}, {result['as_of']}") + _of_base(result)
     text = result['class'] + (' (reading' if result['from'] == 'reading' else ' (line default')
     if result['from'] == 'line' and 'older_than' in result:
         text += f", one class lower: an older version than {result['older_than']}"

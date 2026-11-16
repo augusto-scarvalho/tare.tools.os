@@ -259,3 +259,29 @@ def test_the_class_sources_name_finds_the_boards_row_and_a_profile_may_say_what_
              'board': board(other('meta', 'Muse Spark 1.3', 0.01, effort='max', cost=0.5), other('meta', 'Muse Ember', -0.1, cost=0.02))}
     assert signals._match(saved, muse)['name'] == 'Muse Spark 1.3' and signals.task(muse, saved)['cost_per_task_usd'] == 0.5
     assert signals.task(route('meta/muse-spark-1.3-contributor'), saved) is None  # the id alone is another name
+
+
+def test_a_profile_may_name_its_base_model_and_the_numbers_then_say_they_are_the_bases():
+    """The owner, 2026-11-16: hauhaucs is Qwen3.8 27B dense, Qwen3.8 Omni Flash a variant of Flash-Next; the local
+    profiles say the rest (a quantized build, a Swift fine-tune). The measurement is the full model's: it is shown and
+    used as the base model's, never as the route's own, and a local build takes no API cost per task from it."""
+    def board(*rows):
+        return {'as_of': '2026-11-15', 'rows': list(rows)}
+    local = {'id': 'fixture', 'native_challenger_accounting': 'local', 'native_measured_as': {'model': 'qwen3.8-27b', 'relation': 'quantized'},
+             'native_profile': {'model': 'qwen38-gsq', 'endpoint': 'http://local-gateway:8080/v1', 'protocol': 'openai-chat', 'parameters_json': '{}'}}
+    saved = {**twice(other('qwen', 'Qwen3.8 27B', 20, effort='xhigh', permaslug='qwen/qwen3.8-27b-20260814')),
+             'board': board(other('alibaba', 'Qwen3.8-27B', -0.05, cost=0.4), other('alibaba', 'Qwen3.8-Flash-Next', -0.04, cost=0.2),
+                            other('meta', 'Muse Ember', -0.2, cost=0.02))}
+    found = signals.klass(local, saved)
+    assert (found['class'], found['base'], found['relation']) == ('cheap', 'Qwen3.8 27B', 'quantized')
+    assert signals.describe(found).endswith('(of its base model Qwen3.8 27B; this route runs a quantized build)')
+    assert signals.task(local, saved) is None  # the board's cost is an API's price of the full model
+    omni = {**route('qwen/qwen3.8-omni-flash'), 'native_measured_as': {'model': 'qwen3.8-flash-next', 'relation': 'variant'}}
+    omni['native_profile']['protocol'] = 'openai-chat'
+    figure = signals.task(omni, saved)
+    assert (figure['cost_per_task_usd'], figure['base'], figure['relation']) == (0.2, 'Qwen3.8-Flash-Next', 'variant')
+    assert signals.describe_task(figure).endswith('(of its base model Qwen3.8-Flash-Next; this route runs a variant)')
+    assert signals.klass(omni, saved) is None  # the class source does not list Flash-Next: no class is invented
+    # an unknown relation, or a field of another shape, declares nothing
+    assert signals.measured_as({'native_measured_as': {'model': 'x', 'relation': 'guess'}}) == (None, None)
+    assert signals.measured_as({'native_measured_as': 'meta/muse-spark-1.3'}) == ('meta/muse-spark-1.3', None)

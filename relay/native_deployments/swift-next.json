@@ -16,5 +16,6 @@
   "native_usage_contract": {
     "layout": "chat-inclusive",
     "source": "Strata per-request OpenAI usage; fields absent remain unknown"
-  }
+  },
+  "native_measured_as": {"model": "qwen3.8-flash-next", "relation": "fine-tune"}
 }
