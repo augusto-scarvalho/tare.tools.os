@@ -114,7 +114,7 @@ def test_describe_says_it_in_one_phrase():
     [kimi(55), kimi(30)],                                                             # two rows at the top effort
     [other('moonshotai', 'Kimi K3.1 Pro (0902)', 55, permaslug=KIMI+'-20261023')],     # a date the id does not carry
     [other('moonshotai', 'Kimi K3.1 Pro (Reasoning)', 55, permaslug=KIMI+'-20261023')],  # a variant
-    [other('moonshotai', 'Kimi K3.1 Pro', 55, permaslug=KIMI+'-0127')],                # a permaslug dated otherwise
+    [other('moonshotai', 'Kimi K3.1 Pro', 55, permaslug=KIMI+'-012')],                 # not a date
     [other('moonshotai', 'Kimi K3.1 Pro Code', 55, permaslug=KIMI+'-code-20261023')]])  # another model
 def test_an_ambiguous_dated_or_variant_row_matches_nothing(rows):
     assert signals._match(reading(rows), route(KIMI)) is None
@@ -135,6 +135,13 @@ def test_an_openrouter_route_matches_by_permaslug_with_or_without_its_date():
     assert signals._match(reading([undated]), route(KIMI))['intelligence'] == 44
     # the name is no way in for an OpenRouter route: another model's permaslug never matches
     assert signals._match(reading([other('x', 'Whatever', 55, permaslug='y/other-model-20261023')]), route(KIMI)) is None
+    # a permaslug dated with four digits (kimi-k2.5-0127 is a real one) is the same snapshot convention
+    short = other('moonshotai', 'Kimi K3.1 Pro', 33, permaslug=KIMI+'-0127')
+    assert signals._match(reading([short]), route(KIMI))['intelligence'] == 33
+    # a route id that shortens the date (-1017) is the permaslug of that date, and of no other
+    flash = other('deepseek', 'DeepSeek V4.1 Flash 1017', 30, permaslug='deepseek/deepseek-v4.1-flash-20261017')
+    assert signals._match(reading([flash]), route('deepseek/deepseek-v4.1-flash-1017'))['intelligence'] == 30
+    assert signals._match(reading([flash]), route('deepseek/deepseek-v4.1-flash-0731')) is None
 
 
 def test_another_route_matches_by_the_rows_name_and_its_vendor_when_it_has_one():
@@ -145,6 +152,28 @@ def test_another_route_matches_by_the_rows_name_and_its_vendor_when_it_has_one()
     assert signals._match(saved, route('other-vendor/kimi-k3.1-pro', 'https://gateway.example/v1')) is None
     assert signals._match(saved, route('kimi-k3.1', 'https://gateway.example/v1')) is None
     assert signals._match(saved, route('kimi-k3.1-pro-thinking', 'https://gateway.example/v1')) is None
+
+
+def test_one_house_spelled_two_ways_and_a_dated_row_name_still_match():
+    """Measured 2026-11-16 on the LMArena agent board: it names `moonshot`, `zai`, `xai` and `mistral` where the
+    routes say `moonshotai/`, `z-ai/`, `x-ai/` and `mistralai/`, and dates a name (`DeepSeek-V4.1-Flash-20261017`)
+    that the routes leave undated or shorten to `-1017`; ten installed routes then matched nothing."""
+    gateway = 'https://gateway.example/v1'
+    saved = reading([other('moonshot', 'Kimi K3.1 Pro', 55), other('zai', 'GLM-5.3', 40), other('xai', 'Grok 4.7', 35),
+                     other('deepseek', 'DeepSeek-V4.1-Flash-20261017', 30)])
+    for model, row in (('moonshotai/kimi-k3.1-pro', 'Kimi K3.1 Pro'), ('z-ai/glm-5.3', 'GLM-5.3'),
+                       ('x-ai/grok-4.7', 'Grok 4.7'), ('deepseek/deepseek-v4.1-flash', 'DeepSeek-V4.1-Flash-20261017'),
+                       ('deepseek/deepseek-v4.1-flash-1017', 'DeepSeek-V4.1-Flash-20261017'),
+                       ('deepseek-v4.1-flash', 'DeepSeek-V4.1-Flash-20261017')):
+        assert signals._match(saved, route(model))['name'] == row, model  # OpenRouter route, board without permaslug
+    for model in ('moonshine/kimi-k3.1-pro',  # another house, however close the spelling
+                  'deepseek/deepseek-v4.1-flash-0731',  # another date of the model
+                  'deepseek/deepseek-v4.1', 'z-ai/glm-5.3-flash'):  # another model
+        assert signals._match(saved, route(model, gateway)) is None, model
+    # two dates of one model on the board: the undated route cannot tell which is meant
+    two = reading([other('deepseek', 'DeepSeek-V4.1-Flash-20261017', 30), other('deepseek', 'DeepSeek-V4.1-Flash-20260731', 28)])
+    assert signals._match(two, route('deepseek-v4.1-flash', gateway)) is None
+    assert signals._match(two, route('deepseek/deepseek-v4.1-flash-1017', gateway))['name'].endswith('1017')
 
 
 def test_a_name_two_creators_claim_matches_nothing_unless_the_route_names_its_vendor():
