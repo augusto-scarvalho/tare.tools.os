@@ -87,7 +87,7 @@ the templates alone are used. An id that is a newer version of a line the templa
 model replaced and a `source` that says it came from the alias reading (account availability unchecked). It is
 managed like any discovered profile: retired when a later reading no longer resolves to it, never touched once you
 edit it. Its role row is then derived as for any newer version (see
-[shared GPU](SHARED_GPU.md)): pin only until proven.
+[shared GPU](SHARED_GPU.md)): pin only until proven, which the TUI does when it arrives (below).
 
 ### AGY: a new version without a template
 
@@ -122,6 +122,30 @@ both model fields replaced and a `source` that says it mirrors the id the CLI li
 that date; limits and parameters are the sibling's and no price is added. It is retired when the CLI no longer lists
 the id or a successful read no longer has it, and never touched once you edit it. Its role row is derived as for any
 newer version (the non-Pro sibling's row, since only that sibling has one): pin only until proven.
+
+### A new version is proven when it arrives
+
+The TUI proves such a route itself, so a new version does not wait for you to find it in `/routes`. When it starts
+in a terminal, right after discovery and the price reading, it looks for **arrivals**: routes with a derived role row
+(a newer version of a known line on its vendor's own CLI or API) that have no proof record at all, that can run now
+and that the routing profile leaves on for at least one of the row's roles. A route proven, failed or declined
+before is never tried or asked again by itself; `p` in `/routes` > "Models per role" and `tare setup --prove` still
+prove it again.
+
+- **On a subscription** (a route that counts against a plan, such as Claude Code, Codex or AGY) the proof runs with
+  no question, one route after another. The status line names the route and its cost line first (one minimal call and
+  one short task of at most 6 calls, on that plan's account). A notice then gives the outcome: passed (the route is
+  used automatically where its line is ticked in `/routes` and is now its line's newest version), or failed with the
+  reason (it stays pin only). This spends the plan's allowance without asking, once per new model version.
+- **On a pay-per-token route** nothing is called without a yes. The Prove dialog of `/routes` opens once, before the
+  subscription proofs start, and lists each such route with its cost line. Prove runs the same proofs. Cancel or Esc
+  records `{"ok": null, "reason": "not confirmed"}` under `proofs` in the setup, so the next start does not ask
+  again. A declined route counts as not proven everywhere.
+
+To keep tare from proving anything by itself, start it with `TARE_CLI_DISCOVERY=0` (which also turns discovery off),
+or switch the line off in `/routes` for every role its row has. Closing the TUI starts no further proof, but it
+waits for the one already running to finish (its task stops at 5 minutes). `tare serve`, `tare setup` and any entry
+with nobody present prove nothing by themselves.
 
 ### Gemini 4 Argon
 
