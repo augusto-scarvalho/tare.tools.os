@@ -18,6 +18,8 @@ ACCOUNTS = {'OPENAI_API_KEY': 'openai-api', 'ANTHROPIC_API_KEY': 'anthropic-api'
 DECLARABLE = frozenset({'openai-api', 'anthropic-api', 'gemini-api', 'bedrock', 'opencode-api'})
 # The usage.opencode.billing_source values that name a plan (not 'balance', 'byok' or 'free').
 PLANS = ('go', 'go-plus')
+# The account of every local model's energy rows (watt-hours, never dollars spent).
+LOCAL = 'local'
 # The subscriptions tare measures (relay/plan_consumption.py), each with the vendor API whose reference price values a call.
 EQUIVALENT_API = {'claude': 'https://api.anthropic.com', 'codex': 'https://api.openai.com',
                   'agy': 'https://generativelanguage.googleapis.com'}
@@ -48,7 +50,71 @@ def post(deployment, usage, session, now=None, since=None):
     posted = record(deployment, calls[done:], now, since=since)
     if len(calls) != done:
         marker.write_text(json.dumps({'calls': len(calls)}), encoding='utf-8')
+        if len(calls) > done and type(since) in (int, float):
+            try:  # the energy is only shown; whatever goes wrong here never touches the session
+                record_energy(deployment, since, time.time() if now is None else now)
+            except Exception:
+                pass
     return posted
+
+
+def node_watts(deployment, began, ended):
+    """The average watts the model's node measured for its GPU between two times, or None (an old node, no
+    nvidia-smi, unreachable, no reading in the span). One request, 2 s."""
+    from urllib.request import urlopen
+    base = deployment['native_profile']['endpoint'].rstrip('/').rsplit('/v1', 1)[0]
+    try:
+        with urlopen(f'{base}/v1/gpu/power?since={began}&until={ended}', timeout=2) as reply:
+            watts = float(json.load(reply)['watts'])
+    except Exception:  # any failure is no reading, never an error in the call's result
+        return None
+    return watts if 0 < watts < 10000 else None  # also drops nan and the null of "no reading"
+
+
+def record_energy(deployment, began, ended):
+    """Add the energy a local route's GPU drew between two times to the ledger, as an 'energy_wh' row for the
+    account 'local' (watt-hours, not dollars: the price is read when it is shown). Never money spent: it has no 'usd',
+    so spent(), a declared balance and a spending cap do not see it. The watts are the node's measurement; failing
+    that, the ones `tare setup --local-watts` declared; failing both, nothing. Measured only once the user set a price
+    or watts: until then no local endpoint gets a request it did not ask for (a loopback server that is not a tare
+    node would answer 404, or cost its timeout, after every invocation). Rows added."""
+    from .challenger import local
+    seconds = ended - began
+    if not (settings := local_energy()) or not local(deployment) or not 0 < seconds < 7 * 86400:
+        return 0
+    watts, source = node_watts(deployment, began, ended), 'measured'
+    if watts is None:
+        watts, source = settings.get('watts'), 'declared'
+    if watts is None:
+        return 0
+    folder().mkdir(parents=True, exist_ok=True)
+    with open(folder()/'provider-spend.jsonl', 'a', encoding='utf-8') as ledger:
+        ledger.write(json.dumps({'at': ended, 'account': LOCAL, 'deployment': deployment.get('id'),
+                                 'model': str(deployment['native_profile'].get('model') or '').lower(),
+                                 'energy_wh': watts*seconds/3600, 'watts': watts, 'seconds': seconds,
+                                 'source': source}) + '\n')
+    return 1
+
+
+def local_energy():
+    """What `tare setup` holds for local energy: {'price_kwh': US$ per kWh, 'watts': declared load}, each when set."""
+    from .environment import read
+    section = read().get('local_energy')
+    return {k: v for k, v in section.items() if k in ('price_kwh', 'watts') and type(v) in (int, float) and v > 0
+            } if isinstance(section, dict) else {}
+
+
+def energy_report(now, days=7):
+    """The local account's energy of the last `days` days for `tare quota`, or None without a row: kWh (and how much
+    of it at declared watts) and, when a price is set, its cost at that price."""
+    since = now - days*86400
+    measured, declared = (spent(LOCAL, since, 'energy_wh', source=s) / 1000 for s in ('measured', 'declared'))
+    if not measured + declared:
+        return None
+    price = local_energy().get('price_kwh')
+    kwh = measured + declared
+    return {'days': days, 'kwh': round(kwh, 4), 'declared_kwh': round(declared, 4), 'price_kwh': price,
+            'usd': round(kwh*price, 4) if price else None, 'scope': 'GPU only'}
 
 
 def equivalent(deployment, call):
@@ -115,16 +181,18 @@ def record(deployment, calls, now=None, since=None):
     return len(rows)
 
 
-def spent(name, since, field='usd', reference=False):
-    """Dollars tare recorded for this account from `since` on (field 'allowance': of OpenCode's plan allowance;
-    `reference`: only those valued at a models.dev reference price)."""
+def spent(name, since, field='usd', reference=False, source=None):
+    """Dollars tare recorded for this account from `since` on (field 'allowance': of OpenCode's plan allowance, 'energy_wh':
+    of the local account's energy; `reference`: only those valued at a models.dev reference price; `source`: only the
+    energy rows measured or declared)."""
     total = 0.0
     try:
         with open(folder()/'provider-spend.jsonl', encoding='utf-8') as ledger:
             for line in ledger:
                 try:
                     row = json.loads(line)
-                    if row['account'] == name and row['at'] >= since and (not reference or row.get('reference')):
+                    if row['account'] == name and row['at'] >= since and (not reference or row.get('reference')) \
+                            and (source is None or row.get('source') == source):
                         total += float(row[field])
                 except (ValueError, KeyError, TypeError):
                     continue  # a torn line is not a charge

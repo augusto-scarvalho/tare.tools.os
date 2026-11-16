@@ -30,6 +30,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib import request as urllib_request
+from urllib.parse import parse_qs, urlsplit
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 
@@ -54,6 +55,7 @@ from tare_node.fleet_count import (  # noqa: E402
     BINDING_FIELD, BindingMismatch, check_binding, count_request, effective_profile,
 )
 from tare_node.gpu_lease import GpuBusy, SharedGpuLease, eta_seconds  # noqa: E402
+from tare_node.gpu_lease_run import PowerLog, gpu_sample  # noqa: E402
 from tare_node.comfy_routes import (  # noqa: E402
     ComfyBackendError,
     ComfyRouteError,
@@ -412,6 +414,7 @@ MAX_RESERVATION, TTL_RANGE, MAX_RESERVE_WAIT = 4 * 3600, (15, 600), 120
 RESERVATION_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 GPU_API_TOKEN: str | None = None
 RESERVATION: dict[str, Any] | None = None
+POWER = PowerLog()  # the board's power, sampled while the gateway runs (GET /v1/gpu/power)
 RESERVATION_LOCK = threading.Lock()
 RESERVING = threading.Lock()  # one reservation being acquired at a time
 
@@ -700,6 +703,15 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
         if path in {"/health", "/v1/health", "/fleet/status", "/v1/fleet/status"}:
             send_json(self, 200, with_reservation(RUNTIME.status()))
+            return
+        if path == "/v1/gpu/power":  # read-only, like /v1/fleet/status: average watts between two Unix times
+            query = parse_qs(urlsplit(self.path).query)
+            try:
+                since, until = (float(query[key][0]) for key in ("since", "until"))
+            except (KeyError, ValueError):
+                send_json(self, 400, {"error": {"type": "invalid_request", "message": "since and until, Unix seconds"}})
+                return
+            send_json(self, 200, POWER.average(since, until) or {"watts": None, "samples": 0})
             return
         if path == "/v1/fleet/recommend":
             if "host_modes" not in RUNTIME.config["fleet"]:
@@ -1221,6 +1233,14 @@ def main(argv: list[str] | None = None) -> int:
                 RUNTIME.unload_if_idle()
 
     threading.Thread(target=idle_watch, name="idle-unload", daemon=True).start()
+
+    def power_watch() -> None:
+        while True:  # no nvidia-smi: no readings, and the route says it has none
+            if (reading := gpu_sample()) is not None:
+                POWER.add(reading[0])
+            time.sleep(5)
+
+    threading.Thread(target=power_watch, name="gpu-power", daemon=True).start()
 
     global GPU_API_TOKEN
     token_file = Path(args.gpu_api_token_file or Path(args.state_dir) / "api-token")
