@@ -69,7 +69,9 @@ def test_first_party_api_route_takes_its_models_reference_price_labelled_everywh
     assert native_profiles.describe('claude-api-fable-5-2')['cost_accounting'] == 'reference_price'
     facts = route_facts.collect(deployment)['price']
     assert facts['status'] == 'REFERENCE_PRICE' and 'read 2026-11-14' in facts['scope']
-    assert cost_line(deployment).endswith('(at a models.dev reference price read 2026-11-14, not a confirmed tariff)')
+    line = cost_line(deployment)  # the minimal call is priced by the reference; the short task after it is not
+    assert '(at a models.dev reference price read 2026-11-14, not a confirmed tariff), then one short task' in line
+    assert line.endswith('at the same rates, its tokens unknown before it runs')
 
 
 def test_own_tariff_comes_first(reading):
