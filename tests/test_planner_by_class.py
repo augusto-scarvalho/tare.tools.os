@@ -36,9 +36,10 @@ def test_a_route_switched_off_for_the_planner_never_plans(pool):
 def test_the_planner_prefers_a_frontier_route_per_token_to_a_middling_subscription_one(pool):
     names = planning_tools.snapshot()['route_order']
     frontier = [n for n in names if (klass(native_catalog.select(n)) or {}).get('class') == 'frontier']
-    assert {'openai-api-gpt-6-astra', 'claude-api-fable-5-1'} <= set(frontier)
+    assert 'openai-api-gpt-6-astra' in frontier and 'claude-api-fable-5-1' not in frontier  # 5.1: an older version
     assert names[:len(frontier)] == frontier  # every route that reaches frontier precedes any that falls short
-    assert names.index('claude-api-fable-5-1') < names.index(SUBSCRIPTION)
+    assert names.index('openai-api-gpt-6-astra') < names.index(SUBSCRIPTION)
+    assert names.index('openai-api-gpt-6-astra') < names.index('claude-api-fable-5-1')  # the newer line first
     _, selection = native_routes.ranked('planner')
     short = {row['deployment']: row['classes_short'] for row in selection['candidates'] if row['eligible']}
     assert short['openai-api-gpt-6-astra'] == 0 and short[SUBSCRIPTION] == 1
