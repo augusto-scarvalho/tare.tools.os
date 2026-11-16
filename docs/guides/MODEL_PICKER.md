@@ -89,6 +89,21 @@ managed like any discovered profile: retired when a later reading no longer reso
 edit it. Its role row is then derived as for any newer version (see
 [shared GPU](SHARED_GPU.md)): pin only until proven.
 
+### AGY: a new version without a template
+
+AGY lists its models for the signed-in account (`agy models`, no model call). Discovery runs it through the located
+executable and keeps the ids in the same cache (`cli-discovery.json`, key `agy_models`). It reads again when the
+executable file changes or the last attempt is a day old, since the list depends on the account too; a read that fails,
+times out or lists no id keeps the last ids (and counts as the attempt, so it is not repeated for a day). Ids are grouped
+by base (the id without its effort suffix). A base that is a newer version of a line than every AGY template of that
+line (`gemini-4.1-argon` beside `agy-gemini-4-argon-cli`, `claude-opus-5-6` beside `agy-claude-opus-5-5-cli`) gets
+the profile `agy-<base>-cli` (dots become hyphens), copied from that line's newest template: `model` is the listed id
+at the template's effort (the nearest listed one when AGY does not list it, and the `source` says which), and
+`native_reasoning_models` is rebuilt from the listed ids for the efforts the template maps only (never an effort it
+lacked). It is retired only when a later successful read no longer lists the base, and never touched once you edit it.
+An older or equal version, an id with no known line (`gpt-oss-120b-medium`) and a line with no AGY template change
+nothing. Its role row is derived as for any newer version: pin only until proven.
+
 ### Gemini 4 Argon
 
 AGY discovery offers `agy-gemini-4-argon-cli`, shown as **Gemini 4 Argon**.

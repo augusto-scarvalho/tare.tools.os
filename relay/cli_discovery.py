@@ -4,12 +4,14 @@ A CLI is 'found' when installed and 'ready' once it answered a proof the owner a
 /setup): one real, tiny generation through the normal inference path, cached per executable file.
 Codex models come from Codex's own per-account cache (~/.codex/models_cache.json) when it
 exists, otherwise from the shipped templates. Claude Code has no listing: a model id that one of its family aliases
-resolves to and no template names yet is offered too (alias_models), read once per executable file.
+resolves to and no template names yet is offered too (alias_models), read once per executable file. AGY lists its
+models (`agy models`, per account): a newer version of a line its templates have is offered too (agy_profiles), read
+again when the file changes or the reading is a day old.
 Discovery keeps the profiles it wrote current (the
 cache records each written file's hash); a profile the user wrote or edited is never replaced.
 """
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -108,6 +110,86 @@ def alias_profiles(wanted, reading):
     return found
 
 
+def agy_listing(executable):
+    """The model ids `agy models` prints for the signed-in account (no model call): one 'id<TAB>Display' per line."""
+    done = subprocess.run([executable, 'models'], capture_output=True, text=True, timeout=60,
+                          stdin=subprocess.DEVNULL, cwd=str(Path(executable).absolute().parent))
+    if done.returncode:
+        raise OSError(f'agy models exited {done.returncode}')
+    # The id becomes a profile name: lowercase letters, digits, dots and hyphens only.
+    return [i for i in (l.split('	')[0].strip() for l in done.stdout.splitlines() if '	' in l)
+            if re.fullmatch(r'[a-z0-9][a-z0-9.-]*', i)]
+
+
+def agy_models(cache, executable):
+    """The `agy models` reading, kept in the cache and taken again when the executable file changes or the last
+    attempt is a day old (the list depends on the account too). An attempt that fails, or lists no id, keeps the
+    last ids; it counts as the attempt, so a CLI that cannot list is not started on every discovery.
+    `read_at` moves only when the ids change, so a profile's source does not change every day."""
+    held = cache.get('agy_models')
+    held = held if isinstance(held, dict) else {}
+    now = datetime.now(timezone.utc)
+    try:
+        fresh = held.get('fingerprint') == fingerprint(executable) and now - datetime.fromisoformat(held['checked_at']) < timedelta(days=1)
+    except (KeyError, TypeError, ValueError):
+        fresh = False
+    if not fresh:
+        try:
+            ids = agy_listing(executable)
+        except Exception:
+            ids = None
+        held = {'ids': held.get('ids') or [], 'read_at': held.get('read_at', ''), 'fingerprint': fingerprint(executable),
+                'checked_at': now.isoformat()}
+        if ids:
+            if sorted(ids) != sorted(held['ids']):
+                held['read_at'] = now.isoformat()
+            held['ids'] = ids
+        cache['agy_models'] = held
+    return held
+
+
+def agy_profiles(wanted, reading):
+    """Profiles for the AGY models that are a newer version of a line the templates have (gemini-4.1-argon beside
+    agy-gemini-4-argon-cli), copied from that line's newest template. AGY lists one id per effort: the map is rebuilt
+    from the listed ids for the efforts the template maps and never gains one (the Kernel takes only those)."""
+    from .vendor_models import AGY_EFFORT, line, parse
+    efforts = {}
+    for i in reading.get('ids') or []:
+        if AGY_EFFORT.search(i):
+            efforts.setdefault(AGY_EFFORT.sub('', i), set()).add(AGY_EFFORT.search(i)[1])
+    found = {}
+    for base, listed in sorted(efforts.items()):
+        if not line(base):
+            continue
+        vendor, name, version = parse(base)
+        same = {n: parse(AGY_EFFORT.sub('', t['native_profile']['model']))[2] for n, t in wanted.items()
+                if parse(AGY_EFFORT.sub('', t['native_profile']['model']))[:2] == (vendor, name)}
+        if not same or version <= max(same.values()):
+            continue
+        template = max(same, key=lambda n: (same[n], n))
+        value = deepcopy(wanted[template])
+        mapped = [e for e in value['native_reasoning_models'] if e in listed]
+        params = json.loads(value['native_profile'].get('parameters_json') or '{}')
+        if not mapped:
+            continue
+        effort = params.get('effort')
+        rule = f"the template's effort {effort}"
+        if effort not in mapped:  # nearest listed effort, the lower one on a tie
+            order = ('low', 'medium', 'high', 'xhigh', 'max')
+            effort = min(mapped, key=lambda e: (abs(order.index(e)-order.index(params.get('effort', 'high'))), order.index(e)))
+            rule = f"nearest listed effort {effort}, the template's {params.get('effort')} is not listed"
+        params['effort'] = effort
+        value['id'] = f'agy-{base.replace(".", "-")}-cli'
+        value['model'] = value['native_profile']['model'] = f'{base}-{effort}'
+        value['native_profile']['parameters_json'] = json.dumps(params, separators=(',', ':'))
+        value['native_reasoning_models'] = {e: f'{base}-{e}' for e in mapped}
+        value['native_profile'].pop('expected_response_model', None)
+        value['native_profile']['source'] = (f"Exact model IDs from agy models {reading.get('read_at', '')[:10]}, copied from "
+                                             f"{template}, {rule}; account availability unchecked")
+        found[value['id']] = value
+    return found
+
+
 def desired_profiles(templates, endpoint, executable, reading=None):
     wanted = {name: deployment(template, executable) for name, template in templates.items()
               if template['native_profile']['endpoint'] == endpoint}
@@ -124,6 +206,8 @@ def desired_profiles(templates, endpoint, executable, reading=None):
         wanted.update(expand(bases, models))
     if endpoint == 'cli://claude' and reading:
         wanted.update(alias_profiles(wanted, reading))
+    if endpoint == 'cli://agy' and reading:
+        wanted.update(agy_profiles(wanted, reading))
     return wanted
 
 
@@ -254,7 +338,7 @@ def discover():
             continue
         row['status'] = 'ready' if cache.get(endpoint, {}).get('fingerprint') == fingerprint(executable) else 'found'
         managed = cache.setdefault('managed', {})
-        reading = alias_models(cache, executable) if endpoint == 'cli://claude' else None
+        reading = {'cli://claude': alias_models, 'cli://agy': agy_models}.get(endpoint, lambda *a: None)(cache, executable)
         wanted = desired_profiles(templates, endpoint, executable, reading)
         for name, value in sorted(wanted.items()):
             state = write_profile(name, value, managed)
