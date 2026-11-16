@@ -106,11 +106,11 @@ def test_planner_picker_saves_separate_model_and_allowance_without_a_model_call(
             await pilot.pause()
             assert app.screen is panel and panel.planner_profile is not None, str(panel.query_one('#delegation-status', Static).render())
             panel.query_one('#delegation-planner_child', Switch).value = True
-            routes_before = turn_engine.policy()['planner']
+            routes_before = turn_engine.policy().get('planner')  # none: automatic
             panel.query_one('#delegation-calls', Input).value = '0'
             await pilot.click('#delegation-save')
             await pilot.pause()
-            assert turn_engine.policy()['planner'] == routes_before
+            assert turn_engine.policy().get('planner') == routes_before
             assert 'Invalid exploration limit' in str(panel.query_one('#delegation-status', Static).render())
             panel.query_one('#delegation-calls', Input).value = '4'
             await pilot.pause(.4)  # Let the button's click debounce end after validation feedback.

@@ -16,7 +16,7 @@ def test_the_owners_routes_replace_tares_role_by_role_and_unknown_names_are_refu
     value = turn_engine.save_policy({'implementer': tiers, 'auditor': [['bedrock-opus'], ['bedrock-sonnet']],
                                      'planner': []})
     assert value['implementer'] == tiers and value['auditor'] == ['bedrock-opus', 'bedrock-sonnet']
-    assert value['planner'] == turn_engine.DEFAULT_POLICY['planner']  # empty keeps tare's default
+    assert 'planner' not in value  # empty keeps tare's default: no list, the planner is automatic
     assert set(json.loads(turn_engine.policy_path().read_text(encoding='utf-8'))) == {'implementer', 'auditor', 'auditor_selection'}
     with pytest.raises(ValueError, match='nonsense-route'):
         turn_engine.save_policy({'implementer': [['nonsense-route']]})

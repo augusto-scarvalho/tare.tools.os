@@ -10,6 +10,14 @@ from .native_agent import read_json
 COST = {'free': 0, 'flat': 1, 'free-credit': 2, 'metered': 3}
 
 
+# The class (model_signals.ORDER) each role wants. Human policy, not a measurement, and the one place to change it
+# (owner, 2026-11-15): planning is where the strongest model pays, so the planner wants frontier (Astra, Fable,
+# Carbon). Checking code and plans for defects is done as well or better by the class below (Sol, Opus, Argon), so
+# the reviewers want middling. A route that falls short goes last; one above the wanted class is used after the
+# exact one on the same kind of allowance. What a user wants otherwise is ticked in /routes > Models per role.
+WANTED = {'planner': 'frontier', 'plan-auditor': 'middling', 'auditor': 'middling'}
+
+
 def configured():
     path = Path(os.environ.get('TARE_ROLE_DEPLOYMENTS') or Path(__file__).with_name('role_deployments.json'))
     from .round_table_roster import load_role_deployments
@@ -142,6 +150,8 @@ def _ranked(role, producer=None, *, check_resources=False):
     fact_cache = {}; evidence = route_facts.supplied_evidence(); observed_facts = {}
     from .turn_engine import cross_vendor_first
     first = bool(author) and cross_vendor_first()  # off: --any_vendor_auditor or /routes
+    from .model_signals import ORDER, klass
+    need = WANTED.get(role)
     for order, row in enumerate(table['deployments']):
         decision = {'deployment': row['id'], 'eligible': False}
         decisions.append(decision)
@@ -183,17 +193,22 @@ def _ranked(role, producer=None, *, check_resources=False):
                     else 'CONFIGURED_INDEPENDENT_NATIVE_ROUTE' if kind == 'INDEPENDENT' else kind),
             cost_tier=row['cost_tier'], cross_vendor=cross, profile_sha256=fingerprint,
             selected_deployment=deployment['id'], availability='CREDENTIAL_PRESENT_HOST_UNPROBED' if key else 'HOST_UNPROBED')
-        priority = row.get('review_priority', 1000) if role in {'auditor', 'plan-auditor'} else 0
-        decision['review_priority'] = priority
+        # Classes short of the wanted one, and above it: a model with no line counts as cheap.
+        gap = ORDER.index((klass(deployment) or {}).get('class') or 'cheap') - ORDER.index(need) if need else 0
+        fall, above = max(0, -gap), max(0, gap)
+        decision['classes_short'] = fall
         cli_backup = (role in {'auditor', 'plan-auditor'} and
                       (deployment['native_profile']['endpoint'] == 'cli://codex' or row['id'] == 'claude-cli'))
         signal = surplus(deployment, cache=lapsing)  # an allowance about to lapse, in surplus: None otherwise
         if signal:
             decision['expiring'] = signal
         # An independent auditor always precedes an admitted same-family one, and another vendor precedes the same
-        # vendor before any preference, tier or priority: a same-vendor auditor runs only when no other is eligible.
-        # With `first` off the vendor leaves the order: preference, lapsing allowance, tier, priority, primary, CLI backup, table order.
-        rank = (same_family, first and not cross, current().preference(deployment,role), lapse_order(signal), COST[row['cost_tier']], priority, row['kind'] != 'primary', cli_backup, order)
+        # vendor before any preference, class or tier: a same-vendor auditor runs only when no other is eligible.
+        # With `first` off the vendor leaves the order. Then the user's preference, a route that reaches the wanted
+        # class before one that falls short (move `fall` to change how much the class weighs against allowance and
+        # tier), a lapsing allowance, tier, the exact class before one above it (Sol before Astra on one
+        # subscription, from the class and not from a number per route), primary, CLI backup, table order.
+        rank = (same_family, first and not cross, current().preference(deployment,role), fall, lapse_order(signal), COST[row['cost_tier']], above, row['kind'] != 'primary', cli_backup, order)
         eligible.append((rank, deployment, decision))
     if check_resources:
         kept = []
@@ -218,7 +233,8 @@ def _ranked(role, producer=None, *, check_resources=False):
         'roster_sha256': author.payload['roster_sha256'] if author else None,
         'candidates': decisions, 'generation_calls': 0,
         **({'expiring_first': True} if any(d.get('expiring') for _, _, d in eligible) else {}),
-        'cost_scope': 'Configured tiers and operator review preference; no price estimate or measured quality ranking.'}
+        'cost_scope': ('Wanted class of the role, then configured cost tiers' if need else 'Configured cost tiers')
+                      + '; no price estimate or measured quality ranking.'}
 
 
 def independent_auditors(producer):

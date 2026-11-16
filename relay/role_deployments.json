@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "purpose": "Operator role admission. Frontier plan/audit prefers another vendor, subscription quota before metered API, Sol before Astra and Opus before Fable within the same allowance class; Google uses Argon. This is preference policy, not measured quality or a public model ranking. local_only_roles are taken only in --local_only mode, because the owner chose that mode: an operator admission, not a quality claim. There an audit by the implementer's own model family is labelled not independent and applies only after the user confirms it in the TUI; every other mode keeps the roles list and the independence rule unchanged.",
+  "purpose": "Operator role admission. Frontier plan/audit prefers another vendor, then a route that reaches the class the role wants (relay/native_routes.py WANTED: the planner wants frontier, reviewers the class below it, which checks code as well; the class is from relay/model_signals.py), then subscription quota before metered API. No hand-written order of models. This is preference policy, not a measured quality ranking. local_only_roles are taken only in --local_only mode, because the owner chose that mode: an operator admission, not a quality claim. There an audit by the implementer's own model family is labelled not independent and applies only after the user confirms it in the TUI; every other mode keeps the roles list and the independence rule unchanged.",
   "deployments": [
     {
       "id": "local-qwen",
@@ -58,7 +58,6 @@
       "kind": "primary",
       "cost_tier": "flat",
       "native_catalog": "claude-cli",
-      "review_priority": 0,
       "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
     },
     {
@@ -114,8 +113,7 @@
       "kind": "primary",
       "cost_tier": "flat",
       "native_catalog": "claude-fable-5-1-cli",
-      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified.",
-      "review_priority": 1
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
     },
     {
       "id": "claude-fable-5-2-cli",
@@ -136,8 +134,7 @@
       "cost_tier": "flat",
       "qualified": false,
       "native_catalog": "claude-fable-5-2-cli",
-      "note": "Fable 5.1's roles; Claude Code 2.1.325 lists claude-fable-5-2 (2026-11-13). Pin only until qualified through tare. Subscription quota and incremental billing remain unverified.",
-      "review_priority": 1
+      "note": "Fable 5.1's roles; Claude Code 2.1.325 lists claude-fable-5-2 (2026-11-13). Pin only until qualified through tare. Subscription quota and incremental billing remain unverified."
     },
     {
       "id": "claude-opus-5-5-cli",
@@ -158,8 +155,7 @@
       "kind": "primary",
       "cost_tier": "flat",
       "native_catalog": "claude-opus-5-5-cli",
-      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified.",
-      "review_priority": 0
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
     },
     {
       "id": "agy-cli",
@@ -197,8 +193,7 @@
       "kind": "primary",
       "cost_tier": "flat",
       "native_catalog": "codex-cli",
-      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified.",
-      "review_priority": 1
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
     },
     {
       "id": "codex-cli-gpt-5-5",
@@ -309,8 +304,7 @@
       "kind": "primary",
       "cost_tier": "flat",
       "native_catalog": "codex-native",
-      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified.",
-      "review_priority": 1
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
     },
     {
       "id": "codex-native-gpt-5-5",
@@ -564,8 +558,7 @@
       "kind": "primary",
       "cost_tier": "flat",
       "native_catalog": "agy-gemini-4-argon-cli",
-      "note": "Operator-designated frontier peer of Astra and Fable; exact AGY model IDs observed 2026-10-17. Resolve the installed profile; quota, billing and comparative quality remain separately evidenced.",
-      "review_priority": 0
+      "note": "Operator-designated frontier peer of Astra and Fable; exact AGY model IDs observed 2026-10-17. Resolve the installed profile; quota, billing and comparative quality remain separately evidenced."
     },
     {
       "id": "agy-gemini-4-hydrogen-cli",
@@ -643,7 +636,6 @@
       ],
       "kind": "primary",
       "cost_tier": "flat",
-      "review_priority": 0,
       "native_catalog": "codex-native-gpt-6-1-sol",
       "note": "Operator-admitted frontier. Prefer this native connection's stable cache identity over a new Codex CLI process. Uses the same subscription allowance."
     },
@@ -663,7 +655,6 @@
       ],
       "kind": "primary",
       "cost_tier": "flat",
-      "review_priority": 0,
       "native_catalog": "codex-cli-gpt-6-1-sol",
       "note": "Operator-admitted frontier CLI backup; Sol 6.1 precedes Astra within the same allowance class."
     },
@@ -685,7 +676,6 @@
       ],
       "kind": "primary",
       "cost_tier": "metered",
-      "review_priority": 0,
       "native_catalog": "openai-api",
       "note": "Operator-admitted frontier. Prefer a different vendor, then configured allowance class and review preference. API credit is separate from CLI quota; no measured quality or savings claim. Pro execution modes are not automatic reviewer choices. Available for implementation/exploration in a restricted TUI launch; the ordinary execution ladder is unchanged."
     },
@@ -707,7 +697,6 @@
       ],
       "kind": "primary",
       "cost_tier": "metered",
-      "review_priority": 1,
       "native_catalog": "openai-api-gpt-6-astra",
       "note": "Operator-admitted frontier. Prefer a different vendor, then configured allowance class and review preference. API credit is separate from CLI quota; no measured quality or savings claim. Pro execution modes are not automatic reviewer choices. Available for implementation/exploration in a restricted TUI launch; the ordinary execution ladder is unchanged."
     },
@@ -729,7 +718,6 @@
       ],
       "kind": "primary",
       "cost_tier": "metered",
-      "review_priority": 0,
       "native_catalog": "claude-api-opus-5-5",
       "note": "Operator-admitted frontier. Prefer a different vendor, then configured allowance class and review preference. API credit is separate from CLI quota; no measured quality or savings claim. Pro execution modes are not automatic reviewer choices. Available for implementation/exploration in a restricted TUI launch; the ordinary execution ladder is unchanged."
     },
@@ -751,7 +739,6 @@
       ],
       "kind": "primary",
       "cost_tier": "metered",
-      "review_priority": 1,
       "native_catalog": "claude-api-fable-5-1",
       "note": "Operator-admitted frontier. Prefer a different vendor, then configured allowance class and review preference. API credit is separate from CLI quota; no measured quality or savings claim. Pro execution modes are not automatic reviewer choices. Available for implementation/exploration in a restricted TUI launch; the ordinary execution ladder is unchanged."
     },
@@ -773,7 +760,6 @@
       ],
       "kind": "primary",
       "cost_tier": "metered",
-      "review_priority": 1,
       "qualified": false,
       "native_catalog": "claude-api-fable-5-2",
       "note": "Fable 5.1's roles; Anthropic's model list, read 2026-11-13. Pin only until qualified through tare. API credit is separate from CLI quota; no measured quality or savings claim."
@@ -815,7 +801,6 @@
       ],
       "kind": "primary",
       "cost_tier": "metered",
-      "review_priority": 0,
       "qualified": false,
       "native_catalog": "gemini-api-4-carbon",
       "note": "Gemini 4 Argon's roles: Google's model page names Carbon its most capable reasoning model, above Argon. Gemini model list, read 2026-11-13. Pin only until qualified through tare; no measured quality or savings claim."
@@ -857,7 +842,6 @@
       ],
       "kind": "primary",
       "cost_tier": "metered",
-      "review_priority": 0,
       "native_catalog": "gemini-api",
       "note": "Operator-admitted frontier. Prefer a different vendor, then configured allowance class and review preference. API credit is separate from CLI quota; no measured quality or savings claim. Pro execution modes are not automatic reviewer choices. Available for implementation/exploration in a restricted TUI launch; the ordinary execution ladder is unchanged."
     },
@@ -878,8 +862,7 @@
       "kind": "primary",
       "cost_tier": "metered",
       "native_catalog": "openrouter-kimi-k3-1-pro",
-      "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality.",
-      "review_priority": 2
+      "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality."
     },
     {
       "id": "openrouter-deepseek-v4-1-flash-1017",
@@ -974,8 +957,7 @@
       "kind": "primary",
       "cost_tier": "metered",
       "native_catalog": "openrouter-muse-wonder",
-      "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality.",
-      "review_priority": 2
+      "note": "OpenRouter model and endpoint catalogue, consulted 2026-11-01; metadata admission, not measured delivery quality."
     },
     {
       "id": "openrouter-step-5-preview",

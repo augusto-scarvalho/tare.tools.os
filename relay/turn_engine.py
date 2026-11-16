@@ -46,9 +46,7 @@ DEFAULT_POLICY = {
          'openrouter-glm-5-3'],
         ['codex-native', 'codex-cli', 'claude-fable-5-1-cli', 'agy-gemini-4-argon-cli'],
     ],
-    'planner': ['codex-native-gpt-6-1-sol', 'codex-cli-gpt-6-1-sol', 'claude-opus-5-5-cli',
-                'agy-gemini-4-argon-cli', 'codex-native', 'codex-cli', 'claude-fable-5-1-cli',
-                'openai-api', 'claude-api-opus-5-5', 'gemini-api', 'openai-api-gpt-6-astra', 'claude-api-fable-5-1'],
+    # No 'planner' list: unless the owner saves one, the planner is chosen from the role table (planner_routes).
     'planner_effort': 'high',
     # Frontier auditors review each turn that changed code; a vendor other than the implementer's goes first.
     'auditor': ['codex-native-gpt-6-1-sol', 'codex-cli-gpt-6-1-sol', 'claude-opus-5-5-cli',
@@ -114,6 +112,17 @@ def policy():
             saved['auditor_selection'] = 'configured'
         return {**DEFAULT_POLICY, **saved}
     return DEFAULT_POLICY
+
+
+def planner_routes():
+    """The planner's route names in order: the owner's saved list (/routes Order tab), else the role table's planner
+    routes as native_routes.ranked ranks them (what the matrix shows), so no list of names is kept in the code."""
+    if saved := policy().get('planner'):
+        return saved
+    from .native_routes import ranked
+    deployments, selection = ranked('planner')
+    names = {row['selected_deployment']: row['catalog'] for row in selection['candidates'] if row.get('eligible')}
+    return [names[value['id']] for value in deployments]
 
 
 def cross_vendor_first():

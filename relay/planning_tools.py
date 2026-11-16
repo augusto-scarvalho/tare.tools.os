@@ -83,7 +83,7 @@ def snapshot():
     """The planner routes a session freezes at its start. Any account's: the flags, the routing profile and pins limit
     them where the planner is chosen (owner, 2026-11-14)."""
     from . import native_catalog
-    from .turn_engine import policy
+    from .turn_engine import planner_routes, policy
     from .execution_scope import current, pinned
     if current().pin('planner'):
         with for_role('planner'):
@@ -91,15 +91,15 @@ def snapshot():
         name = value['native_model_choice']['connection']
         return {'routes': {name: value}, 'route_order': [name], 'origin': 'EXACT_TEMPORARY_PIN'}
     routes = {}
-    for name in policy()['planner']:
+    for name in planner_routes():
         try:
             routes[name] = native_catalog.select(name)
         except (ValueError, OSError, KeyError, TypeError):
             continue
-    # An allowance that lapses in surplus is used first here too, among the routes the profile leaves on for the
-    # planner: a Claude week ending today was left unused while planning went to a Codex week with 6% left.
+    # The role table's order already puts a lapsing allowance in surplus first, after the class. The owner's own list
+    # gets it here: a Claude week ending today was left unused while planning went to a Codex week with 6% left.
     from .turn_engine import surplus_first
-    return {'routes': routes, 'route_order': surplus_first(list(routes))}
+    return {'routes': routes, 'route_order': surplus_first(list(routes)) if policy().get('planner') else list(routes)}
 
 
 def record(path):
@@ -273,7 +273,7 @@ def configure_model(profile):
     else:
         install(name, profile)
     selected = policy()
-    roles = {role: [item if isinstance(item, list) else [item] for item in selected[role]] for role in ROUTE_ROLES}
+    roles = {role: [item if isinstance(item, list) else [item] for item in selected.get(role, [])] for role in ROUTE_ROLES}
     roles['planner'] = [[name]]
     save_policy(roles)
     return name

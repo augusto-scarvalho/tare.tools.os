@@ -71,7 +71,11 @@ def test_claude_subscription_prefers_opus_before_fable_and_metered_api(pool):
     install(pool,'claude-fable-5-1-cli','cli://claude','claude-fable-5-1')
     install(pool,'claude-opus-5-5-cli','cli://claude','claude-opus-5-5')
     selected, _ = native_routes.reviewers(native_catalog.select('openai-api-gpt-6-astra'))
-    assert [d['id'] for d in selected[:2]] == ['claude-opus-5-5-cli','claude-fable-5-1-cli']
+    names = [d['id'] for d in selected]
+    # From the class, no number per route: a reviewer wants middling, so Opus first; Fable, one class above, after it
+    # on the same subscription and still before any route paid per token.
+    assert names[0] == 'claude-opus-5-5-cli'
+    assert names.index('claude-fable-5-1-cli') < names.index('claude-api-opus-5-5') < names.index('claude-api-fable-5-1')
 
 
 def test_existing_generic_claude_opus_profile_is_a_frontier_backup(pool):
@@ -237,12 +241,3 @@ def test_claude_opus_on_agy_audits_other_vendors_never_claude_opus():
                                       ('agy-gemini-4-hydrogen-cli', True)):
             (row,) = work_audit.prepare(shipped[producer], [auditor], 'optional')['routes']
             assert (row['eligible'], row['cross_vendor']) == (independent, independent), (producer, auditor['model'])
-
-
-def test_review_priority_is_bounded_operator_policy_not_a_quality_score():
-    roster=round_table_roster.load_roster()
-    table=round_table_roster.load_role_deployments(roster=roster)
-    for invalid in (-1,True,1.5,1001):
-        bad=copy.deepcopy(table);bad['deployments'][0]['review_priority']=invalid
-        with pytest.raises(ValueError,match='REVIEW_PRIORITY_INVALID'):
-            round_table_roster.validate_role_deployments(bad,roster)

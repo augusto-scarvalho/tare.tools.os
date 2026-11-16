@@ -7,8 +7,11 @@ conversation delegates, may run on any provider or allowance, whichever account
 the coordinator is on: `--subscription_only`, `--api_only`, `--local_only`, the
 routing profile (`tare setup --auto`, the "Models per role" matrix) and pins
 limit it. Existing conversations keep their saved tools/routes.
-The existing `/routes` planner list remains the ordered fallback configuration;
-the model picker uses that same role configuration for new planning flows.
+Without a planner list of your own, the planner is chosen from the role table, the
+routes switched on for it in "Models per role": the ones that reach frontier first,
+then a lapsing allowance, then subscription before metered API. A `/routes` planner
+list you save replaces that choice and keeps its order; the model picker uses the
+same configuration for new planning flows.
 
 Open **Review settings…** here, or `/routes`, to choose **Automatic · another
 provider, frontier models**. Formal PLAN reviews, automatic Work audits and code
@@ -21,8 +24,10 @@ this setting chooses the auditor for existing reviews and adds no review stage.
 
 The automatic pool admits Sol 6.1, Astra 6, Opus 5.5, Fable 5.1 and Gemini 4 Argon,
 using the installed Codex/Claude/AGY connections or enabled native HTTP APIs.
-Another model vendor comes first, then subscription allowance before metered API,
-then Sol before Astra and Opus before Fable within the same allowance class.
+Another model vendor comes first, then a route that reaches the class the role wants
+(the planner wants a frontier model; a reviewer wants the class below it, Sol, Opus or Argon, which checks code and plans as well, and takes a frontier model after those on the same allowance; the class of a route is
+the one `tare models` shows, from `relay/model_signals.py`), then subscription allowance
+before metered API. No order of models is written by hand.
 Codex Direct precedes its CLI alias to preserve the native cache route. Pro API
 modes, small helpers and older models are not automatic frontier reviewers.
 Unavailable credentials, invalid local Codex login, disabled connections and known
@@ -33,7 +38,7 @@ or a known balance; missing cost remains unknown. The selection itself uses no L
 Previously saved auditor lists stay manual until their owner chooses automatic
 review. An independent auditor is one of another vendor. Another bias domain of
 the same vendor (Opus for Fable, or AGY's Claude for Claude Code) is chosen only
-when no auditor of another vendor is eligible, whatever the tier, priority or a
+when no auditor of another vendor is eligible, whatever the class, tier or a
 subscription/API preference; in an owner's list another vendor also goes first.
 Such an audit runs and its verdict counts as before, but it is never called
 independent: its selection reason is `SAME_VENDOR_NOT_INDEPENDENT`, and the
@@ -47,8 +52,8 @@ You can turn "another vendor first" off: untick **Put auditors of another vendor
 first** in `/routes` (saved as `"any_vendor_auditor": true` in the routing policy,
 absent while ticked), or launch with `--any_vendor_auditor` for one TUI and its
 children. Either one turns it off, in both reviewer modes and for plan reviews.
-Then the automatic order is the subscription/API preference, cost tier, review
-priority, primary before reserve, CLI backup and table order (selection reason
+Then the automatic order is the class the route falls short of, a lapsing allowance,
+cost tier, primary before reserve, CLI backup and table order (selection reason
 `AUTO_COST_AND_CONFIGURED_ORDER`); your own list keeps its order
 (`OPERATOR_AUDITOR_ROUTES_IN_ORDER`) and is replaced by the automatic choice only
 when a temporary preference sets all of it aside. Nothing else changes: the same

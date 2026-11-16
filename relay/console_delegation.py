@@ -242,7 +242,7 @@ def planner_label():
     from .turn_engine import policy
     from .planning_tools import configured
     if not configured():
-        return 'Planner: first available configured planner · minimum high reasoning.'
+        return 'Planner: automatic · the routes switched on for it in /routes, frontier models first · minimum high reasoning.'
     labels = []
     for name in policy()['planner']:
         try:
@@ -258,9 +258,9 @@ def planner_label():
 def current_planner_choice(choices):
     from .model_choices import resolve
     from .native_catalog import select
-    from .turn_engine import policy
+    from .turn_engine import planner_routes
     try:
-        saved = select(policy()['planner'][0]).get('native_model_choice') or {}
+        saved = select(planner_routes()[0]).get('native_model_choice') or {}
         chosen = {k: saved[k] for k in ('key', 'connection', 'reasoning')}
         resolve(choices, chosen)
         return chosen
