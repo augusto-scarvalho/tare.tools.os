@@ -35,6 +35,7 @@ BEFORE = {
     'agy-gemini-4-hydrogen-cli@low': [['Google', 'google/gemini', 'gemini-4-hydrogen-low'], 'Google'],
     'agy-gemini-4-hydrogen-cli@medium': [['Google', 'google/gemini', 'gemini-4-hydrogen-medium'], 'Google'],
     'bedrock-glm': [['Z.ai', 'zai/glm-family', 'glm-5'], 'Z.ai'],
+    'bedrock-glm-5-3': [['Z.ai', 'zai/glm-family', 'glm-5.3'], 'Z.ai'],
     'bedrock-opus': [['Anthropic', 'anthropic/opus', 'claude-opus-4.6'], 'Anthropic'],
     'bedrock-sonnet': [['Anthropic', 'anthropic/sonnet', 'claude-sonnet-4.6'], 'Anthropic'],
     'claude-api': [['Anthropic', 'anthropic/haiku', 'claude-haiku-5.5'], 'Anthropic'],

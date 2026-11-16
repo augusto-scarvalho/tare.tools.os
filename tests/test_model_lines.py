@@ -16,6 +16,7 @@ BEFORE = {
     'agy-gemini-4-argon-cli': ['gemini-4-argon', 'Gemini 4 Argon', 'Google', 'AGY CLI', ['low', 'medium', 'high'], 'high'],
     'agy-gemini-4-hydrogen-cli': ['gemini-4-hydrogen', 'Gemini 4 Hydrogen', 'Google', 'AGY CLI', ['low', 'medium', 'high'], 'high'],
     'bedrock-glm': ['zai.glm-5', 'GLM-5', 'AWS Bedrock', 'AWS Bedrock', ['high'], 'high'],
+    'bedrock-glm-5-3': ['us.zai.glm-5.3', 'GLM-5.3', 'AWS Bedrock', 'AWS Bedrock', ['high'], 'high'],
     'bedrock-opus': ['us.anthropic.claude-opus-4-6-v1', 'Claude Opus 4.6', 'AWS Bedrock', 'AWS Bedrock', [], ''],
     'bedrock-sonnet': ['us.anthropic.claude-sonnet-4-6', 'Claude Sonnet 4.6', 'AWS Bedrock', 'AWS Bedrock', [], ''],
     'claude-api': ['claude-haiku-5-5', 'Claude Haiku 5.5', 'Anthropic', 'Claude API', ['low', 'medium', 'high', 'xhigh', 'max'], ''],

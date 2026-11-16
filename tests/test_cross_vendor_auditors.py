@@ -243,3 +243,16 @@ def test_claude_opus_on_agy_audits_other_vendors_never_claude_opus():
                                       ('agy-gemini-4-hydrogen-cli', True)):
             (row,) = work_audit.prepare(shipped[producer], [auditor], 'optional')['routes']
             assert (row['eligible'], row['cross_vendor']) == (independent, independent), (producer, auditor['model'])
+
+
+def test_bedrock_glm_5_3_is_pin_only_both_glm_routes_share_one_vendor_identity(pool):
+    from relay import model_choices
+    row = next(r for r in native_routes.configured()['deployments'] if r.get('native_catalog') == 'bedrock-glm-5-3')
+    assert row['qualified'] is False
+    reasons = {c['deployment']: c['reason'] for c in native_routes.ranked('implementer')[1]['candidates']}
+    assert reasons['bedrock-glm-5-3-explorer'] == 'NOT_QUALIFIED_PIN_ONLY'
+    rows = {r['deployment']: r for r in model_choices.projection(include_unconfigured=True)}
+    pin = rows['bedrock-glm-5-3']['role_arguments']['implementer'][0].split(' ', 1)[1]
+    assert model_choices.select_exact(pin, 'implementer')['native_model_choice']['connection'] == 'bedrock-glm-5-3'
+    ids = [work_audit.identity(native_catalog.select(n), 'implementer') for n in ('bedrock-glm-5-3', 'openrouter-glm-5-3')]
+    assert {(i.vendor, i.bias_domain) for i in ids} == {('Z.ai', 'zai/glm-family')} and ids[0].model_id == 'glm-5.3'

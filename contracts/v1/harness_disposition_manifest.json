@@ -2201,8 +2201,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 10447,
-      "sha256": "457983a729cdb1d06f5a104ef7e55bdcc4f4e96a7508cf1156e9e7f7a934d6de"
+      "size_bytes": 10538,
+      "sha256": "6890c773ae0a1692b1a0de4f692d6327afc434c33dcdf28de39bc3a813283eb1"
     },
     {
       "name": "native_diagnostics.py",
@@ -2427,8 +2427,8 @@
     {
       "name": "round_table_roster.py",
       "path": "tare.tools.os/relay/round_table_roster.py",
-      "size_bytes": 19864,
-      "sha256": "d5504e658ad80941c987082743dc7981ce848b8dff4d0c31046a206aa6918f7e",
+      "size_bytes": 20082,
+      "sha256": "0cdb2485e70f7e44faa8bd281fe3eaa530160ec7350e30f93ad93ece20d7cf80",
       "summary": "Round Table roster validation and Markdown matrix projection.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -3361,8 +3361,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator model selection; Runtime retains session execution.",
-      "size_bytes": 33407,
-      "sha256": "48fe09d62daf8cbb72e29e633eb2f5b0e7730cedae04a27e6d26684c6d8b6fd2"
+      "size_bytes": 33436,
+      "sha256": "a7e8b6ec4c6bc74afb9d5b308d8d544c5cca332ebe5d298d0627b674491f4186"
     },
     {
       "name": "model_picker.py",

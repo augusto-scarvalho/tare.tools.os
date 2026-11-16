@@ -17,7 +17,7 @@ LABELS = {'qwen38': 'Qwen3.8 27B', 'hauhaucs': 'HauhauCS · Qwen3.8',
           'fable-tc': 'Fable-TC', 'qwen36-moe': 'Qwen3.6 MoE', 'swift-next': 'Swift 1.5 Flash-Next',
           'qwen38-gsq': 'Qwen3.8 27B GSQ · NInfer', 'swift27b': 'Swift 1.5 27B · NInfer',
           'us.anthropic.claude-opus-4-6-v1': 'Claude Opus 4.6',
-          'us.anthropic.claude-sonnet-4-6': 'Claude Sonnet 4.6', 'zai.glm-5': 'GLM-5',
+          'us.anthropic.claude-sonnet-4-6': 'Claude Sonnet 4.6', 'zai.glm-5': 'GLM-5', 'us.zai.glm-5.3': 'GLM-5.3',
           'deepseek/deepseek-v4.1-flash': 'DeepSeek V4.1 Flash',
           'z-ai/glm-5.3': 'GLM 5.3', 'xiaomi/mimo-v2.6-pro': 'MiMo V2.6 Pro (Preview)'}
 SCHEMA = 'tare.tools/model-preferences/1'

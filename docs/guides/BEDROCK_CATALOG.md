@@ -27,7 +27,10 @@ Mistral Large 3 and GLM 5. The roster uses the corrected, verified ids.
   separate from the Round Table, projected by `python relay/round_table_roster.py --roles`.
   It holds the three Bedrock reserve explorers: `bedrock-opus-explorer`,
   `bedrock-sonnet-explorer`, `bedrock-glm-explorer`. A role deployment may only
-  use a model with `access: verified` in the catalog.
+  use a model with `access: verified` in the catalog. One exception: `bedrock-glm-5-3-explorer` (GLM 5.3 through the
+  `us.zai.glm-5.3` inference profile) is `access: listed` (Bedrock's listing on 2026-11-16, never called) and
+  `qualified: false`: an exact pin reaches it, automatic selection does not until a proof on the machine. Its limits
+  and parameters are copied from GLM 5 and not verified for 5.3.
 - **Model catalog: the roster's `models`.** Shared by both tables;
   the `bedrock` records live there. Twelve verified, three marked as denied.
 

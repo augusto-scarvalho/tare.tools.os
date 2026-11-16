@@ -167,7 +167,7 @@ def validate_roster(data: dict[str, Any]) -> None:
                 raise ValueError(f"model {model_id} attests independence but shares bias domain with {independent_id}")
 
 
-BEDROCK_ACCESS = {"verified", "denied", "provisioned_only"}
+BEDROCK_ACCESS = {"verified", "listed", "denied", "provisioned_only"}
 
 
 def load_role_deployments(path: Path = ROLE_DEPLOYMENTS, roster: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -220,7 +220,9 @@ def validate_role_deployments(data: dict[str, Any], roster: dict[str, Any]) -> N
         if entry.get('provider') == 'Amazon Bedrock':
             if not entry.get("region"):
                 raise ValueError(f"role deployment {entry['id']} must pin an AWS region")
-            if (roster["models"][entry["model"]].get("bedrock") or {}).get("access") != "verified":
+            # A pin-only row (qualified false) may rest on a listed model: a pin is a choice, a proof comes later.
+            if (roster["models"][entry["model"]].get("bedrock") or {}).get("access") not in (
+                    ("verified", "listed") if entry.get("qualified") is False else ("verified",)):
                 raise ValueError(f"role deployment {entry['id']} uses a Bedrock model not verified for this account")
 
 
