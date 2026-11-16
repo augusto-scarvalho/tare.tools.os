@@ -174,13 +174,24 @@ def codex_limits(executable, timeout=45):
         server.kill()
 
 
+def claude_plan(executable):
+    """planTier (else subscriptionType) of `claude auth status`, a local answer. It also holds the account's email and
+    organisation: only the plan is taken. A failure is no plan, never no windows."""
+    try:
+        answer = json.loads(run(executable, 'auth', 'status', timeout=20))
+        plan = answer.get('planTier') or answer.get('subscriptionType')
+        return plan if isinstance(plan, str) else None
+    except Exception:
+        return None
+
+
 def read_claude(executable, now):
     result = json.loads(run(executable, '-p', '/usage', '--output-format', 'json', '--setting-sources', '',
                             '--no-session-persistence'))
     buckets = parse_claude(str(result.get('result') or ''), now)
     if not buckets:
         raise ValueError('no usage window in the answer')
-    return {'buckets': buckets, 'source': 'claude -p /usage'}
+    return {'buckets': buckets, 'plan': claude_plan(executable), 'source': 'claude -p /usage'}
 
 
 def read_codex(executable, now):
@@ -199,7 +210,51 @@ def read_agy(executable, now):
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
         credits = None  # the quota still stands without it
     buckets, notes = parse_agy(command('quota'), credits)
-    return {'buckets': buckets, 'notes': notes, 'source': 'agy -p /quota'}
+    plan_read = agy_plan(executable, now)
+    return {'buckets': buckets, 'notes': notes, 'source': 'agy -p /quota', 'plan': plan_read and plan_read['plan'],
+            'plan_read': plan_read}
+
+
+PLAN_LINE = re.compile(r'\((Google AI [A-Za-z ]+)\)')  # the header: '<account email> (Google AI Pro)'
+
+
+def agy_screen_plan(executable, folder, timeout=12):
+    """The plan on the first screen of AGY's TUI, which no AGY command reports. Nothing is sent: no key, no text, not even
+    an answer to the terminal's queries, so no model call can result and the trust question of a folder AGY does not know
+    is never answered (that screen gives no plan). The header also holds the account's email: only the plan leaves here."""
+    from compute_plane.terminal_sessions import TerminalSessions
+    from .terminal_display import TerminalDisplay
+    from .turn_engine import cli_env
+    display, cursor, end = TerminalDisplay(120, 40), 0, time.monotonic() + timeout
+    with TerminalSessions() as sessions:  # leaving it ends AGY and its children
+        handle = sessions.start(owner='plan', request_id='plan', argv=[executable], cwd=folder, env=cli_env(),
+                                timeout=timeout + 15, mode='pty', columns=120, rows=40)['handle']
+        while time.monotonic() < end:
+            page = sessions.read(owner='plan', handle=handle, cursors={'stdout': cursor, 'stderr': 0})['output']['stdout']
+            cursor = page['cursor']
+            display.feed(page['text'], truncated=page['truncated'])
+            screen = '\n'.join(display.active.display)
+            if 'do you trust' in screen.lower():
+                return None
+            if match := PLAN_LINE.search(screen):
+                return match[1].strip()
+            time.sleep(0.2)
+    return None
+
+
+def agy_plan(executable, now):
+    """{'fingerprint', 'at', 'plan'}: the screen is read once per executable file (about seven seconds) and kept in the
+    quota cache; a miss (no plan on the screen) is tried again after a day. A failure leaves the windows alone."""
+    from .cli_discovery import fingerprint
+    try:
+        stamp = fingerprint(executable)
+        held = next((row.get('plan_read') for row in (cached() or {}).get('accounts') or []
+                     if row.get('account') == 'agy'), None)
+        if held and held['fingerprint'] == stamp and (held['plan'] or now - held['at'] < 86400):
+            return held
+        return {'fingerprint': stamp, 'at': now, 'plan': agy_screen_plan(executable, os.getcwd())}
+    except Exception:
+        return None
 
 
 def read_openrouter(key, now):
@@ -242,11 +297,17 @@ def refresh(now=None):
         jobs.append(('openrouter', 'OpenRouter', 'credit', read_openrouter, key))
     with ThreadPoolExecutor(max_workers=max(1, len(jobs))) as pool:
         accounts = list(pool.map(lambda job: observe(*job, now), jobs))
+    # A quota reading that failed this once must not forget AGY's plan: its TUI would be opened again for nothing.
+    held = next((row.get('plan_read') for row in (cached() or {}).get('accounts') or [] if row.get('account') == 'agy'), None)
+    for reading in accounts:
+        if reading['account'] == 'agy' and held and not reading.get('plan_read'):
+            reading['plan_read'] = held
     from . import provider_spend
     if secret('OPENCODE_API_KEY'):
+        plan = provider_spend.last_plan('opencode-sub')  # the billing source of the last reply of the subscription route
         used = [provider_spend.spent('opencode-sub', now - seconds, 'allowance') for seconds in (5 * 3600, 7 * 86400, 30 * 86400)]
         accounts.append({'account': 'opencode-sub', 'name': 'OpenCode subscription', 'kind': 'subscription',
-                         'status': 'NOT_REPORTED', 'observed_at': now, 'reason':
+                         'status': 'NOT_REPORTED', 'observed_at': now, **({'plan': plan} if plan else {}), 'reason':
                          'OpenCode publishes no remaining allowance; a reply only says what it used.',
                          'allowance_used': dict(zip(('5h', '7d', '30d'), used)), 'notes': [
                              "Allowance tare's own sessions used: US$ {:.2f} in the last 5 h, US$ {:.2f} in 7 days, "
@@ -431,7 +492,7 @@ def render(report, now=None):
             continue
         lines += ([''] if lines else []) + [title]
         for account in accounts:
-            head = '  ' + account['name'] + (' · ' + account['plan'] if account.get('plan') else '')
+            head = '  ' + account['name'] + (' · plan ' + account['plan'] if account.get('plan') else '')
             if account['status'] not in ('OBSERVED', 'DECLARED'):
                 lines.append(head + ': ' + ('not reported. ' if account['status'] == 'NOT_REPORTED' else 'no reading. ')
                              + account['reason'])
