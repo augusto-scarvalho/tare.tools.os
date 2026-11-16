@@ -121,12 +121,13 @@ def test_a_model_no_board_places_gets_the_general_class_marked_general():
     assert signals.type_class(KIMI, {**KIND, 'sources': []}, saved)['general']
 
 
-def test_a_known_line_is_placed_at_its_own_effort_else_the_highest_the_board_lists():
-    saved = kept(first=[('gemini-3.8-flash_low', 'Google DeepMind', .90)])
-    high = signals.type_class(route('gemini-3.8-flash', reasoning_effort='high'), KIND, saved)
-    medium = signals.type_class(route('gemini-3.8-flash', reasoning_effort='medium'), KIND, saved)
-    assert (high['class'], high['effort']) == ('cheap', 'high') and (medium['class'], medium['effort']) == ('cheap', 'high')
-    assert signals.type_class(route('gemini-3.8-flash', reasoning_effort='low'), KIND, saved)['class'] == 'frontier'
+def test_a_known_line_is_placed_at_the_highest_effort_the_board_lists_whatever_the_routes():
+    """Like with like: the lines that rank a board are read at their highest effort, so a route's model is too. Read
+    at its own effort, a route at medium (not listed) outranked the same model's route at high (listed)."""
+    saved = kept(first=[('gemini-3.8-flash_low', 'Google DeepMind', .90)])  # a low-effort row that would be frontier
+    for effort in ('high', 'medium', 'low'):
+        found = signals.type_class(route('gemini-3.8-flash', reasoning_effort=effort), KIND, saved)
+        assert (found['class'], found['effort']) == ('cheap', 'high')
 
 
 def test_a_board_that_stopped_at_older_versions_places_nobody():
