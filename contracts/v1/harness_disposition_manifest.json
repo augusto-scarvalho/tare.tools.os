@@ -2981,8 +2981,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS selects configured eligible role routes and persists the rationale; existing native Work owner executes and recovers them.",
-      "size_bytes": 23013,
-      "sha256": "7a8d14a626be33b336e91474b201fb2b26faa65eea92a4a9c2fdec931e71a805"
+      "size_bytes": 27323,
+      "sha256": "acb45f4ee2f4d499fcf3e007725e8da4fc973224f2760855996350ffe295a3b5"
     },
     {
       "name": "native_serve.py",
