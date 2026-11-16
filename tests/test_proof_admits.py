@@ -107,9 +107,10 @@ def test_a_proof_recorded_before_the_role_check_still_admits(pool, monkeypatch):
     assert CARBON in ranked(role)[0]
 
 
-@pytest.mark.parametrize('name', ['opencode-sub-kimi-k3', 'opencode-sub-gemini-4-argon'])
+@pytest.mark.parametrize('name', ['opencode-sub-kimi-k3'])
 def test_a_route_with_no_line_stays_pin_only_with_a_successful_proof(pool, monkeypatch, name):
-    # Resellers: Kimi has no vendor route here; Gemini 4 Argon on OpenCode is spelled like a line, not Google's.
+    # A reseller's Kimi K3: no other catalogue route serves it automatically (Gemini 4 Argon on OpenCode mirrors
+    # Google's own route, so a proof admits it: test_mirror_admission.py).
     table = native_routes.configured()
     table['deployments'] = [{**r, 'qualified': False} if r['id'] == name else r for r in table['deployments']]
     monkeypatch.setattr(native_routes, 'configured', lambda: table)

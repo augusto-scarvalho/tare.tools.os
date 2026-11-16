@@ -104,6 +104,15 @@ def load():
     return value, routes, labels
 
 
+def mirrors(routes):
+    """{(role, name): row id} of each pin-only route with no line that serves a model the row named already serves
+    automatically for that role (native_routes.mirror): a proof admits it as that row's reserve."""
+    from .native_routes import configured, mirror
+    rows = {row.get('native_catalog'): row for row in configured()['deployments'] if row.get('qualified') is False}
+    return {(role, name): found['id'] for role, items in routes.items() for name, route, _, key in items
+            if name in rows and not key[0] and (found := mirror(rows[name], route, role))}
+
+
 class Matrix(DataTable):
     BINDINGS = [Binding('space', 'select_cursor', 'Toggle', show=False)]
 
@@ -160,6 +169,7 @@ class RouteMatrix(Vertical):
     def compose(self):
         self.value = self.routes = self.saved = None
         self.role, self.warned, self.labels, self.proving, self.proved = 'coordinator', False, {}, False, {}  # what a user meets first
+        self.mirrors = {}
         self.message, self.extra, self.identities, self.warnings = 'Reading the routes…', [], {}, []
         with Horizontal(classes='matrix-bar'):
             yield Select([(label, role) for role, label in CHOICES.items()], value=self.role, allow_blank=False,
@@ -190,6 +200,7 @@ class RouteMatrix(Vertical):
         self.routes, self.labels, self.identities = routes, labels, {}  # a route may run another model under its id
         from .model_signals import own_record
         self.record = await asyncio.to_thread(own_record)  # each route's outcomes as implementer on this machine
+        self.mirrors = await asyncio.to_thread(mirrors, routes)
         self.sources = {route['id']: key[3] for rows in routes.values() for _, route, _, key in rows if not key[0]}
         self.cells = {role: {} for role in routes}
         for role, rows in routes.items():
@@ -413,8 +424,7 @@ class RouteMatrix(Vertical):
             lead += (', but not used automatically now: ' if own == 'on' else '; not usable now either: ') + reasons + \
                 ' (a tick does not override this rule)'
         return f'{title} {self.glyph(row, where)}: {lead}. ' + '; '.join(
-            f'{n} {self.state(r)}, {now}' + (' (press p to prove it once)'
-                                            if now == 'NOT_QUALIFIED_PIN_ONLY' and k[0] else '')
+            f'{n} {self.state(r)}, {now}' + (' (press p to prove it once)' if self.liftable(n, now, k) else '')
             + (f' ({self.proved[n]})' if n in self.proved else '')
             + (f' ({cost})' if (cost := describe_task(self.task(r))) else '')
             + (f' (as implementer here: {did})' if (did := describe_record(self.record.get(n))) else '')
@@ -427,10 +437,14 @@ class RouteMatrix(Vertical):
         found = table.coordinate_to_cell_key(table.cursor_coordinate)
         return found.row_key.value, found.column_key.value
 
+    def liftable(self, name, now, key):
+        """Whether a proof would lift a route: pin only, of a known model line or a mirror (mirrors())."""
+        return now == 'NOT_QUALIFIED_PIN_ONLY' and bool(key[0] or (self.role, name) in self.mirrors)
+
     def provable(self):
-        """(route, key) of the selected cell's routes a proof would lift: pin only, of a known model line."""
+        """(route, key) of the selected cell's routes a proof would lift (liftable)."""
         cell = self.cursor_cell()
-        return cell and [(n, k) for n, _, now, k in self.cells[self.role].get(cell, []) if now == 'NOT_QUALIFIED_PIN_ONLY' and k[0]]
+        return cell and [(n, k) for n, _, now, k in self.cells[self.role].get(cell, []) if self.liftable(n, now, k)]
 
     def action_prove(self):
         """Confirm, then one real call per provable route of the selected cell. Starts only here, from the user."""
@@ -438,7 +452,8 @@ class RouteMatrix(Vertical):
         if self.proving:
             return self.show('A proof is already running.')
         if not found:
-            return self.show('Nothing to prove in this cell: only a route of a known model line that is pin only can be.')
+            return self.show('Nothing to prove in this cell: only a pin-only route of a known model line, or of a model '
+                             'another route already serves automatically, can be.')
         self.run_worker(self.confirm_prove([n for n, _ in found]), group='route-matrix-prove')
 
     async def confirm_prove(self, names):
@@ -473,9 +488,11 @@ class RouteMatrix(Vertical):
                 f"answered, but failed the role check: {record['role_check'].get('reason')}; it stays pin only"
                 if failed_task else
                 f"failed: {record.get('reason') or 'no reason given'}" if record.get('ok') is not True else
-                'answered and did the task; used automatically where it is ticked on'
+                'answered and did the task; used automatically where it is ticked on' + (
+                    f', as a reserve after {self.mirrors[role, name]}' if (role, name) in self.mirrors else '')
                 if now.get(name) != 'NOT_QUALIFIED_PIN_ONLY' else
-                'answered and did the task, but it stays pin only (a reseller or a local model is not proven by this)')
+                'answered and did the task, but it stays pin only (a local model, or a reseller\'s that no other route '
+                'serves automatically, is not proven by this)')
         self.show(self.describe(*cell))
 
     def targets(self, rule):
