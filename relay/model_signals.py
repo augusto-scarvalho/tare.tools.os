@@ -186,23 +186,61 @@ def _row(saved, key):
     return rows[0] if len(rows) == 1 and _number(rows[0].get('intelligence')) is not None else None
 
 
+def _slug(deployment):
+    """The slug a route's line and version are read from: its runtime model id, or the catalogue's own `model` when
+    that id names no line (Bedrock's us.anthropic.claude-opus-4-6-v1 is claude-opus-4.6)."""
+    for slug in (deployment['native_profile']['model'], deployment.get('model')):
+        if isinstance(slug, str) and line(slug):
+            return slug
+
+
+_versions = (None, {})  # (the catalogue's route names, {line: newest version}): read again when a route is added
+def _newest():
+    """{line: the newest version of it that a route of the catalogue runs}, shipped templates included."""
+    global _versions
+    from .native_catalog import offline_deployments
+    from .native_profiles import names
+    stamp = tuple(sorted(names()))
+    if _versions[0] != stamp:
+        found = {}
+        for _, value, _ in offline_deployments(include_unconfigured=True):
+            try:
+                slug = _slug(value)
+            except (KeyError, TypeError):
+                continue
+            if slug:
+                family, name, version = parse(AGY_EFFORT.sub('', slug))
+                found[family+'-'+name] = max(found.get(family+'-'+name, ()), version)
+        _versions = (stamp, found)
+    return _versions[1]
+
+
 def klass(deployment, saved=None):
     """{'class', 'from': 'reading' | 'line', plus 'source', 'as_of', 'intelligence', 'cost_per_task_usd' when the
     reading has the route's model at its default effort} for a deployment, or None for a model with no line. The
     class is the reading's (absolute cuts of CUTS) only when the two latest readings of the same source and index
-    version put the model in the same class; otherwise the line's own, which no reading overrides on one word."""
-    model = deployment['native_profile']['model']
-    known = line(model)
+    version put the model in the same class; otherwise the line's own, which no reading overrides on one word. The
+    line's class is its newest version's: an older version gets one class lower and says so ('older_than')."""
+    model = _slug(deployment)
+    known = model and line(model)
     if not known:
         return None
     from .execution_team import reasoning
-    suffix = AGY_EFFORT.search(model)
+    suffix = AGY_EFFORT.search(deployment['native_profile']['model'])
     effort = suffix[1] if suffix else reasoning(deployment)
-    key = (known['line'], '.'.join(map(str, parse(AGY_EFFORT.sub('', model))[2])), effort)
+    version = parse(AGY_EFFORT.sub('', model))[2]
+    key = (known['line'], '.'.join(map(str, version)), effort)
+    # The line's class is its newest version's. An older version is another model (Opus 4.6 on Bedrock is not the
+    # Opus 5.5 of the CLI): one class lower, since nothing measured places it higher, until a reading of its own.
+    newest = _newest().get(known['line'], version)
+    own = {'class': known['class'], 'from': 'line'}
+    if version < newest:
+        own = {'class': ORDER[max(0, ORDER.index(known['class']) - 1)], 'from': 'line',
+               'older_than': '.'.join(map(str, newest))}
     saved = reading() if saved is None else saved
     now = _row(saved, key)
     if not now:
-        return {'class': known['class'], 'from': 'line'}
+        return own
     numbers = {'source': saved['source'], 'as_of': saved.get('as_of'), 'intelligence': now['intelligence'],
                'cost_per_task_usd': now.get('cost_per_task_usd')}
     before = saved.get('previous')
@@ -211,7 +249,7 @@ def klass(deployment, saved=None):
     chosen = band(saved['source'], now['intelligence'])
     if before and band(saved['source'], before['intelligence']) == chosen:
         return {'class': chosen, 'from': 'reading', **numbers}
-    return {'class': known['class'], 'from': 'line', **numbers}
+    return {**own, **numbers}
 
 
 def own_record(storage=None):
@@ -268,6 +306,8 @@ def describe(result):
     if not result:
         return 'none (no model line)'
     text = result['class'] + (' (reading' if result['from'] == 'reading' else ' (line default')
+    if result['from'] == 'line' and 'older_than' in result:
+        text += f", one class lower: an older version than {result['older_than']}"
     if 'source' in result:
         text += f"; {result['source']} {result['as_of']}: intelligence {result['intelligence']:g}"
         if result['cost_per_task_usd'] is not None:

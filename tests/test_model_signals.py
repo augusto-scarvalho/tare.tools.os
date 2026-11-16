@@ -176,7 +176,7 @@ def test_the_hand_class_serves_when_there_is_no_reading_and_a_model_without_a_li
     assert signals.reading() is None
     hand = {'claude-fable-5-2': 'frontier', 'claude-opus-5-5': 'middling', 'claude-sonnet-5-5': 'middling',
             'claude-haiku-5-5': 'cheap', 'gpt-6-astra': 'frontier', 'gpt-6.1-sol': 'middling', 'gpt-6.1-terra': 'middling',
-            'gpt-6-luna': 'cheap', 'gemini-4-carbon': 'frontier', 'gemini-4-hydrogen': 'middling',
+            'gpt-6.1-luna': 'cheap', 'gemini-4-carbon': 'frontier', 'gemini-4-hydrogen': 'middling',
             'gemini-4-argon': 'middling', 'gemini-3.8-flash': 'cheap', 'gemini-4-argon-high': 'middling'}
     for model, name in hand.items():
         assert signals.klass(route(model)) == {'class': name, 'from': 'line'}
@@ -227,3 +227,17 @@ def test_a_routes_own_record_as_implementer_is_counted_from_the_unit_receipts_an
     model_choices.main(['--include-unconfigured', '--vendor', 'Google', '--json'])
     rows = {row['deployment']: row for row in json.loads(capsys.readouterr().out)['models']}
     assert rows['gemini-api-3-8-flash']['implementer_record']['needs.middling.ran'] == 2
+
+
+def test_an_older_version_of_a_line_is_one_class_lower_and_a_bedrock_id_is_read_as_its_model():
+    """The version is part of what a model is: Fable 5.1 is not Fable 5.2, and the Opus 4.6 that Bedrock's free
+    credit runs is not the Opus 5.5 of the CLI and the API (owner, 2026-11-15)."""
+    assert signals.klass(route('claude-fable-5-2')) == {'class': 'frontier', 'from': 'line'}
+    assert signals.klass(route('claude-fable-5-1')) == {'class': 'middling', 'from': 'line', 'older_than': '5.2'}
+    assert signals.klass(route('gpt-6-sol')) == {'class': 'cheap', 'from': 'line', 'older_than': '6.1'}
+    assert signals.klass(route('gpt-5.6-luna'))['class'] == 'cheap'  # nothing is below cheap
+    bedrock = {'id': 'bedrock-opus', 'model': 'claude-opus-4.6',
+               'native_profile': {'model': 'us.anthropic.claude-opus-4-6-v1', 'parameters_json': '{}'}}
+    found = signals.klass(bedrock)
+    assert found == {'class': 'cheap', 'from': 'line', 'older_than': '5.5'}
+    assert signals.describe(found) == 'cheap (line default, one class lower: an older version than 5.5)'

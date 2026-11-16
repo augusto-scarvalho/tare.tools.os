@@ -72,10 +72,10 @@ def test_claude_subscription_prefers_opus_before_fable_and_metered_api(pool):
     install(pool,'claude-opus-5-5-cli','cli://claude','claude-opus-5-5')
     selected, _ = native_routes.reviewers(native_catalog.select('openai-api-gpt-6-astra'))
     names = [d['id'] for d in selected]
-    # From the class, no number per route: a reviewer wants middling, so Opus first; Fable, one class above, after it
-    # on the same subscription and still before any route paid per token.
-    assert names[0] == 'claude-opus-5-5-cli'
-    assert names.index('claude-fable-5-1-cli') < names.index('claude-api-opus-5-5') < names.index('claude-api-fable-5-1')
+    # From the class, no number per route. Fable 5.1 is an older version of its line, so it counts one class lower:
+    # the class a reviewer wants, like Opus 5.5. Both subscription routes go before any route paid per token.
+    assert set(names[:2]) == {'claude-opus-5-5-cli', 'claude-fable-5-1-cli'}
+    assert max(names.index('claude-api-opus-5-5'), names.index('claude-api-fable-5-1')) > 1
 
 
 def test_existing_generic_claude_opus_profile_is_a_frontier_backup(pool):
