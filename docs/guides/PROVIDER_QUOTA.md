@@ -17,18 +17,18 @@ reading lands. Reopen `/usage` to read again.
 
 ```text
 Subscriptions
-  Claude subscription
+  Claude subscription · plan max_20x
     week, all models                  57% left   resets Sun 15 Nov 17:59
     week, Fable                       62% left   resets Sun 15 Nov 17:59
-  Codex subscription · prolite
+  Codex subscription · plan prolite
     week                             none left   resets Thu 12 Nov 18:21
     2 free limit resets available
-  AGY subscription
+  AGY subscription · plan Google AI Pro
     Gemini Models, week               49% left   resets Fri 13 Nov 22:20
     Gemini Models, 5 h               100% left   resets 13:13
     Claude and GPT models, week      100% left   resets Tue 17 Nov 08:13
     Gemini 4 Argon, week             none left   resets Sat 14 Nov 01:57
-  OpenCode subscription: not reported. OpenCode publishes no remaining allowance; a reply only says what it used.
+  OpenCode subscription · plan go: not reported. OpenCode publishes no remaining allowance; a reply only says what it used.
 
 API credit
   OpenRouter: US$ 5.23 left of US$ 20.00
@@ -43,6 +43,15 @@ API credit
 | Codex subscription | `codex app-server`, request `account/rateLimits/read` | Percent used and reset time of each window, per limit id; the plan; free limit resets. |
 | AGY subscription | `agy -p /quota` and `/credits` | Fraction left of the weekly and 5-hour windows of each model group, and AI credits. |
 | OpenRouter | `GET https://openrouter.ai/api/v1/credits` | Dollars bought and dollars used. |
+
+Each subscription's name carries the plan the account is on, which tare reads instead of asking:
+
+| Provider | Where the plan shows | Read |
+| --- | --- | --- |
+| Claude subscription | `planTier` of `claude auth status` (else `subscriptionType`); a local answer | Each reading. Only the plan is kept: the answer also holds the account's email and organisation. |
+| Codex subscription | `planType` of the same `account/rateLimits/read` | Each reading. |
+| AGY subscription | The header line of the TUI's first screen, `<account email> (Google AI Pro)`; no AGY command reports it | Once per AGY executable file (a new AGY version reads again), kept in the quota cache. tare opens the TUI for a few seconds and sends nothing: no key, no text, no model call. Only the plan name is kept, never the email. If AGY asks to trust the folder, tare answers nothing and shows no plan; it tries again after a day. |
+| OpenCode subscription | `usage.opencode.billing_source` of the last reply of the subscription route (`go`, `go-plus`; `balance`, `byok` and `free` are not plans) | When a reply is recorded (`provider-spend.jsonl`); no plan is shown until one was. |
 
 A window covers the models its line names. On Claude, a Fable call needs room in both the Fable window and the
 all-models window. On AGY, the Gemini models, the third-party models (Claude Opus, Claude Sonnet, GPT-OSS) and
@@ -75,7 +84,7 @@ time that call reported.
   reply only says how much of the allowance it used. tare shows the two facts it has instead:
 
   ```text
-  OpenCode subscription: not reported. OpenCode publishes no remaining allowance; a reply only says what it used.
+  OpenCode subscription · plan go: not reported. OpenCode publishes no remaining allowance; a reply only says what it used.
       A refused call left this account out until 21:05.
       Allowance tare's own sessions used: US$ 0.38 in the last 5 h, US$ 1.88 in 7 days, US$ 1.88 in 30 days.
   ```
