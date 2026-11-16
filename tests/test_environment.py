@@ -310,8 +310,13 @@ def test_older_cli_models_are_left_out_unless_the_owner_wants_them(machine, tmp_
     assert older(listed) == {'gpt-6-sol', 'gpt-5.6-sol', 'gpt-5.6-luna'}  # per line: terra has no newer version
     assert older(listed + ['gpt-7-luna']) == {'gpt-6-sol', 'gpt-5.6-sol', 'gpt-5.6-luna', 'gpt-6-luna'}
     assert older(['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5']) == set()
-    # Without an account catalogue, the shipped Luna 6.1 replaces both older Luna versions.
-    assert environment.older_models() == {'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-6-luna'}
+    # a model from before the named lines is older once a named line of a newer version is listed; among themselves
+    # or beside an older named line it is not
+    assert older(listed + ['gpt-5.5']) == {'gpt-6-sol', 'gpt-5.6-sol', 'gpt-5.6-luna', 'gpt-5.5'}
+    assert older(['gpt-5.5', 'gpt-5.4']) == {'gpt-5.4'} and older(['gpt-5.5', 'gpt-5.5-codex']) == set()
+    # Without an account catalogue, the shipped Luna 6.1 replaces both older Luna versions, and the shipped
+    # templates' GPT-5.5, from before the named lines, is older than every one of them.
+    assert environment.older_models() == {'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-6-luna', 'gpt-5.5'}
     home = tmp_path/'codex'; home.mkdir()
     (home/'models_cache.json').write_text(json.dumps({'models': [{'slug': s, 'visibility': 'list'} for s in listed]}))
     monkeypatch.setenv('CODEX_HOME', str(home))

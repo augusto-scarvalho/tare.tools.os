@@ -2591,8 +2591,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns vendor model discovery and selection; Runtime retains session execution.",
-      "size_bytes": 8578,
-      "sha256": "e362384586179a111c8b8ecf8538b62d70ca52ef2d8a35cfc603d8cc544c23f7"
+      "size_bytes": 8773,
+      "sha256": "54ea5913692dd4466188ed7e4b35e378e73861b3b4828be93be809af4f0b6a2d"
     },
     {
       "name": "watcher.py",
