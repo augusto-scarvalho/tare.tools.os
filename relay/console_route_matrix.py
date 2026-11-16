@@ -222,6 +222,13 @@ class RouteMatrix(Vertical):
                     pass  # a route with no model to read has no class
         return '/'.join(c for c in reversed(ORDER) if c in found)
 
+    def task(self, route):
+        from .model_signals import task
+        try:
+            return task(route)
+        except (ValueError, OSError, KeyError, TypeError):
+            return None  # a route with no model to read has no figure
+
     def named(self, row):
         return self.labels.get(row, row) + (' · ' + self.klass(row) if self.klass(row) else '')
 
@@ -399,7 +406,7 @@ class RouteMatrix(Vertical):
                                    if (row, where) in self.carried else 'this source does not carry it here.')
         own, _, usable = seen
         routes = self.cells[self.role][row, where]
-        from .model_signals import describe_record
+        from .model_signals import describe_record, describe_task
         reasons = ', '.join(sorted({now for _, _, now, _ in routes} - {'usable'}))
         lead = 'on' if own == 'on' else 'off by you'
         if not usable:
@@ -409,6 +416,7 @@ class RouteMatrix(Vertical):
             f'{n} {self.state(r)}, {now}' + (' (press p to prove it once)'
                                             if now == 'NOT_QUALIFIED_PIN_ONLY' and k[0] else '')
             + (f' ({self.proved[n]})' if n in self.proved else '')
+            + (f' ({cost})' if (cost := describe_task(self.task(r))) else '')
             + (f' (as implementer here: {did})' if (did := describe_record(self.record.get(n))) else '')
             for n, r, now, k in routes)
 

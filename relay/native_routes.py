@@ -21,6 +21,9 @@ COST = {'free': 0, 'flat': 1, 'free-credit': 2, 'metered': 3}
 # failure (turn_engine.implementer_tiers); a unit's `needs` reorders its own routes.
 WANTED = {'planner': 'frontier', 'plan-auditor': 'middling', 'auditor': 'middling', 'implementer': 'cheap',
           'coordinator': 'cheap'}
+# The roles that want the cheapest sufficient route: among pay-per-token routes it is the best score per dollar of a
+# task (model_signals.task), the planner's frontier is bought for its strength. Owner, 2026-11-16.
+CHEAPEST = {'implementer', 'coordinator', 'auditor', 'plan-auditor'}
 
 
 _derived = (None, [])  # (the table's path and the installed route names, the rows derived for them)
@@ -235,7 +238,7 @@ def _ranked(role, producer=None, *, check_resources=False):
     fact_cache = {}; evidence = route_facts.supplied_evidence(); observed_facts = {}
     from .turn_engine import cross_vendor_first
     first = bool(author) and cross_vendor_first()  # off: --any_vendor_auditor or /routes
-    from .model_signals import ORDER, klass
+    from .model_signals import ORDER, klass, task
     need = WANTED.get(role)
     try:
         fleet = native_catalog.local_default()
@@ -304,7 +307,10 @@ def _ranked(role, producer=None, *, check_resources=False):
         # For an implementer or a conversation a route with no class also comes after every route that has one: a last
         # resort, so a machine with only unmeasured routes still runs; the node's own default model is not one.
         unclassed = role in {'implementer', 'coordinator'} and not found and             native_catalog.LOCAL.get(row.get('native_catalog', row['id']), row.get('native_catalog', row['id'])) != fleet
-        rank = (same_family, first and not cross, current().preference(deployment,role), fall, unclassed, lapse_order(signal), COST[row['cost_tier']], above, dated, row['kind'] != 'primary', cli_backup, order)
+        # Among pay-per-token routes tied up to here, a route with a figure goes first, the best value first; a metered
+        # route without one, and every other kind of allowance, keep their order (the term is the same for them).
+        value = (task(deployment) or {}).get('value') if role in CHEAPEST and row['cost_tier'] == 'metered' else None
+        rank = (same_family, first and not cross, current().preference(deployment,role), fall, unclassed, lapse_order(signal), COST[row['cost_tier']], (value is None, -(value or 0)), above, dated, row['kind'] != 'primary', cli_backup, order)
         eligible.append((rank, deployment, decision))
     if check_resources:
         kept = []
@@ -330,7 +336,8 @@ def _ranked(role, producer=None, *, check_resources=False):
         'candidates': decisions, 'generation_calls': 0,
         **({'expiring_first': True} if any(d.get('expiring') for _, _, d in eligible) else {}),
         'cost_scope': ('Wanted class of the role, then configured cost tiers' if need else 'Configured cost tiers')
-                      + '; no price estimate or measured quality ranking.'}
+                      + '; then, among pay-per-token routes, the score per dollar of a task on the LMArena agent board when listed'
+                      + '; no price estimate.'}
 
 
 def independent_auditors(producer):
