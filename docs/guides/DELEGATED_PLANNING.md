@@ -36,8 +36,10 @@ permaslug, any other by name and vendor) and the two latest readings of one sour
 counts as cheap, as before. `tare models` says it as "middling: reaches Gemini 4 Argon on openrouter, 2026-11-16".
 A model that is the best in general may know nothing of CAD or 3D, so tare also keeps a catalogue of task types
 (`relay/task_types.json`: software engineering, web and front-end, mathematics, physics and natural sciences, legal,
-consulting and finance work, and types with no source yet) and, for each, an ordered list of public boards: LMArena
-configs and CSV files of Epoch AI's benchmark archive. Each board is read again once a day with the same rule as the
+consulting and finance work, cybersecurity, engineering, CAD, and types with no source yet) and, for each, an ordered
+list of public boards: LMArena configs, CSV files of Epoch AI's benchmark archive, and four leaderboards that exist
+only as a public page (CWE-bench, Vals AI LegalBench after APEX-Agents, BenchCAD, and Mercor's Physical-Engineering
+leaderboard). Each board is read again once a day with the same rule as the
 general reading (no key, no model call, nothing on a machine with `tare setup --no-use api`), kept in
 `serve/task-boards.json` with its own read date, and a board that fails keeps its last reading. A model's class for a
 type comes from the first board that places it, with the same anchors as above, taken only at the newest version of
@@ -46,8 +48,13 @@ no board that places it gives the general class, marked general. `tare models --
 and how many known lines it holds; `tare models --type math` is `tare models` with a class for that type, for
 example "middling for mathematics (Epoch FrontierMath tiers 1-3, read 16 Nov)" or "frontier (general: no board places
 it for CAD)". An Epoch row is matched like any other source's: a model of a known line by its slug and its effort, any
-other by name and creator. Adding a type or a source of a known reader (`arena`, `epoch`) is an edit of the catalogue.
-This only shows the classes: nothing is chosen by them yet.
+other by name and creator. A page is read from the one URL the catalogue names, once a day like the rest: reader
+`page` takes the first HTML table whose header row holds the source's `model` and `column` headers (and its
+`organisation` one, when it has it), reader `script` takes the rows of a JSON `<script id=...>` at the catalogue's
+dotted `rows` path, with the `model`, `column` and `organisation` paths in a row (Mercor's page has no table). A
+page that states no organisation takes a known line's name as its vendor's model, and a name with no effort bracket is
+a row with no stated effort; a page whose table or columns moved is a failed reading, so the saved board stays. Adding
+a type, or a source of a known reader (`arena`, `epoch`, `page`, `script`), is an edit of the catalogue. This only shows the classes: nothing is chosen by them yet.
 Among pay-per-token routes (not subscriptions, free credit or the planner) that tie up to the kind of billing, an implementer, a conversation or an auditor takes the best value first: the score of the model above the lowest score on the LMArena agent board, per dollar of a task, both from one row of the board (a model of a line at the route's own effort when the board lists it, else at the highest it lists). The board is read beside the class reading, at most once a day, and kept even when OpenRouter gives the class; a route it has no single row for, or no cost, keeps its place after those that have one. `tare models` and the matrix say the figure: "about US$ 0.14 per task on the LMArena agent board, 2026-11-15".
 Codex Direct precedes its CLI alias to preserve the native cache route. Pro API
 modes, small helpers and older models are not automatic frontier reviewers.
