@@ -2591,8 +2591,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns vendor model discovery and selection; Runtime retains session execution.",
-      "size_bytes": 8773,
-      "sha256": "54ea5913692dd4466188ed7e4b35e378e73861b3b4828be93be809af4f0b6a2d"
+      "size_bytes": 10499,
+      "sha256": "5a5f8665ad52ee994e0bb95ab483156fb612663027aaf526dbf035035a36ddf6"
     },
     {
       "name": "watcher.py",
@@ -2981,8 +2981,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS selects configured eligible role routes and persists the rationale; existing native Work owner executes and recovers them.",
-      "size_bytes": 29306,
-      "sha256": "0ef641d85a78007250f048d6f3480e467221e1e21ecf1db80eedafe90c80b7ec"
+      "size_bytes": 31451,
+      "sha256": "c272def4ab41e17a4be670046b0bb78bca6b67cf29c15333d27c7af495d46137"
     },
     {
       "name": "native_serve.py",
@@ -4451,8 +4451,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 33805,
-      "sha256": "71bd79dc8582445d228db980771488f817080dc13198476fb7878da52af5f330"
+      "size_bytes": 34910,
+      "sha256": "c28f84dfd1147c63b78bd3aa5619475234568f4646901615abdf6bc4ebb9c0a0"
     },
     {
       "name": "console_credit.py",

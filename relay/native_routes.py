@@ -133,11 +133,13 @@ def ranked(role, producer=None, *, check_resources=False):
     with for_role(role):return _ranked(role,producer,check_resources=check_resources)
 
 
-def proven(row, cache):
-    """Whether a pin-only row answered once on this machine: its setup holds a successful proof (tare setup --prove)
-    under the row's catalogue name, the name prove() records for this route, and the route serves its vendor's own
-    model (vendor_models.origin_line). A reseller's or a local model has no line and stays pin-only, proof or not; an
-    inline row has no name tare setup --prove reaches. The setup is read once per `cache` (admission's)."""
+def proven(row, cache, role=None, mirrors=True):
+    """Whether a pin-only row is used automatically on this machine: its setup holds a successful proof (tare setup
+    --prove) under the row's catalogue name, the name prove() records for this route, and either the route serves its
+    vendor's own model (vendor_models.origin_line: True) or, with `mirrors`, it mirrors a model another row already
+    serves automatically for `role` (None: any role; mirror(): that row). A local model, or a reseller's model no
+    other row serves, stays pin-only, proof or not; an inline row has no name tare setup --prove reaches. The setup
+    is read once per `cache` (admission's)."""
     name = row.get('native_catalog')
     if not name:
         return False
@@ -150,10 +152,37 @@ def proven(row, cache):
         return False
     from .vendor_models import origin_line
     try:
-        profile = native_catalog.select(name)['native_profile']
-        return bool(origin_line(profile['model'], profile['endpoint']))
+        deployment = native_catalog.select(name)
+        if origin_line(deployment['native_profile']['model'], deployment['native_profile']['endpoint']):
+            return True
     except (ValueError, KeyError, TypeError, OSError):
         return False
+    return mirrors and mirror(row, deployment, role, cache) or False
+
+
+def mirror(row, deployment, role=None, cache=None):
+    """The row whose model `row`'s route (`deployment`) serves under another catalogue (vendor_models.same_model)
+    and that automatic selection already takes (not pin only, or proven by its own vendor's line, never through
+    another mirror) for `role` (None: any role), which `row` has too; None when no row does. A proof then admits `row`
+    for that role, ranked as that row's reserve (owner, 2026-11-13: a mirrored model is pinnable until one proof call
+    on its route, then a reserve after every origin route)."""
+    from .execution_scope import current
+    from .vendor_models import same_model
+    cache = {} if cache is None else cache
+    wanted = set(roles(row, current()))
+    if role is not None:
+        wanted &= {'implementer' if role == 'coordinator' else role}
+    for other in configured()['deployments']:
+        name = other.get('native_catalog')
+        if (not name or name == row.get('native_catalog') or not wanted & set(roles(other, current()))
+                or other.get('qualified') is False and not proven(other, cache, mirrors=False)):
+            continue
+        try:
+            if same_model(deployment, native_catalog.select(name)):
+                return other
+        except (ValueError, KeyError, TypeError, OSError):
+            continue
+    return None
 
 
 def admission(row, role, author=None, credentials=None):
@@ -168,9 +197,10 @@ def admission(row, role, author=None, credentials=None):
     # A conversation's model is admitted as an implementer row; the routing profile then judges it as coordinator.
     if ('implementer' if role == 'coordinator' else role) not in roles(row, current()):
         return None, None, 'ROLE_NOT_CONFIGURED'
-    if row.get('qualified') is False and not proven(row, credentials):
+    if row.get('qualified') is False and not proven(row, credentials, role):
         # Registered from a provider's metadata: an exact pin reaches it, automatic selection waits for a live
-        # qualification through tare: one answer here (tare setup --prove NAME) for a vendor's own model.
+        # qualification through tare: one answer here (tare setup --prove NAME) for a vendor's own model, or for a
+        # mirror of a model another row serves automatically in this role.
         return None, None, 'NOT_QUALIFIED_PIN_ONLY'
     if row.get('runner') != 'native-http':
         return None, None, 'RUNNER_NOT_SUPPORTED_BY_NATIVE_WORK' if role == 'auditor' else 'RUNNER_NOT_SUPPORTED_BY_NATIVE_FLOW'
@@ -303,14 +333,18 @@ def _ranked(role, producer=None, *, check_resources=False):
         # class before one that falls short (move `fall` to change how much the class weighs against allowance and
         # tier), a lapsing allowance, tier, the exact class before one above it (Sol before Astra on one
         # subscription, from the class and not from a number per route), a current model before an older version or a model with no line
-        # that lands in the same class (Opus 5.5 before Fable 5.1), primary, CLI backup, table order.
+        # that lands in the same class (Opus 5.5 before Fable 5.1), a proven mirror last, primary, CLI backup, table order.
         # For an implementer or a conversation a route with no class also comes after every route that has one: a last
         # resort, so a machine with only unmeasured routes still runs; the node's own default model is not one.
         unclassed = role in {'implementer', 'coordinator'} and not found and             native_catalog.LOCAL.get(row.get('native_catalog', row['id']), row.get('native_catalog', row['id'])) != fleet
         # Among pay-per-token routes tied up to here, a route with a figure goes first, the best value first; a metered
         # route without one, and every other kind of allowance, keep their order (the term is the same for them).
         value = (task(deployment) or {}).get('value') if role in CHEAPEST and row['cost_tier'] == 'metered' else None
-        rank = (same_family, first and not cross, current().preference(deployment,role), fall, unclassed, lapse_order(signal), COST[row['cost_tier']], (value is None, -(value or 0)), above, dated, row['kind'] != 'primary', cli_backup, order)
+        # A pin-only row admitted as a mirror (proven() names the row it mirrors) is that row's reserve: tied up to
+        # here it goes after every route admitted otherwise; the terms before order it as any route (a cheaper
+        # allowance still goes first).
+        mirrored = row.get('qualified') is False and proven(row, credentials, role) is not True
+        rank = (same_family, first and not cross, current().preference(deployment,role), fall, unclassed, lapse_order(signal), COST[row['cost_tier']], (value is None, -(value or 0)), above, dated, mirrored, row['kind'] != 'primary', cli_backup, order)
         eligible.append((rank, deployment, decision))
     if check_resources:
         kept = []
