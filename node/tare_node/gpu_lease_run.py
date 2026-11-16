@@ -12,6 +12,7 @@ import math
 import os
 from pathlib import Path
 import re
+import shutil
 import signal
 import statistics
 import subprocess
@@ -124,9 +125,12 @@ def record(task, seconds, code, log=None):
 
 
 def gpu_sample():
-    """(watts, utilization %) from nvidia-smi, or None when it cannot tell."""
+    """(watts, utilization %) from nvidia-smi, or None when it cannot tell. On WSL the tool lives in
+    /usr/lib/wsl/lib, which a login shell has on PATH and a systemd service does not: the gateway found no
+    nvidia-smi there and kept no power reading."""
     try:
-        out = subprocess.run(['nvidia-smi', '--query-gpu=power.draw,utilization.gpu', '--format=csv,noheader,nounits'],
+        tool = shutil.which('nvidia-smi') or '/usr/lib/wsl/lib/nvidia-smi'
+        out = subprocess.run([tool, '--query-gpu=power.draw,utilization.gpu', '--format=csv,noheader,nounits'],
                              capture_output=True, text=True, timeout=5, check=True).stdout
         watts, util = (float(x) for x in out.splitlines()[0].split(','))
         return watts, util
