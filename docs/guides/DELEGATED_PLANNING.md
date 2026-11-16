@@ -34,6 +34,7 @@ line's own class, and the model is in the highest class whose weakest anchor it 
 anchor, cheap). It is placed only when the route's model matches exactly one row (an OpenRouter route by the row's
 permaslug, any other by name and vendor) and the two latest readings of one source agree; otherwise it has no class and
 counts as cheap, as before. `tare models` says it as "middling: reaches Gemini 4 Argon on openrouter, 2026-11-16".
+Among pay-per-token routes (not subscriptions, free credit or the planner) that tie up to the kind of billing, an implementer, a conversation or an auditor takes the best value first: the score of the model above the lowest score on the LMArena agent board, per dollar of a task, both from one row of the board (a model of a line at the route's own effort when the board lists it, else at the highest it lists). The board is read beside the class reading, at most once a day, and kept even when OpenRouter gives the class; a route it has no single row for, or no cost, keeps its place after those that have one. `tare models` and the matrix say the figure: "about US$ 0.14 per task on the LMArena agent board, 2026-11-15".
 Codex Direct precedes its CLI alias to preserve the native cache route. Pro API
 modes, small helpers and older models are not automatic frontier reviewers.
 Unavailable credentials, invalid local Codex login, disabled connections and known

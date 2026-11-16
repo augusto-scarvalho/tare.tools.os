@@ -84,7 +84,7 @@ def test_openrouter_is_read_first_with_the_key_else_the_keyless_dataset(monkeypa
     monkeypatch.setattr('relay.provider_quota.secret', lambda name: 'key')
     calls.clear()
     value = signals.refresh_reading(NOW + 2*DAY, fetch=fetch)
-    assert (value['source'], calls) == ('openrouter', [('openrouter', 'key')])
+    assert (value['source'], calls) == ('openrouter', [('openrouter', 'key'), ('arena', None)])  # and the board
     assert value['previous']['source'] == 'arena' and signals.reading()['as_of'] == '2026-11-14'
 
 

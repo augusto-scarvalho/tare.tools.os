@@ -264,6 +264,7 @@ def projection(*, role=None, via=None, vendor=None, provider=None, include_uncon
         if route.get('openrouter'):
             result[-1]['openrouter'] = route['openrouter']
         result[-1]['class'] = signals.klass(value)
+        result[-1]['task'] = signals.task(value)
         if role in PROFILE_ROLES:  # the routing profile's state for this role's automatic routing (tare setup --auto)
             state = profile_state(role, value, value=setup)
             result[-1]['automatic'] = f'{state[0]} ({state[1]})' if state else 'on'
@@ -353,6 +354,8 @@ def main(argv=None):
                   ' | Reasoning permitted: '+(', '.join(row['allowed_reasoning']) or 'none')+
                   (' | Automatic for '+args.role+': '+row['automatic'] if 'automatic' in row else ''))
             print('  Class: '+signals.describe(row['class']))
+            if row['task']:
+                print('  Cost: '+signals.describe_task(row['task']))
             if own := signals.describe_record(record.get(row['deployment'])):
                 print('  As implementer on this machine: '+own)
             if (row.get('openrouter') or {}).get('notice'):
@@ -364,6 +367,8 @@ def main(argv=None):
                     print('  Copy: tare console ./project '+arguments[0])
         if saved := signals.reading():
             print(saved['citation']+', as of '+str(saved.get('as_of'))+'. Classes place a model; they do not choose a route.')
+            if saved['source'] != 'arena' and any(row['task'] for row in rows):
+                print(signals.CITATIONS['arena']+'. Cost per task is the board\'s own figure, not a measurement by tare.')
         if record:
             print('The implementer record counts raw outcomes of delegated units on this machine. Harder work goes to '
                   'stronger models, so it does not compare two models and chooses no route.')

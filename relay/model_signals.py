@@ -7,6 +7,9 @@ and date and only places a model in a class; which route runs is decided elsewhe
 `vendor_models.parse`, never by a table of models: a name that is not exactly one known line, version and effort, or
 that two rows claim, is refused. A model with no line (Kimi, Grok, GLM...) is placed by the known lines of the same
 reading, its anchors: the class whose weakest anchor it reaches (owner, 2026-11-16).
+
+Only the LMArena agent board carries a cost per task. It is kept beside a reading whose class came from OpenRouter
+(`board`), and `task` gives a route's score and cost per task from one row of it.
 """
 import json
 import math
@@ -154,6 +157,15 @@ def fetch(source, key=None):
     return _get(OPENROUTER, {'Authorization': 'Bearer '+key}) if source == 'openrouter' else _get(ARENA)
 
 
+def _read(fetch, source, parse_it, key):
+    try:  # reading and parsing a third party's answer is one step: whatever fails in it, there is no reading from it
+        return parse_it(fetch(source, key))
+    except AssertionError:
+        raise  # a failed check (a test's, or tare's own) is a bug, never an outage
+    except Exception:  # the network, or an answer shaped as nobody foresaw
+        return None
+
+
 def refresh_reading(now=None, fetch=fetch, setup=None):
     """Read the sources at most once a day (after an attempt that read nothing, at most once an hour) and keep the
     reading with the one before it, which the two-reading rule of `klass` needs. A failed, empty or reshaped reading
@@ -181,22 +193,29 @@ def refresh_reading(now=None, fetch=fetch, setup=None):
     for source, parse_it in (('openrouter', parse_openrouter), ('arena', parse_arena)):
         if source == 'openrouter' and not key:
             continue
-        try:  # reading and parsing a third party's answer is one step: whatever fails in it, the next source is tried
-            found = parse_it(fetch(source, key))
-        except AssertionError:
-            raise  # a failed check (a test's, or tare's own) is a bug, never an outage
-        except Exception:  # the network, or an answer shaped as nobody foresaw: no reading from this source
-            continue
+        found = _read(fetch, source, parse_it, key)
         if found and found[0]:
             rows, as_of, version = found
             value = {'schema': SCHEMA, 'source': source, 'citation': CITATIONS[source], 'as_of': as_of,
                      'version': version, 'read_at': now, 'rows': rows}
+            if source == 'openrouter':  # the arena is its own board; OpenRouter has no cost per task, so read it too
+                board = _read(fetch, 'arena', parse_arena, None)
+                board = {'as_of': board[1], 'rows': board[0]} if board and board[0] else _board(saved)
+                if board:
+                    value['board'] = board
             if saved:
-                value['previous'] = {k: v for k, v in saved.items() if k != 'previous'}
+                value['previous'] = {k: v for k, v in saved.items() if k not in ('previous', 'board')}
             write_json_atomic(reading_path(), value)
             _reading = (None, None)
             return value
     return saved
+
+
+def _board(saved):
+    """{'as_of', 'rows'} of the LMArena agent board kept with a reading: the reading itself when the arena is its
+    source, else its `board`; None when it has none."""
+    board = saved if (saved or {}).get('source') == 'arena' else (saved or {}).get('board')
+    return {'as_of': board.get('as_of'), 'rows': board['rows']} if isinstance(board, dict) and isinstance(board.get('rows'), list) else None
 
 
 def band(source, score):
@@ -338,6 +357,12 @@ def _by_anchors(deployment, saved):
                     'anchor': now[1]}
 
 
+def _version_effort(deployment, model):
+    from .execution_team import reasoning
+    suffix = AGY_EFFORT.search(deployment['native_profile']['model'])
+    return parse(AGY_EFFORT.sub('', model))[2], suffix[1] if suffix else reasoning(deployment)
+
+
 def klass(deployment, saved=None):
     """{'class', 'from': 'reading' | 'line', plus 'source', 'as_of', 'intelligence', 'cost_per_task_usd' when the
     reading has the route's model at its default effort} for a deployment. A model with no line gets {'class', 'from':
@@ -349,10 +374,7 @@ def klass(deployment, saved=None):
     known = model and line(model)
     if not known:
         return _by_anchors(deployment, saved)
-    from .execution_team import reasoning
-    suffix = AGY_EFFORT.search(deployment['native_profile']['model'])
-    effort = suffix[1] if suffix else reasoning(deployment)
-    version = parse(AGY_EFFORT.sub('', model))[2]
+    version, effort = _version_effort(deployment, model)
     key = (known['line'], '.'.join(map(str, version)), effort)
     # The line's class is the class of its newest version usable here. An older version is another model (Opus 4.6
     # on Bedrock is not the Opus 5.5 of the CLI): one class lower, since nothing measured places it higher, until a
@@ -375,6 +397,41 @@ def klass(deployment, saved=None):
     if before and band(saved['source'], before['intelligence']) == chosen:
         return {'class': chosen, 'from': 'reading', **numbers}
     return {**own, **numbers}
+
+
+def task(deployment, saved=None):
+    """{'score', 'cost_per_task_usd', 'value', 'source', 'as_of', 'effort'} of a route's model from ONE row of the
+    LMArena agent board, or None when the board has no single row of it or the row lacks the score or the cost. A model
+    of a line is read at the route's own effort when the board lists it, else at the highest it lists ('effort' says
+    which); a model with no line goes through `_match`. The value is the score above the board's lowest score, per
+    dollar of a task: Arena ratings go below zero, so the lowest listed model is the zero of the scale, a rating alone
+    cannot be divided by a cost."""
+    board = _board(reading() if saved is None else saved)
+    if not board:
+        return None
+    model = _slug(deployment)
+    known = model and line(model)
+    if known:
+        version, effort = _version_effort(deployment, model)
+        listed = [r for r in board['rows'] if isinstance(r, dict) and r.get('line') == known['line']
+                  and r.get('version') == '.'.join(map(str, version)) and r.get('effort') in EFFORTS]
+        top = max((EFFORTS.index(r['effort']) for r in listed), default=-1)
+        at = [r for r in listed if r['effort'] == effort] or [r for r in listed if EFFORTS.index(r['effort']) == top]
+        row = at[0] if len(at) == 1 else None
+    else:
+        row = _match(board, deployment)
+    score, cost = row and _number(row.get('intelligence')), row and _number(row.get('cost_per_task_usd'))
+    if score is None or cost is None or cost <= 0:
+        return None
+    lowest = min(s for r in board['rows'] if isinstance(r, dict) and (s := _number(r.get('intelligence'))) is not None)
+    return {'score': score, 'cost_per_task_usd': cost, 'value': (score - lowest)/cost, 'source': 'arena',
+            'as_of': board['as_of'], 'effort': row.get('effort')}
+
+
+def describe_task(found):
+    """One phrase for `tare models` and the matrix: what a task costs on the board, with its source and date; '' when
+    the board has no figure. A public figure of the board, never tare's own measurement."""
+    return f"about US$ {found['cost_per_task_usd']:.2f} per task" + (f" at {found['effort']} effort" if found['effort'] else '')         + f" on the LMArena agent board, {found['as_of']}" if found else ''
 
 
 def own_record(storage=None):
