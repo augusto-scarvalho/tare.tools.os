@@ -32,10 +32,22 @@
     {"id": "professional", "label": "legal, consulting and finance work", "description": "Professional services: legal, consulting and finance tasks done as an agent.",
      "sources": [
        {"reader": "epoch", "board": "apex_agents_external.csv", "column": "Pass@1 score", "higher_is_better": true, "kind": "outcome", "name": "Epoch APEX-Agents",
-        "citation": "APEX-Agents, as collected by Epoch AI (epoch.ai/benchmarks); the data keeps its source's own licence"}]},
-    {"id": "security", "label": "cybersecurity", "description": "Cybersecurity: finding and reasoning about vulnerabilities.", "sources": []},
-    {"id": "engineering", "label": "engineering", "description": "Engineering outside software: mechanical, electrical and process work.", "sources": []},
-    {"id": "cad", "label": "CAD", "description": "Computer-aided design: parametric parts and drawings.", "sources": []},
+        "citation": "APEX-Agents, as collected by Epoch AI (epoch.ai/benchmarks); the data keeps its source's own licence"},
+       {"reader": "page", "board": "https://www.vals.ai/benchmarks/legal_bench", "model": "Model", "column": "Accuracy", "higher_is_better": true, "kind": "outcome", "name": "Vals AI LegalBench",
+        "citation": "LegalBench as run by Vals AI (vals.ai/benchmarks/legal_bench), read from its public leaderboard page"}]},
+    {"id": "security", "label": "cybersecurity", "description": "Cybersecurity: finding and reasoning about vulnerabilities.",
+     "sources": [
+       {"reader": "page", "board": "https://cwe-bench.com/", "model": "Model", "column": "Pass@1", "higher_is_better": true, "kind": "outcome", "name": "CWE-bench",
+        "citation": "CWE-bench (cwe-bench.com), read from its public leaderboard page"}]},
+    {"id": "engineering", "label": "engineering", "description": "Engineering outside software: mechanical, electrical and process work.",
+     "sources": [
+       {"reader": "script", "board": "https://www.mercor.com/apex/partner-benchmarks/ple-bench-leaderboard", "script": "__NEXT_DATA__", "rows": "props.pageProps.leaderboard.rows",
+        "model": "model_name", "organisation": "providerName", "column": "score.mean-score", "higher_is_better": true, "kind": "outcome", "name": "PLE (Mercor)",
+        "citation": "Physical-Engineering's Last Exam (PLE), Mercor (mercor.com/apex/partner-benchmarks/ple-bench-leaderboard), read from its public leaderboard page"}]},
+    {"id": "cad", "label": "CAD", "description": "Computer-aided design: parametric parts and drawings.",
+     "sources": [
+       {"reader": "page", "board": "https://benchcad.com/leaderboard", "model": "Model", "column": "Score", "higher_is_better": true, "kind": "outcome", "name": "BenchCAD",
+        "citation": "BenchCAD (benchcad.com), read from its public leaderboard page"}]},
     {"id": "3d", "label": "3D modelling", "description": "3D modelling: meshes, scenes and assets.", "sources": []},
     {"id": "games", "label": "game development", "description": "Game development: engines, gameplay code and tools.", "sources": []},
     {"id": "medicine", "label": "medicine and life sciences", "description": "Medicine and the life sciences: clinical and biological questions.", "sources": []},

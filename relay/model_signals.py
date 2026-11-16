@@ -25,6 +25,7 @@ import re
 import time
 import zipfile
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -76,17 +77,22 @@ def reading():
     return _reading[1]
 
 
-def normalise(name, creator):
+def normalise(name, creator, bare=False):
     """(line, version, effort) of a source's model name ('GPT-6.1 Sol (Max)' by openai is ('gpt-sol', '6.1', 'max')),
-    or None. The bracket must hold exactly one known effort and the creator must be the line's vendor."""
-    found = BRACKET.fullmatch(name.strip()) if isinstance(name, str) else None
-    if not found or found[2].strip().lower() not in EFFORTS:
+    or None. A bracket must hold exactly one known effort and the creator must be the line's vendor. `bare` is for a
+    page's display names: a name with no bracket is the model at no stated effort (None), and a creator of None means
+    the page names none, so the line's vendor stands."""
+    text = name.strip() if isinstance(name, str) else ''
+    found = BRACKET.fullmatch(text)
+    base, effort = (found[1], found[2].strip().lower()) if found else (text if bare else '', None)
+    if not base or found and effort not in EFFORTS:
         return None
-    slug = found[1].lower().replace(' ', '-')
+    slug = base.lower().replace(' ', '-')
     row = line(slug)
-    if not row or not isinstance(creator, str) or creator.casefold() != row['vendor'].casefold():
+    vendor = row['vendor'] if row and bare and creator is None else creator
+    if not row or not isinstance(vendor, str) or vendor.casefold() != row['vendor'].casefold():
         return None
-    return row['line'], '.'.join(map(str, parse(slug)[2])), found[2].strip().lower()
+    return row['line'], '.'.join(map(str, parse(slug)[2])), effort
 
 
 def _number(value):
@@ -170,7 +176,11 @@ def _get(url, headers=None):
 
 def fetch(source, key=None):
     """A source's answer: OpenRouter's or an LMArena config's JSON ('arena' is the agent board, 'arena:webdev' another),
-    Epoch's archive as bytes ('epoch')."""
+    Epoch's archive as bytes ('epoch'), a public page as bytes ('page:<url>')."""
+    if source.startswith('page:'):  # a public page the catalogue names (a source of reader 'page' or 'script'): only that URL
+        if urlsplit(source[5:]).scheme != 'https':
+            raise ValueError('a page is read over https only')
+        return _get(source[5:], {'Accept': 'text/html'})
     if source == 'epoch':
         return _get(EPOCH, {'Accept': '*/*'})
     if source == 'openrouter':
@@ -390,7 +400,7 @@ def _match(saved, deployment):
     def same(r):
         if openrouter and isinstance(r.get('permaslug'), str):
             return named(model, r['permaslug'])
-        return named(name, r['name'].lower().replace(' ', '-')) and (not vendor or house(vendor, r['creator']))
+        return named(name, r['name'].lower().replace(' ', '-')) and (not vendor or not r['creator'] or house(vendor, r['creator']))
     rows = [r for r in (saved or {}).get('rows', ()) if isinstance(r, dict) and r.get('line') is None
             and isinstance(r.get('name'), str) and isinstance(r.get('creator'), str)
             and _number(r.get('intelligence')) is not None and same(r)]
@@ -591,7 +601,7 @@ def describe(result):
 # A model that is the best in general may know nothing of CAD or 3D, so the class is read per type (owner, 2026-11-16).
 # Adding a type, or a source of a reader below, is an edit of task_types.json and no code.
 TYPES = json.loads(Path(__file__).with_name('task_types.json').read_text(encoding='utf-8'))['types']
-READERS = ('arena', 'epoch')
+READERS = ('arena', 'epoch', 'page', 'script')
 
 
 def task_type(type_id):
@@ -644,6 +654,101 @@ def parse_epoch(raw, source):
     return (rows, max(filter(None, dates), default=None)) if rows else None
 
 
+class _Page(HTMLParser):
+    """The tables of a page as rows of cells (a cell is the list of its text pieces, in order) and its scripts by id."""
+    def __init__(self):
+        super().__init__()
+        self.tables, self.scripts, self._cell, self._script = [], {}, None, None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'table':
+            self.tables.append([])
+        elif tag == 'tr' and self.tables:
+            self.tables[-1].append([])
+        elif tag in ('td', 'th') and self.tables and self.tables[-1]:
+            self._cell = []
+        elif tag == 'script' and dict(attrs).get('id'):
+            self._script = dict(attrs)['id']
+            self.scripts[self._script] = ''
+
+    def handle_endtag(self, tag):
+        if tag in ('td', 'th') and self._cell is not None:
+            self.tables[-1][-1].append(self._cell)
+            self._cell = None
+        elif tag == 'script':
+            self._script = None
+
+    def handle_data(self, data):
+        if self._cell is not None and data.strip():
+            self._cell.append(' '.join(data.split()))  # also folds a no-break space
+        elif self._script:
+            self.scripts[self._script] += data
+
+
+def _page(raw):
+    page = _Page()
+    page.feed(raw.decode('utf-8', 'replace'))
+    return page
+
+
+def _score(value):
+    """A page's score as a number: 0.754, '0.754', '75.0%'; None for anything else ('coming soon', an estimate '≈0.7')."""
+    if isinstance(value, str):
+        found = re.fullmatch(r'\s*(-?\d+(?:\.\d+)?)\s*%?\s*', value)
+        value = float(found[1]) if found else None
+    return _number(value)
+
+
+def _model_rows(found):
+    """Rows from [(display name, organisation or None, score)] like any other board's: a known line's row by
+    `normalise`, any other model's (creator '' when the page names none) by `_others`."""
+    items, others = [], []
+    for name, org, score in found:
+        key = normalise(name, org, bare=True)
+        if key:
+            items.append((key, score, None, None, None))
+        else:
+            others.append((org or '', name, None, score, None, None, None))
+    return _rows(items) + _others(others)
+
+
+def parse_page(raw, source):
+    """(rows, None) of the first table of an HTML page whose header row holds the source's `model` and `column`
+    headers (and its `organisation` one when the catalogue names it): a model's name is the first text of its cell
+    (a row's name may carry a note after it), a sort arrow after a header is ignored, and a row with no number
+    ('coming soon', an estimate) is no row. None when no table has the columns or holds a scored row: a failed
+    reading, which keeps the saved board. The page states no date, so there is no `as_of`."""
+    for table in _page(raw).tables:
+        for i, head in enumerate(table):
+            heads = [re.sub('[▲▼]', '', ''.join(cell)).strip().casefold() for cell in head]
+            at = [heads.index(source[k].casefold()) if source[k].casefold() in heads else None
+                  for k in ('model', 'column', 'organisation') if source.get(k)]
+            if None in at:
+                continue
+            found = [(r[at[0]][0], r[at[2]][0] if len(at) > 2 else None, _score(r[at[1]][0]))
+                     for r in table[i+1:] if len(r) > max(at) and all(r[j] for j in at)]
+            rows = _model_rows(found)
+            if rows:
+                return rows, None
+    return None
+
+
+def parse_script(raw, source):
+    """(rows, None) of a JSON `<script id=...>` of a page that has no table (a Next.js page's `__NEXT_DATA__`): the
+    catalogue gives the script's id (`script`), the dotted path to the list of rows (`rows`) and, as dotted paths in a
+    row, the `model`, the score (`column`) and optionally the `organisation`. A path that is not there raises: a
+    reading that failed, which keeps the saved board."""
+    def at(value, path):
+        for key in path.split('.'):
+            value = value[key]
+        return value
+    data = json.loads(_page(raw).scripts[source['script']])
+    org = source.get('organisation')
+    rows = _model_rows([(at(r, source['model']), at(r, org) if org else None, _score(at(r, source['column'])))
+                        for r in at(data, source['rows'])])
+    return (rows, None) if rows else None
+
+
 def _current(kept):
     """{line: its newest version on any saved board}. The anchors of a board must be these versions: a board that stopped
     at an older one (an aged source) would place a new model against models it is no longer measured beside."""
@@ -655,10 +760,11 @@ def _current(kept):
     return best
 
 
-def _due(entry, now):
-    """True when a saved board is older than a day and no try was made in the last hour."""
+def _due(entry, now, wait=3600):
+    """True when a saved board is older than a day and no try was made in the last `wait` seconds (an hour; a day for
+    a public page: a page that changed its layout must not be asked every hour by every machine)."""
     read, tried = (_when((entry or {}).get(k), now) for k in ('read_at', 'tried_at'))
-    return not (read is not None and now - read < 86400 or tried is not None and now - tried < 3600)
+    return not (read is not None and now - read < 86400 or tried is not None and now - tried < wait)
 
 
 def refresh_boards(now, fetch, setup=None):
@@ -671,7 +777,8 @@ def refresh_boards(now, fetch, setup=None):
         return
     saved = boards()
     sources = {source_key(s): s for t in TYPES for s in t['sources']}
-    due = {k: s for k, s in sources.items() if _due(saved.get(k), now)}
+    due = {k: s for k, s in sources.items()
+           if _due(saved.get(k), now, 86400 if s['reader'] in ('page', 'script') else 3600)}
     if not due:
         return
     kept, archive = {k: v for k, v in saved.items() if k in sources}, []
@@ -680,11 +787,14 @@ def refresh_boards(now, fetch, setup=None):
             if not archive:  # one GET for every Epoch board; a failed one is not asked again in this pass
                 archive.append(_read(fetch, 'epoch', lambda raw: raw, None))
             found = _read(lambda source, k: archive[0], 'epoch', lambda raw: parse_epoch(raw, s), None)
-        else:
+        elif s['reader'] == 'arena':
             found = _read(fetch, 'arena:'+s['board'], lambda body: parse_arena(body, s['column'], s.get('category')), None)
+        else:  # a public page: one GET of the URL the catalogue names, nothing else of the site
+            read_it = parse_page if s['reader'] == 'page' else parse_script
+            found = _read(fetch, 'page:'+s['board'], lambda raw: read_it(raw, s), None)
         if found and found[0]:
             sign = 1 if s['higher_is_better'] else -1  # one direction for _place: a higher number is better
-            kept[key] = {'read_at': now, 'as_of': found[1],
+            kept[key] = {'read_at': now, 'as_of': found[1] or datetime.fromtimestamp(now, timezone.utc).date().isoformat(),
                          'rows': [{**r, 'intelligence': sign*r['intelligence']} for r in found[0]]}
         else:
             kept[key] = {**kept.get(key, {}), 'tried_at': now}
