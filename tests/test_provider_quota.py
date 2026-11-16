@@ -22,6 +22,11 @@ CODEX = {'ordinaryUsageAllowed': False,
              'premium': {'limitId': 'premium', 'planType': 'prolite', 'primary': {
                  'usedPercent': 25.5, 'windowDurationMins': 300, 'resetsAt': 1794300000}, 'secondary': None}},
          'rateLimitResetCredits': {'availableCount': 2, 'credits': []}}
+# `claude auth status` also holds the account's email and organisation: no reading may keep them.
+CLAUDE_AUTH = {'loggedIn': True, 'email': 'someone@example.test', 'orgName': 'Example Org', 'subscriptionType': 'max',
+               'planTier': 'max_20x'}
+SCREEN_READS = []  # each time a test's stand-in opened AGY's first screen
+REAL_AGY_SCREEN_PLAN = provider_quota.agy_screen_plan  # conftest replaces the module's name with a refusal
 AGY = {'description': 'Within each group, models share a weekly limit and a 5-hour limit.', 'groups': [
     {'name': 'Gemini Models', 'description': 'Models within this group: Gemini Flash, Gemini Pro', 'buckets': [
         {'id': 'gemini-weekly', 'window': 'weekly', 'remaining_fraction': 0.5160037875175476,
@@ -103,8 +108,14 @@ def providers(monkeypatch, tmp_path):
         'OPENROUTER_API_KEY', 'OPENCODE_API_KEY', 'OPENAI_API_KEY'} else None)
     monkeypatch.setattr(provider_quota, 'codex_limits', lambda executable: CODEX)
 
+    SCREEN_READS.clear()
+    monkeypatch.setattr('relay.cli_discovery.fingerprint', lambda executable: [executable, 1, 1])
+    monkeypatch.setattr(provider_quota, 'agy_screen_plan', lambda executable, folder: SCREEN_READS.append(1) or 'Google AI Pro')
+
     def run(executable, *arguments, timeout=90):
         if executable == 'claude.exe':
+            if arguments == ('auth', 'status'):
+                return json.dumps(CLAUDE_AUTH)
             assert arguments == ('-p', '/usage', '--output-format', 'json', '--setting-sources', '',
                                  '--no-session-persistence')
             return json.dumps({'result': CLAUDE, 'total_cost_usd': 0})
@@ -137,7 +148,7 @@ def test_the_table_says_what_is_left_when_it_resets_and_what_is_not_reported(pro
     assert 'week, Fable' in text and 'none left' in text and 'Gemini 4 Argon, week' in text
     line = next(row for row in text.splitlines() if 'week, all models' in row)
     assert '61% left' in line and 'resets Sun 15 Nov 17:59' in line
-    assert 'Codex subscription · prolite' in text and '2 free limit resets available' in text
+    assert 'Codex subscription · plan prolite' in text and '2 free limit resets available' in text
     assert 'OpenRouter: no reading. TimeoutError: no answer' in text
     assert 'OpenAI API: not reported.' in text and 'no model call was made' in text
     assert provider_quota.main(['--cached', '--json']) == 0
@@ -289,16 +300,139 @@ def test_opencode_shows_what_tare_used_of_the_allowance_and_a_plan_a_refused_cal
     old, recent = tmp_path/'old', tmp_path/'recent'
     old.mkdir(); recent.mkdir()
     assert provider_spend.post(glm, calls('1.5'), old, now=NOW - 3 * 86400) == 1
-    assert provider_spend.post(glm, calls('0.25', None, '0.125'), recent, now=NOW - 3600) == 2
+    assert provider_spend.post(glm, calls('0.25', None, '0.125'), recent, now=NOW - 3600) == 3  # a reply with no allowance still names the plan
     assert provider_spend.spent('opencode-sub', 0) == 0  # allowance is not a charge
     turn_engine.note_usage_limit(glm, resets_at=NOW + 7200, now=NOW)  # a refused call: GoUsageLimitError
     report = provider_quota.refresh(now=NOW)
     plan = next(a for a in report['accounts'] if a['account'] == 'opencode-sub')
     assert plan['allowance_used'] == {'5h': 0.375, '7d': 1.875, '30d': 1.875} and plan['parked_until'] == NOW + 7200
     text = provider_quota.render(report, now=NOW)
-    assert 'OpenCode subscription: not reported.' in text
+    assert 'OpenCode subscription · plan go: not reported.' in text
     assert '    A refused call left this account out until 10:00.' in text
     assert "    Allowance tare's own sessions used: US$ 0.38 in the last 5 h, US$ 1.88 in 7 days, US$ 1.88 in 30 days." in text
     # Other subscriptions say so too; an account no refused call touched says nothing.
     assert 'parked_until' not in next(a for a in report['accounts'] if a['account'] == 'agy')
     assert provider_quota.parked('opencode-sub', NOW + 7201) is None
+
+
+def test_each_source_names_its_plan_the_table_shows_it_and_no_email_is_kept(providers, tmp_path, capsys):
+    from relay import native_catalog, provider_spend
+    reply = {'calls': [{'call_id': 's/m/1', 'cost': {'currency': 'USD', 'known_amount': '0', 'opencode': {
+        'billing_source': 'go', 'allowance': '0.1'}}}]}
+    provider_spend.post(native_catalog.select('opencode-sub-glm-5-3-flash'), reply, tmp_path, now=NOW - 60)
+    report = provider_quota.refresh(now=NOW)
+    assert {a['account']: a.get('plan') for a in report['accounts'] if a['kind'] == 'subscription'} == {
+        'claude': 'max_20x', 'codex': 'prolite', 'agy': 'Google AI Pro', 'opencode-sub': 'go'}
+    text = provider_quota.render(report, now=NOW)
+    for name in ('Claude subscription · plan max_20x', 'Codex subscription · plan prolite',
+                 'AGY subscription · plan Google AI Pro', 'OpenCode subscription · plan go'):
+        assert name in text
+    assert provider_quota.main(['--json']) == 0
+    shown = capsys.readouterr().out + json.dumps(report) + (providers/'serve'/'provider-quota.json').read_text(encoding='utf-8')
+    assert 'someone@example.test' not in shown and 'Example Org' not in shown
+
+
+def test_a_failed_plan_read_keeps_the_windows(providers, monkeypatch):
+    real = provider_quota.run
+
+    def run(executable, *arguments, timeout=90):
+        if arguments == ('auth', 'status'):
+            raise OSError('no auth status')
+        return real(executable, *arguments, timeout=timeout)
+    monkeypatch.setattr(provider_quota, 'run', run)
+
+    def no_screen(executable, folder):
+        raise OSError('no terminal')
+    monkeypatch.setattr(provider_quota, 'agy_screen_plan', no_screen)
+    accounts = {a['account']: a for a in provider_quota.refresh(now=NOW)['accounts']}
+    for name in ('claude', 'agy'):
+        assert accounts[name]['status'] == 'OBSERVED' and accounts[name]['buckets'] and not accounts[name]['plan']
+
+
+def test_agy_is_read_once_per_executable_file_and_a_miss_is_tried_again_after_a_day(providers, monkeypatch):
+    stamp = [['agy.exe', 1, 1]]
+    monkeypatch.setattr('relay.cli_discovery.fingerprint', lambda executable: stamp[0])
+    provider_quota.refresh(now=NOW)
+    provider_quota.refresh(now=NOW + 3600)
+    assert len(SCREEN_READS) == 1 and provider_quota.cached()['accounts'][2]['plan'] == 'Google AI Pro'
+    stamp[0] = ['agy.exe', 2, 2]  # an update replaced the file
+    provider_quota.refresh(now=NOW + 7200)
+    assert len(SCREEN_READS) == 2
+    monkeypatch.setattr(provider_quota, 'agy_screen_plan', lambda executable, folder: SCREEN_READS.append(1))  # no plan on it
+    stamp[0] = ['agy.exe', 3, 3]
+    provider_quota.refresh(now=NOW)
+    provider_quota.refresh(now=NOW + 3600)
+    assert len(SCREEN_READS) == 3  # the miss is kept for a day
+    provider_quota.refresh(now=NOW + 86401)
+    assert len(SCREEN_READS) == 4
+
+
+def test_a_quota_reading_that_fails_once_does_not_open_the_agy_tui_again(providers, monkeypatch):
+    monkeypatch.setattr('relay.cli_discovery.fingerprint', lambda executable: ['agy.exe', 1, 1])
+    provider_quota.refresh(now=NOW)
+    real = provider_quota.run
+
+    def down(executable, *arguments, timeout=90):
+        if '/quota' in arguments:
+            raise OSError('agy is down')
+        return real(executable, *arguments, timeout=timeout)
+    monkeypatch.setattr(provider_quota, 'run', down)
+    failed = {a['account']: a for a in provider_quota.refresh(now=NOW + 60)['accounts']}['agy']
+    assert failed['status'] == 'UNAVAILABLE' and failed['plan_read']['plan'] == 'Google AI Pro'
+    monkeypatch.setattr(provider_quota, 'run', real)
+    provider_quota.refresh(now=NOW + 120)
+    assert len(SCREEN_READS) == 1  # the plan read before the failure still stands
+
+
+class FakeSessions:
+    """TerminalSessions that shows one screen and records anything sent to the program."""
+    sent, stopped = [], []
+
+    def __init__(self, screen):
+        self.screen = screen
+
+    def __call__(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.stopped.append(1)
+
+    def start(self, **kwargs):
+        assert kwargs['argv'] == ['agy.exe'] and kwargs['mode'] == 'pty'
+        return {'handle': 'h'}
+
+    def read(self, **kwargs):
+        return {'output': {'stdout': {'cursor': 1, 'text': self.screen, 'truncated': False}}}
+
+    def send(self, **kwargs):
+        self.sent.append(kwargs)
+
+
+@pytest.mark.parametrize('screen, plan', [
+    ('Antigravity\r\n someone@example.test (Google AI Pro)\r\n> ', 'Google AI Pro'),
+    ('Do you trust the contents of this project?\r\n 1. Yes\r\n someone@example.test (Google AI Pro)', None)])
+def test_the_agy_screen_gives_the_plan_never_the_email_and_sends_nothing(monkeypatch, screen, plan):
+    fake = FakeSessions(screen)
+    fake.sent.clear()
+    fake.stopped.clear()
+    monkeypatch.setattr('compute_plane.terminal_sessions.TerminalSessions', fake)
+    monkeypatch.setattr('relay.turn_engine.cli_env', dict)
+    assert REAL_AGY_SCREEN_PLAN('agy.exe', '.', timeout=1) == plan
+    assert fake.sent == [] and fake.stopped == [1]  # not a key, not a text, not an answer to the trust question
+
+
+def test_an_opencode_balance_charge_is_not_a_plan(providers, tmp_path):
+    from relay import native_catalog, provider_spend
+    glm = native_catalog.select('opencode-sub-glm-5-3-flash')
+    assert provider_spend.last_plan('opencode-sub') is None
+
+    def post(source, now):
+        reply = {'calls': [{'call_id': f's/m/{now}', 'cost': {'currency': 'USD', 'known_amount': '0.5', 'opencode': {
+            'billing_source': source, 'allowance': '0'}}}]}
+        provider_spend.record(glm, reply['calls'], now=now)
+        return provider_spend.last_plan('opencode-sub')
+    assert post('balance', 1) is None and post('go', 2) == 'go' and post('go-plus', 3) == 'go-plus'
+    assert post('byok', 4) == 'go-plus' and post('free', 5) == 'go-plus'  # the last reply that names a plan

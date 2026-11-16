@@ -16,6 +16,8 @@ from pathlib import Path
 ACCOUNTS = {'OPENAI_API_KEY': 'openai-api', 'ANTHROPIC_API_KEY': 'anthropic-api', 'GEMINI_API_KEY': 'gemini-api',
             'AWS_BEARER_TOKEN_BEDROCK': 'bedrock', 'OPENROUTER_API_KEY': 'openrouter'}
 DECLARABLE = frozenset({'openai-api', 'anthropic-api', 'gemini-api', 'bedrock', 'opencode-api'})
+# The usage.opencode.billing_source values that name a plan (not 'balance', 'byok' or 'free').
+PLANS = ('go', 'go-plus')
 
 
 def folder():
@@ -66,6 +68,7 @@ def record(deployment, calls, now=None):
         usd = amount(cost.get('known_amount')) if cost.get('currency') == 'USD' else 0.0
         # OpenCode's subscription charges nothing; each reply says how much of the plan's allowance it used.
         allowance = amount((cost.get('opencode') or {}).get('allowance')) if plan else 0.0
+        source = (cost.get('opencode') or {}).get('billing_source')
         if name and usd > 0:
             # Valued at a models.dev reference price, not a tariff: it counts down all the same, and the row says
             # which entry priced it and the day that price was read.
@@ -73,8 +76,8 @@ def record(deployment, calls, now=None):
             rows.append(json.dumps({**row, 'account': name, 'usd': usd, **({
                 'reference': True, 'price_source': tariff['source'], 'price_read': tariff.get('effective_at')}
                 if is_reference(tariff) else {})}))
-        elif allowance > 0:
-            rows.append(json.dumps({**row, 'account': plan, 'allowance': allowance}))
+        elif plan and (allowance > 0 or source in PLANS):  # a reply inside the plan's limits still names its plan
+            rows.append(json.dumps({**row, 'account': plan, 'allowance': allowance, **({'plan': source} if source in PLANS else {})}))
     if rows:
         folder().mkdir(parents=True, exist_ok=True)
         with open(folder()/'provider-spend.jsonl', 'a', encoding='utf-8') as ledger:
@@ -98,6 +101,23 @@ def spent(name, since, field='usd', reference=False):
     except OSError:
         pass
     return round(total, 6)
+
+
+def last_plan(name):
+    """The plan (billing source) of the last reply the ledger holds for this account, or None."""
+    found = None
+    try:
+        with open(folder()/'provider-spend.jsonl', encoding='utf-8') as ledger:
+            for line in ledger:
+                try:
+                    row = json.loads(line)
+                    if row['account'] == name and row.get('plan') in PLANS:
+                        found = row['plan']
+                except (ValueError, KeyError, TypeError):
+                    continue
+    except OSError:
+        pass
+    return found
 
 
 def cycle(day, now):
