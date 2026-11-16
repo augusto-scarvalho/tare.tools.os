@@ -232,6 +232,12 @@ def test_a_routes_own_record_as_implementer_is_counted_from_the_unit_receipts_an
 def test_an_older_version_of_a_line_is_one_class_lower_and_a_bedrock_id_is_read_as_its_model():
     """The version is part of what a model is: Fable 5.1 is not Fable 5.2, and the Opus 4.6 that Bedrock's free
     credit runs is not the Opus 5.5 of the CLI and the API (owner, 2026-11-15)."""
+    from relay import environment
+    # Fable 5.2 is listed but has not answered on this machine: it lowers nobody, and 5.1 keeps the line's class.
+    assert signals.klass(route('claude-fable-5-1')) == {'class': 'frontier', 'from': 'line'}
+    setup = environment.read()
+    setup.setdefault('proofs', {})['claude-api-fable-5-2'] = {'ok': True}
+    environment.save(setup)  # the proof tare setup --prove (or the TUI) records
     assert signals.klass(route('claude-fable-5-2')) == {'class': 'frontier', 'from': 'line'}
     assert signals.klass(route('claude-fable-5-1')) == {'class': 'middling', 'from': 'line', 'older_than': '5.2'}
     assert signals.klass(route('gpt-6-sol')) == {'class': 'cheap', 'from': 'line', 'older_than': '6.1'}

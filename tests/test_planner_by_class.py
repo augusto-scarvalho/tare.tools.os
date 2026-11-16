@@ -34,6 +34,9 @@ def test_a_route_switched_off_for_the_planner_never_plans(pool):
 
 
 def test_the_planner_prefers_a_frontier_route_per_token_to_a_middling_subscription_one(pool):
+    setup = environment.read()
+    setup.setdefault('proofs', {})['claude-api-fable-5-2'] = {'ok': True}  # 5.2 answered here: 5.1 is the older one
+    environment.save(setup)
     names = planning_tools.snapshot()['route_order']
     frontier = [n for n in names if (klass(native_catalog.select(n)) or {}).get('class') == 'frontier']
     assert 'openai-api-gpt-6-astra' in frontier and 'claude-api-fable-5-1' not in frontier  # 5.1: an older version
