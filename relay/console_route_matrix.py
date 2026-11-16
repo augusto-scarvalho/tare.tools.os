@@ -124,7 +124,8 @@ class ProveDialog(ModalScreen):
 
     def compose(self):
         with Vertical(id='prove-dialog'):
-            yield Static('One minimal real call per route, to see that it answers:', markup=False)
+            yield Static('Per route, one minimal real call to see that it answers, then one short task (read, edit and '
+                         'deliver one file in a throwaway folder) to see that it works in a tare role:', markup=False)
             yield Static('\n'.join(self.lines), id='prove-lines', markup=False)
             with Horizontal(classes='panel-actions'):
                 yield Button('Cancel · Esc', id='prove-cancel')
@@ -445,7 +446,7 @@ class RouteMatrix(Vertical):
         role, cell, self.proving, said = self.role, self.cursor_cell(), True, []
         try:
             for i, name in enumerate(names, 1):
-                self.show(f'Proving {name} ({i} of {len(names)}): one minimal call…')
+                self.show(f'Proving {name} ({i} of {len(names)}): one minimal call, then a short task…')
                 # the user just confirmed that line; prove() keeps the result in the setup file, never the reply
                 try:
                     record = await asyncio.to_thread(env.prove, name, lambda line: True)
@@ -459,10 +460,14 @@ class RouteMatrix(Vertical):
             return
         now = {n: now for n, _, now, _ in (r for rows in self.cells[role].values() for r in rows)}
         for name, record in said:  # kept for describe(): the reload moves the cursor, which rewrites the status line
+            failed_task = (record.get('role_check') or {}).get('ok') is False
             self.proved[name] = 'proved here: ' + (
+                f"answered, but failed the role check: {record['role_check'].get('reason')}; it stays pin only"
+                if failed_task else
                 f"failed: {record.get('reason') or 'no reason given'}" if record.get('ok') is not True else
-                'answered; used automatically where it is ticked on' if now.get(name) != 'NOT_QUALIFIED_PIN_ONLY' else
-                'answered, but it stays pin only (a reseller or a local model is not proven by this)')
+                'answered and did the task; used automatically where it is ticked on'
+                if now.get(name) != 'NOT_QUALIFIED_PIN_ONLY' else
+                'answered and did the task, but it stays pin only (a reseller or a local model is not proven by this)')
         self.show(self.describe(*cell))
 
     def targets(self, rule):

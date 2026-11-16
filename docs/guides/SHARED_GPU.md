@@ -156,9 +156,15 @@ Implementer", one step). With no coordinator entries, a conversation is routed a
 - **Rules come first.** A provider declined in setup, a route not yet proven here (`NOT_QUALIFIED_PIN_ONLY`), an
   older model (`OLDER_MODEL`), an auditor of the same family, a missing credential or a spent quota keep their own
   reasons. An "on" entry never makes such a route usable.
-- **A proof lifts `NOT_QUALIFIED_PIN_ONLY` for a known line.** Once `tare setup --prove ROUTE` has answered on this
-  machine, that route, if its endpoint serves its vendor's own model (it has a line), is used automatically for the
-  roles its row lists; proving a model's CLI route does not lift its API route, and a route with no line stays pin-only.
+- **A proof lifts `NOT_QUALIFIED_PIN_ONLY` for a known line.** `tare setup --prove ROUTE` makes one minimal call and,
+  when it answers, one short role check: an implementer session (at most 6 calls and 5 minutes, at the route's own
+  effort) on a throwaway folder it then deletes, told to read `value.txt`, change 41 to 42 and deliver. tare, not a
+  model, judges it: it passes when the session delivered and the file reads 42; otherwise the proof fails and says
+  whether the session did not finish (its status and reason) or delivered without changing the file. Only the
+  result is kept, never the reply. Once both passed on this machine, that route, if its endpoint serves its vendor's
+  own model (it has a line), is used automatically for the roles its row lists; a failed role check leaves it
+  pin-only. Proving a model's CLI route does not lift its API route, and a route with no line stays pin-only. A proof
+  recorded before the role check existed still counts.
 - **A skipped route says why:** `SWITCHED_OFF_FOR_ROLE` and the entry, in tare auto's skipped routes, in a role
   table's candidates and in "No route can start", with how to switch it on (`tare setup --auto ROLE:ENTRY=on`) or
   pin it, so the coordinator can tell you. A role left with no route behaves as when none is available: no auditor
@@ -239,7 +245,7 @@ Local, Other API) that has a route for that role here. Vendor API is the model o
 Claude, OpenAI for GPT, Google for Gemini); OpenRouter, Bedrock and the OpenCode API are resellers of the same
 models, each a column of its own, so the origin and a reseller can be switched separately. The search finds a row by its name or its technical name
 (`claude/fable`), which the status line shows. Space, Enter or a click on the selected cell ticks it. Nothing is
-written until Save, and Esc asks once before it discards unsaved changes. On a cell whose route is `!` for `NOT_QUALIFIED_PIN_ONLY` and has a model line, `p` (or the Prove button) asks to confirm one minimal real call per route, naming each route and its cost line, and then makes it: the same proof as `tare setup --prove ROUTE`, kept in the setup (never the reply), after which the route is automatic where ticked on. Unsaved ticks stay, and Save keeps the proofs. The file Save writes is the one the
+written until Save, and Esc asks once before it discards unsaved changes. On a cell whose route is `!` for `NOT_QUALIFIED_PIN_ONLY` and has a model line, `p` (or the Prove button) asks to confirm one minimal real call and one short task per route, naming each route and its cost line, and then makes them: the same proof as `tare setup --prove ROUTE`, kept in the setup (never the reply), after which the route is automatic where ticked on. A route that answers but fails the short task stays pin only, and the status line says why. Unsaved ticks stay, and Save keeps the proofs. The file Save writes is the one the
 equivalent `tare setup --auto` commands write.
 
 The rows, like `--auto-show`, are the routes the role's automatic path considers, each checked as the paths that

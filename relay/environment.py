@@ -888,6 +888,43 @@ def dialog(value, ask=input):
 
 
 PROOF = 'Reply with exactly: OK'
+# After the minimal call, one short task in a tare role (owner, 2026-11-15): what broke with new models in real use
+# was never the greeting but tool calls, the edit and the delivery. The host judges it, no model does.
+ROLE_CHECK = 'Read value.txt, change the number in it to 42, then deliver.'
+ROLE_CHECK_LIMITS = {'max_model_calls': 6, 'max_seconds': 300}  # read, edit, deliver, and room for a reread
+TASK = f"one short task of at most {ROLE_CHECK_LIMITS['max_model_calls']} calls (read, edit and deliver one file)"
+
+
+def role_check(deployment):
+    """{'ok', 'reason'} of one implementer session, through run_session as every role, on a throwaway project whose
+    value.txt holds 41: it passes when the session delivered (PROPOSED; a delegated implementer completes only through
+    its delivery tool, never with text) and value.txt then reads 42. The project and the session's custody live in one
+    temporary folder, deleted afterwards; the reason never carries the reply or the session's text."""
+    import tempfile
+    from . import native_agent
+    from .execution_scope import require, user_choice
+    from .turn_engine import streaming
+    with tempfile.TemporaryDirectory(prefix='tare-proof-', ignore_cleanup_errors=True) as folder:
+        project = Path(folder)/'project'
+        project.mkdir()
+        (project/'value.txt').write_bytes(b'41\n')
+        config = {'schema': 'tare.tools/native-agent-config/1', 'role': 'implementer',
+                  'repositories': {'proof': str(project)}, 'writable': {'proof': ['value.txt']}, 'verifiers': {},
+                  'capabilities': ['read', 'edit'], 'specgraph_edit_context': False}
+        try:
+            require(deployment, 'implementer')  # else an exact --implementer pin would run its own route instead
+            with user_choice('implementer', deployment):  # the user named this route: a profile "off" does not refuse it
+                result = native_agent.run_session(config, streaming(deployment), Path(folder)/'session', ROLE_CHECK,
+                                                  limits=dict(ROLE_CHECK_LIMITS), delegated_leaf=True)
+        except Exception as exc:  # refused before or during the session: the check fails, the proof goes on
+            return {'ok': False, 'reason': f'the session did not finish: {str(exc) or type(exc).__name__}'[:200]}
+        if result.get('status') != 'PROPOSED':
+            why = ' '.join(str(result[k]) for k in ('status', 'reason', 'failure_code') if result.get(k))
+            return {'ok': False, 'reason': f'the session did not finish: {why}'[:200]}
+        value = project/'value.txt'
+        if not value.is_file() or value.read_bytes().strip() != b'42':
+            return {'ok': False, 'reason': 'the session delivered but did not change value.txt to 42'}
+    return {'ok': True, 'reason': 'the session changed value.txt to 42 and delivered'}
 
 
 def route_for(name):
@@ -906,32 +943,35 @@ def route_for(name):
 
 
 def cost_line(deployment):
-    """What one minimal call costs, said before it is spent: quota, dollars or the local GPU."""
+    """What a proof costs, said before it is spent: one minimal call, then the role check's short task; quota, dollars
+    or the local GPU."""
     from decimal import Decimal
     from .challenger_variants import accounting
     route_class = accounting(deployment)
     if route_class == 'quota':
         from .turn_engine import usage_account
-        return f'one minimal call on the {usage_account(deployment)} account: no dollars; it counts against that plan'
+        return (f'one minimal call and {TASK} on the {usage_account(deployment)} account: no dollars; they count '
+                'against that plan')
     if route_class == 'local':
         from compute_plane.model_facts import gpu_availability, read_json_observation
         base = deployment['native_profile']['endpoint'].rstrip('/')
         gpu = gpu_availability(read_json_observation(base + '/fleet/status', timeout=3), deployment['native_profile']['model'])
-        return 'one minimal call on the local GPU: ' + ('the model is loaded' if gpu.get('resident') else
+        return f'one minimal call and {TASK} on the local GPU: ' + ('the model is loaded' if gpu.get('resident') else
             'the gateway may first load the model (slow)' if gpu.get('loading_required') else 'its state is unknown')
     from .provider_prices import quote
     price = quote(deployment, live=True)
     rates = [Decimal(v) for v in (price.get('rates') or {}).values() if v is not None]
     if not rates:
-        return 'one minimal call (about 40 tokens) at an unknown price: no tariff is known for this route'
+        return f'one minimal call (about 40 tokens) and {TASK} at an unknown price: no tariff is known for this route'
     return f'one minimal call (about 40 tokens): under US$ {max(rates)*40/1000000:.6f}' + (
         f" (at a models.dev reference price read {price['effective_at']}, not a confirmed tariff)"
-        if price.get('basis') == 'reference' else '')
+        if price.get('basis') == 'reference' else '') + f', then {TASK} at the same rates, its tokens unknown before it runs'
 
 
 def prove(name, confirm):
-    """One minimal real call on a route, only after `confirm(cost line)` agrees; the result (never the reply) is
-    kept in the setup. A proven CLI is recorded for discovery, which then offers its models."""
+    """One minimal real call on a route, then, when it answered, the role check's short task, only after
+    `confirm(cost line)` agrees; the result (never the reply) is kept in the setup, ok only when both passed. A proven
+    CLI is recorded for discovery, which then calls it ready."""
     from datetime import datetime, timezone
     deployment, why = route_for(name)
     if deployment is None:
@@ -939,21 +979,26 @@ def prove(name, confirm):
     line = cost_line(deployment)
     if not confirm(f'{name}: {line}.'):
         return {'ok': None, 'reason': 'not confirmed', 'cost': line}
-    if deployment['native_profile']['protocol'] == 'vendor-cli':
-        from .cli_discovery import acknowledge, proven
+    cli = deployment['native_profile']['protocol'] == 'vendor-cli'
+    if cli:
+        from .cli_discovery import acknowledge
         from .cli_qualification import forget_failed
         forget_failed(deployment['native_profile']['endpoint'])  # the explicit retry: probe the release again
         ok, reason = acknowledge(deployment)
-        if ok:
-            proven(deployment['native_profile']['endpoint'], deployment['native_cli']['executable'])
     else:
         from .native_generation import generate_text, vault_secret
         answered, content, receipt = generate_text(deployment, deployment['native_profile']['model'], PROOF, 120,
                                                    attempt_label='setup-proof', credential_resolver=vault_secret)
         ok = bool(answered and content.strip())
         reason = '' if ok else str(receipt.get('failure_class') or 'empty reply')[:200]
+    check = role_check(deployment) if ok else None  # a route that does not answer is not given a task
+    if check and not check['ok']:
+        ok, reason = False, f"answered, but failed the role check: {check['reason']}; a pin-only route stays pin only"
+    if ok and cli:
+        from .cli_discovery import proven
+        proven(deployment['native_profile']['endpoint'], deployment['native_cli']['executable'])
     record = {'at': datetime.now(timezone.utc).isoformat(timespec='seconds'), 'ok': ok, 'cost': line,
-              **({} if ok else {'reason': reason})}
+              **({} if ok else {'reason': reason}), **({'role_check': check} if check else {})}
     def keep(value):
         value.setdefault('proofs', {})[name] = record
         return value
@@ -1019,7 +1064,8 @@ def main(argv=None):
     parser.add_argument('--meta-contributor', choices=('on', 'off'),
                         help='Allow Meta to use prompts, code and responses sent to Muse Spark Contributor')
     parser.add_argument('--prove', action='append', default=[], metavar='ROUTE',
-                        help='One minimal real call on a route (a profile name, or cli:codex), after showing its cost')
+                        help='One minimal real call on a route (a profile name, or cli:codex), then one short task '
+                        'in the implementer role on a throwaway file, after showing its cost')
     parser.add_argument('--yes', action='store_true', help='Prove without asking (scripts); the cost is still printed')
     parser.add_argument('--replace-older', action='store_true', help='Move routes you named to the newer models')
     parser.add_argument('--keep-older', action='store_true', help='Keep the older models routes you named run')

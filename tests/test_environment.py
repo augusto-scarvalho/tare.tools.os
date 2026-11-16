@@ -256,14 +256,17 @@ def test_a_proof_says_its_cost_first_and_spends_only_when_agreed(machine, monkey
     calls = []
     monkeypatch.setattr(native_generation, 'generate_text',
                         lambda *a, **kw: calls.append(kw['attempt_label']) or (True, 'OK', {}))
+    monkeypatch.setattr(environment, 'role_check', lambda deployment: calls.append('role check') or {'ok': True, 'reason': ''})
     monkeypatch.setattr('sys.stdin', io.StringIO(''))
     assert environment.main(['--prove', 'paid']) == 1 and calls == []  # no terminal and no --yes: nothing spent
-    assert 'under US$ 0.000400' in capsys.readouterr().out
-    assert environment.main(['--prove', 'paid', '--yes']) == 0 and calls == ['setup-proof']
+    out = capsys.readouterr().out
+    assert 'under US$ 0.000400' in out and 'then one short task of at most 6 calls' in out
+    assert environment.main(['--prove', 'paid', '--yes']) == 0 and calls == ['setup-proof', 'role check']
     assert environment.read()['proofs']['paid']['ok'] is True
     local = {'native_profile': {**LOCAL['native_profile'], 'model': 'm'}, 'id': 'local'}
     monkeypatch.setattr('compute_plane.model_facts.read_json_observation', lambda url, timeout: {'status': 'UNKNOWN'})
-    assert environment.cost_line(local) == 'one minimal call on the local GPU: its state is unknown'
+    assert environment.cost_line(local) == ('one minimal call and one short task of at most 6 calls (read, edit and '
+                                            'deliver one file) on the local GPU: its state is unknown')
 
 
 def test_the_jev_key_comes_from_the_environment_then_the_vault(monkeypatch):

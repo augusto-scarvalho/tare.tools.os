@@ -43,6 +43,7 @@ def test_found_clis_offer_their_models_without_a_call_and_a_proof_makes_one_read
     assert cli_discovery.summary(cli_discovery.discover()) == ''  # nothing new: nothing said
 
     shown = []
+    monkeypatch.setattr(environment, 'role_check', lambda deployment: {'ok': True, 'reason': 'fixture'})
     assert environment.prove('cli:agy', lambda line: shown.append(line) or True)['ok']
     assert len(calls) == 1 and 'no dollars' in shown[0]
     report = {r['endpoint']: r for r in cli_discovery.discover()}

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from textual.widgets import Button, OptionList, Select, Static, TabbedContent, TextArea
 
 from relay import environment, execution_scope, native_catalog, native_routes, turn_engine, web_research, work_audit
@@ -563,9 +564,10 @@ def test_a_row_shows_its_models_class_and_a_cell_the_routes_own_record_as_implem
 FABLE = 'claude-fable-5-2-cli'
 
 
-def prover(monkeypatch, ok=True):
+def prover(monkeypatch, ok=True, failed=None):
     """No real call: environment.prove is replaced by a stand-in that, like the real one, asks `confirm` first and
-    keeps its record in the setup file (never a reply). Returns the names it was called for."""
+    keeps its record in the setup file (never a reply). `failed`: the record of a failed proof. Returns the names it
+    was called for."""
     calls = []
     monkeypatch.setattr(environment, 'route_for', lambda name: ({'id': name}, None))
     monkeypatch.setattr(environment, 'cost_line', lambda deployment: 'one minimal call: fixture cost')
@@ -573,7 +575,7 @@ def prover(monkeypatch, ok=True):
     def prove(name, confirm):
         assert confirm(f'{name}: one minimal call: fixture cost.')
         calls.append(name)
-        record = {'ok': ok, 'cost': 'fixture', **({} if ok else {'reason': 'credential_rejected'})}
+        record = {'ok': ok, 'cost': 'fixture', **({} if ok else failed or {'reason': 'credential_rejected'})}
         value = environment.read()
         value.setdefault('proofs', {})[name] = record
         environment.save(value)
@@ -605,7 +607,7 @@ def test_a_pin_only_cell_is_proven_from_the_matrix_after_a_confirmation_naming_t
         assert FABLE in shown and 'one minimal call: fixture cost' in shown
         assert calls == []  # nothing is called before Prove
         dialog.query_one('#prove-go', Button).press()
-        await proved(pilot, panel, status, 'answered; used automatically')
+        await proved(pilot, panel, status, 'answered and did the task; used automatically')
         assert calls == [FABLE] and app.screen is panel
         assert str(panel.query_one('#matrix-table').get_cell('claude/fable', 'claude-code')) == '[x]'  # lost its "!"
         assert 'the reply' not in json.dumps(environment.read()['proofs'])
@@ -649,14 +651,19 @@ def test_cancel_and_esc_call_nothing(pool, tmp_path, monkeypatch):
     journey(tmp_path, steps)
 
 
-def test_a_failed_proof_says_why_and_the_cell_stays_as_it_was(pool, tmp_path, monkeypatch):
+@pytest.mark.parametrize('failed,answer', [
+    (None, 'failed: credential_rejected'),
+    ({'reason': 'answered, but failed the role check: x', 'role_check': {
+        'ok': False, 'reason': 'the session delivered but did not change value.txt to 42'}},
+     'answered, but failed the role check: the session delivered but did not change value.txt to 42; it stays pin only')])
+def test_a_failed_proof_says_why_and_the_cell_stays_as_it_was(pool, tmp_path, monkeypatch, failed, answer):
     install(pool, FABLE, 'cli://claude', 'claude-fable-5-2')
-    calls = prover(monkeypatch, ok=False)
+    calls = prover(monkeypatch, ok=False, failed=failed)
 
     async def steps(app, pilot, panel, cell, status):
         await cell('claude/fable', 'claude-code', 'p')
         app.screen.query_one('#prove-go', Button).press()
-        await proved(pilot, panel, status, 'failed: credential_rejected')
+        await proved(pilot, panel, status, answer)
         assert calls == [FABLE]
         assert str(panel.query_one('#matrix-table').get_cell('claude/fable', 'claude-code')) == '[x]!'
         assert not panel.query_one(RouteMatrix).dirty()
@@ -683,7 +690,7 @@ def test_an_unsaved_tick_survives_a_proof_and_save_writes_the_tick_and_keeps_the
         assert await cell('claude/opus', 'claude-code') == '[ ]'  # unsaved
         await cell('claude/fable', 'claude-code', 'p')
         app.screen.query_one('#prove-go', Button).press()
-        await proved(pilot, panel, status, 'answered; used automatically')
+        await proved(pilot, panel, status, 'answered and did the task; used automatically')
         table = panel.query_one('#matrix-table')
         assert str(table.get_cell('claude/opus', 'claude-code')) == '[ ]' and panel.query_one(RouteMatrix).dirty()
         assert environment.read()['proofs'][FABLE]['ok'] is True and stored() is None
