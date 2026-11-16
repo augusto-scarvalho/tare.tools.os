@@ -24,5 +24,6 @@
     "precision_note": "Endpoint precision is a serving label, not evidence of training dtype, QAT, extra quantization or quality. Native FP4/FP8 is admissible.",
     "source": "https://openrouter.ai/qwen/qwen3.8-omni-flash/providers",
     "observed_at": "2026-11-01"
-  }
+  },
+  "native_measured_as": {"model": "qwen3.8-flash-next", "relation": "variant"}
 }
