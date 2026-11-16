@@ -5,7 +5,9 @@ tare quota [--json] [--cached] [--sync] [--set ACCOUNT AMOUNT [--renews DAY [GRA
 Claude, Codex and AGY answer from their own CLI: the plan's windows, each with the models it covers and when it
 resets. OpenRouter answers its credit endpoint. A provider that publishes no balance for an ordinary key is listed as
 not reported, unless the operator stated its balance (--set): tare then shows that balance less the dollars its own
-sessions recorded since (--renews: a credit that returns each month and does not carry over). A window or credit
+sessions recorded since (--renews: a credit that returns each month and does not carry over). Under "Local models" it
+shows the energy the GPU drew for tare's local calls in the last 7 days, and its cost at the price tare setup holds
+(--energy-price); it is never counted against a balance. A window or credit
 with more left than the share of its period still to run is marked "in surplus": routing prefers a route whose every window is in surplus to cost until use
 catches up with the pace. Every reading names its source and the time it was observed.
 """
@@ -328,6 +330,9 @@ def refresh(now=None):
             accounts.append({**reading, 'status': 'NOT_REPORTED', 'reason':
                              'This provider has no balance endpoint for an API key. State the balance with '
                              'tare quota --set ' + account + ' AMOUNT and tare counts down from it.'})
+    if energy := provider_spend.energy_report(now):  # the local models' GPU energy (never money spent)
+        accounts.append({'account': provider_spend.LOCAL, 'name': 'Local models', 'kind': 'local', 'status': 'MEASURED',
+                         'observed_at': now, 'energy': energy})
     from .console_credit import ACCOUNT, note
     if text := note(now):  # a failed Console reading, under the Claude API account
         for reading in accounts:
@@ -488,16 +493,31 @@ def clock(epoch, now):
     return when.strftime('%H:%M' if when.date() == datetime.fromtimestamp(now).date() else '%a %d %b %H:%M')
 
 
+def energy_line(energy):
+    """The local account's energy as `tare quota` says it. 'GPU only': nvidia-smi measures the card, not the machine."""
+    text = f"{energy['kwh']:.2f} kWh in {energy['days']} days"
+    if energy.get('usd') is not None:
+        text += f", about US$ {energy['usd']:.2f} at US$ {energy['price_kwh']:g}/kWh (GPU only)"
+    else:
+        text += ' (GPU only); tare setup --energy-price US$_PER_KWH shows it in dollars'
+    if energy.get('declared_kwh'):
+        text += f", {energy['declared_kwh']:.2f} kWh of it at the watts you declared (the node reported none: an upper bound)"
+    return text
+
+
 def render(report, now=None):
     from . import plan_consumption
     now = time.time() if now is None else now
     lines = []
-    for kind, title in (('subscription', 'Subscriptions'), ('credit', 'API credit')):
+    for kind, title in (('subscription', 'Subscriptions'), ('credit', 'API credit'), ('local', 'Local models')):
         accounts = [a for a in report['accounts'] if a['kind'] == kind]
         if not accounts:
             continue
         lines += ([''] if lines else []) + [title]
         for account in accounts:
+            if kind == 'local':
+                lines.append('  local: ' + energy_line(account['energy']))
+                continue
             head = '  ' + account['name'] + (' · plan ' + account['plan'] if account.get('plan') else '')
             if account['status'] not in ('OBSERVED', 'DECLARED'):
                 lines.append(head + ': ' + ('not reported. ' if account['status'] == 'NOT_REPORTED' else 'no reading. ')

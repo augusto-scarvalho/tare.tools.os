@@ -16,6 +16,7 @@ import signal
 import statistics
 import subprocess
 import sys
+import threading
 import time
 from uuid import uuid4
 
@@ -131,6 +132,27 @@ def gpu_sample():
         return watts, util
     except (OSError, subprocess.SubprocessError, ValueError, IndexError):
         return None
+
+
+class PowerLog:
+    """The board's recent power readings, in memory (the gateway's /v1/gpu/power answers from it). ponytail: one
+    reading per sampling period, so a call shorter than the period can fall between two and get no average."""
+
+    def __init__(self, keep=3600.0, clock=time.time):
+        self.keep, self.clock, self.readings, self.lock = keep, clock, deque(), threading.Lock()
+
+    def add(self, watts):
+        with self.lock:
+            now = self.clock()
+            self.readings.append((now, watts))
+            while now - self.readings[0][0] > self.keep:
+                self.readings.popleft()
+
+    def average(self, since, until):
+        """{'watts': mean, 'samples': n} of the readings from `since` to `until` (Unix seconds), None without one."""
+        with self.lock:
+            inside = [w for t, w in self.readings if since <= t <= until]
+        return {'watts': round(statistics.fmean(inside), 1), 'samples': len(inside)} if inside else None
 
 
 class IdleWatch:
