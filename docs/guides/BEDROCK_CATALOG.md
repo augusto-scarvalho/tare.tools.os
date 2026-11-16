@@ -29,8 +29,12 @@ Mistral Large 3 and GLM 5. The roster uses the corrected, verified ids.
   `bedrock-sonnet-explorer`, `bedrock-glm-explorer`. A role deployment may only
   use a model with `access: verified` in the catalog. One exception: `bedrock-glm-5-3-explorer` (GLM 5.3 through the
   `us.zai.glm-5.3` inference profile) is `access: listed` (Bedrock's listing on 2026-11-16, never called) and
-  `qualified: false`: an exact pin reaches it, automatic selection does not until a proof on the machine. Its limits
-  and parameters are copied from GLM 5 and not verified for 5.3.
+  `qualified: false`: an exact pin reaches it, automatic selection does not until a proof on the machine. It mirrors
+  OpenRouter's GLM 5.3 (same author, same id once `us.zai.` and `z-ai/` are off), which is automatic, so one proof
+  (`tare setup --prove bedrock-glm-5-3`, or `p` in `/routes`) makes it automatic for the implementer and explorer
+  roles both rows have, as that route's reserve: tied with it up to the kind of billing it goes after it, though
+  free credit still ranks before pay per token. Its limits and parameters are copied from GLM 5 and not verified
+  for 5.3.
 - **Model catalog: the roster's `models`.** Shared by both tables;
   the `bedrock` records live there. Twelve verified, three marked as denied.
 

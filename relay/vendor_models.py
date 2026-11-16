@@ -26,6 +26,8 @@ ORIGINS = {'Anthropic': {'cli://claude', 'cli://agy', 'api.anthropic.com'},
            'OpenAI': {'cli://codex', 'api.openai.com', 'chatgpt.com'},
            'Google': {'cli://agy', 'generativelanguage.googleapis.com'}}
 AGY_EFFORT = re.compile(r'-(low|medium|high|xhigh)$')
+# Bedrock's spelling of a model: an optional geography, the vendor, the id, an optional -vN and :N (us.zai.glm-5.3).
+BEDROCK = re.compile(r'(?:(?:us|us-gov|eu|apac|jp|au|ca|global)\.)?[a-z0-9-]+\.(.+?)(?:-v\d+)?(?::\d+)?')
 
 
 def parse(slug):
@@ -56,6 +58,35 @@ def origin_line(model, endpoint):
     if not row or origin not in ORIGINS.get(row['vendor'], ()) or origin != 'cli://agy' and AGY_EFFORT.search(model):
         return None
     return row
+
+
+def same_model(a, b):
+    """Whether two routes serve one model, by construction, never by resemblance: one author (work_audit.identity:
+    vendor and bias domain) and one id once each catalogue's own decoration is off: Bedrock's geography, `<vendor>.`,
+    `-vN` and `:N` (us.zai.glm-5.3 is glm-5.3), OpenRouter's `<vendor>/` (an id with a `:` variant is refused), AGY's
+    effort suffix; an OpenCode id and a vendor's own CLI or API id as they are. Nothing else comes off: a -flash, -pro,
+    preview or dated id is another model. A local model or any other endpoint is never the same."""
+    from .environment import source
+    from .work_audit import identity
+
+    def bare(deployment):
+        model, where = deployment['native_profile']['model'], source(deployment)
+        if where == 'bedrock':
+            found = BEDROCK.fullmatch(model)
+            return found and found[1]
+        if where == 'openrouter':
+            return ':' not in model and model.count('/') == 1 and model.split('/')[1]
+        if where == 'agy':
+            return AGY_EFFORT.sub('', model)
+        return where in ('opencode-sub', 'opencode-api', 'api', 'claude-code', 'codex') and model
+    try:
+        mine = bare(a)
+        if not mine or mine != bare(b):
+            return False
+        one, other = identity(a, 'auditor'), identity(b, 'auditor')
+        return (one.vendor, one.bias_domain) == (other.vendor, other.bias_domain)
+    except (ValueError, KeyError, TypeError, OSError):
+        return False
 
 
 def older(slugs):

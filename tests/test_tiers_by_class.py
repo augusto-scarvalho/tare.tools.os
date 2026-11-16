@@ -94,6 +94,7 @@ def test_a_subscription_of_a_higher_class_precedes_a_pay_per_token_route_of_the_
     monkeypatch.setattr(signals, 'reading', lambda: saved)
     cheap, middling = 'openrouter-deepseek-v4-1-flash-1017', 'openrouter-glm-5-3'
     assert (class_of(cheap), class_of(middling)) == ('cheap', 'middling')
+    assert class_of('bedrock-glm-5-3') == 'middling'  # the same model under Bedrock's spelling (native_measured_as)
     for role in ('implementer', 'coordinator'):
         tiers = turn_engine.implementer_tiers(role)
         for subscription in ('claude-sonnet-5-5-cli', 'claude-opus-5-5-cli', 'claude-fable-5-1-cli'):

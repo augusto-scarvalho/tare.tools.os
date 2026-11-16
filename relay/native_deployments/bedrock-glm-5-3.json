@@ -16,5 +16,6 @@
     "layout": "converse-exclusive",
     "source": "AWS Converse response usage"
   },
-  "native_counter_protocol": "utf8-envelope-estimate-v1"
+  "native_counter_protocol": "utf8-envelope-estimate-v1",
+  "native_measured_as": "z-ai/glm-5.3"
 }
