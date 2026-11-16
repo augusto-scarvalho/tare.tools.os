@@ -502,6 +502,9 @@ def energy_line(energy):
         text += ' (GPU only); tare setup --energy-price US$_PER_KWH shows it in dollars'
     if energy.get('declared_kwh'):
         text += f", {energy['declared_kwh']:.2f} kWh of it at the watts you declared (the node reported none: an upper bound)"
+    if energy.get('unmeasured_hours'):
+        text += (f"; {energy['unmeasured_hours']:g} h of sessions not counted (the node no longer held their readings: "
+                 'a partial total)')
     return text
 
 
