@@ -67,6 +67,7 @@ def disable_installed_flow_assessor(monkeypatch, tmp_path_factory, request):
     monkeypatch.setattr('relay.storage.sweep_in_background', lambda: None)
     # The newest version per line is kept per process: a test that patches the catalogue must not leave its own.
     monkeypatch.setattr('relay.model_signals._versions', (None, {}))
+    monkeypatch.setattr('relay.native_routes._derived', (None, []))  # the derived role rows, kept the same way
     # Auto-update syncs the operator's VS Code model list from the running serve: never from a test.
     monkeypatch.setattr('relay.native_product.published_models', lambda: [])
     # Tests exercising activation explicitly supply their own policy/worker.

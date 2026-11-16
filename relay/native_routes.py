@@ -1,5 +1,6 @@
 """Rank configured native role candidates; existing owners execute and recover them."""
 import copy
+import json
 import os
 from pathlib import Path
 
@@ -18,10 +19,89 @@ COST = {'free': 0, 'flat': 1, 'free-credit': 2, 'metered': 3}
 WANTED = {'planner': 'frontier', 'plan-auditor': 'middling', 'auditor': 'middling'}
 
 
+_derived = (None, [])  # (the table's path and the installed route names, the rows derived for them)
+
+
 def configured():
+    """The role table: the shipped rows, then the rows derived() adds for this machine's routes."""
     path = Path(os.environ.get('TARE_ROLE_DEPLOYMENTS') or Path(__file__).with_name('role_deployments.json'))
     from .round_table_roster import load_role_deployments
-    return load_role_deployments(path, roster=read_json(native_catalog.roster_path(), 4*1024*1024))
+    roster = read_json(native_catalog.roster_path(), 4*1024*1024)
+    table = load_role_deployments(path, roster=roster)
+    global _derived
+    from .native_profiles import names
+    try:
+        stamp = (str(path), tuple(sorted(names())))
+    except (ValueError, OSError):
+        stamp = None
+    if stamp is None or _derived[0] != stamp:  # deriving reads every unnamed profile: once per set of routes
+        _derived = (stamp, derived(table['deployments'], roster))
+    table['deployments'] += copy.deepcopy(_derived[1])
+    return table
+
+
+def derived(rows, roster):
+    """Rows for routes installed here that no row names, so that a newer version of a known line is selectable and
+    pinnable at once (owner, 2026-11-13). A route gets one when its model has a line and its endpoint is that vendor's
+    own (vendor_models.origin_line: never a reseller or a local model), rows exist for that line on the same source
+    (endpoint origin and protocol: codex-cli-gpt-6-1-sol for codex-cli-gpt-6-2-sol), all of older versions, and its
+    identity is established. It copies the newest such row's policy under its own name and
+    model, pin only (qualified false) until it answers once here (proven). Built at each load and never saved: a written
+    row always wins, and with no such route installed the table is exactly the shipped one."""
+    from .cli_discovery import TEMPLATES
+    from .environment import origin
+    from .native_profiles import names
+    from .vendor_models import AGY_EFFORT, line, origin_line, parse
+    from .work_audit import identity
+
+    def source(value):  # (line, version, (endpoint origin, protocol)) of a vendor's own model, else None
+        profile = value['native_profile']
+        found = origin_line(profile['model'], profile['endpoint'])
+        return found and (found['line'], parse(AGY_EFFORT.sub('', profile['model']))[2],
+                          (origin(profile['endpoint']), profile['protocol']))
+    sources = {}
+
+    def shipped(name):  # a row's source: its route here, else its CLI template (not set up here), else None
+        if name not in sources:
+            try:
+                value = native_catalog.select(name)
+            except (ValueError, KeyError, TypeError, OSError):
+                value = json.loads(TEMPLATES.read_text(encoding='utf-8')).get(name)
+            try:
+                sources[name] = value and source(value)
+            except (KeyError, TypeError):
+                sources[name] = None
+        return sources[name]
+    named = {name for row in rows for name in (row['id'], row.get('native_catalog'))}
+    try:
+        installed = [name for name in names() if name not in named]
+    except (ValueError, OSError):
+        return []
+    found = []
+    for name in installed:
+        try:
+            value = native_catalog.select(name)
+            mine = source(value)
+            if not mine:
+                continue
+            same = []
+            for row in rows:
+                wire = ((roster['models'].get(row['model']) or {}).get('runtime') or {}).get('native-http')
+                if row.get('native_catalog') and wire and (line(wire) or {}).get('line') == mine[0]:
+                    theirs = shipped(row['native_catalog'])  # resolved only for the rows of this line
+                    if theirs and (theirs[0], theirs[2]) == (mine[0], mine[2]):
+                        same.append((theirs[1], row))
+            if not same or max(version for version, _ in same) >= mine[1]:
+                continue  # only a version newer than every written one: an older model gains nothing here
+            sibling = max(same, key=lambda item: item[0])[1]  # the newest version; a tie keeps table order
+            identity(value, 'auditor')
+        except (ValueError, KeyError, TypeError, OSError):
+            continue
+        found.append({**copy.deepcopy(sibling), 'id': name, 'native_catalog': name, 'model': value['model'],
+                      'qualified': False,
+                      'note': f"Derived at load from {sibling['id']}, the version before it on the same source; "
+                              f"pin only until it answers once here (tare setup --prove {name})."})
+    return found
 
 
 def roles(row, scope):

@@ -318,9 +318,11 @@ def test_no_automatic_role_picks_a_route_for_its_line_alone(pool, monkeypatch):
         assert chosen, role
         assert not {d['id'] for d in chosen} & set(new)
         assert not any('line' in work_audit.identity(d, 'auditor').payload for d in chosen)
-        assert not {c['deployment'] for c in selection['candidates']} & set(new)
-    # Automatic roles come only from role rows, and a row must name a roster record: one naming the new model is
-    # refused, and one that points a recorded model at the new profile is not that model.
+        # Each has a row derived from its line's row on its source (native_routes.derived): pin only until proven.
+        reasons = {c['deployment']: c['reason'] for c in selection['candidates'] if c['deployment'] in new}
+        assert set(reasons) == set(new) and set(reasons.values()) <= {'NOT_QUALIFIED_PIN_ONLY', 'ROLE_NOT_CONFIGURED'}
+    # A written row must name a roster record: one naming the new model is refused, and one that points a recorded
+    # model at the new profile is not that model.
     roster = json.loads(native_catalog.roster_path().read_text(encoding='utf-8'))
     row = {'id': 'claude-fable-5-3-cli', 'native_catalog': 'claude-fable-5-3-cli', 'model': 'claude-fable-5-3',
            'runner': 'native-http', 'provider': 'Anthropic', 'roles': ['auditor'], 'kind': 'primary',

@@ -165,6 +165,14 @@ Implementer", one step). With no coordinator entries, a conversation is routed a
   own model (it has a line), is used automatically for the roles its row lists; a failed role check leaves it
   pin-only. Proving a model's CLI route does not lift its API route, and a route with no line stays pin-only. A proof
   recorded before the role check existed still counts.
+- **A newer version needs no release of tare.** When a vendor's CLI lists a new version of a known line (Codex lists
+  `gpt-6.2-sol`, and discovery writes `codex-cli-gpt-6-2-sol`), the route gets its role row when tare loads the role
+  table: a copy of the row of the newest version of that line on the same source (same endpoint and protocol; here
+  `codex-cli-gpt-6-1-sol`), with the same roles and cost tier, pin only. So it can be pinned at once, shows `!` in the
+  matrix and can be proven; after a proof it is used automatically and becomes its line's newest version, so the
+  older one counts one class lower. Only a route of the vendor's own CLI or API gets one, never a reseller's or a
+  local model, and only when no row names it: a row written in `relay/role_deployments.json` always wins. Nothing is
+  written to a file.
 - **A skipped route says why:** `SWITCHED_OFF_FOR_ROLE` and the entry, in tare auto's skipped routes, in a role
   table's candidates and in "No route can start", with how to switch it on (`tare setup --auto ROLE:ENTRY=on`) or
   pin it, so the coordinator can tell you. A role left with no route behaves as when none is available: no auditor
