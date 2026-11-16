@@ -126,6 +126,8 @@ def disable_installed_flow_assessor(monkeypatch, tmp_path_factory, request):
     # Nor may discovery start a Claude Code to read its aliases (four starts); a test replaces this to read.
     from relay import cli_discovery
     monkeypatch.setattr(cli_discovery, 'claude_aliases', no_vendor_cli)
+    # Nor `agy models`; a test replaces this to read.
+    monkeypatch.setattr(cli_discovery, 'agy_listing', no_vendor_cli)
 
 
 LOOPBACK = ('127.', '::1', 'localhost')
