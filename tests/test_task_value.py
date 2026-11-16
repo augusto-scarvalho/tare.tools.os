@@ -29,7 +29,8 @@ SECOND = board_body('2026-11-15', ('GPT-6.1 Sol (Max)', 'openai', 0.12, 1.5))
 
 def served(openrouter, arena, calls):
     def fetch(source, key):
-        calls.append((source, key))
+        if source in ('openrouter', 'arena'):  # the task-type boards are read after these and are not this test's
+            calls.append((source, key))
         body = {'openrouter': openrouter, 'arena': arena}[source]
         if isinstance(body, Exception):
             raise body

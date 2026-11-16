@@ -1,0 +1,46 @@
+{
+  "schema": "tare.tools/task-types/1",
+  "types": [
+    {"id": "coding", "label": "software engineering", "description": "Software engineering and coding agents: changing real code bases until the checks pass.",
+     "sources": [
+       {"reader": "arena", "board": "agent", "column": "score", "higher_is_better": true, "kind": "outcome", "name": "LMArena agent",
+        "citation": "LMArena agent leaderboard, CC BY 4.0 (huggingface.co/datasets/lmarena-ai/leaderboard-dataset)"},
+       {"reader": "epoch", "board": "frontierswe_external.csv", "column": "Score", "higher_is_better": true, "kind": "outcome", "name": "Epoch FrontierSWE",
+        "citation": "FrontierSWE (frontierswe.com), as collected by Epoch AI (epoch.ai/benchmarks); the data keeps its source's own licence"},
+       {"reader": "epoch", "board": "cursorbench_external.csv", "column": "Score", "higher_is_better": true, "kind": "outcome", "name": "Epoch CursorBench",
+        "citation": "CursorBench (cursor.com/cursorbench), as collected by Epoch AI (epoch.ai/benchmarks); the data keeps its source's own licence"},
+       {"reader": "epoch", "board": "deepswe_external.csv", "column": "Pass@1", "higher_is_better": true, "kind": "outcome", "name": "Epoch DeepSWE",
+        "citation": "DeepSWE (deepswe.datacurve.ai), as collected by Epoch AI (epoch.ai/benchmarks); the data keeps its source's own licence"}]},
+    {"id": "web", "label": "web and front-end", "description": "Web and front-end development: building pages and interfaces that people judge by use.",
+     "sources": [
+       {"reader": "arena", "board": "webdev", "category": "overall", "column": "rating", "higher_is_better": true, "kind": "preference", "name": "LMArena webdev",
+        "citation": "LMArena webdev leaderboard, CC BY 4.0 (huggingface.co/datasets/lmarena-ai/leaderboard-dataset)"}]},
+    {"id": "math", "label": "mathematics", "description": "Mathematics: proofs and problems from competition level to research level.",
+     "sources": [
+       {"reader": "epoch", "board": "frontiermath_tiers_1_3_v2.csv", "column": "Best score (across scorers)", "higher_is_better": true, "kind": "outcome", "name": "Epoch FrontierMath tiers 1-3",
+        "citation": "Epoch AI, Capabilities & benchmarking, CC BY 4.0 (epoch.ai/benchmarks); FrontierMath"},
+       {"reader": "epoch", "board": "frontiermath_tier_4_v2.csv", "column": "Best score (across scorers)", "higher_is_better": true, "kind": "outcome", "name": "Epoch FrontierMath tier 4",
+        "citation": "Epoch AI, Capabilities & benchmarking, CC BY 4.0 (epoch.ai/benchmarks); FrontierMath"},
+       {"reader": "epoch", "board": "otis_mock_aime_2024_2025.csv", "column": "Best score (across scorers)", "higher_is_better": true, "kind": "outcome", "name": "Epoch OTIS Mock AIME",
+        "citation": "Epoch AI, Capabilities & benchmarking, CC BY 4.0 (epoch.ai/benchmarks); OTIS Mock AIME 2024-2025"}]},
+    {"id": "science", "label": "physics and natural sciences", "description": "Physics and the natural sciences: research-level and graduate-level questions.",
+     "sources": [
+       {"reader": "epoch", "board": "critpt_external.csv", "column": "Accuracy", "higher_is_better": true, "kind": "outcome", "name": "Epoch CritPt",
+        "citation": "CritPt, as collected by Epoch AI (epoch.ai/benchmarks); the data keeps its source's own licence"},
+       {"reader": "epoch", "board": "gpqa_diamond.csv", "column": "Best score (across scorers)", "higher_is_better": true, "kind": "outcome", "name": "Epoch GPQA Diamond",
+        "citation": "Epoch AI, Capabilities & benchmarking, CC BY 4.0 (epoch.ai/benchmarks); GPQA Diamond"}]},
+    {"id": "professional", "label": "legal, consulting and finance work", "description": "Professional services: legal, consulting and finance tasks done as an agent.",
+     "sources": [
+       {"reader": "epoch", "board": "apex_agents_external.csv", "column": "Pass@1 score", "higher_is_better": true, "kind": "outcome", "name": "Epoch APEX-Agents",
+        "citation": "APEX-Agents, as collected by Epoch AI (epoch.ai/benchmarks); the data keeps its source's own licence"}]},
+    {"id": "security", "label": "cybersecurity", "description": "Cybersecurity: finding and reasoning about vulnerabilities.", "sources": []},
+    {"id": "engineering", "label": "engineering", "description": "Engineering outside software: mechanical, electrical and process work.", "sources": []},
+    {"id": "cad", "label": "CAD", "description": "Computer-aided design: parametric parts and drawings.", "sources": []},
+    {"id": "3d", "label": "3D modelling", "description": "3D modelling: meshes, scenes and assets.", "sources": []},
+    {"id": "games", "label": "game development", "description": "Game development: engines, gameplay code and tools.", "sources": []},
+    {"id": "medicine", "label": "medicine and life sciences", "description": "Medicine and the life sciences: clinical and biological questions.", "sources": []},
+    {"id": "data", "label": "data analysis", "description": "Data analysis: cleaning, querying and reading data.", "sources": []},
+    {"id": "writing", "label": "writing", "description": "Writing: prose, documentation and editing.", "sources": []},
+    {"id": "philosophy", "label": "philosophy", "description": "Philosophy: argument, ethics and conceptual analysis.", "sources": []}
+  ]
+}

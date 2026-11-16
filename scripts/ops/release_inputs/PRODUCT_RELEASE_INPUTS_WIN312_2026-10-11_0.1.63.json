@@ -85,7 +85,8 @@
         "scripts/ops/pack_native_release.py",
         "relay/prompt_capsules.json",
         "relay/sandbox-python/sitecustomize.py",
-        "relay/model_lines.json"
+        "relay/model_lines.json",
+        "relay/task_types.json"
       ],
       "package": "tare-tools-os",
       "version": "0.1.63"

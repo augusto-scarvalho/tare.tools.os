@@ -1,0 +1,315 @@
+"""The catalogue of task types, the boards read for it, and a model's class per type. Every model and number here is
+invented (no real benchmark reading is in the repository)."""
+import csv
+import io
+import json
+import zipfile
+
+import pytest
+
+from relay import model_choices
+from relay import model_signals as signals
+
+NOW = 1794628000.0  # 2026-11-14 UTC
+DAY = 86400
+
+
+def source(board, reader='epoch', column='Score', **more):
+    return {'reader': reader, 'board': board, 'column': column, 'higher_is_better': True, 'kind': 'outcome',
+            'name': 'Board '+board, 'citation': 'Source: '+board, **more}
+
+
+ONE, TWO = source('one.csv'), source('two.csv')
+KIND = {'id': 't', 'label': 'testing', 'description': 'a type of the tests', 'sources': [ONE, TWO]}
+# Frontier anchors: Carbon .71 and Astra .66 (weakest .66); middling: Sol .60 and Argon .50 (weakest .50). Invented.
+LINES_ROWS = [('gemini-4-carbon_high', 'Google DeepMind', .71), ('gpt-6-astra_max', 'OpenAI', .66),
+              ('gpt-6.1-sol_max', 'OpenAI', .60), ('gemini-4-argon_high', 'Google DeepMind', .50),
+              ('gemini-3.8-flash_high', 'Google DeepMind', .30)]
+
+
+def csv_text(column, rows):
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(['Model version', 'Organization', 'Release date', column])
+    writer.writerows((version, org, '2026-11-10', score) for version, org, score in rows)
+    return out.getvalue()
+
+
+def archive(members):
+    """An Epoch-like zip from {member: csv text}."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as z:
+        for name, text in members.items():
+            z.writestr(name, text)
+    return buffer.getvalue()
+
+
+def board(src, *rows, anchors=LINES_ROWS):
+    """The saved form of a board read from an archive of `rows` beside the anchors."""
+    rows, as_of = signals.parse_epoch(archive({src['board']: csv_text(src['column'], [*anchors, *rows])}), src)
+    return {'read_at': NOW, 'as_of': as_of, 'rows': rows}
+
+
+def route(model, endpoint='https://api.example/v1', **parameters):
+    return {'id': 'fixture', 'native_profile': {'model': model, 'endpoint': endpoint, 'parameters_json': json.dumps(parameters)}}
+
+
+KIMI, GLM = route('moonshotai/kimi-k3.1-pro'), route('z-ai/glm-9')
+
+
+def kept(first=(), second=()):
+    return {signals.source_key(ONE): board(ONE, *first), signals.source_key(TWO): board(TWO, *second)}
+
+
+def test_the_catalogue_is_well_formed_and_lists_the_types_with_no_source_yet():
+    ids = [t['id'] for t in signals.TYPES]
+    assert len(ids) == len(set(ids))
+    for t in signals.TYPES:
+        assert all(isinstance(t[k], str) and t[k] for k in ('id', 'label', 'description')) and isinstance(t['sources'], list)
+        for s in t['sources']:
+            assert s['reader'] in signals.READERS and s['kind'] in ('outcome', 'preference')
+            assert isinstance(s['higher_is_better'], bool) and all(s[k] for k in ('board', 'column', 'name', 'citation'))
+            assert s['reader'] != 'epoch' or s['board'].endswith('.csv')
+    keys = [signals.source_key(s) for t in signals.TYPES for s in t['sources']]
+    assert len(keys) == len(set(keys))
+    assert {t['id'] for t in signals.TYPES if not t['sources']} == {
+        'security', 'engineering', 'cad', '3d', 'games', 'medicine', 'data', 'writing', 'philosophy'}
+    assert {t['id'] for t in signals.TYPES if t['sources']} == {'coding', 'web', 'math', 'science', 'professional'}
+
+
+def test_a_model_is_placed_by_the_first_source_that_places_it():
+    saved = kept(first=[('kimi-k3.1-pro_max', 'Moonshot', .80)], second=[('kimi-k3.1-pro_max', 'Moonshot', .10)])
+    found = signals.type_class(KIMI, KIND, saved)
+    assert (found['class'], found['general'], found['source'], found['board'], found['kind'], found['read_at']) \
+        == ('frontier', False, 'Board one.csv', 'one.csv', 'outcome', NOW)
+    assert signals.describe_type(found) == 'frontier for testing (Board one.csv, read 14 Nov)'
+
+
+def test_a_model_only_the_second_source_places_gets_that_sources_class():
+    saved = kept(second=[('glm-9_max', 'Z.ai', .55)])  # the house is spelled z-ai by the route and Z.ai by the board
+    found = signals.type_class(GLM, KIND, saved)
+    assert (found['class'], found['general'], found['source']) == ('middling', False, 'Board two.csv')
+    # votes are said as votes
+    vote = {**TWO, 'kind': 'preference'}
+    assert signals.describe_type(signals.type_class(GLM, {**KIND, 'sources': [vote]}, {signals.source_key(vote): saved[signals.source_key(TWO)]})) \
+        == 'middling for testing (Board two.csv, votes, read 14 Nov)'
+
+
+def test_a_model_no_board_places_gets_the_general_class_marked_general():
+    saved = kept()
+    # a line model keeps its line's class; a model with no line and no row has none
+    found = signals.type_class(route('gemini-4-hydrogen', reasoning_effort='high'), KIND, saved)
+    assert found['general'] and found['class'] == 'middling'
+    assert signals.describe_type(found) == 'middling (general: no board places it for testing)'
+    nobody = signals.type_class(route('unknownco/unseen-1'), KIND, saved)
+    assert nobody['general'] and nobody['class'] is None
+    assert signals.describe_type(nobody).startswith('none (no general class either: no board places it for testing')
+    # a type with no source at all
+    assert signals.type_class(KIMI, {**KIND, 'sources': []}, saved)['general']
+
+
+def test_a_known_line_is_placed_at_its_own_effort_else_the_highest_the_board_lists():
+    saved = kept(first=[('gemini-3.8-flash_low', 'Google DeepMind', .90)])
+    high = signals.type_class(route('gemini-3.8-flash', reasoning_effort='high'), KIND, saved)
+    medium = signals.type_class(route('gemini-3.8-flash', reasoning_effort='medium'), KIND, saved)
+    assert (high['class'], high['effort']) == ('cheap', 'high') and (medium['class'], medium['effort']) == ('cheap', 'high')
+    assert signals.type_class(route('gemini-3.8-flash', reasoning_effort='low'), KIND, saved)['class'] == 'frontier'
+
+
+def test_a_board_that_stopped_at_older_versions_places_nobody():
+    """An aged source: it holds Sol 5.6 where another board already holds Sol 6.1, so its middling anchor is gone."""
+    old = [('gpt-5.6-sol_max', 'OpenAI', .20), ('gemini-4-carbon_high', 'Google DeepMind', .71), ('gpt-6-astra_max', 'OpenAI', .66)]
+    aged = board(ONE, ('kimi-k3.1-pro_max', 'Moonshot', .65), anchors=old)
+    alone = {signals.source_key(ONE): aged}
+    # on its own it is the newest it knows: Sol 5.6 is its middling anchor, and Kimi is middling
+    assert signals.type_class(KIMI, {**KIND, 'sources': [ONE]}, alone)['class'] == 'middling'
+    beside = {**alone, signals.source_key(TWO): board(TWO)}  # another board holds Sol 6.1
+    found = signals.type_class(KIMI, {**KIND, 'sources': [ONE]}, beside)
+    assert found['general'] and found['class'] is None
+    assert 'GPT-5.6 Sol' not in [a[2] for a in signals._anchors(aged, signals._current(beside))]
+    # a board with no known line at all has no anchor
+    bare = {'read_at': NOW, 'as_of': None, 'rows': [{'line': None, 'creator': 'Moonshot', 'name': 'kimi-k3.1-pro', 'effort': 'max',
+                                                     'permaslug': None, 'intelligence': .9}]}
+    assert signals._anchors(bare) == [] and signals.type_class(KIMI, {**KIND, 'sources': [ONE]}, {signals.source_key(ONE): bare})['general']
+
+
+def served(zip_bytes, web_rows, calls, down=()):
+    def fetch(src, key):
+        calls.append(src)
+        if src in down:
+            raise OSError('offline')
+        if src == 'epoch':
+            return zip_bytes
+        return {'rows': [{'row': r} for r in web_rows]}
+    return fetch
+
+
+def everything():
+    """The shipped catalogue answered by invented data: an archive of every Epoch board it names, and Arena rows."""
+    epoch = [s for t in signals.TYPES for s in t['sources'] if s['reader'] == 'epoch']
+    web = [{'model_name': n, 'organization': o, 'category': 'overall', 'score': v, 'rating': v, 'leaderboard_publish_date': '2026-11-15'}
+           for n, o, v in (('Gemini 4 Carbon (High)', 'google', .71), ('GPT-6 Astra (Max)', 'openai', .66),
+                           ('GPT-6.1 Sol (Max)', 'openai', .60), ('Gemini 4 Argon (High)', 'google', .50),
+                           ('Gemini 3.8 Flash (High)', 'google', .30))]
+    return archive({s['board']: csv_text(s['column'], LINES_ROWS) for s in epoch}), web
+
+
+def test_the_boards_are_read_once_a_day_and_a_failed_source_keeps_its_saved_board_and_stops_no_other():
+    zipped, web = everything()
+    calls = []
+    signals.refresh_boards(NOW, served(zipped, web, calls), {})
+    saved = signals.boards()
+    every = [signals.source_key(s) for t in signals.TYPES for s in t['sources']]
+    assert sorted(saved) == sorted(every) and all(b['read_at'] == NOW and b['rows'] for b in saved.values())
+    assert calls.count('epoch') == 1 and sorted(c for c in calls if c != 'epoch') == ['arena:agent', 'arena:webdev']  # one GET
+    assert saved[signals.source_key(signals.task_type('web')['sources'][0])]['as_of'] == '2026-11-15'
+    calls.clear()
+    signals.refresh_boards(NOW + 7200, served(zipped, web, calls), {})
+    assert calls == []  # once a day
+    # a day later the archive is down and the arena answers: the Epoch boards stay as they were, the arena's are new
+    signals.refresh_boards(NOW + 2*DAY, served(zipped, web, calls, down=('epoch',)), {})
+    after = signals.boards()
+    epoch_key = signals.source_key(signals.task_type('math')['sources'][0])
+    assert after[epoch_key]['rows'] == saved[epoch_key]['rows'] and after[epoch_key]['read_at'] == NOW
+    assert after[epoch_key]['tried_at'] == NOW + 2*DAY
+    web_key = signals.source_key(signals.task_type('web')['sources'][0])
+    assert after[web_key]['read_at'] == NOW + 2*DAY and 'tried_at' not in after[web_key]
+    calls.clear()
+    signals.refresh_boards(NOW + 2*DAY + 600, served(zipped, web, calls), {})
+    assert calls == []  # after a failed try, an hour passes first
+    signals.refresh_boards(NOW + 2*DAY + 3700, served(zipped, web, calls), {})
+    assert calls.count('epoch') == 1 and signals.boards()[epoch_key]['read_at'] == NOW + 2*DAY + 3700
+
+
+def test_a_board_missing_from_the_archive_or_empty_fails_alone():
+    zipped, web = everything()
+    math = signals.task_type('math')['sources'][0]
+    broken = archive({s['board']: csv_text(s['column'], LINES_ROWS) for t in signals.TYPES for s in t['sources']
+                      if s['reader'] == 'epoch' and s['board'] != math['board']})
+    signals.refresh_boards(NOW, served(broken, web, []), {})
+    saved = signals.boards()
+    assert signals.source_key(math) in saved and 'rows' not in saved[signals.source_key(math)]  # tried, nothing to keep
+    assert saved[signals.source_key(signals.task_type('science')['sources'][0])]['rows']
+    # an archive that is not a zip, and a reshaped arena answer, read nothing and raise nothing
+    signals.refresh_boards(NOW + 2*DAY, lambda s, k: b'not a zip' if s == 'epoch' else {'rows': 'x'}, {})
+    assert signals.boards()[signals.source_key(math)].get('tried_at') == NOW + 2*DAY
+
+
+def test_a_machine_that_declined_api_use_reads_nothing():
+    calls = []
+    zipped, web = everything()
+    signals.refresh_boards(NOW, served(zipped, web, calls), {'api_providers': {'use': False}})
+    assert calls == [] and signals.boards() == {}
+
+
+def test_refresh_reading_reads_the_boards_after_the_general_reading_and_neither_stops_the_other(monkeypatch):
+    monkeypatch.setattr('relay.provider_quota.secret', lambda name: None)
+    zipped, web = everything()
+    calls = []
+    served_by = served(zipped, web, calls, down=('arena:webdev', 'epoch'))
+    value = signals.refresh_reading(NOW, fetch=served_by, setup={})
+    assert value['source'] == 'arena' and 'arena:agent' in calls and 'epoch' in calls  # the agent board is read for both
+    agent_key = signals.source_key(signals.task_type('coding')['sources'][0])
+    assert signals.boards()[agent_key]['rows'] and 'rows' not in signals.boards()[signals.source_key(signals.task_type('web')['sources'][0])]
+    # the general source down, the boards fine
+    down = served(zipped, web, [], down=('arena',))
+    assert signals.refresh_reading(NOW + 2*DAY, fetch=down, setup={}) == value
+    assert signals.boards()[signals.source_key(signals.task_type('math')['sources'][0])]['read_at'] == NOW + 2*DAY
+
+
+def test_the_archive_reader_opens_only_the_named_member_in_memory_and_refuses_an_oversized_one(monkeypatch):
+    raw = archive({'one.csv': csv_text('Score', LINES_ROWS), 'other.csv': csv_text('Score', LINES_ROWS)})
+    opened = []
+    original = zipfile.ZipFile.read
+    monkeypatch.setattr(zipfile.ZipFile, 'read', lambda self, name, *a: opened.append(getattr(name, 'filename', name)) or original(self, name, *a))
+    for forbidden in ('extract', 'extractall'):
+        monkeypatch.setattr(zipfile.ZipFile, forbidden, lambda *a, **k: pytest.fail('a member was extracted to disk'))
+    rows, as_of = signals.parse_epoch(raw, ONE)
+    assert opened == ['one.csv'] and as_of == '2026-11-10' and len(rows) == len(LINES_ROWS)
+    with pytest.raises(KeyError):
+        signals.parse_epoch(raw, source('missing.csv'))  # a name the archive does not hold is never guessed
+    monkeypatch.setattr(signals, 'CAP', 50)
+    opened.clear()
+    with pytest.raises(ValueError):
+        signals.parse_epoch(raw, ONE)
+    assert opened == []  # refused by its declared size, before it is read
+
+
+def test_an_epoch_row_is_a_model_and_its_effort_or_a_variant_or_no_row():
+    text = csv_text('Score', [('gpt-6.1-sol_xhigh', 'OpenAI', .1), ('gpt-6.1-sol_unknown', 'OpenAI', .2),
+                              ('gpt-6.1-sol_none', 'OpenAI', .3), ('gpt-6-astra-fallback_max', 'OpenAI', .4),
+                              ('gpt-6-luna_max', 'Reseller', .5), ('kimi-k3.1-pro-together_max', 'Moonshot', .6),
+                              ('gemini-3.8-flash', 'Google DeepMind', .7), ('gpt-6-terra_max', 'OpenAI', 'n/a')])
+    rows = signals.parse_epoch(archive({'one.csv': text}), ONE)[0]
+    lines = {(r['line'], r['version'], r['effort']) for r in rows if r['line']}
+    assert lines == {('gpt-sol', '6.1', 'xhigh'), ('gpt-sol', '6.1', None), ('gemini-flash', '3.8', None)}
+    others = {(r['creator'], r['name']) for r in rows if not r['line']}
+    # a mode with no effort of ours and a variant are not the model; another creator's row of a line's name is no line
+    assert others == {('OpenAI', 'gpt-6.1-sol_none'), ('OpenAI', 'gpt-6-astra-fallback'), ('Reseller', 'gpt-6-luna'),
+                      ('Moonshot', 'kimi-k3.1-pro-together')}  # the unscored row is no row
+
+
+def test_a_source_that_is_not_higher_is_better_is_negated_so_that_a_higher_number_is_better(monkeypatch):
+    lower = source('lower.csv', higher_is_better=False)
+    monkeypatch.setattr(signals, 'TYPES', [{**KIND, 'sources': [lower]}])
+    raw = archive({'lower.csv': csv_text('Score', [('gpt-6.1-sol_max', 'OpenAI', .25), ('gemini-4-argon_high', 'Google DeepMind', .5)])})
+    signals.refresh_boards(NOW, lambda s, k: raw, {})
+    assert sorted(r['intelligence'] for r in signals.boards()[signals.source_key(lower)]['rows']) == [-.5, -.25]
+
+
+def saved_boards():
+    zipped, web = everything()
+    signals.refresh_boards(NOW, served(zipped, web, []), {})
+
+
+def flash(capsys, *argv):
+    """The JSON row of the Gemini Flash API route (a known line, cheap) for `argv`."""
+    model_choices.main(['--include-unconfigured', '--vendor', 'Google', '--json', *argv])
+    return {r['deployment']: r for r in json.loads(capsys.readouterr().out)['models']}['gemini-api-3-8-flash']
+
+
+def test_tare_models_type_shows_each_models_class_for_the_type_and_where_it_came_from(capsys):
+    saved_boards()
+    model_choices.main(['--include-unconfigured', '--vendor', 'Google', '--type', 'math'])
+    out = capsys.readouterr().out
+    assert 'Class for mathematics: cheap for mathematics (Epoch FrontierMath tiers 1-3, read 14 Nov)' in out
+    assert 'Source: Epoch AI, Capabilities & benchmarking, CC BY 4.0 (epoch.ai/benchmarks); FrontierMath, as of 2026-11-10.' in out
+    model_choices.main(['--include-unconfigured', '--vendor', 'Google', '--type', 'cad'])
+    out = capsys.readouterr().out
+    assert 'Class for CAD: cheap (general: no board places it for CAD)' in out and 'Source: Epoch' not in out
+
+
+def test_tare_models_type_in_json_marks_a_class_from_a_board_and_one_that_is_general(capsys):
+    saved_boards()
+    placed = flash(capsys, '--type', 'math')['type_class']
+    assert (placed['general'], placed['type'], placed['class'], placed['source'], placed['read_at'])         == (False, 'math', 'cheap', 'Epoch FrontierMath tiers 1-3', NOW)
+    assert flash(capsys, '--type', 'cad')['type_class'] == {'class': 'cheap', 'type': 'cad', 'label': 'CAD', 'general': True}
+    assert 'type_class' not in flash(capsys)  # without --type nothing changes
+
+
+def test_tare_models_types_shows_the_catalogue_with_each_sources_read_date_and_anchors(capsys):
+    saved_boards()
+    model_choices.main(['--types'])
+    out = capsys.readouterr().out
+    assert 'math: mathematics - ' in out and 'cad: CAD - ' in out and 'no source yet: the general class' in out
+    assert 'Epoch GPQA Diamond (outcome): read 14 Nov, 5 of 12 known lines' in out and 'LMArena webdev (preference): read 14 Nov' in out
+    assert 'Epoch AI, Capabilities & benchmarking, CC BY 4.0 (epoch.ai/benchmarks); GPQA Diamond' in out
+    model_choices.main(['--types', '--json'])
+    catalogue = {t['id']: t for t in json.loads(capsys.readouterr().out)['types']}
+    assert catalogue['cad']['sources'] == [] and len(catalogue) == len(signals.TYPES)
+    gpqa = next(s for s in catalogue['science']['sources'] if s['board'] == 'gpqa_diamond.csv')
+    assert (gpqa['anchors'], gpqa['known_lines'], gpqa['places'], gpqa['read_at']) == (5, 12, True, NOW)
+
+
+def test_an_unread_or_aged_source_is_said_to_place_no_model(capsys):
+    model_choices.main(['--types'])
+    assert 'Epoch GPQA Diamond (outcome): not read yet, 0 of 12 known lines; no anchors: places no model' in capsys.readouterr().out
+    assert signals.describe_source({'name': 'B', 'kind': 'outcome', 'read_at': NOW, 'anchors': 2, 'known_lines': 12, 'places': False})         == 'B (outcome): read 14 Nov, 2 of 12 known lines; no middling anchor: places no model'
+
+
+def test_an_unknown_type_id_is_an_error_that_lists_the_ids(capsys):
+    with pytest.raises(SystemExit) as stop:
+        model_choices.main(['--type', 'nope'])
+    assert stop.value.code == 2
+    err = capsys.readouterr().err
+    assert 'Unknown task type: nope' in err and all(t['id'] in err for t in signals.TYPES)
