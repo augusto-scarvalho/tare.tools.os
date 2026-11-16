@@ -668,8 +668,13 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
     if parent_allowed and parent_name not in allowed:
         allowed.append(parent_name)  # The conversation's own connection, in a separate role, after the ladder.
     # The ladder leaves out a route switched off for the implementer; the chosen one is refused below, saying why.
-    if chosen and chosen not in allowed and not ((value := available(chosen, probe=False)[0])
-                                                 and refusal('implementer', value, chosen)):
+    # Read from the catalogue only: a route outside the policy is never probed for availability (no call, no billing).
+    def switched_off(name):
+        try:
+            return refusal('implementer', select(name), name)
+        except (ValueError, OSError, KeyError, TypeError):
+            return None
+    if chosen and chosen not in allowed and not switched_off(chosen):
         raise ValueError("Choose one of tare's implementer routes: " + ', '.join(allowed))
     if needs and not chosen:
         from .model_signals import ORDER, short

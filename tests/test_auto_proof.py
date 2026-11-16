@@ -16,7 +16,7 @@ from test_native_console import FakeBackend
 
 FABLE = 'claude-fable-5-3-cli'  # derived from claude-fable-5-2-cli: a subscription (Claude Code)
 API = 'claude-api-fable-5-3'  # derived from claude-api-fable-5-2: pay per token
-ROLES = ('planner', 'plan-auditor', 'auditor', 'explorer')  # claude-fable-5-2-cli's, so its derived row's
+ROLES = ('planner', 'plan-auditor', 'auditor', 'implementer', 'explorer')  # claude-fable-5-2-cli's, so its derived row's
 
 
 @pytest.fixture
