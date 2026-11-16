@@ -28,6 +28,12 @@ Another model vendor comes first, then a route that reaches the class the role w
 (the planner wants a frontier model; a reviewer wants the class below it, Sol, Opus or Argon, which checks code and plans as well, and takes a frontier model after those on the same allowance; the class of a route is
 the one `tare models` shows, from `relay/model_signals.py`), then subscription allowance
 before metered API. No order of models is written by hand.
+A model with no line (Kimi, Grok, GLM, DeepSeek, Qwen...) is placed by the lines tare knows, in the same public
+benchmark reading: for each known line the newest version listed, at the highest effort listed, is an anchor with the
+line's own class, and the model is in the highest class whose weakest anchor it reaches (below the weakest middling
+anchor, cheap). It is placed only when the route's model matches exactly one row (an OpenRouter route by the row's
+permaslug, any other by name and vendor) and the two latest readings of one source agree; otherwise it has no class and
+counts as cheap, as before. `tare models` says it as "middling: reaches Gemini 4 Argon on openrouter, 2026-11-16".
 Codex Direct precedes its CLI alias to preserve the native cache route. Pro API
 modes, small helpers and older models are not automatic frontier reviewers.
 Unavailable credentials, invalid local Codex login, disabled connections and known

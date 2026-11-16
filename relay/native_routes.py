@@ -273,11 +273,11 @@ def _ranked(role, producer=None, *, check_resources=False):
                     else 'CONFIGURED_INDEPENDENT_NATIVE_ROUTE' if kind == 'INDEPENDENT' else kind),
             cost_tier=row['cost_tier'], cross_vendor=cross, profile_sha256=fingerprint,
             selected_deployment=deployment['id'], availability='CREDENTIAL_PRESENT_HOST_UNPROBED' if key else 'HOST_UNPROBED')
-        # Classes short of the wanted one, and above it: a model with no line counts as cheap.
+        # Classes short of the wanted one, and above it: a model with no class (no line, nothing placing it) counts as cheap.
         found = klass(deployment) or {}
         gap = ORDER.index(found.get('class') or 'cheap') - ORDER.index(need) if need else 0
         fall, above = max(0, -gap), max(0, gap)
-        # After a current model of a known line in the same class: an older version, or a model with no line at all.
+        # After a current model of a known line in the same class: an older version, or a model with no class at all.
         dated = bool(need) and ('older_than' in found or not found)
         decision['classes_short'] = fall
         cli_backup = (role in {'auditor', 'plan-auditor'} and

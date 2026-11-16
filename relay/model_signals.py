@@ -5,16 +5,18 @@ already stored, never another), then the LMArena agent dataset (keyless). Left o
 own API (it needs a key of its own that no one has stored) and Epoch AI (a zip). The reading is shown with its source
 and date and only places a model in a class; which route runs is decided elsewhere. Rows are matched to a line by
 `vendor_models.parse`, never by a table of models: a name that is not exactly one known line, version and effort, or
-that two rows claim, is refused.
+that two rows claim, is refused. A model with no line (Kimi, Grok, GLM...) is placed by the known lines of the same
+reading, its anchors: the class whose weakest anchor it reaches (owner, 2026-11-16).
 """
 import json
 import math
 import re
 import time
+from urllib.parse import urlsplit
 
 from .model_choices import EFFORTS
 from .provider_prices import _local_json, _when
-from .vendor_models import AGY_EFFORT, line, parse
+from .vendor_models import AGY_EFFORT, LINES, line, parse
 
 SCHEMA = 'tare.tools/model-signals/1'
 OPENROUTER = 'https://openrouter.ai/api/v1/benchmarks?source=artificial-analysis'
@@ -85,20 +87,38 @@ def _rows(items):
              'cost_per_task_usd': p} for k, i, c, a, p in rows if seen[k] == 1 and i is not None]
 
 
+def _bare(name):
+    """(name, effort): a source's name with its one effort bracket taken off; any other bracket (a date, a variant)
+    stays in the name, which `_match` refuses."""
+    found = BRACKET.fullmatch(name.strip())
+    return (found[1], found[2].strip().lower()) if found and found[2].strip().lower() in EFFORTS else (name.strip(), None)
+
+
+def _others(items):
+    """Rows of models with no line, from [(creator, name, permaslug, intelligence, coding, agentic, cost)]. They carry
+    the source's own identifiers and `line` None; two rows claiming one name are refused when a route is matched."""
+    return [{'line': None, 'creator': c, 'name': (b := _bare(n))[0], 'effort': b[1], 'permaslug': s, 'intelligence': _number(i),
+             'coding': _number(g), 'agentic': _number(a), 'cost_per_task_usd': _number(p)}
+            for c, n, s, i, g, a, p in items if isinstance(c, str) and isinstance(n, str) and _number(i) is not None]
+
+
 def parse_openrouter(body):
     """(rows, as_of, version) of OpenRouter's benchmarks answer, or None when it is not shaped as expected."""
     body = body if isinstance(body, dict) else {}
     data, meta = body.get('data'), body.get('meta') if isinstance(body.get('meta'), dict) else {}
     if not isinstance(data, list) or not isinstance(meta.get('as_of'), str):
         return None
-    items = []
+    items, others = [], []
     for item in data:
         if isinstance(item, dict) and isinstance(item.get('model_permaslug'), str):
-            key = normalise(item.get('display_name'), item['model_permaslug'].split('/')[0])
+            creator = item['model_permaslug'].split('/')[0]
+            numbers = (item.get('intelligence_index'), item.get('coding_index'), item.get('agentic_index'))
+            key = normalise(item.get('display_name'), creator)
             if key:
-                items.append((key, item.get('intelligence_index'), item.get('coding_index'),
-                              item.get('agentic_index'), None))
-    return _rows(items), meta['as_of'][:10], str(meta.get('version'))
+                items.append((key, *numbers, None))
+            else:
+                others.append((creator, item.get('display_name'), item['model_permaslug'], *numbers, None))
+    return _rows(items) + _others(others), meta['as_of'][:10], str(meta.get('version'))
 
 
 def parse_arena(body):
@@ -106,7 +126,7 @@ def parse_arena(body):
     data = body.get('rows') if isinstance(body, dict) else None
     if not isinstance(data, list):
         return None
-    items, dates = [], []
+    items, others, dates = [], [], []
     for item in data:
         row = item.get('row') if isinstance(item, dict) else None
         if isinstance(row, dict):
@@ -114,7 +134,10 @@ def parse_arena(body):
             key = normalise(row.get('model_name'), row.get('organization'))
             if key:
                 items.append((key, row.get('score'), None, None, row.get('cost_per_task_p50')))
-    return (_rows(items), max(dates), None) if dates else None
+            else:
+                others.append((row.get('organization'), row.get('model_name'), None, row.get('score'), None, None,
+                               row.get('cost_per_task_p50')))
+    return (_rows(items) + _others(others), max(dates), None) if dates else None
 
 
 def _get(url, headers=None):
@@ -226,16 +249,106 @@ def _newest():
     return _versions[1]
 
 
+def _version(text):
+    return tuple(map(int, text.split('.'))) if isinstance(text, str) and re.fullmatch(r'\d+(\.\d+)*', text) else None
+
+
+def _anchors(saved):
+    """[(score, class, name)], one per known line in the reading: its newest version, at the highest effort listed
+    for that version, with the line's declared class. A line whose newest version the reading names only as a variant
+    ("Claude Opus 5.5 (Max, Default Fallback)") gives no anchor: the clean row of an older version is another, weaker
+    model, and as an anchor it would lower its class's floor."""
+    rows = [r for r in (saved or {}).get('rows', ()) if isinstance(r, dict)]
+    found, newest = {}, {}
+    for r in rows:
+        if r.get('line') in LINES and _version(r.get('version')):
+            name, version = r['line'], _version(r['version'])
+            if r.get('effort') in EFFORTS and _number(r.get('intelligence')) is not None:
+                found.setdefault(name, []).append(((version, EFFORTS.index(r['effort'])), r))
+        elif isinstance(r.get('name'), str) and isinstance(r.get('creator'), str):
+            slug = re.sub(r'\s*\(.*$', '', r['name']).lower().replace(' ', '-')
+            known = line(slug)
+            if not known or known['vendor'].casefold() != r['creator'].casefold():
+                continue
+            name, version = known['line'], parse(slug)[2]
+        else:
+            continue
+        newest[name] = max(newest.get(name, version), version)
+    return [(r['intelligence'], LINES[name]['class'], LINES[name]['label'].format(version=r['version']))
+            for name, listed in found.items() for (version, _), r in [max(listed, key=lambda item: item[0])]
+            if version == newest[name]]
+
+
+def _place(anchors, score):
+    """(class, anchor name): the highest class whose weakest anchor the score reaches, else cheap (below the weakest
+    middling anchor). A class with no anchor cannot be entered, and with no middling anchor nothing is placed."""
+    weakest = {c: min((a[0], a[2]) for a in anchors if a[1] == c) for c in ('frontier', 'middling')
+               if any(a[1] == c for a in anchors)}
+    if 'middling' not in weakest:
+        return None
+    for c in ('frontier', 'middling'):
+        if c in weakest and score >= weakest[c][0]:
+            return c, weakest[c][1]
+    return 'cheap', weakest['middling'][1]
+
+
+def _match(saved, deployment):
+    """The row of a route's model among those with no line, at the highest effort the reading lists for it, or None.
+    Exact or nothing: an OpenRouter route's model id is the row's permaslug, with or without its `-YYYYMMDD`; any
+    other route's id (its `vendor/` checked against the creator when it has one) is the row's name lowercased and
+    hyphenated. A name or permaslug two rows claim (a variant or another date of the model counts), two rows at the
+    top effort, and a name with a bracket left (a date, a variant) match nothing."""
+    profile = deployment['native_profile']
+    model = profile.get('model')
+    if not isinstance(model, str):
+        return None
+    openrouter = urlsplit(profile.get('endpoint') or '').hostname == 'openrouter.ai'
+    vendor, _, name = model.rpartition('/')
+
+    def same(r):
+        if openrouter and isinstance(r.get('permaslug'), str):
+            return r['permaslug'] == model or re.fullmatch(re.escape(model)+r'-\d{8}', r['permaslug']) is not None
+        return name == r['name'].lower().replace(' ', '-') and (not vendor or vendor.casefold() == r['creator'].casefold())
+    rows = [r for r in (saved or {}).get('rows', ()) if isinstance(r, dict) and r.get('line') is None
+            and isinstance(r.get('name'), str) and isinstance(r.get('creator'), str)
+            and _number(r.get('intelligence')) is not None and same(r)]
+    rank = lambda r: EFFORTS.index(r['effort']) if r.get('effort') in EFFORTS else -1
+    top = [r for r in rows if rank(r) == max(map(rank, rows))] if rows else []
+    one = len(top) == 1 and len({(r.get('permaslug'), r['creator'], r['name']) for r in rows}) == 1
+    return top[0] if one and '(' not in top[0]['name'] else None
+
+
+def _placed(saved, deployment):
+    row = _match(saved, deployment)
+    placed = row and _place(_anchors(saved), row['intelligence'])
+    return (*placed, row) if placed else None
+
+
+def _by_anchors(deployment, saved):
+    """The class of a model with no line, from the known lines of the reading, only when the two latest readings of
+    the same source and index version agree; otherwise None."""
+    saved = reading() if saved is None else saved
+    now = _placed(saved, deployment) if saved else None
+    before = (saved or {}).get('previous')
+    if now and isinstance(before, dict) and (before.get('source'), before.get('version')) == (saved['source'], saved.get('version')):
+        before = _placed(before, deployment)
+        if before and before[0] == now[0]:
+            return {'class': now[0], 'from': 'anchors', 'source': saved['source'], 'as_of': saved.get('as_of'),
+                    'intelligence': now[2]['intelligence'], 'cost_per_task_usd': now[2].get('cost_per_task_usd'),
+                    'anchor': now[1]}
+
+
 def klass(deployment, saved=None):
     """{'class', 'from': 'reading' | 'line', plus 'source', 'as_of', 'intelligence', 'cost_per_task_usd' when the
-    reading has the route's model at its default effort} for a deployment, or None for a model with no line. The
+    reading has the route's model at its default effort} for a deployment. A model with no line gets {'class', 'from':
+    'anchors', 'source', 'as_of', 'intelligence', 'cost_per_task_usd', 'anchor'} (`_by_anchors`), else None. The
     class is the reading's (absolute cuts of CUTS) only when the two latest readings of the same source and index
     version put the model in the same class; otherwise the line's own, which no reading overrides on one word. The
     line's class is its newest version's: an older version gets one class lower and says so ('older_than')."""
     model = _slug(deployment)
     known = model and line(model)
     if not known:
-        return None
+        return _by_anchors(deployment, saved)
     from .execution_team import reasoning
     suffix = AGY_EFFORT.search(deployment['native_profile']['model'])
     effort = suffix[1] if suffix else reasoning(deployment)
@@ -304,7 +417,7 @@ def describe_record(tally):
 
 def short(deployment, needs):
     """How many classes a route's class falls short of the class a unit needs: 0 when it reaches it. A model with
-    no line (a local, reseller or Bedrock id) counts as cheap: nothing known places it higher."""
+    no class (no line and no row of the reading to place it by) counts as cheap: nothing known places it higher."""
     found = klass(deployment) or {}
     return max(0, ORDER.index(needs) - ORDER.index(found.get('class') or 'cheap'))
 
@@ -316,7 +429,10 @@ def reaches(deployment, needs):
 def describe(result):
     """One line of `tare models`: the class, where it came from and the numbers."""
     if not result:
-        return 'none (no model line)'
+        return 'none (no model line, and no benchmark row to place it by)'
+    if result['from'] == 'anchors':
+        return (f"{result['class']}: {'falls below' if result['class'] == 'cheap' else 'reaches'} {result['anchor']} "
+                f"on {result['source']}, {result['as_of']}")
     text = result['class'] + (' (reading' if result['from'] == 'reading' else ' (line default')
     if result['from'] == 'line' and 'older_than' in result:
         text += f", one class lower: an older version than {result['older_than']}"
