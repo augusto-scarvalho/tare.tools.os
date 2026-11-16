@@ -314,9 +314,10 @@ def _place(anchors, score):
 def _match(saved, deployment):
     """The row of a route's model among those with no line, at the highest effort the reading lists for it, or None.
     Exact or nothing: an OpenRouter route's model id is the row's permaslug, with or without its `-YYYYMMDD`; any
-    other route's id (its `vendor/` checked against the creator when it has one) is the row's name lowercased and
-    hyphenated. A name or permaslug two rows claim (a variant or another date of the model counts), two rows at the
-    top effort, and a name with a bracket left (a date, a variant) match nothing."""
+    other route's id (its `vendor/` checked against the creator when it has one, the same house in either spelling) is
+    the row's name lowercased and hyphenated, with or without the row's snapshot date. A name or permaslug two rows
+    claim (a variant or another date of the model counts), two rows at the top effort, and a name with a bracket left
+    (a variant) match nothing."""
     profile = deployment['native_profile']
     model = profile.get('model')
     if not isinstance(model, str):
@@ -324,10 +325,19 @@ def _match(saved, deployment):
     openrouter = urlsplit(profile.get('endpoint') or '').hostname == 'openrouter.ai'
     vendor, _, name = model.rpartition('/')
 
+    def house(a, b):  # one creator spelled by two catalogues: z-ai and zai, moonshotai and moonshot (measured 2026-11-16)
+        a, b = (re.sub(r'[^a-z0-9]', '', text.lower()) for text in (a, b))
+        return a == b or a == b + 'ai' or b == a + 'ai'
+
+    def named(mine, row):  # the row may carry the snapshot date the route's id leaves out (-20261017) or shortens (-1017)
+        dated = re.fullmatch(r'(.+)-(\d{8}|\d{4})', row)
+        short = re.fullmatch(r'(.+)-(\d{4})', mine)
+        return mine == row or bool(dated) and (mine == dated[1] or bool(short) and short[1] == dated[1] and dated[2].endswith(short[2]))
+
     def same(r):
         if openrouter and isinstance(r.get('permaslug'), str):
-            return r['permaslug'] == model or re.fullmatch(re.escape(model)+r'-\d{8}', r['permaslug']) is not None
-        return name == r['name'].lower().replace(' ', '-') and (not vendor or vendor.casefold() == r['creator'].casefold())
+            return named(model, r['permaslug'])
+        return named(name, r['name'].lower().replace(' ', '-')) and (not vendor or house(vendor, r['creator']))
     rows = [r for r in (saved or {}).get('rows', ()) if isinstance(r, dict) and r.get('line') is None
             and isinstance(r.get('name'), str) and isinstance(r.get('creator'), str)
             and _number(r.get('intelligence')) is not None and same(r)]
