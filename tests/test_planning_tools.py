@@ -473,7 +473,8 @@ def test_picker_profile_is_immutable_and_keeps_other_role_routes(tmp_path):
     assert planning_tools.configure_model(profile) == selected
     assert load_deployment(local_path(selected)) == candidate
     assert turn_engine.policy()['planner'] == [selected]
-    assert all(turn_engine.policy()[role] == before[role] for role in ('implementer', 'auditor', 'vision'))
+    assert all(turn_engine.policy()[role] == before[role] for role in ('auditor', 'vision'))
+    assert 'implementer' not in turn_engine.policy()  # still automatic: computed tiers are never saved
 
 
 @pytest.mark.parametrize('settled', [False, True])

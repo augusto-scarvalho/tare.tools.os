@@ -289,8 +289,8 @@ def test_an_implementer_of_the_auditors_own_line_is_left_unaudited(pool, tmp_pat
 
     async def steps(app, pilot, panel, cell, status):
         await only_opus_audits(pilot, panel, cell)
-        assert 'No auditor ticked on may audit implementer bedrock-opus (same model or line): its changes are not ' \
-               'audited.' in status()  # the first Opus implementer; Opus auditors are refused for it
+        assert 'No auditor ticked on may audit implementer claude/opus-5.5@claude-code (same model or line): its ' \
+               'changes are not audited.' in status()  # the first Opus implementer; Opus auditors are refused for it
     journey(tmp_path, steps)
 
 
@@ -299,8 +299,8 @@ def test_a_claude_implementer_with_only_opus_ticked_to_audit_gets_the_same_vendo
 
     async def steps(app, pilot, panel, cell, status):
         await only_opus_audits(pilot, panel, cell)
-        assert 'Every auditor ticked on for bedrock-sonnet is of the same vendor: its audits run, labelled not ' \
-               'independent.' in status()  # Claude Sonnet: Opus audits it, labelled not independent
+        assert 'Every auditor ticked on for claude/sonnet-5.5@claude-code is of the same vendor: its audits run, ' \
+               'labelled not independent.' in status()  # Claude Sonnet: Opus audits it, labelled not independent
     journey(tmp_path, steps)
 
 
@@ -491,10 +491,12 @@ def test_a_route_that_runs_another_model_under_its_id_is_judged_again_when_the_r
 
 def test_a_researcher_list_route_needs_the_research_tools_own_admission(pool, monkeypatch):
     keys(monkeypatch)
-    turn_engine.save_policy({'researcher': [['openai-api', 'codex-cli-gpt-6-luna']]})
-    assert turn_engine.available('openai-api', probe=False)[0] is not None
-    assert 'openai-api' in web_research.snapshot()['unavailable']  # not a research CLI nor an OpenRouter route
-    assert {n: now for n, _, now in environment.auto_routes('researcher')}['openai-api'] == 'ROLE_NOT_CONFIGURED'
+    # GPT-6 Luna on the API: no implementer row either, so tare auto's tiers (the /research link summary) miss it.
+    turn_engine.save_policy({'researcher': [['openai-api-gpt-6-luna', 'codex-cli-gpt-6-luna']]})
+    assert turn_engine.available('openai-api-gpt-6-luna', probe=False)[0] is not None
+    assert 'openai-api-gpt-6-luna' in web_research.snapshot()['unavailable']  # not a research CLI nor OpenRouter
+    assert {n: now for n, _, now in environment.auto_routes('researcher')}['openai-api-gpt-6-luna'] == \
+        'ROLE_NOT_CONFIGURED'
 
 
 def test_an_empty_saved_heads_up_list_reads_as_its_writer_reads_it():
@@ -511,7 +513,8 @@ def flat(items):
 def test_the_matrix_rows_agree_with_the_paths_that_route(pool, monkeypatch):
     """auto_routes against the real paths on the fixture catalogue, with no profile. Ranked roles: the routes only the
     role table reaches, against native_routes.ranked (review roles: the union over a producer of each vendor, since
-    the matrix checks no independence). tare auto's tiers, for implementer and for the researcher's /research link
+    the matrix checks no independence; the coordinator on the implementer rows). tare auto's list path (the owner's
+    list, else local-default) for implementer and coordinator, and its tiers for the researcher's /research link
     summary: against turn_engine.choose(probe=False), name by name. The researcher list: against
     web_research.snapshot(). Not compared, because their loops live inline in their callers: the planner list
     (planning_tools), vision (turn_engine.describe_files), heads_up (heads_up.write), the web search helper
@@ -521,27 +524,25 @@ def test_the_matrix_rows_agree_with_the_paths_that_route(pool, monkeypatch):
     install(pool, 'codex-cli-gpt-5-6-sol', 'cli://codex', 'gpt-5.6-sol')
     keys(monkeypatch)
     rules = turn_engine.policy()
+    saved = rules.get('implementer') or [['local-default']]
     producers = [native_catalog.select(name) for name in ('claude-api-opus-5-5', 'openai-api', 'gemini-api')]
-    for role in ('implementer', 'explorer', 'planner', 'plan-auditor', 'auditor'):
+    for role in ('implementer', 'coordinator', 'explorer', 'planner', 'plan-auditor', 'auditor'):
         rows = {name: now for name, _, now in environment.auto_routes(role)}
-        listed = set(flat(rules.get(role) or [])) if role in ('implementer', 'planner') else set()
+        listed = set(flat(saved if role in ('implementer', 'coordinator') else rules.get(role) or [])) \
+            if role in ('implementer', 'coordinator', 'planner') else set()
         eligible = set()
         for producer in producers if 'auditor' in role else [None]:
             eligible |= {c['catalog'] for c in native_routes.ranked(role, producer)[1]['candidates'] if c['eligible']}
         assert {n for n, now in rows.items() if now == 'usable' and n not in listed} == eligible - listed, role
     table = {r.get('native_catalog', r['id']) for r in native_routes.configured()['deployments']}
-    for role in ('implementer', 'researcher'):
+    tiers = flat(turn_engine.implementer_tiers('researcher'))
+    for role, names in (('implementer', flat(saved)), ('coordinator', flat(saved)), ('researcher', tiers)):
         rows = {name: now for name, _, now in environment.auto_routes(role)}
-        for name in set(flat(rules['implementer'])) - table - set(rules['researcher']):
+        for name in set(names) - table - set(rules['researcher']):
             taken = turn_engine.choose([[name]], probe=False, role=role)[2] is not None
             assert (rows[name] == 'usable') == taken, (role, name)
-    # coordinator: tare auto's tiers and nothing else, each as a conversation's tare auto takes it.
-    rows = {name: now for name, _, now in environment.auto_routes('coordinator')}
-    assert list(rows) == list(dict.fromkeys(flat(rules['implementer'])))
-    for name, now in rows.items():
-        assert (now == 'usable') == (turn_engine.choose([[name]], probe=False, role='coordinator')[2] is not None), name
     rows, snapshot = {n: now for n, _, now in environment.auto_routes('researcher')}, web_research.snapshot()
-    for name in set(rules['researcher']) - set(flat(rules['implementer'])) - set(turn_engine.HELPER_ROUTES):
+    for name in set(rules['researcher']) - set(tiers) - set(turn_engine.HELPER_ROUTES):
         assert (rows[name] == 'ROLE_NOT_CONFIGURED') == ('admitted research' in snapshot['unavailable'].get(name, '')), name
         assert rows[name] != 'usable' or name in snapshot['routes'], name
 

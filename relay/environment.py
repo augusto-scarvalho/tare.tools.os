@@ -134,7 +134,8 @@ def decides(name):
 # conversation); implementer: a session or delegated unit on those tiers or the role table.
 PROFILE_ROLES = ('implementer', 'explorer', 'planner', 'plan-auditor', 'auditor', 'researcher', 'vision', 'heads_up',
                  'coordinator')
-RANKED_ROLES = PROFILE_ROLES[:5]  # the roles relay/role_deployments.json ranks (native_routes.ranked)
+# The roles relay/role_deployments.json ranks (native_routes.ranked); coordinator on the implementer rows.
+RANKED_ROLES = (*PROFILE_ROLES[:5], 'coordinator')
 SOURCES = ('claude-code', 'codex', 'agy', 'opencode-sub', 'opencode-api', 'api', 'openrouter', 'bedrock', 'local',
            'other-api')
 AUTO_NAMES = ('auto', 'tare-auto', 'local-default')  # names of automatic routing, not routes
@@ -330,10 +331,11 @@ def switched_off(role, deployment, *names, value=None):
 def auto_routes(role):
     """[(name, route or None, now)] of the routes automatic `role` routing considers here, checked as each path that
     reaches a route checks it, under that role, without a live probe: `now` is 'usable' when one of those paths takes
-    it, else the first path's reason (a rule). The routing profile does not change it. The paths: coordinator tare
-    auto's tiers as a conversation's tare auto takes them (availability; coordinator_policy.eligible judges only a
-    --coordinator pin, not this path); implementer its routing list (availability), planner the list the owner saved
-    (none: the role table only), both the role table (native_routes.admission, what ranks); explorer its role table; auditor and
+    it, else the first path's reason (a rule). The routing profile does not change it. The paths: coordinator and
+    implementer (tare auto's tiers, turn_engine.implementer_tiers) and planner the list the owner saved (availability;
+    none: local-default for the first two, nothing for the planner) and the role table (native_routes.admission, what
+    ranks; a coordinator on the implementer rows; coordinator_policy.eligible judges only a --coordinator pin, not
+    this path); explorer its role table; auditor and
     plan-auditor the owner's auditor list when "Use my auditor routes" is chosen, else their role
     table, never both (native_routes._reviewers); researcher its list (availability and the research tool's own
     admission), tare auto's tiers (the /research link summary) and the Codex web search helper; vision and heads_up
@@ -341,16 +343,17 @@ def auto_routes(role):
     from copy import deepcopy
     from .cli_discovery import TEMPLATES
     from .execution_scope import current, for_role
-    from .native_catalog import select
+    from .native_catalog import LOCAL_DEFAULT, select
     from .native_routes import admission, configured, roles as table_roles
-    from .turn_engine import DEFAULT_POLICY, HELPER_ROUTES, available, policy
+    from .turn_engine import DEFAULT_POLICY, HELPER_ROUTES, available, implementer_tiers, policy
     from .web_research import DEFAULT_ROUTES, admits, research_api_routes
     templates = json.loads(TEMPLATES.read_text(encoding='utf-8'))
     rules = policy()
     owner = role in ('auditor', 'plan-auditor') and not (
         current().changes(role) or rules.get('auditor_selection', 'cross_vendor_frontier') == 'cross_vendor_frontier')
-    lists = {'coordinator': rules['implementer'], 'implementer': rules['implementer'], 'planner': rules.get('planner', []),
-             'researcher': [*rules['implementer'], *HELPER_ROUTES],
+    saved = rules.get('implementer') or [[LOCAL_DEFAULT]]
+    lists = {'coordinator': saved, 'implementer': saved, 'planner': rules.get('planner', []),
+             'researcher': [*(implementer_tiers('researcher') if role == 'researcher' else []), *HELPER_ROUTES],
              'vision': rules.get('vision', DEFAULT_POLICY['vision']),
              'heads_up': rules.get('heads_up') or DEFAULT_POLICY['heads_up']}
 
@@ -362,7 +365,8 @@ def auto_routes(role):
     for name in flat(rules.get('researcher', DEFAULT_ROUTES) if role == 'researcher' else []):
         paths.setdefault(name, []).append('research')
     table = {row.get('native_catalog', row['id']): row for row in configured()['deployments']
-             if role in RANKED_ROLES and not owner and role in table_roles(row, current())}
+             if role in RANKED_ROLES and not owner
+             and ('implementer' if role == 'coordinator' else role) in table_roles(row, current())}
     for name in table:
         paths.setdefault(name, []).append('table')
     api_routes, credentials, found = research_api_routes() if role == 'researcher' else set(), {}, []

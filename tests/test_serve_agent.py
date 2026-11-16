@@ -258,9 +258,9 @@ def test_an_audit_request_leads_with_the_latest_message_and_keeps_earlier_ones_a
     assert long.startswith('ok\n\n') and len(long.encode()) < 3300
 
 
-def test_the_default_policy_names_single_routes_per_tier():
+def test_the_default_policy_names_no_implementer_or_planner_routes():
     rules = turn_engine.DEFAULT_POLICY
-    assert all(isinstance(name, str) for tier in rules['implementer'] for name in tier)
+    assert 'implementer' not in rules  # tare auto's tiers come from the role table (implementer_tiers)
     assert 'planner' not in rules and rules['planner_effort'] == 'high'  # the planner comes from the role table
 
 

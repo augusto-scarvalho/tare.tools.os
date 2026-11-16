@@ -158,8 +158,8 @@ The exact IDs from `agy models` on 2026-10-17 support **low**, **medium** and
 **high**; **Default** resolves to **high**. Selecting a reasoning level changes
 both the model ID and effort together.
 
-Operator policy places Argon alongside Astra and Fable for frontier planning,
-audit and the highest implementation escalation tier. It shares the
+Its line is in the middling class, with Sol and Opus: it reviews plans and
+code, and it is an implementer of tare auto's first two floors (at least cheap, at least middling). It shares the
 `google/gemini` lineage with Gemini Flash, so it cannot independently audit
 that family. The profile retains conservative AGY transport limits; this
 registration does not establish comparative quality, price or available quota.

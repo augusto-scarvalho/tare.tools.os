@@ -75,7 +75,7 @@ BEFORE = {
     'qwen38-gsq': ['qwen38-gsq', 'Qwen3.8 27B GSQ · NInfer', 'Local', 'Local GPU', ['low', 'medium', 'xhigh'], 'low'],
     'swift-next': ['swift-next', 'Swift 1.5 Flash-Next', 'Local', 'Local GPU', ['low', 'medium', 'xhigh'], 'low'],
     'swift27b': ['swift27b', 'Swift 1.5 27B · NInfer', 'Local', 'Local GPU', ['xhigh'], 'xhigh'],
-    'tare-auto': ['tare-auto', 'tare auto', 'tare', 'local → cheap → intermediate', [], ''],
+    'tare-auto': ['tare-auto', 'tare auto', 'tare', 'cheap → middling → frontier', [], ''],
 }
 # Through shipped connections (key, label, group, connection, efforts): versions that do not exist yet, and AGY's
 # Claude ids, labelled from the table alone; AGY's own ids give its efforts, the Codex template's catalogue Codex's.

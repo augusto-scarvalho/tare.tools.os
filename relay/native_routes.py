@@ -16,7 +16,11 @@ COST = {'free': 0, 'flat': 1, 'free-credit': 2, 'metered': 3}
 # Carbon). Checking code and plans for defects is done as well or better by the class below (Sol, Opus, Argon), so
 # the reviewers want middling. A route that falls short goes last; one above the wanted class is used after the
 # exact one on the same kind of allowance. What a user wants otherwise is ticked in /routes > Models per role.
-WANTED = {'planner': 'frontier', 'plan-auditor': 'middling', 'auditor': 'middling'}
+# The implementer and a conversation (coordinator) want cheap: the cheapest sufficient route first, the class nearest
+# the floor first on each kind of allowance. tare auto's tiers are floors of class over this order, raised on a
+# failure (turn_engine.implementer_tiers); a unit's `needs` reorders its own routes.
+WANTED = {'planner': 'frontier', 'plan-auditor': 'middling', 'auditor': 'middling', 'implementer': 'cheap',
+          'coordinator': 'cheap'}
 
 
 _derived = (None, [])  # (the table's path and the installed route names, the rows derived for them)
@@ -158,7 +162,8 @@ def admission(row, role, author=None, credentials=None):
     from .work_audit import identity
     from .execution_scope import constrained, current, same_family_admitted
     credentials = {} if credentials is None else credentials
-    if role not in roles(row, current()):
+    # A conversation's model is admitted as an implementer row; the routing profile then judges it as coordinator.
+    if ('implementer' if role == 'coordinator' else role) not in roles(row, current()):
         return None, None, 'ROLE_NOT_CONFIGURED'
     if row.get('qualified') is False and not proven(row, credentials):
         # Registered from a provider's metadata: an exact pin reaches it, automatic selection waits for a live
@@ -219,7 +224,7 @@ def admission(row, role, author=None, credentials=None):
 def _ranked(role, producer=None, *, check_resources=False):
     """No inference. New automatic dispatch can also observe current capacity."""
     from .work_audit import identity
-    if role not in {'planner', 'plan-auditor', 'auditor', 'implementer', 'explorer'} or (role in {'plan-auditor', 'auditor'} and producer is None):
+    if role not in {'planner', 'plan-auditor', 'auditor', 'implementer', 'coordinator', 'explorer'} or (role in {'plan-auditor', 'auditor'} and producer is None):
         raise ValueError('ROLE_SELECTION_REQUIRES_SUPPORTED_ROLE_AND_AUTHOR')
     author = identity(producer, 'implementer') if producer is not None else None
     table = configured(); decisions = []; eligible = []; credentials = {}; seen = set()
@@ -232,6 +237,10 @@ def _ranked(role, producer=None, *, check_resources=False):
     first = bool(author) and cross_vendor_first()  # off: --any_vendor_auditor or /routes
     from .model_signals import ORDER, klass
     need = WANTED.get(role)
+    try:
+        fleet = native_catalog.local_default()
+    except (OSError, ValueError, KeyError, TypeError):
+        fleet = None  # unreadable setup: no model is the default here
     for order, row in enumerate(table['deployments']):
         decision = {'deployment': row['id'], 'eligible': False}
         decisions.append(decision)
@@ -292,7 +301,10 @@ def _ranked(role, producer=None, *, check_resources=False):
         # tier), a lapsing allowance, tier, the exact class before one above it (Sol before Astra on one
         # subscription, from the class and not from a number per route), a current model before an older version or a model with no line
         # that lands in the same class (Opus 5.5 before Fable 5.1), primary, CLI backup, table order.
-        rank = (same_family, first and not cross, current().preference(deployment,role), fall, lapse_order(signal), COST[row['cost_tier']], above, dated, row['kind'] != 'primary', cli_backup, order)
+        # For an implementer or a conversation a route with no class also comes after every route that has one: a last
+        # resort, so a machine with only unmeasured routes still runs; the node's own default model is not one.
+        unclassed = role in {'implementer', 'coordinator'} and not found and             native_catalog.LOCAL.get(row.get('native_catalog', row['id']), row.get('native_catalog', row['id'])) != fleet
+        rank = (same_family, first and not cross, current().preference(deployment,role), fall, unclassed, lapse_order(signal), COST[row['cost_tier']], above, dated, row['kind'] != 'primary', cli_backup, order)
         eligible.append((rank, deployment, decision))
     if check_resources:
         kept = []

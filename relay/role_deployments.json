@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "purpose": "Operator role admission. Frontier plan/audit prefers another vendor, then a route that reaches the class the role wants (relay/native_routes.py WANTED: the planner wants frontier, reviewers the class below it, which checks code as well; the class is from relay/model_signals.py), then subscription quota before metered API. No hand-written order of models. This is preference policy, not a measured quality ranking. local_only_roles are taken only in --local_only mode, because the owner chose that mode: an operator admission, not a quality claim. There an audit by the implementer's own model family is labelled not independent and applies only after the user confirms it in the TUI; every other mode keeps the roles list and the independence rule unchanged.",
+  "purpose": "Operator role admission. Frontier plan/audit prefers another vendor, then a route that reaches the class the role wants (relay/native_routes.py WANTED: the planner wants frontier, reviewers the class below it, which checks code as well, the implementer and a conversation the cheapest class, where tare auto's tiers are floors of class over that order (relay/turn_engine.py implementer_tiers), raised one at a time on a failure, and a route with no class comes last; the class is from relay/model_signals.py), then subscription quota before metered API. No hand-written order of models. This is preference policy, not a measured quality ranking. local_only_roles are taken only in --local_only mode, because the owner chose that mode: an operator admission, not a quality claim. There an audit by the implementer's own model family is labelled not independent and applies only after the user confirms it in the TUI; every other mode keeps the roles list and the independence rule unchanged.",
   "deployments": [
     {
       "id": "local-qwen",
@@ -108,7 +108,8 @@
         "planner",
         "plan-auditor",
         "auditor",
-        "explorer"
+        "explorer",
+        "implementer"
       ],
       "kind": "primary",
       "cost_tier": "flat",
@@ -128,7 +129,8 @@
         "planner",
         "plan-auditor",
         "auditor",
-        "explorer"
+        "explorer",
+        "implementer"
       ],
       "kind": "primary",
       "cost_tier": "flat",
@@ -188,7 +190,8 @@
         "planner",
         "plan-auditor",
         "auditor",
-        "explorer"
+        "explorer",
+        "implementer"
       ],
       "kind": "primary",
       "cost_tier": "flat",
@@ -229,6 +232,24 @@
       "kind": "primary",
       "cost_tier": "flat",
       "native_catalog": "codex-cli-gpt-5-6-luna",
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
+    },
+    {
+      "id": "codex-cli-gpt-6-luna",
+      "model": "gpt-6-luna",
+      "provider": "OpenAI",
+      "transport": "CLI",
+      "runner": "native-http",
+      "quota_domain": "openai-codex-plan",
+      "endpoint_domain": "openai-cli",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "codex-cli-gpt-6-luna",
       "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
     },
     {
@@ -299,7 +320,8 @@
         "planner",
         "plan-auditor",
         "auditor",
-        "explorer"
+        "explorer",
+        "implementer"
       ],
       "kind": "primary",
       "cost_tier": "flat",
@@ -340,6 +362,24 @@
       "kind": "primary",
       "cost_tier": "flat",
       "native_catalog": "codex-native-gpt-5-6-luna",
+      "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
+    },
+    {
+      "id": "codex-native-gpt-6-luna",
+      "model": "gpt-6-luna",
+      "provider": "OpenAI",
+      "transport": "API",
+      "runner": "native-http",
+      "quota_domain": "openai-codex-plan",
+      "endpoint_domain": "openai-api",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "primary",
+      "cost_tier": "flat",
+      "native_catalog": "codex-native-gpt-6-luna",
       "note": "Resolve the installed TUI profile, including its current effort. Subscription quota and incremental billing remain unverified."
     },
     {
@@ -553,7 +593,8 @@
         "planner",
         "plan-auditor",
         "auditor",
-        "explorer"
+        "explorer",
+        "implementer"
       ],
       "kind": "primary",
       "cost_tier": "flat",
@@ -632,7 +673,8 @@
       "roles": [
         "planner",
         "plan-auditor",
-        "auditor"
+        "auditor",
+        "implementer"
       ],
       "kind": "primary",
       "cost_tier": "flat",
@@ -651,7 +693,8 @@
       "roles": [
         "planner",
         "plan-auditor",
-        "auditor"
+        "auditor",
+        "implementer"
       ],
       "kind": "primary",
       "cost_tier": "flat",

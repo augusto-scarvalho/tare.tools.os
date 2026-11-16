@@ -34,16 +34,21 @@ _turns, _chats, _guard = {}, {}, threading.Lock()
 def routes(start=0):
     """(tier, name, deployment) of the policy's available routes that carry client tools, from tier `start`. The
     route is the model the user talks to, as in a tare serve chat (a conversation): the routing profile's
-    coordinator entries decide it."""
+    coordinator entries decide it. The tiers are nested floors (implementer_tiers), so each route is given once, at the
+    highest floor that holds it (as turn_engine.choose): a failure then moves above it and never to it again."""
     from .execution_scope import refusal
-    for tier, names in enumerate(engine.policy()['implementer']):
+    tiers, seen = engine.implementer_tiers('coordinator'), set()
+    for tier, names in enumerate(tiers):
         if tier < start:
             continue
         for name in names:
+            if name in seen:
+                continue
+            seen.add(name)
             deployment, _ = engine.available(name)
             if deployment is not None and deployment['native_profile']['protocol'] == 'openai-chat' and \
                     not refusal('coordinator', deployment, name):
-                yield tier, name, deployment
+                yield max(i for i in range(tier, len(tiers)) if name in tiers[i]), name, deployment
 
 
 def route_from(floor):

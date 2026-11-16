@@ -114,7 +114,7 @@ def describe(name, value):
         group, connection = 'API', 'API · ' + (urlsplit(endpoint).hostname or endpoint)
     if 'native_auto_routes' in value:
         # Resolved when a new session starts; a blocked or exhausted turn continues on the next tier.
-        key, label, group, connection = name, 'tare auto', 'tare', 'local → cheap → intermediate'
+        key, label, group, connection = name, 'tare auto', 'tare', 'cheap → middling → frontier'
         from .execution_scope import current
         scope=current()
         if scope.only or scope.prefer=='local':
@@ -193,8 +193,8 @@ def projection(*, role=None, via=None, vendor=None, provider=None, include_uncon
     table = configured()['deployments']
     researchers = policy().get('researcher', DEFAULT_ROUTES)
     setup = read()
-    # Work dispatch also admits the operator's configured implementation
-    # ladder; the static review-role table is not that ladder's authority.
+    # Work dispatch also admits the owner's saved implementation ladder (none: tare auto's tiers are the table's
+    # implementer rows, plus the fleet default, turn_engine.implementer_tiers).
     # Aliases name the profile dispatch uses: local-qwen and qwen38 are qwen38-gsq, local-default the fleet default.
     alias = lambda n: native_catalog.LOCAL.get(n, n)
     try:
@@ -202,7 +202,7 @@ def projection(*, role=None, via=None, vendor=None, provider=None, include_uncon
     except (OSError, ValueError, KeyError, TypeError):
         fleet = native_catalog.LOCAL_DEFAULT
     implementers = {alias(fleet if name == native_catalog.LOCAL_DEFAULT else name)
-                    for tier in policy().get('implementer', []) for name in tier}
+                    for tier in policy().get('implementer') or [[native_catalog.LOCAL_DEFAULT]] for name in tier}
     result = []
     for name, value, installed in deployments:
         if 'native_auto_routes' in value or 'native_host_modes' in value:

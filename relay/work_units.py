@@ -633,7 +633,7 @@ def implementer_label(name, deployment):
 def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None, needs=None):
     """The implementer routes to try, whichever account the conversation runs on (owner, 2026-11-14): the routes of
     the kind --prefer_* names first, then those whose allowance lapses in surplus (the sooner lapse first), then tare's
-    implementer ladder, cheapest tier first (the owner's <storage>/serve/routing.json, else tare's). With nothing in
+    implementer ladder, cheapest tier first (the owner's <storage>/serve/routing.json, else the role table's, cheapest sufficient first). With nothing in
     surplus and the GPU free, a hosted conversation's unit starts on the local model. What may run is said by --*_only
     and --prefer_local (available() leaves the other routes out), the routing profile and pins, never by the
     coordinator's account. An implementer pin is the one route. The coordinator may fix one route and its effort,
@@ -645,7 +645,7 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
     those one class short, then two, so a weaker one runs only when nothing nearer is available and a hard unit does
     not go to a weak model because its allowance is free. A route the coordinator chose, or a pin, is not reordered."""
     from .native_catalog import select
-    from .turn_engine import available, gpu_taken, policy, surplus_first, with_effort
+    from .turn_engine import available, gpu_taken, implementer_tiers, surplus_first, with_effort
     from .execution_scope import current, execution_tiers, is_pro, kind, refusal
     temporary=current()
     if temporary.pin('implementer'):
@@ -653,7 +653,7 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
         deployment=pin_selection('implementer',chosen,effort)
         yield deployment['native_model_choice']['connection'],deployment
         return  # Never reconstruct from a name under the parent's coordinator role.
-    ladder = [name for tier in execution_tiers(policy()['implementer']) for name in tier]
+    ladder = list(dict.fromkeys(name for tier in execution_tiers(implementer_tiers()) for name in tier))  # floors nest: tier 0 holds all
     allowed = surplus_first(ladder + lapsing_outside(ladder))
     if temporary.prefer:
         def other(name):
@@ -667,7 +667,9 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
         and not is_pro(parent) and temporary.allows(parent, 'implementer')[0])
     if parent_allowed and parent_name not in allowed:
         allowed.append(parent_name)  # The conversation's own connection, in a separate role, after the ladder.
-    if chosen and chosen not in allowed:
+    # The ladder leaves out a route switched off for the implementer; the chosen one is refused below, saying why.
+    if chosen and chosen not in allowed and not ((value := available(chosen, probe=False)[0])
+                                                 and refusal('implementer', value, chosen)):
         raise ValueError("Choose one of tare's implementer routes: " + ', '.join(allowed))
     if needs and not chosen:
         from .model_signals import ORDER, short

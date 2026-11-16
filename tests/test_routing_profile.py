@@ -963,7 +963,10 @@ def test_auto_show_coordinator_lists_tare_autos_tiers_as_a_conversation_reads_th
     shown = json.loads(capsys.readouterr().out)
     assert shown['routing_profile'] == {'off': {'coordinator': ['claude/sonnet@claude-code']}}
     rows = shown['roles']['coordinator']
-    assert [r['route'] for r in rows] == list(dict.fromkeys(n for tier in turn_engine.policy()['implementer'] for n in tier))
+    # The fleet's default (no saved list), then the role table's implementer rows, which a conversation ranks on.
+    table = [r.get('native_catalog', r['id']) for r in native_routes.configured()['deployments']
+             if 'implementer' in r['roles']]
+    assert [r['route'] for r in rows] == list(dict.fromkeys(['local-default', *table]))
     assert next(r for r in rows if r['route'] == 'claude-sonnet-5-5-cli')['profile'] == 'off (claude/sonnet@claude-code)'
     assert environment.main(['--auto-show', 'coordinator']) == 0
     assert capsys.readouterr().out.startswith('coordinator: the routes automatic routing considers')
