@@ -557,6 +557,8 @@ class RouteMatrix(Vertical):
         event.stop()  # the order tab's handler resets its routes for any other button
         if self.value is None:
             return
+        if event.button.id == 'matrix-prove':
+            return self.action_prove()
         if event.button.id == 'matrix-reload':
             value = await asyncio.to_thread(env.read)
             if self.is_mounted:

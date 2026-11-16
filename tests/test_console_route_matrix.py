@@ -612,6 +612,25 @@ def test_a_pin_only_cell_is_proven_from_the_matrix_after_a_confirmation_naming_t
     journey(tmp_path, steps)
 
 
+def test_the_prove_button_opens_the_same_confirmation_as_the_key(pool, tmp_path, monkeypatch):
+    install(pool, FABLE, 'cli://claude', 'claude-fable-5-2')
+    calls = prover(monkeypatch)
+
+    async def steps(app, pilot, panel, cell, status):
+        table = panel.query_one('#matrix-table')
+        table.focus()  # select the cell without ticking or proving it
+        table.move_cursor(row=table.get_row_index('claude/fable'), column=table.get_column_index('claude-code'))
+        await pilot.pause()
+        panel.query_one('#matrix-prove', Button).press()
+        for _ in range(50):
+            await pilot.pause(0.1)
+            if isinstance(app.screen, ProveDialog):
+                break
+        assert isinstance(app.screen, ProveDialog) and FABLE in ' '.join(app.screen.lines) and calls == []
+        await pilot.press('escape')
+    journey(tmp_path, steps)
+
+
 def test_cancel_and_esc_call_nothing(pool, tmp_path, monkeypatch):
     install(pool, FABLE, 'cli://claude', 'claude-fable-5-2')
     calls = prover(monkeypatch)
