@@ -75,6 +75,20 @@ Provider errors remain visible. Adding a model is not a benchmark or proof of
 every reasoning level's live behavior. See [vendor inference](VENDOR_CLI_INFERENCE.md)
 for transport boundaries and usage-accounting limitations.
 
+### Claude Code: a new version without a template
+
+Claude Code lists no models, so each Claude model has a template in `relay/native_deployments/vendor_cli_templates.json`.
+Discovery also asks the installed Claude Code which model id each family alias (`fable`, `opus`, `sonnet`, `haiku`)
+resolves to: one start per alias against a local recorder that refuses every request, so no token is spent. The
+reading is kept in discovery's cache (`cli-discovery.json`, key `claude_aliases`) for that executable file and is
+taken again only when the file changes (a Claude Code update); a reading that fails is kept as empty until then and
+the templates alone are used. An id that is a newer version of a line the templates have (`claude-fable-5-3` beside
+`claude-fable-5-2-cli`) gets the profile `<id>-cli`, copied from the newest template of that line, with the id and
+model replaced and a `source` that says it came from the alias reading (account availability unchecked). It is
+managed like any discovered profile: retired when a later reading no longer resolves to it, never touched once you
+edit it. Its role row is then derived as for any newer version (see
+[shared GPU](SHARED_GPU.md)): pin only until proven.
+
 ### Gemini 4 Argon
 
 AGY discovery offers `agy-gemini-4-argon-cli`, shown as **Gemini 4 Argon**.
