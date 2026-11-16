@@ -104,6 +104,25 @@ lacked). It is retired only when a later successful read no longer lists the bas
 An older or equal version, an id with no known line (`gpt-oss-120b-medium`) and a line with no AGY template change
 nothing. Its role row is derived as for any newer version: pin only until proven.
 
+### API: the same version on the vendor's API
+
+A vendor's own CLI is the whitelist for its API. After the CLIs are read, discovery takes the ids they list in the
+same run (Codex's catalogue slugs, the ids Claude Code's aliases resolve to, AGY's Gemini bases without the effort
+suffix) and keeps those that are a newer version of a line than every bundled API profile of it (`openai-api`,
+`claude-api*`, `gemini-api*`, Pro variants included in the comparison). Only for a vendor with such an id, whose key
+is stored (environment or vault) and whose provider `tare setup` leaves in, discovery sends one `GET <endpoint>/models`
+(Anthropic: `x-api-key` and `anthropic-version`, `limit=1000`; OpenAI and the Gemini OpenAI-compatible endpoint:
+`Authorization: Bearer`) to the host of the bundled profile's endpoint, over https, 15 seconds, no redirect. The key
+is never in a URL, a log, an error text or the cache; discovery's cache (key `api_models`) keeps the ids, the read
+date and the last attempt, and reads again only when the attempt is a day old (a read that fails or lists no id keeps
+the last ids and counts as the attempt). The API's list never decides which models exist, it only confirms an id the
+CLI listed. A confirmed id gets `claude-api-<id without claude->`, `openai-api-<id>` or `gemini-api-<id without
+gemini->` (dots become hyphens), copied from the line's newest bundled API profile that is not Pro, with the id and
+both model fields replaced and a `source` that says it mirrors the id the CLI lists, confirmed on the API's list on
+that date; limits and parameters are the sibling's and no price is added. It is retired when the CLI no longer lists
+the id or a successful read no longer has it, and never touched once you edit it. Its role row is derived as for any
+newer version (the non-Pro sibling's row, since only that sibling has one): pin only until proven.
+
 ### A new version is proven when it arrives
 
 The TUI proves such a route itself, so a new version does not wait for you to find it in `/routes`. When it starts

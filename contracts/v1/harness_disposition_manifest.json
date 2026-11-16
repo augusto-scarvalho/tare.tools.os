@@ -3151,8 +3151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns console model choices and local profiles; the Kernel still owns CLI preflight and inference.",
-      "size_bytes": 18206,
-      "sha256": "49e5e1379b87f0fbaea3a9495b0250dc3cf826ca2818cc625d5b53e3de0e52fd"
+      "size_bytes": 26391,
+      "sha256": "8ecba273fe200f01d8fe907342dd285b48be7704f386169c609cd5c67bb13a9f"
     },
     {
       "name": "native_activity.py",
