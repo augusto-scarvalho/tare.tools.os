@@ -243,9 +243,20 @@
       "display_name": "GLM 5.3",
       "vendor": "Z.ai",
       "bias_domain": "zai/glm-family",
+      "bedrock": {
+        "model_id": "us.zai.glm-5.3",
+        "region": "us-east-1",
+        "access": "listed",
+        "checked": "2026-11-16",
+        "source": "Bedrock model listing 2026-11-16: zai.glm-5.3 ACTIVE, inference profile us.zai.glm-5.3; listed, not called",
+        "fit": "Bedrock route for GLM 5.3, pin only until a proof on the machine",
+        "roles": []
+      },
       "runtime": {
         "aider-openrouter": "openrouter/z-ai/glm-5.3",
-        "claude-gateway": "openrouter/z-ai/glm-5.3"
+        "claude-gateway": "openrouter/z-ai/glm-5.3",
+        "native": "us.zai.glm-5.3",
+        "native-http": "us.zai.glm-5.3"
       }
     },
     "fable-tc": {

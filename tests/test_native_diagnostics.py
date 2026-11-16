@@ -56,7 +56,7 @@ def test_installed_requirements_branch_uses_distribution_metadata(tmp_path,monke
     assert basis=='installed_metadata' and str(req['tare-tools-os'])=='tare-tools-os==0.1.4'
 
 
-@pytest.mark.parametrize('name',['local-qwen','hauhaucs','fable-tc','qwen36-moe','bedrock-opus','bedrock-sonnet','bedrock-glm'])
+@pytest.mark.parametrize('name',['local-qwen','hauhaucs','fable-tc','qwen36-moe','bedrock-opus','bedrock-sonnet','bedrock-glm','bedrock-glm-5-3'])
 def test_named_profiles_static_inspection_has_no_http_or_credential_access(name,monkeypatch):
     from compute_plane.native_models import NativeHttpClient
     from relay import native_generation
@@ -67,7 +67,7 @@ def test_named_profiles_static_inspection_has_no_http_or_credential_access(name,
     report=diagnostic.profile(select(name))
     assert report['status']=='CONFIGURATION_VALID' and report['provider_readiness']=='NOT_PROBED'
     assert not calls
-    assert report['counting']==('ESTIMATED' if name in ('bedrock-glm','local-qwen') else 'MEASURED_REQUIRED')  # NInfer has no /tokenize
+    assert report['counting']==('ESTIMATED' if name in ('bedrock-glm','bedrock-glm-5-3','local-qwen') else 'MEASURED_REQUIRED')  # NInfer has no /tokenize
 
 
 def test_estimated_spending_conflict_and_unpriced_categories_are_actionable():

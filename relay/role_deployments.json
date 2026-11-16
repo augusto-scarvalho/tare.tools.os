@@ -544,6 +544,41 @@
       "native_catalog": "bedrock-glm"
     },
     {
+      "id": "bedrock-glm-5-3-explorer",
+      "model": "glm-5.3",
+      "provider": "Amazon Bedrock",
+      "transport": "API",
+      "runner": "native-http",
+      "region": "us-east-1",
+      "quota_domain": "aws-bedrock-credits",
+      "endpoint_domain": "aws-bedrock-runtime-us-east-1",
+      "effort": null,
+      "roles": [
+        "implementer",
+        "explorer"
+      ],
+      "kind": "reserve",
+      "note": "GLM 5.3 on Bedrock, listed 2026-11-16, never called. Pin only (qualified false): an exact pin reaches it, automatic selection does not until a proof on this machine. Limits and parameters copied from the GLM 5 route, not verified for 5.3.",
+      "cost_tier": "free-credit",
+      "qualified": false,
+      "native_credential_env": "AWS_BEARER_TOKEN_BEDROCK",
+      "native_profile": {
+        "protocol": "bedrock-converse",
+        "model": "us.zai.glm-5.3",
+        "context_window": 200000,
+        "output_tokens": 4096,
+        "endpoint": "https://bedrock-runtime.us-east-1.amazonaws.com",
+        "source": "Bedrock model listing read 2026-11-16 (listing only, no model call): zai.glm-5.3 ACTIVE with inference profile us.zai.glm-5.3. Limits and parameters are copied from the bedrock-glm (GLM 5) route and not verified for 5.3; window not stress tested; UTF-8 envelope estimate selected explicitly because CountTokens is unsupported",
+        "parameters_json": "{\"additionalModelRequestFields\": {\"reasoning_config\": \"high\"}}"
+      },
+      "native_usage_contract": {
+        "layout": "converse-exclusive",
+        "source": "AWS Converse response usage"
+      },
+      "native_counter_protocol": "utf8-envelope-estimate-v1",
+      "native_catalog": "bedrock-glm-5-3"
+    },
+    {
       "id": "openrouter-deepseek-v4-1-flash",
       "model": "deepseek/deepseek-v4.1-flash",
       "provider": "OpenRouter",

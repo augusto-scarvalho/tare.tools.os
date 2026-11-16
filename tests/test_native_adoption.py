@@ -11,7 +11,7 @@ from test_work_run import os_root, NativeFixtureClient, evidence
 from test_native_agent import setup, Client, deployment
 
 
-@pytest.mark.parametrize('name,model', [('bedrock-sonnet','claude-sonnet-4.6'), ('bedrock-glm','glm-5')])
+@pytest.mark.parametrize('name,model', [('bedrock-sonnet','claude-sonnet-4.6'), ('bedrock-glm','glm-5'), ('bedrock-glm-5-3','glm-5.3')])
 def test_restored_bedrock_catalog_role_and_roster_share_exact_native_profile(name, model):
     from relay.native_catalog import select
     root=Path(__file__).resolve().parents[1]/'relay'

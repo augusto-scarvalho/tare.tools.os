@@ -24,6 +24,7 @@ LOCAL = {'openai-api': 'openai-api', 'gemini-api': 'gemini-api', 'claude-api': '
          'fable-tc': 'fable-tc', 'qwen36-moe': 'qwen36-moe', 'swift-next': 'swift-next', 'local-auto': 'local-auto',
          'qwen38-gsq': 'qwen38-gsq', 'swift27b': 'swift27b', 'tare-auto': 'tare-auto',
          'bedrock-opus': 'bedrock-opus', 'bedrock-sonnet': 'bedrock-sonnet', 'bedrock-glm': 'bedrock-glm',
+         'bedrock-glm-5-3': 'bedrock-glm-5-3',
          'openrouter-deepseek-v4-1-flash': 'openrouter-deepseek-v4-1-flash',
          'openrouter-glm-5-3': 'openrouter-glm-5-3',
          'openrouter-mimo-v2-6-pro': 'openrouter-mimo-v2-6-pro',
@@ -161,7 +162,8 @@ def select(name=None, path=None, *, role=None):
     result = bundled(name)
     models = {'qwen38': 'qwen-3.8-27b', 'qwen38-gsq': 'qwen-3.8-27b', 'fable-tc': 'fable-tc', 'bedrock-opus': 'claude-opus-4.6',
               'hauhaucs': 'hauhaucs-qwen38', 'qwen36-moe': 'qwen36-moe',
-              'bedrock-sonnet': 'claude-sonnet-4.6', 'bedrock-glm': 'glm-5'}
+              'bedrock-sonnet': 'claude-sonnet-4.6', 'bedrock-glm': 'glm-5',
+              'bedrock-glm-5-3': 'glm-5.3'}
     if LOCAL[name] in models:
         result['model'] = models[LOCAL[name]]
     return canonical_identity(result)

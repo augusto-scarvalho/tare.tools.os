@@ -102,7 +102,7 @@ def test_setup_by_flags_offers_only_what_the_gateway_publishes(machine, gateway,
     generic = 'local-127-0-0-1-' + url.rsplit(':', 1)[1] + '-minha-llama'
     offered = {r['deployment'] for r in native_catalog.available_models()}
     assert {'qwen38-gsq', 'tare-auto', generic} <= offered
-    assert not offered & {'swift27b', 'hauhaucs', 'bedrock-glm', 'openrouter-glm-5-3'}  # unpublished; API declined
+    assert not offered & {'swift27b', 'hauhaucs', 'bedrock-glm', 'bedrock-glm-5-3', 'openrouter-glm-5-3'}  # unpublished; API declined
     assert 'not qualified' in native_catalog.select(generic)['native_profile']['source']
     assert native_serve.default_models() == {'tare-qwen38': 'qwen38-gsq', 'tare-' + generic[6:]: generic}
     assert environment.default_route() == 'tare-auto'
