@@ -23,12 +23,16 @@ ONE, TWO = source('one.csv'), source('two.csv')
 PAGE = {'reader': 'page', 'board': 'https://example.test/leaderboard', 'model': 'Model', 'column': 'Score', 'higher_is_better': True,
         'kind': 'outcome', 'name': 'Board page', 'citation': 'Source: page'}
 PAGE_ROWS = [('Gemini 4 Carbon (High)', 'Google', .71), ('GPT-6 Astra (Max)', 'OpenAI', .66), ('GPT-6.1 Sol (Max)', 'OpenAI', .60),
-             ('Gemini 4 Argon (High)', 'Google', .50), ('Gemini 3.8 Flash (High)', 'Google', .30)]  # the anchors of LINES_ROWS
+             ('GPT-6.1 Terra (High)', 'OpenAI', .58), ('Claude Opus 5.5 (High)', 'Anthropic', .55),
+             ('Gemini 4 Argon (High)', 'Google', .50), ('Gemini 3.8 Flash (High)', 'Google', .30),
+             ('Claude Haiku 5.5 (High)', 'Anthropic', .20)]  # the lines of LINES_ROWS
 KIND = {'id': 't', 'label': 'testing', 'description': 'a type of the tests', 'sources': [ONE, TWO]}
-# Frontier anchors: Carbon .71 and Astra .66 (weakest .66); middling: Sol .60 and Argon .50 (weakest .50). Invented.
+# Eight known lines (the least a board places with), ranked: frontier is the top quarter (the second best, .66),
+# middling the top three quarters (the sixth best, .50). Invented.
 LINES_ROWS = [('gemini-4-carbon_high', 'Google DeepMind', .71), ('gpt-6-astra_max', 'OpenAI', .66),
-              ('gpt-6.1-sol_max', 'OpenAI', .60), ('gemini-4-argon_high', 'Google DeepMind', .50),
-              ('gemini-3.8-flash_high', 'Google DeepMind', .30)]
+              ('gpt-6.1-sol_max', 'OpenAI', .60), ('gpt-6.1-terra_high', 'OpenAI', .58),
+              ('claude-opus-5-5_high', 'Anthropic', .55), ('gemini-4-argon_high', 'Google DeepMind', .50),
+              ('gemini-3.8-flash_high', 'Google DeepMind', .30), ('claude-haiku-5-5_high', 'Anthropic', .20)]
 
 
 def csv_text(column, rows):
@@ -126,11 +130,12 @@ def test_a_known_line_is_placed_at_its_own_effort_else_the_highest_the_board_lis
 
 
 def test_a_board_that_stopped_at_older_versions_places_nobody():
-    """An aged source: it holds Sol 5.6 where another board already holds Sol 6.1, so its middling anchor is gone."""
-    old = [('gpt-5.6-sol_max', 'OpenAI', .20), ('gemini-4-carbon_high', 'Google DeepMind', .71), ('gpt-6-astra_max', 'OpenAI', .66)]
+    """An aged source: it holds Sol 5.6 where another board already holds Sol 6.1, so it is one line short of the
+    least a board places with."""
+    old = [('gpt-5.6-sol_max', 'OpenAI', .60) if row[0] == 'gpt-6.1-sol_max' else row for row in LINES_ROWS]
     aged = board(ONE, ('kimi-k3.1-pro_max', 'Moonshot', .65), anchors=old)
     alone = {signals.source_key(ONE): aged}
-    # on its own it is the newest it knows: Sol 5.6 is its middling anchor, and Kimi is middling
+    # on its own it is the newest it knows: Sol 5.6 is one of its eight lines, and Kimi is middling
     assert signals.type_class(KIMI, {**KIND, 'sources': [ONE]}, alone)['class'] == 'middling'
     beside = {**alone, signals.source_key(TWO): board(TWO)}  # another board holds Sol 6.1
     found = signals.type_class(KIMI, {**KIND, 'sources': [ONE]}, beside)
@@ -330,19 +335,19 @@ def test_tare_models_types_shows_the_catalogue_with_each_sources_read_date_and_a
     model_choices.main(['--types'])
     out = capsys.readouterr().out
     assert 'math: mathematics - ' in out and 'cad: CAD - ' in out and 'no source yet: the general class' in out
-    assert 'Epoch GPQA Diamond (outcome): read 14 Nov, 5 of 12 known lines' in out and 'LMArena webdev (preference): read 14 Nov' in out
-    assert 'Epoch AI, Capabilities & benchmarking, CC BY 4.0 (epoch.ai/benchmarks); GPQA Diamond' in out
+    assert 'Epoch CritPt (outcome): read 14 Nov, 8 of 12 known lines' in out and 'LMArena webdev (preference): read 14 Nov' in out
+    assert 'CritPt, as collected by Epoch AI (epoch.ai/benchmarks)' in out
     model_choices.main(['--types', '--json'])
     catalogue = {t['id']: t for t in json.loads(capsys.readouterr().out)['types']}
     assert catalogue['3d']['sources'] == [] and len(catalogue) == len(signals.TYPES)
-    gpqa = next(s for s in catalogue['science']['sources'] if s['board'] == 'gpqa_diamond.csv')
-    assert (gpqa['anchors'], gpqa['known_lines'], gpqa['places'], gpqa['read_at']) == (5, 12, True, NOW)
+    gpqa = next(s for s in catalogue['science']['sources'] if s['board'] == 'critpt_external.csv')
+    assert (gpqa['anchors'], gpqa['known_lines'], gpqa['places'], gpqa['read_at']) == (8, 12, True, NOW)
 
 
 def test_an_unread_or_aged_source_is_said_to_place_no_model(capsys):
     model_choices.main(['--types'])
-    assert 'Epoch GPQA Diamond (outcome): not read yet, 0 of 12 known lines; no anchors: places no model' in capsys.readouterr().out
-    assert signals.describe_source({'name': 'B', 'kind': 'outcome', 'read_at': NOW, 'anchors': 2, 'known_lines': 12, 'places': False})         == 'B (outcome): read 14 Nov, 2 of 12 known lines; no middling anchor: places no model'
+    assert 'Epoch CritPt (outcome): not read yet, 0 of 12 known lines; fewer than 8: places no model' in capsys.readouterr().out
+    assert signals.describe_source({'name': 'B', 'kind': 'outcome', 'read_at': NOW, 'anchors': 2, 'known_lines': 12, 'places': False})         == 'B (outcome): read 14 Nov, 2 of 12 known lines; fewer than 8: places no model'
 
 
 def test_an_unknown_type_id_is_an_error_that_lists_the_ids(capsys):
@@ -450,3 +455,22 @@ def test_only_an_https_page_is_fetched(monkeypatch):
             signals.fetch('page:' + url)
     monkeypatch.setattr(signals, '_get', lambda url, headers=None: (url, headers))
     assert signals.fetch('page:https://example.test/')[0] == 'https://example.test/'
+
+
+def test_a_board_ranks_the_known_lines_instead_of_trusting_their_general_class():
+    """A line that leads in general but is weak at this type of work must not set the floor of its class here: the top
+    quarter of the board's lines is frontier, whatever each line is called in general."""
+    # Carbon and Astra (frontier in general) are the two worst of eight on this board; Sol and Terra lead it.
+    upside = [('gpt-6.1-sol_max', 'OpenAI', .90), ('gpt-6.1-terra_high', 'OpenAI', .80), ('claude-opus-5-5_high', 'Anthropic', .70),
+              ('gemini-4-argon_high', 'Google DeepMind', .60), ('gemini-3.8-flash_high', 'Google DeepMind', .50),
+              ('claude-haiku-5-5_high', 'Anthropic', .40), ('gpt-6-astra_max', 'OpenAI', .30),
+              ('gemini-4-carbon_high', 'Google DeepMind', .20)]
+    kind = {**KIND, 'sources': [ONE]}
+
+    def at(score):
+        kept = {signals.source_key(ONE): board(ONE, ('kimi-k3.1-pro_max', 'Moonshot', score), anchors=upside)}
+        return signals.type_class(KIMI, kind, kept)['class']
+    # by the general labels' weakest anchor .25 would be frontier (above Carbon's .20); ranked, it is cheap
+    assert [at(.85), at(.79), at(.45), at(.25)] == ['frontier', 'middling', 'middling', 'cheap']
+    seven = {signals.source_key(ONE): board(ONE, ('kimi-k3.1-pro_max', 'Moonshot', .85), anchors=upside[:7])}
+    assert signals.type_class(KIMI, kind, seven)['general']  # a quarter of too few lines is one line: it places nobody

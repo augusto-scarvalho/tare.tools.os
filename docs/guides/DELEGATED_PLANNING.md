@@ -42,9 +42,13 @@ only as a public page (CWE-bench, Vals AI LegalBench after APEX-Agents, BenchCAD
 leaderboard). Each board is read again once a day with the same rule as the
 general reading (no key, no model call, nothing on a machine with `tare setup --no-use api`), kept in
 `serve/task-boards.json` with its own read date, and a board that fails keeps its last reading. A model's class for a
-type comes from the first board that places it, with the same anchors as above, taken only at the newest version of
-each known line any board holds, so an aged board that stopped at older versions places nobody and drops out by itself;
-no board that places it gives the general class, marked general. `tare models --types` shows each source's read date
+type comes from the first board that places it. On such a board the known lines are a ranking, not their general
+labels: a line that leads in general may be weak at one type of work, and as its class's weakest anchor it would drop
+that class's floor. The lines split 3 : 6 : 3 in general, so frontier is the top quarter of the board's lines,
+middling the top three quarters, the rest cheap. A line counts only at the newest version any board holds, and a board
+places a model only with at least 8 of the known lines: an aged board, or a page that lists few of them, places
+nobody and says so; no board that places it gives the general class, marked general. A board near its ceiling, where
+a cheap line outranks frontier ones, is no source (Epoch's OTIS Mock AIME and GPQA Diamond were removed for that). `tare models --types` shows each source's read date
 and how many known lines it holds; `tare models --type math` is `tare models` with a class for that type, for
 example "middling for mathematics (Epoch FrontierMath tiers 1-3, read 16 Nov)" or "frontier (general: no board places
 it for CAD)". An Epoch row is matched like any other source's: a model of a known line by its slug and its effort, any
