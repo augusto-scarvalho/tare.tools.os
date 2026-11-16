@@ -35,6 +35,10 @@ API credit
   OpenAI API: not reported. This provider has no balance endpoint for an API key.
 ```
 
+Under each bucket one more line says what 1% of that window bought on this account, measured from tare's own use
+(`no measure yet` until it can): `about US$ 46 of API-equivalent use per 1% (firm, measured 11 to 16 Nov)`. See
+[What 1% bought](#what-1-bought).
+
 ## Where each reading comes from
 
 | Provider | Source | What it reports |
@@ -156,6 +160,35 @@ guessed. tare then counts its own spend down from the balance read, as for any s
   its documentation describes acting in sites you are signed in to, on your behalf. tare reads one section of one
   page of your own account, clicks nothing, and never works around a sign-in page or a block.
 - **Without it.** `tare quota --set anthropic-api AMOUNT --renews DAY [GRANT]` stays the way to state the credit by hand.
+
+## What 1% bought
+
+A plan's cost per task depends on how much API-equivalent value its meter delivers, and the vendors change that
+without notice. tare measures it on your own account and never announces a number without a state. It changes no
+routing.
+
+- **Readings.** Each `tare quota` appends the buckets of every subscription it read to
+  `<storage>/serve/plan-readings.json` (time, account, bucket, remaining, reset) and drops what is older than 7 days. A
+  failed reading adds nothing.
+- **tare's own use.** A call on a Claude, Codex or AGY route is valued at the reference price (models.dev, see
+  HTTP_API_PROVIDERS.md) of its model on the vendor's own API, cache reads and writes at their own rates, and kept in
+  `provider-spend.jsonl` as a row with `equivalent` and no `usd`. It is never money: it does not count in
+  `spent()`, a declared balance or a spending cap. A call whose model has no reference price, or whose CLI reported no
+  token counts, has no value and does not count. Calls that never reach the ledger (side calls such as reviews and web
+  research) are missing too; that only makes the estimate more cautious. A bucket scoped to some models (Claude's
+  `week, Fable`, AGY's groups) counts only the calls of those models.
+- **The estimate.** Use outside tare only ever adds to the meter, so between two readings of one window
+  `rate <= (meter movement + one meter step) / tare's dollars` and every span gives an upper bound. The estimate is the
+  smallest bound over spans of the last 7 days that hold at least US$ 5 of tare's use (older spans are never used, so a
+  changed quota moves it within a week; a span ending at 100% is no bound, as the meter stops counting). It is shown
+  as the inverse: the dollars 1% bought, at least that much.
+  The meter step is the smallest non-zero step in the series, else the source's own (1% for Claude and Codex, 0.01%
+  for AGY).
+- **States.** `none`: no span reaches US$ 5 (`no measure yet`). `weak`: shown as `at least US$ X`; one span, or
+  outside use may have loosened it. `firm`: shown as `about US$ X`; the best span covers at least US$ 50 and each of
+  its halves, a span of its own, gives a bound within 25% of it.
+- **Where.** `tare quota --json` has it as `consumption` on each bucket: `state`, `usd_per_percent`, `measured_from`,
+  `measured_to` (the span the figure comes from) and `covered_usd`.
 
 ## The saved readings
 

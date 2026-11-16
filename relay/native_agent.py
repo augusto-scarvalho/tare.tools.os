@@ -1174,7 +1174,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             save_json(root / 'usage.json', usage, max_bytes=MAX_USAGE_BYTES)
             try:  # the account's running spend across sessions (tare quota); never a reason to fail the session
                 from .provider_spend import post
-                post(deployment, usage, root)
+                post(deployment, usage, root, since=started_utc)  # this invocation's calls ran after it began
             except (OSError, ValueError, TypeError):
                 pass
             # Small controller-attempt attribution beside existing outcomes. This
