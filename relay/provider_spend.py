@@ -18,6 +18,9 @@ ACCOUNTS = {'OPENAI_API_KEY': 'openai-api', 'ANTHROPIC_API_KEY': 'anthropic-api'
 DECLARABLE = frozenset({'openai-api', 'anthropic-api', 'gemini-api', 'bedrock', 'opencode-api'})
 # The usage.opencode.billing_source values that name a plan (not 'balance', 'byok' or 'free').
 PLANS = ('go', 'go-plus')
+# The subscriptions tare measures (relay/plan_consumption.py), each with the vendor API whose reference price values a call.
+EQUIVALENT_API = {'claude': 'https://api.anthropic.com', 'codex': 'https://api.openai.com',
+                  'agy': 'https://generativelanguage.googleapis.com'}
 
 
 def folder():
@@ -33,7 +36,7 @@ def account(deployment):
     return ACCOUNTS.get(deployment.get('native_credential_env'))
 
 
-def post(deployment, usage, session, now=None):
+def post(deployment, usage, session, now=None, since=None):
     """Add to the ledger the dollars of this session's calls that were not added yet (a session is resumed and its
     usage report is cumulative, so the session keeps how many calls it already posted)."""
     calls = usage.get('calls') or []
@@ -42,19 +45,37 @@ def post(deployment, usage, session, now=None):
         done = int(json.loads(marker.read_text(encoding='utf-8'))['calls'])
     except (OSError, ValueError, KeyError, TypeError):
         done = 0
-    posted = record(deployment, calls[done:], now)
+    posted = record(deployment, calls[done:], now, since=since)
     if len(calls) != done:
         marker.write_text(json.dumps({'calls': len(calls)}), encoding='utf-8')
     return posted
 
 
-def record(deployment, calls, now=None):
-    """Add to the ledger the dollars of these calls ({'call_id', 'cost'}), with no marker: the caller knows they are
-    new (a side call with no session of its own, like the heads-up writer's). The number of rows added."""
+def equivalent(deployment, call):
+    """What a call on a subscription would have cost on the model's own vendor API: its tokens at that model's
+    models.dev reference price (cache reads and writes at their own rates), else 0 (no price, or no token counts)."""
+    from compute_plane.native_usage import UsageTariff, price_usage
+    from .provider_prices import reference
+    from .turn_engine import usage_account
+    profile = deployment.get('native_profile') or {}
+    try:
+        tariff = reference({**profile, 'endpoint': EQUIVALENT_API[usage_account(deployment)]})
+        return float(price_usage(call['normalized'], UsageTariff(**tariff))['known_amount']) if tariff else 0.0
+    except (KeyError, TypeError, ValueError):  # a call with no token counts (an older CLI) is unvalued, never guessed
+        return 0.0
+
+
+def record(deployment, calls, now=None, since=None):
+    """Add to the ledger the dollars of these calls ({'call_id', 'cost', and 'normalized' for a subscription's}), with
+    no marker: the caller knows they are new (a side call with no session of its own, like the heads-up writer's). A
+    call on a subscription adds an 'equivalent' row instead (no 'usd': it is never money spent). Rows added."""
     from .opencode import subscription
     from .provider_prices import is_reference
+    from .turn_engine import usage_account
     name, rows = account(deployment), []
     plan = 'opencode-sub' if subscription(deployment) else None
+    sub = usage_account(deployment)
+    sub = sub if sub in EQUIVALENT_API else None
     now = time.time() if now is None else now
 
     def amount(value):
@@ -62,7 +83,7 @@ def record(deployment, calls, now=None):
             return max(0.0, float(value))
         except (TypeError, ValueError):
             return 0.0
-    for call in calls if name or plan else []:
+    for call in calls if name or plan or sub else []:
         cost = call.get('cost') or {}
         row = {'at': now, 'deployment': deployment.get('id'), 'call': call.get('call_id')}
         usd = amount(cost.get('known_amount')) if cost.get('currency') == 'USD' else 0.0
@@ -78,6 +99,15 @@ def record(deployment, calls, now=None):
                 if is_reference(tariff) else {})}))
         elif plan and (allowance > 0 or source in PLANS):  # a reply inside the plan's limits still names its plan
             rows.append(json.dumps({**row, 'account': plan, 'allowance': allowance, **({'plan': source} if source in PLANS else {})}))
+        elif sub and (value := equivalent(deployment, call)) > 0:
+            # API-equivalent use of a plan, for relay/plan_consumption.py only: the key is 'equivalent', not 'usd', so
+            # spent(), a declared balance and a spending cap (which reads the session journal) never see it.
+            model = str(deployment['native_profile'].get('model') or '').lower()
+            # 'since': the earliest these calls can have run, as the caller knows it (the start of the invocation
+            # that made them). plan_consumption counts a call only in a span that began before it; with no known start
+            # it counts in none, which only loosens the bound. A file's time is never used: it is not the call's.
+            rows.append(json.dumps({**row, 'account': sub, 'equivalent': value, 'model': model,
+                                    **({'since': since} if type(since) in (int, float) else {})}))
     if rows:
         folder().mkdir(parents=True, exist_ok=True)
         with open(folder()/'provider-spend.jsonl', 'a', encoding='utf-8') as ledger:
@@ -101,6 +131,26 @@ def spent(name, since, field='usd', reference=False):
     except OSError:
         pass
     return round(total, 6)
+
+
+def equivalents(name, since):
+    """[(since or None, at, dollars, model)] of tare's own calls on subscription `name` recorded from `since` on, at
+    the vendor API's reference price: what the plan's use would have cost, not what was paid."""
+    found = []
+    try:
+        with open(folder()/'provider-spend.jsonl', encoding='utf-8') as ledger:
+            for line in ledger:
+                try:
+                    row = json.loads(line)
+                    if row['account'] == name and row['at'] >= since and row.get('equivalent'):
+                        began = row.get('since')
+                        found.append((began if type(began) in (int, float) else None, row['at'],
+                                      float(row['equivalent']), str(row.get('model') or '')))
+                except (ValueError, KeyError, TypeError):
+                    continue
+    except OSError:
+        pass
+    return found
 
 
 def last_plan(name):

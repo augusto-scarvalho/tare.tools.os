@@ -489,7 +489,7 @@ def _spent(deployment, receipt):
         return found
     try:
         from .provider_spend import record
-        record(deployment, [{'call_id': receipt.get('attempt_id'), 'cost': receipt.get('cost')}])
+        record(deployment, [{'call_id': receipt.get('attempt_id'), 'cost': receipt.get('cost'), 'normalized': {'tokens': values}}])
     except Exception:  # ponytail: the ledger missing a call never loses the note; the log row still has the dollars
         pass
     return found

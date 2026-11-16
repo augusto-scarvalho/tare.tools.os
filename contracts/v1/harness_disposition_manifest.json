@@ -2,7 +2,7 @@
   "$schema": "https://tare.tools/schemas/v1/disposition-manifest.json",
   "version": "1.0.0",
   "generated_at": "2026-10-04T03:10:28.054735+00:00",
-  "total_modules": 448,
+  "total_modules": 449,
   "modules": [
     {
       "name": "consent_decisions.py",
@@ -2151,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 130288,
-      "sha256": "1c2288503644611a4047375b1b66f47c1a570fa3b08a0afc6f025717ff7badca"
+      "size_bytes": 130353,
+      "sha256": "f1a124bf512a4ef11d6948d6523b4e84802019e5c603d6e4a6375eed61be2e86"
     },
     {
       "name": "native_artifacts.py",
@@ -3561,8 +3561,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator interaction, workflow composition and evidence inspection; execution ports remain in Kernel and Runtime.",
-      "size_bytes": 25923,
-      "sha256": "50d4d38a353347850552d55e7d71ae280798fa1fa93724c49428164fb5e72e7a"
+      "size_bytes": 26457,
+      "sha256": "11c140e2834cdb6f8a8d4f923fd7cd36cc01083d73df56a134b274fae65bd9e7"
     },
     {
       "name": "route_admission.py",
@@ -4351,8 +4351,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 48566,
-      "sha256": "64c22fe5c7b2f73b398f46c0d983da1aae15a9cadbedb642e4bf57c503b669b4"
+      "size_bytes": 48600,
+      "sha256": "630c9052f40400031346a7177ac4449441b60188432a825fd77845707a78f7ac"
     },
     {
       "name": "cli_qualification.py",
@@ -4391,8 +4391,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 32185,
-      "sha256": "c3e4d94ff3484af2f1951bac684dfe7e0e13b24bc251e7ce9d6d402ca176e980"
+      "size_bytes": 32594,
+      "sha256": "0f8517ebde41b6f91ef863ff1d0861a9cb202d1e9a531aeb23514bbc5dca05ea"
     },
     {
       "name": "provider_spend.py",
@@ -4401,8 +4401,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 10432,
-      "sha256": "439eb146b207c7bab94ce6806785526361c80a16a8b00c56cbdf0e9354113f43"
+      "size_bytes": 13677,
+      "sha256": "756cdb9958429807e5c3b83858b0de5a7a8739729e59525df737fcf116022622"
     },
     {
       "name": "push_preflight.py",
@@ -4483,6 +4483,16 @@
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
       "size_bytes": 30267,
       "sha256": "76b2e6363669c450b28b86c1a2c65bb36b3ce5aa4fdc6b102d782922eed5ce92"
+    },
+    {
+      "name": "plan_consumption.py",
+      "path": "tare.tools.os/relay/plan_consumption.py",
+      "summary": "What 1% of a subscription window bought on the owner's own account: the history of the plans' meter readings and the estimate (a bound, with a state) taken from them.",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
+      "size_bytes": 7666,
+      "sha256": "b8fc8972eb0bbd9a51aa9560dbe5fba67181ee056641c25165454094df1d1f4b"
     }
   ]
 }
