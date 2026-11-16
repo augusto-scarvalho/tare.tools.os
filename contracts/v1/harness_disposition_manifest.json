@@ -3421,8 +3421,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator views and draft composition; Runtime retains execution authority.",
-      "size_bytes": 45754,
-      "sha256": "ebb94d806068ec27ce95b49ec33cfce51632dcaf659a06ac5c9bda8247f44128"
+      "size_bytes": 46117,
+      "sha256": "846b0f5884906200aa6e5524991708ebc3f631ca4295f9e408408657dd4d1b4d"
     },
     {
       "name": "adaptive_routes.py",
@@ -3821,8 +3821,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 68777,
-      "sha256": "d4a7c44521f794a0edf69080fdbc5291738d6c4b4dba2600cbd45648adcb83b0"
+      "size_bytes": 70562,
+      "sha256": "da27d8826e40d0f4feaccd2c60ac77f2697d80e0d37756d7426af6378a178e08"
     },
     {
       "name": "console_setup.py",

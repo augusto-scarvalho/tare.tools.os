@@ -550,7 +550,8 @@ class ConversationWorkbench:
                 if yes:
                     work = lambda: self.prove_now([(n, d) for n, d in found if n in paid])
                 else:
-                    work = lambda: [env.remember(n, {'ok': None, 'reason': 'not confirmed', 'cost': line})
+                    # claim, not remember: another tare window may have proven it while this dialog was open
+                    work = lambda: [env.claim(n, {'ok': None, 'reason': 'not confirmed', 'cost': line})
                                     for n, line in paid.items()]
                 self.run_worker(work, thread=True, group='auto-proof', exit_on_error=False)
             self.call_from_thread(self.push_screen, ProveDialog([
@@ -566,6 +567,9 @@ class ConversationWorkbench:
         for name, deployment in found:
             if get_current_worker().is_cancelled:  # the TUI is closing: no proof starts with nobody there
                 return
+            if not env.claim(name):  # reserved before the call: two TUIs opened together saw the same arrival
+                self.call_from_thread(self.set_status, f'{name}: another tare window is proving it or answered for it.')
+                continue
             line = env.cost_line(deployment)
             self.call_from_thread(self.set_status, f'Proving {name}, a new model version: {line}…')
             try:

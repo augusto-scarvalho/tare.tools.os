@@ -1014,10 +1014,50 @@ def remember(name, record):
     return record
 
 
+STARTED = 'proof started'
+CLAIM_MINUTES = 30  # ponytail: no heartbeat; longer than any proof (the role check stops at 5 minutes)
+
+
+def held(record):
+    """Whether a proof record still stands: any result or decline, and a reservation (claim) only while its proof can
+    still be running, so a tare that died mid-proof does not keep the route from ever being proven by itself."""
+    from datetime import datetime, timedelta, timezone
+    if not isinstance(record, dict) or record.get('reason') != STARTED:
+        return isinstance(record, dict)
+    try:
+        return datetime.now(timezone.utc) - datetime.fromisoformat(record['at']) < timedelta(minutes=CLAIM_MINUTES)
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def claim(name, record=None):
+    """Write `record` (default: a reservation) under proofs[name] only when nothing stands there, as one step under
+    the setup's lock: True for the one caller that wrote. Two TUIs opened together on one setup both see an arrival
+    before either has a result: without this each would spend the plan's allowance, and a Cancel in one could
+    overwrite the proof the other passed."""
+    from datetime import datetime, timezone
+    won = []
+
+    def keep(value):
+        proofs = value.setdefault('proofs', {})
+        if held(proofs.get(name)):
+            return None
+        proofs[name] = {'at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+                        **(record or {'ok': None, 'reason': STARTED})}
+        won.append(name)
+        return value
+    try:
+        update(keep)
+    except ValueError:
+        return False  # an unreadable or busy setup: nothing is proven by itself; the next start looks again
+    return bool(won)
+
+
 def arrivals():
     """[(name, deployment)] of the routes a TUI start proves by itself, or asks to (owner, 2026-11-16): a derived
-    role row (native_routes.derived: a newer version of a known line on its vendor's own source), no record at all
-    under proofs (proven, failed or declined: never tried or asked again by itself), usable now (route_for: the
+    role row (native_routes.derived: a newer version of a known line on its vendor's own source), no record standing
+    under proofs (held: proven, failed, declined or being proven by another tare: never tried or asked again by
+    itself), usable now (route_for: the
     setup, the session's flags, its CLI or credential, a plan not spent), and on in the routing profile for at least
     one role of its row (tare does not spend on a line the user turned off)."""
     from . import native_routes
@@ -1030,7 +1070,7 @@ def arrivals():
     found = []
     for row in native_routes._derived[1]:
         name = row['native_catalog']
-        deployment = None if name in tried else route_for(name)[0]
+        deployment = None if held(tried.get(name)) else route_for(name)[0]
         if deployment and any(not refusal(role, deployment, name) for role in row.get('roles', [])):
             found.append((name, deployment))
     return found

@@ -176,3 +176,48 @@ def test_a_proof_that_raises_is_reported_kept_as_failed_and_the_next_arrival_goe
            'again.' in shown
     assert any(m.startswith(f'{SOL} answered and did the task') for m in shown)
     assert environment.read()['proofs'][FABLE]['ok'] is False  # not spent again by itself at the next start
+
+
+def test_two_tuis_that_both_saw_the_arrival_call_the_provider_once(pool, quiet, monkeypatch, tmp_path):
+    install(pool, FABLE, 'cli://claude', 'claude-fable-5-3')
+    seen = environment.arrivals()  # both windows looked before either wrote anything
+    assert [name for name, _ in seen] == [FABLE]
+    monkeypatch.setattr(environment, 'arrivals', lambda: seen)
+    calls, other = [], []
+
+    def prove(name, confirm):  # the first window's provider call is still running when the second window starts
+        calls.append(name)
+        if len(calls) == 1:  # once: without the reservation the second window calls too, and must not open a third
+            other.append(start(tmp_path))
+        return environment.remember(name, {'ok': True, 'cost': 'fixture'})
+    monkeypatch.setattr(environment, 'prove', prove)
+    start(tmp_path)
+    said, shown, _, events = other[0]
+    assert calls == [FABLE] and events == []  # one call in all; the second window made none
+    assert f'{FABLE}: another tare window is proving it or answered for it.' in said
+    assert not [m for m in shown if FABLE in m] and environment.read()['proofs'][FABLE]['ok'] is True
+
+
+def test_one_of_many_claims_made_together_wins_and_a_dead_tares_claim_lapses(pool, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import datetime, timedelta
+    from threading import Barrier
+    install(pool, FABLE, 'cli://claude', 'claude-fable-5-3')
+    gate = Barrier(6)
+    with ThreadPoolExecutor(6) as threads:
+        won = list(threads.map(lambda _: gate.wait() is not None and environment.claim(FABLE), range(6)))
+    assert won.count(True) == 1 and environment.arrivals() == []  # reserved: no other start proves it meanwhile
+    assert native_routes.proven({'native_catalog': FABLE}, {}) is False  # a reservation is not a proof
+
+    def age(value):  # the tare that reserved it died mid-proof
+        record = value['proofs'][FABLE]
+        record['at'] = (datetime.fromisoformat(record['at']) - timedelta(minutes=environment.CLAIM_MINUTES + 1)).isoformat()
+        return value
+    environment.update(age)
+    assert [name for name, _ in environment.arrivals()] == [FABLE] and environment.claim(FABLE) is True
+
+
+def test_a_cancel_never_overwrites_what_another_window_recorded(pool):
+    environment.remember(API, {'ok': True, 'cost': 'fixture'})
+    assert environment.claim(API, {'ok': None, 'reason': 'not confirmed', 'cost': 'fixture'}) is False
+    assert environment.read()['proofs'][API]['ok'] is True
