@@ -65,5 +65,5 @@ def test_the_matrix_says_how_to_lift_a_pin_only_route_of_a_known_line(pool, tmp_
 
     async def steps(app, pilot, panel, cell, status):
         await cell('claude/fable', 'claude-code')
-        assert 'NOT_QUALIFIED_PIN_ONLY (prove it once: tare setup --prove claude-fable-5-2-cli)' in status()
+        assert 'NOT_QUALIFIED_PIN_ONLY (press p to prove it once)' in status()
     journey(tmp_path, steps)

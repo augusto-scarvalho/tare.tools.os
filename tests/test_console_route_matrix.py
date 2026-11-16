@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from textual.widgets import Button, OptionList, Select, Static, TabbedContent, TextArea
 
 from relay import environment, execution_scope, native_catalog, native_routes, turn_engine, web_research, work_audit
-from relay.console_route_matrix import RouteMatrix
+from relay.console_route_matrix import ProveDialog, RouteMatrix
 from relay.console_routes import RoutesPanel
 from relay.native_console import WorkConsole
 from test_cross_vendor_auditors import install, pool  # noqa: F401
@@ -557,4 +557,138 @@ def test_a_row_shows_its_models_class_and_a_cell_the_routes_own_record_as_implem
         assert 'Claude Opus · middling' in rendered(panel, 'claude/opus')
         await cell('claude/opus', 'claude-code')
         assert '(as implementer here: 1 runs; 1 passed the checks; 0 of 0 audits accepted; 1 applied)' in status()
+    journey(tmp_path, steps)
+
+
+FABLE = 'claude-fable-5-2-cli'
+
+
+def prover(monkeypatch, ok=True):
+    """No real call: environment.prove is replaced by a stand-in that, like the real one, asks `confirm` first and
+    keeps its record in the setup file (never a reply). Returns the names it was called for."""
+    calls = []
+    monkeypatch.setattr(environment, 'route_for', lambda name: ({'id': name}, None))
+    monkeypatch.setattr(environment, 'cost_line', lambda deployment: 'one minimal call: fixture cost')
+
+    def prove(name, confirm):
+        assert confirm(f'{name}: one minimal call: fixture cost.')
+        calls.append(name)
+        record = {'ok': ok, 'cost': 'fixture', **({} if ok else {'reason': 'credential_rejected'})}
+        value = environment.read()
+        value.setdefault('proofs', {})[name] = record
+        environment.save(value)
+        return record
+    monkeypatch.setattr(environment, 'prove', prove)
+    return calls
+
+
+async def proved(pilot, panel, status, answer):
+    """Wait for the status line to carry `answer`: the proof and the reload run in worker threads."""
+    for _ in range(600):
+        await pilot.pause(0.05)
+        if answer in status():
+            return
+    raise AssertionError(f'no {answer!r} in 30 s: {status()}')
+
+
+def test_a_pin_only_cell_is_proven_from_the_matrix_after_a_confirmation_naming_the_route_and_its_cost(pool, tmp_path,
+                                                                                                    monkeypatch):
+    install(pool, FABLE, 'cli://claude', 'claude-fable-5-2')
+    calls = prover(monkeypatch)
+
+    async def steps(app, pilot, panel, cell, status):
+        assert await cell('claude/fable', 'claude-code', 'p') == '[x]!'  # on, but a rule holds it
+        assert 'press p to prove it once' in status() and not panel.query_one('#matrix-prove', Button).disabled
+        dialog = app.screen
+        assert isinstance(dialog, ProveDialog)
+        shown = ' '.join(dialog.lines)
+        assert FABLE in shown and 'one minimal call: fixture cost' in shown
+        assert calls == []  # nothing is called before Prove
+        dialog.query_one('#prove-go', Button).press()
+        await proved(pilot, panel, status, 'answered; used automatically')
+        assert calls == [FABLE] and app.screen is panel
+        assert str(panel.query_one('#matrix-table').get_cell('claude/fable', 'claude-code')) == '[x]'  # lost its "!"
+        assert 'the reply' not in json.dumps(environment.read()['proofs'])
+    journey(tmp_path, steps)
+
+
+def test_the_prove_button_opens_the_same_confirmation_as_the_key(pool, tmp_path, monkeypatch):
+    install(pool, FABLE, 'cli://claude', 'claude-fable-5-2')
+    calls = prover(monkeypatch)
+
+    async def steps(app, pilot, panel, cell, status):
+        table = panel.query_one('#matrix-table')
+        table.focus()  # select the cell without ticking or proving it
+        table.move_cursor(row=table.get_row_index('claude/fable'), column=table.get_column_index('claude-code'))
+        await pilot.pause()
+        panel.query_one('#matrix-prove', Button).press()
+        for _ in range(50):
+            await pilot.pause(0.1)
+            if isinstance(app.screen, ProveDialog):
+                break
+        assert isinstance(app.screen, ProveDialog) and FABLE in ' '.join(app.screen.lines) and calls == []
+        await pilot.press('escape')
+    journey(tmp_path, steps)
+
+
+def test_cancel_and_esc_call_nothing(pool, tmp_path, monkeypatch):
+    install(pool, FABLE, 'cli://claude', 'claude-fable-5-2')
+    calls = prover(monkeypatch)
+
+    async def steps(app, pilot, panel, cell, status):
+        await cell('claude/fable', 'claude-code', 'p')
+        assert isinstance(app.screen, ProveDialog)
+        await pilot.press('escape')
+        await pilot.pause()
+        assert app.screen is panel
+        await cell('claude/fable', 'claude-code', 'p')
+        app.screen.query_one('#prove-cancel', Button).press()
+        await pilot.pause()
+        assert app.screen is panel and calls == [] and 'proofs' not in environment.read()
+        assert str(panel.query_one('#matrix-table').get_cell('claude/fable', 'claude-code')) == '[x]!'
+    journey(tmp_path, steps)
+
+
+def test_a_failed_proof_says_why_and_the_cell_stays_as_it_was(pool, tmp_path, monkeypatch):
+    install(pool, FABLE, 'cli://claude', 'claude-fable-5-2')
+    calls = prover(monkeypatch, ok=False)
+
+    async def steps(app, pilot, panel, cell, status):
+        await cell('claude/fable', 'claude-code', 'p')
+        app.screen.query_one('#prove-go', Button).press()
+        await proved(pilot, panel, status, 'failed: credential_rejected')
+        assert calls == [FABLE]
+        assert str(panel.query_one('#matrix-table').get_cell('claude/fable', 'claude-code')) == '[x]!'
+        assert not panel.query_one(RouteMatrix).dirty()
+    journey(tmp_path, steps)
+
+
+def test_a_cell_with_nothing_to_prove_says_so_and_opens_no_dialog(pool, tmp_path, monkeypatch):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+    calls = prover(monkeypatch)
+
+    async def steps(app, pilot, panel, cell, status):
+        assert await cell('claude/opus', 'claude-code', 'p') == '[x]'
+        assert 'Nothing to prove in this cell' in status() and app.screen is panel and calls == []
+        assert panel.query_one('#matrix-prove', Button).disabled
+    journey(tmp_path, steps)
+
+
+def test_an_unsaved_tick_survives_a_proof_and_save_writes_the_tick_and_keeps_the_proof(pool, tmp_path, monkeypatch):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+    install(pool, FABLE, 'cli://claude', 'claude-fable-5-2')
+    prover(monkeypatch)
+
+    async def steps(app, pilot, panel, cell, status):
+        assert await cell('claude/opus', 'claude-code') == '[ ]'  # unsaved
+        await cell('claude/fable', 'claude-code', 'p')
+        app.screen.query_one('#prove-go', Button).press()
+        await proved(pilot, panel, status, 'answered; used automatically')
+        table = panel.query_one('#matrix-table')
+        assert str(table.get_cell('claude/opus', 'claude-code')) == '[ ]' and panel.query_one(RouteMatrix).dirty()
+        assert environment.read()['proofs'][FABLE]['ok'] is True and stored() is None
+        await saved(pilot, panel)
+        assert 'Saved.' in status() and 'Not saved' not in status()
+        assert stored() == environment.set_auto({}, 'auditor:claude/opus@claude-code=off')['routing_profile']
+        assert environment.read()['proofs'][FABLE]['ok'] is True
     journey(tmp_path, steps)

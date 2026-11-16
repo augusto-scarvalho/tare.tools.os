@@ -954,10 +954,13 @@ def prove(name, confirm):
         reason = '' if ok else str(receipt.get('failure_class') or 'empty reply')[:200]
     record = {'at': datetime.now(timezone.utc).isoformat(timespec='seconds'), 'ok': ok, 'cost': line,
               **({} if ok else {'reason': reason})}
-    value = read()
-    if 'error' not in value:
+    def keep(value):
         value.setdefault('proofs', {})[name] = record
-        save(value)
+        return value
+    try:
+        update(keep)  # under the setup's lock: the /routes matrix proves while its Save may write the same file
+    except ValueError:
+        pass  # an unreadable setup keeps no proof, as before
     return record
 
 

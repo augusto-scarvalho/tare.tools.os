@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from rich.text import Text
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Input, OptionList, Select, Static
 
 from . import environment as env
@@ -107,7 +108,41 @@ class Matrix(DataTable):
     BINDINGS = [Binding('space', 'select_cursor', 'Toggle', show=False)]
 
 
+class ProveDialog(ModalScreen):
+    """Names each route a proof would call and what it costs; Prove is the only way on, Cancel and Esc call nothing."""
+    BINDINGS = [Binding('escape', 'cancel', 'Cancel', priority=True)]
+    DEFAULT_CSS = '''
+    ProveDialog { align: center middle; background: $background 80%; }
+    ProveDialog #prove-dialog { width: 90; max-width: 95%; height: auto; max-height: 95%; padding: 1 2;
+                                background: $panel; border: round $warning; }
+    ProveDialog #prove-lines { height: auto; max-height: 14; overflow-y: auto; margin: 1 0; }
+    '''
+
+    def __init__(self, lines):
+        super().__init__()
+        self.lines = lines
+
+    def compose(self):
+        with Vertical(id='prove-dialog'):
+            yield Static('One minimal real call per route, to see that it answers:', markup=False)
+            yield Static('\n'.join(self.lines), id='prove-lines', markup=False)
+            with Horizontal(classes='panel-actions'):
+                yield Button('Cancel · Esc', id='prove-cancel')
+                yield Button('Prove', id='prove-go', classes='panel-primary')
+
+    def on_mount(self):
+        self.query_one('#prove-cancel', Button).focus()  # a stray Enter spends nothing
+
+    def action_cancel(self):
+        self.dismiss(False)
+
+    def on_button_pressed(self, event):
+        event.stop()
+        self.dismiss(event.button.id == 'prove-go')
+
+
 class RouteMatrix(Vertical):
+    BINDINGS = [Binding('p', 'prove', 'Prove the selected cell')]
     DEFAULT_CSS = '''
     RouteMatrix { height: 1fr; }
     RouteMatrix .matrix-bar { height: 1; margin-bottom: 1; }
@@ -123,7 +158,7 @@ class RouteMatrix(Vertical):
 
     def compose(self):
         self.value = self.routes = self.saved = None
-        self.role, self.warned, self.labels = 'coordinator', False, {}  # what a user meets first
+        self.role, self.warned, self.labels, self.proving, self.proved = 'coordinator', False, {}, False, {}  # what a user meets first
         self.message, self.extra, self.identities, self.warnings = 'Reading the routes…', [], {}, []
         with Horizontal(classes='matrix-bar'):
             yield Select([(label, role) for role, label in CHOICES.items()], value=self.role, allow_blank=False,
@@ -137,6 +172,7 @@ class RouteMatrix(Vertical):
         with Horizontal(classes='panel-actions'):
             yield Select([], prompt='Bulk action…', id='matrix-bulk')
             yield Button('Reload', id='matrix-reload')
+            yield Button('Prove · p', id='matrix-prove')
             yield Button('Save', id='matrix-save', classes='panel-primary')
 
     def open(self):
@@ -337,6 +373,7 @@ class RouteMatrix(Vertical):
         lines = [*self.warnings, self.message, *(
             ['Unsaved changes: Save writes them; Esc asks before discarding them.'] if self.dirty() else [])]
         self.query_one('#matrix-status', Static).update('\n'.join(line for line in lines if line))
+        self.query_one('#matrix-prove', Button).disabled = self.proving or not self.provable()
 
     def edit(self, change, message, name=None):
         before = copy.deepcopy(self.value)
@@ -368,10 +405,65 @@ class RouteMatrix(Vertical):
             lead += (', but not used automatically now: ' if own == 'on' else '; not usable now either: ') + reasons + \
                 ' (a tick does not override this rule)'
         return f'{title} {self.glyph(row, where)}: {lead}. ' + '; '.join(
-            f'{n} {self.state(r)}, {now}' + (f' (prove it once: tare setup --prove {n})'
+            f'{n} {self.state(r)}, {now}' + (' (press p to prove it once)'
                                             if now == 'NOT_QUALIFIED_PIN_ONLY' and k[0] else '')
+            + (f' ({self.proved[n]})' if n in self.proved else '')
             + (f' (as implementer here: {did})' if (did := describe_record(self.record.get(n))) else '')
             for n, r, now, k in routes)
+
+    def cursor_cell(self):
+        table = self.query_one(Matrix)
+        if self.routes is None or not table.row_count or not table.columns:
+            return None
+        found = table.coordinate_to_cell_key(table.cursor_coordinate)
+        return found.row_key.value, found.column_key.value
+
+    def provable(self):
+        """(route, key) of the selected cell's routes a proof would lift: pin only, of a known model line."""
+        cell = self.cursor_cell()
+        return cell and [(n, k) for n, _, now, k in self.cells[self.role].get(cell, []) if now == 'NOT_QUALIFIED_PIN_ONLY' and k[0]]
+
+    def action_prove(self):
+        """Confirm, then one real call per provable route of the selected cell. Starts only here, from the user."""
+        found = self.provable()
+        if self.proving:
+            return self.show('A proof is already running.')
+        if not found:
+            return self.show('Nothing to prove in this cell: only a route of a known model line that is pin only can be.')
+        self.run_worker(self.confirm_prove([n for n, _ in found]), group='route-matrix-prove')
+
+    async def confirm_prove(self, names):
+        def lines():  # the line `environment.prove` will ask about, said before anything is spent
+            for name in names:
+                deployment, why = env.route_for(name)
+                yield f'{name}: ' + (env.cost_line(deployment) if deployment else f'cannot be proven: {why}')
+        text = await asyncio.to_thread(lambda: list(lines()))
+        self.app.push_screen(ProveDialog(text), lambda yes: yes and self.run_worker(
+            self.prove(names), group='route-matrix-prove'))
+
+    async def prove(self, names):
+        role, cell, self.proving, said = self.role, self.cursor_cell(), True, []
+        try:
+            for i, name in enumerate(names, 1):
+                self.show(f'Proving {name} ({i} of {len(names)}): one minimal call…')
+                # the user just confirmed that line; prove() keeps the result in the setup file, never the reply
+                try:
+                    record = await asyncio.to_thread(env.prove, name, lambda line: True)
+                except (ValueError, OSError, KeyError, TypeError) as exc:
+                    record = {'ok': False, 'reason': str(exc)}
+                said.append((name, record))
+            await self.load()  # the rows now read the proofs; unsaved ticks are entries of self.value and stay
+        finally:
+            self.proving = False
+        if not self.is_mounted:
+            return
+        now = {n: now for n, _, now, _ in (r for rows in self.cells[role].values() for r in rows)}
+        for name, record in said:  # kept for describe(): the reload moves the cursor, which rewrites the status line
+            self.proved[name] = 'proved here: ' + (
+                f"failed: {record.get('reason') or 'no reason given'}" if record.get('ok') is not True else
+                'answered; used automatically where it is ticked on' if now.get(name) != 'NOT_QUALIFIED_PIN_ONLY' else
+                'answered, but it stays pin only (a reseller or a local model is not proven by this)')
+        self.show(self.describe(*cell))
 
     def targets(self, rule):
         """The role's cells `rule` covers (a line on a source, a vendor's lines, a source, a route id), for make()."""
@@ -465,6 +557,8 @@ class RouteMatrix(Vertical):
         event.stop()  # the order tab's handler resets its routes for any other button
         if self.value is None:
             return
+        if event.button.id == 'matrix-prove':
+            return self.action_prove()
         if event.button.id == 'matrix-reload':
             value = await asyncio.to_thread(env.read)
             if self.is_mounted:
