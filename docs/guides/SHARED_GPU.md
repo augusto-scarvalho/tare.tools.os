@@ -55,7 +55,7 @@ conversation delegates (a unit) tries, on any account, the routes of the kind `-
 surplus, then tare's implementer ladder, cheapest tier first: with nothing in surplus and the GPU free, a hosted
 conversation's unit starts on the local model. Among routes in surplus, the one whose allowance lapses first goes
 first (a week ending today before a credit ending next week); the larger lead decides only between two that lapse
-together. The planner follows the same rule among the routes the routing profile leaves on for it. Pins, `--*_only`,
+together. The planner follows the same rule among the routes the routing profile leaves on for it, after the class (frontier first). Pins, `--*_only`,
 a route the routing profile switches off and your own auditor list are untouched. The readings are those of
 `tare quota`; the Max plan's monthly API credit has no API, so state it: `tare quota --set anthropic-api 100 --renews 14`
 (the balance now, the day of the month it renews, and a third number if each cycle brings a different grant).
@@ -245,8 +245,8 @@ equivalent `tare setup --auto` commands write.
 The rows, like `--auto-show`, are the routes the role's automatic path considers, each checked as the paths that
 reach it check it, under that role (so `--prefer_local` and the other launch restrictions read as at run time), and
 read again each time the tab is shown or the Order tab saves: coordinator tare auto's tiers (the Order tab's
-Implementer list), each by availability as a conversation's tare auto takes it; implementer and planner their list in the Order tab
-(availability) and their role table (the rules that rank it, qualification and older models included); explorer its
+Implementer list), each by availability as a conversation's tare auto takes it; implementer its list in the Order tab, planner the list you saved there if any
+(availability), and both their role table (the rules that rank it, qualification and older models included); explorer its
 role table; auditor and plan-auditor your auditor routes when "Use my auditor routes" is chosen in the Order tab,
 and their role table otherwise, never both; researcher its list (availability and the research tool's own
 admission), the implementer tiers (the `/research` link summary) and the Codex web search helper; vision and

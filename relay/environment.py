@@ -332,9 +332,9 @@ def auto_routes(role):
     reaches a route checks it, under that role, without a live probe: `now` is 'usable' when one of those paths takes
     it, else the first path's reason (a rule). The routing profile does not change it. The paths: coordinator tare
     auto's tiers as a conversation's tare auto takes them (availability; coordinator_policy.eligible judges only a
-    --coordinator pin, not this path); implementer and
-    planner their routing list (availability) and role table (native_routes.admission, what ranks); explorer its role
-    table; auditor and plan-auditor the owner's auditor list when "Use my auditor routes" is chosen, else their role
+    --coordinator pin, not this path); implementer its routing list (availability), planner the list the owner saved
+    (none: the role table only), both the role table (native_routes.admission, what ranks); explorer its role table; auditor and
+    plan-auditor the owner's auditor list when "Use my auditor routes" is chosen, else their role
     table, never both (native_routes._reviewers); researcher its list (availability and the research tool's own
     admission), tare auto's tiers (the /research link summary) and the Codex web search helper; vision and heads_up
     their list, read as their writer reads it."""
@@ -349,7 +349,7 @@ def auto_routes(role):
     rules = policy()
     owner = role in ('auditor', 'plan-auditor') and not (
         current().changes(role) or rules.get('auditor_selection', 'cross_vendor_frontier') == 'cross_vendor_frontier')
-    lists = {'coordinator': rules['implementer'], 'implementer': rules['implementer'], 'planner': rules['planner'],
+    lists = {'coordinator': rules['implementer'], 'implementer': rules['implementer'], 'planner': rules.get('planner', []),
              'researcher': [*rules['implementer'], *HELPER_ROUTES],
              'vision': rules.get('vision', DEFAULT_POLICY['vision']),
              'heads_up': rules.get('heads_up') or DEFAULT_POLICY['heads_up']}

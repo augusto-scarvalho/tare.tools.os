@@ -207,9 +207,6 @@ def validate_role_deployments(data: dict[str, Any], roster: dict[str, Any]) -> N
             raise ValueError(f"role deployment {entry['id']} cost_tier must be free, flat, free-credit or metered")
         if type(entry.get('qualified', True)) is not bool:
             raise ValueError(f"role deployment {entry['id']} qualified must be true or false")
-        priority = entry.get('review_priority', 1000)
-        if type(priority) is not int or not 0 <= priority <= 1000:
-            raise ValueError('REVIEW_PRIORITY_INVALID')
         if runner == 'native-http':
             from relay.native_generation import deployment_profile
             if entry.get('native_catalog') and 'native_profile' not in entry:

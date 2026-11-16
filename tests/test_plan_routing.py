@@ -64,8 +64,9 @@ def test_auto_plan_reviews_with_other_lineage_and_keeps_exact_profiles(proposal,
     before=proposal[1].read_bytes();result=generate(proposal);calls,_,_=provider
     assert result['status']=='REVIEWED' and proposal[1].read_bytes()==before
     assert [r[0] for r in calls]==['planner','plan-auditor']
-    # The subscription Gemini 4 Argon reviews before the credit reserve.
-    assert calls[0][1]==native_catalog.select('local-qwen') and calls[1][1]==native_catalog.select('opencode-sub-gemini-4-argon')
+    # The planner wants frontier: Astra per token before the local model. The subscription Gemini 4 Argon, of the
+    # class a reviewer wants, reviews before the credit reserve.
+    assert [calls[0][1]['id'],calls[1][1]['id']]==['openai-api-gpt-6-astra','opencode-sub-gemini-4-argon']
     assert all(r[2]['max_model_calls'] is None and r[2]['max_seconds'] is None for r in calls)
     assert result['routes']['plan-auditor']['selection']['producer_sha256']
     assert 'registered model lineage' in result['review']['independence']
@@ -113,7 +114,8 @@ def test_replan_makes_fresh_choices_and_preserves_parent(proposal,selection,prov
     for row in selection['deployments']:
         if row['id']=='opencode-sub-gemini-4-argon':row['roles'].remove('plan-auditor')
     second=native_plan.replan(parent,parent.parent/'next','Keep scope narrow','auto',reviewer_deployment='auto',unlimited=True)
-    assert second['status']=='REVIEWED' and provider[0][-1][1]==native_catalog.select('bedrock-opus')
+    # Opus 5.5 per token is of the class a reviewer wants; the Bedrock Opus has no model line, so it counts as cheap.
+    assert second['status']=='REVIEWED' and provider[0][-1][1]==native_catalog.select('claude-api-opus-5-5')
     assert all(p.read_bytes()==raw for p,raw in frozen.items())
 
 

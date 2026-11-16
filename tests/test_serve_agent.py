@@ -261,7 +261,7 @@ def test_an_audit_request_leads_with_the_latest_message_and_keeps_earlier_ones_a
 def test_the_default_policy_names_single_routes_per_tier():
     rules = turn_engine.DEFAULT_POLICY
     assert all(isinstance(name, str) for tier in rules['implementer'] for name in tier)
-    assert all(isinstance(name, str) for name in rules['planner']) and rules['planner_effort'] == 'high'
+    assert 'planner' not in rules and rules['planner_effort'] == 'high'  # the planner comes from the role table
 
 
 def test_a_route_whose_executable_cannot_be_checked_is_skipped_not_fatal(monkeypatch):
@@ -870,3 +870,16 @@ def test_real_serve_folder_notice_is_a_delta_delivered_once(runtime, monkeypatch
     assert notice not in results[-1]['output']
     assert notice not in answer and notice not in ''.join(output)
     assert not any(notice in e.get('text', '') for e in events)
+
+
+def test_plan_with_no_saved_list_tries_the_role_tables_planners_one_by_one_in_their_order(runtime, monkeypatch):
+    """The table's order already holds the class and the lapsing allowance: one tier of them all would let choose()
+    put a lapsing middling route before a frontier one."""
+    project, state, _ = runtime
+    monkeypatch.setattr(turn_engine, 'policy', lambda: {'implementer': [['cheap']], 'planner_effort': 'high'})
+    monkeypatch.setattr(turn_engine, 'planner_routes', lambda: ['astra', 'opus'])
+    seen = []
+    choose = turn_engine.choose
+    monkeypatch.setattr(turn_engine, 'choose', lambda tiers, **kw: (seen.append(tiers), choose(tiers, **kw))[1])
+    serve_agent.run_turn(copilot(project, '/plan migrate the storage layer'), [].append)
+    assert seen[0] == [['astra'], ['opus']] and state['calls'][0]['route'] == 'astra'

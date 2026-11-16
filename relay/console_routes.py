@@ -9,7 +9,9 @@ from .console_panels import SupportPanel
 from .console_route_matrix import RouteMatrix
 
 ROLE_LABELS = {'implementer': 'Implementer · conversations, sessions and the units they delegate',
-               'planner': 'Planner', 'auditor': 'Your auditor routes · used when you choose your list',
+               'planner': 'Planner · empty: automatic, the routes switched on for it in Models per role, frontier models first; '
+                         'write routes to fix the order yourself',
+               'auditor': 'Your auditor routes · used when you choose your list',
                'researcher': 'Researcher · searches the internet; explorers investigate project files',
                'vision': 'Vision · describes attached images for models that cannot see',
                'heads_up': 'Heads-up · writes a note after a reply that follows delivered or attempted work, and by the counts tare keeps or every few turns otherwise'}
@@ -58,8 +60,8 @@ class RoutesPanel(SupportPanel):
                         yield Checkbox('Put auditors of another vendor first', value.get('any_vendor_auditor') is not True,
                                        id='routes-cross-vendor-first')
                         yield Static('Automatic prefers another model provider. It uses enabled frontier connections, '
-                                     'subscription quota before metered API, Sol before Astra and Opus before Fable. '
-                                     'Google uses Argon. No extra model request is made to choose a reviewer.', classes='routes-label')
+                                     'the class that checks code (Sol, Opus, Argon) before the one above it, subscription quota before metered API. '
+                                     'No extra model request is made to choose a reviewer.', classes='routes-label')
                         for role in ROUTE_ROLES:
                             yield Static(ROLE_LABELS[role], classes='routes-label')
                             yield TextArea(as_text(value.get(role) or []), id='routes-' + role,

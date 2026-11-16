@@ -195,7 +195,10 @@ def run_flow(kind, text, root, emit, activity):
             deployment=pinned(role)
             name=deployment['native_model_choice']['connection']
         else:
-            tiers = [rules['planner']] if role == 'planner' else rules['implementer']
+            # The role table's order already holds class and lapsing allowance: one route per tier keeps it. The
+            # owner's saved list stays one tier, where choose() puts a lapsing allowance first.
+            names = engine.planner_routes() if role == 'planner' else None
+            tiers = rules['implementer'] if names is None else [names] if rules.get('planner') else [[n] for n in names]
             tier, name, deployment, skipped = engine.choose(tiers, role=role)
             if deployment is None:
                 return None, 'tare: no route is available for /' + kind + ': ' + json.dumps(skipped)
