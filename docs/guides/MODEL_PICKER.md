@@ -147,6 +147,10 @@ or switch the line off in `/routes` for every role its row has. Closing the TUI 
 waits for the one already running to finish (its task stops at 5 minutes). `tare serve`, `tare setup` and any entry
 with nobody present prove nothing by themselves.
 
+Two TUIs opened together on the same setup prove a route once: the proof reserves the route under the setup's
+lock before its call, and the other window calls nothing. A reservation left by a tare that died mid-proof lapses
+after 30 minutes.
+
 ### Gemini 4 Argon
 
 AGY discovery offers `agy-gemini-4-argon-cli`, shown as **Gemini 4 Argon**.
