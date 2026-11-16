@@ -3361,8 +3361,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator model selection; Runtime retains session execution.",
-      "size_bytes": 33436,
-      "sha256": "a7e8b6ec4c6bc74afb9d5b308d8d544c5cca332ebe5d298d0627b674491f4186"
+      "size_bytes": 35316,
+      "sha256": "b31bdc45f4c2c3feafb64ae31f66593a595c0dd059e658e7fe04f3b37e173dab"
     },
     {
       "name": "model_picker.py",
@@ -4481,8 +4481,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 30267,
-      "sha256": "76b2e6363669c450b28b86c1a2c65bb36b3ce5aa4fdc6b102d782922eed5ce92"
+      "size_bytes": 42297,
+      "sha256": "ff49dd791be6cb7abbc121369f147ba66a81ddeb8c6e9fdfb1ac310bebf69881"
     },
     {
       "name": "plan_consumption.py",

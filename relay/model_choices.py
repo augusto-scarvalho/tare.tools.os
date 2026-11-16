@@ -167,8 +167,9 @@ def filter_domains(deployments):
     return vendors, providers
 
 
-def projection(*, role=None, via=None, vendor=None, provider=None, include_unconfigured=False, scope=None):
-    """Shared offline identity and allowed-effort projection; availability is never inferred."""
+def projection(*, role=None, via=None, vendor=None, provider=None, include_unconfigured=False, scope=None, task_type=None):
+    """Shared offline identity and allowed-effort projection; availability is never inferred. `task_type` (a row of
+    model_signals.TYPES) adds each model's class for that type as 'type_class'."""
     from .execution_scope import current, kind, is_pro
     from .coordinator_policy import APPROVED
     from .inference_allowlist import identities
@@ -203,6 +204,7 @@ def projection(*, role=None, via=None, vendor=None, provider=None, include_uncon
         fleet = native_catalog.LOCAL_DEFAULT
     implementers = {alias(fleet if name == native_catalog.LOCAL_DEFAULT else name)
                     for tier in policy().get('implementer') or [[native_catalog.LOCAL_DEFAULT]] for name in tier}
+    kept = signals.boards() if task_type else {}
     result = []
     for name, value, installed in deployments:
         if 'native_auto_routes' in value or 'native_host_modes' in value:
@@ -265,6 +267,8 @@ def projection(*, role=None, via=None, vendor=None, provider=None, include_uncon
             result[-1]['openrouter'] = route['openrouter']
         result[-1]['class'] = signals.klass(value)
         result[-1]['task'] = signals.task(value)
+        if task_type:
+            result[-1]['type_class'] = signals.type_class(value, task_type, kept)
         if role in PROFILE_ROLES:  # the routing profile's state for this role's automatic routing (tare setup --auto)
             state = profile_state(role, value, value=setup)
             result[-1]['automatic'] = f'{state[0]} ({state[1]})' if state else 'on'
@@ -326,14 +330,34 @@ def main(argv=None):
     parser.add_argument('--vendor', help='Model author, not connection provider')
     parser.add_argument('--provider', help='Connection provider, e.g. anthropic, openai, bedrock')
     parser.add_argument('--include-unconfigured', action='store_true')
+    parser.add_argument('--type', help='Task type: show each model\'s class for it (see --types)')
+    parser.add_argument('--types', action='store_true', help='Show the catalogue of task types and the boards that class models')
     parser.add_argument('--json', action='store_true')
     add_arguments(parser)
     args = parser.parse_args(normalize_arguments(sys.argv[1:] if argv is None else argv))
     from . import model_signals as signals
+    if args.types:
+        report = signals.types_report(signals.boards())
+        if args.json:
+            print(json.dumps({'types': report}, indent=2))
+            return 0
+        print('Task types: the class of a model is read per type of work. A type with no source, or whose sources place no model, uses the general class.')
+        for kind in report:
+            print(kind['id']+': '+kind['label']+' - '+kind['description'])
+            for source in kind['sources']:
+                print('  '+signals.describe_source(source))
+            if not kind['sources']:
+                print('  no source yet: the general class')
+        for source in dict.fromkeys(s['citation'] for k in report for s in k['sources']):
+            print(source)
+        return 0
+    kind = signals.task_type(args.type) if args.type else None
+    if args.type and not kind:
+        parser.error('Unknown task type: '+args.type+'. Known: '+', '.join(t['id'] for t in signals.TYPES)+'.')
     try:
         scope = from_arguments(args, discovery=True)
         rows = projection(role=args.role, via=args.via, vendor=args.vendor, provider=args.provider,
-                          include_unconfigured=args.include_unconfigured, scope=scope)
+                          include_unconfigured=args.include_unconfigured, scope=scope, task_type=kind)
     except ValueError as error:
         parser.error(str(error)+' Consult tare models --help for valid alternatives.')
     record = signals.own_record()
@@ -354,6 +378,8 @@ def main(argv=None):
                   ' | Reasoning permitted: '+(', '.join(row['allowed_reasoning']) or 'none')+
                   (' | Automatic for '+args.role+': '+row['automatic'] if 'automatic' in row else ''))
             print('  Class: '+signals.describe(row['class']))
+            if kind:
+                print('  Class for '+kind['label']+': '+signals.describe_type(row['type_class']))
             if row['task']:
                 print('  Cost: '+signals.describe_task(row['task']))
             if own := signals.describe_record(record.get(row['deployment'])):
@@ -365,6 +391,10 @@ def main(argv=None):
                     base = arguments[0].rsplit('@', 1)[0]
                     print('  '+role+' syntax: '+base+'@LEVEL; permitted levels: '+', '.join(a.rsplit('@', 1)[1] for a in arguments))
                     print('  Copy: tare console ./project '+arguments[0])
+        kept = signals.boards() if kind else {}
+        for source in kind['sources'] if kind else ():
+            if source_board := kept.get(signals.source_key(source)):
+                print('Source: '+source['citation']+', as of '+str(source_board.get('as_of'))+'.')
         if saved := signals.reading():
             print(saved['citation']+', as of '+str(saved.get('as_of'))+'. Classes place a model; they do not choose a route.')
             if saved['source'] != 'arena' and any(row['task'] for row in rows):

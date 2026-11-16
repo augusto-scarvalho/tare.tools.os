@@ -77,7 +77,8 @@ def test_openrouter_is_read_first_with_the_key_else_the_keyless_dataset(monkeypa
     body = {'openrouter': OPENROUTER, 'arena': ARENA}
 
     def fetch(source, key):
-        calls.append((source, key))
+        if source in body:  # the task-type boards are read after these (tests/test_task_types.py)
+            calls.append((source, key))
         return body[source]
     monkeypatch.setattr('relay.provider_quota.secret', lambda name: None)
     assert signals.refresh_reading(NOW, fetch=fetch)['source'] == 'arena' and calls == [('arena', None)]
@@ -91,7 +92,7 @@ def test_openrouter_is_read_first_with_the_key_else_the_keyless_dataset(monkeypa
 def test_a_declined_key_is_not_used_and_no_api_use_reads_nothing(monkeypatch):
     monkeypatch.setattr('relay.provider_quota.secret', lambda name: 'key')
     calls = []
-    signals.refresh_reading(NOW, fetch=lambda s, k: calls.append(s) or ARENA,
+    signals.refresh_reading(NOW, fetch=lambda s, k: calls.append(s) or ARENA if s in ('openrouter', 'arena') else None,
                             setup={'api_providers': {'items': {'OPENROUTER_API_KEY': {'use': False}}}})
     assert calls == ['arena']
     later = signals.refresh_reading(NOW + 2*DAY, fetch=lambda s, k: calls.append(s), setup={'api_providers': {'use': False}})

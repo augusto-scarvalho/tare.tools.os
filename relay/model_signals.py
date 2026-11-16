@@ -2,19 +2,30 @@
 
 Read, the first source that answers: OpenRouter's relay of Artificial Analysis's indices (with the OpenRouter key
 already stored, never another), then the LMArena agent dataset (keyless). Left out on purpose: Artificial Analysis's
-own API (it needs a key of its own that no one has stored) and Epoch AI (a zip). The reading is shown with its source
+own API (it needs a key of its own that no one has stored). The reading is shown with its source
 and date and only places a model in a class; which route runs is decided elsewhere. Rows are matched to a line by
 `vendor_models.parse`, never by a table of models: a name that is not exactly one known line, version and effort, or
 that two rows claim, is refused. A model with no line (Kimi, Grok, GLM...) is placed by the known lines of the same
 reading, its anchors: the class whose weakest anchor it reaches (owner, 2026-11-16).
 
+Beside it, `relay/task_types.json` is the catalogue of task types (coding, mathematics, web...), each with the boards
+(LMArena configs, CSV files of Epoch AI's archive) that say how models do at that type. `refresh_boards` reads them again
+with the same rule (once a day, no key, nothing on a machine that declined API use), keeps them in
+`serve/task-boards.json`, and a board places a model with the same anchors; a type no board places a model for falls back
+to the general class and says so. Nothing routes by them yet: they are shown (`tare models --type`, `--types`).
+
 Only the LMArena agent board carries a cost per task. It is kept beside a reading whose class came from OpenRouter
 (`board`), and `task` gives a route's score and cost per task from one row of it.
 """
+import csv
+import io
 import json
 import math
 import re
 import time
+import zipfile
+from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from .model_choices import EFFORTS
@@ -33,6 +44,9 @@ ARENA = ('https://datasets-server.huggingface.co/rows?dataset=lmarena-ai/leaderb
 CUTS = {'openrouter': ((56, 'frontier'), (40, 'middling')), 'arena': ((0.14, 'frontier'), (0.05, 'middling'))}
 CITATIONS = {'openrouter': 'Source: Artificial Analysis (artificialanalysis.ai) via OpenRouter (openrouter.ai/rankings)',
              'arena': 'Source: LMArena agent leaderboard, CC BY 4.0 (huggingface.co/datasets/lmarena-ai/leaderboard-dataset)'}
+EPOCH = 'https://epoch.ai/data/benchmark_data.zip'  # one archive of CSV files, about 2.3 MB
+BOARDS_SCHEMA = 'tare.tools/task-boards/1'
+CAP = 8*1024*1024  # the most accepted from the network, and from one member of the archive once opened
 ORDER = ('cheap', 'middling', 'frontier')  # ascending: a route reaches a need when its class is not before it
 BRACKET = re.compile(r'(.+?)\s*\(([^()]*)\)')
 
@@ -124,21 +138,22 @@ def parse_openrouter(body):
     return _rows(items) + _others(others), meta['as_of'][:10], str(meta.get('version'))
 
 
-def parse_arena(body):
-    """(rows, as_of, version) of the Hugging Face rows answer; the score stands in `intelligence`."""
+def parse_arena(body, column='score', category=None):
+    """(rows, as_of, version) of the Hugging Face rows answer; the score (`column`) stands in `intelligence`. Another
+    config names its score column otherwise (webdev: rating) and holds several categories (`category` keeps one)."""
     data = body.get('rows') if isinstance(body, dict) else None
     if not isinstance(data, list):
         return None
     items, others, dates = [], [], []
     for item in data:
         row = item.get('row') if isinstance(item, dict) else None
-        if isinstance(row, dict):
+        if isinstance(row, dict) and (category is None or row.get('category') == category):
             dates.append(str(row.get('leaderboard_publish_date')))
             key = normalise(row.get('model_name'), row.get('organization'))
             if key:
-                items.append((key, row.get('score'), None, None, row.get('cost_per_task_p50')))
+                items.append((key, row.get(column), None, None, row.get('cost_per_task_p50')))
             else:
-                others.append((row.get('organization'), row.get('model_name'), None, row.get('score'), None, None,
+                others.append((row.get('organization'), row.get('model_name'), None, row.get(column), None, None,
                                row.get('cost_per_task_p50')))
     return (_rows(items) + _others(others), max(dates), None) if dates else None
 
@@ -147,14 +162,20 @@ def _get(url, headers=None):
     from urllib.request import Request, urlopen
     with urlopen(Request(url, headers={'Accept': 'application/json', 'User-Agent': 'tare.tools', **(headers or {})}),
                  timeout=30) as reply:
-        raw = reply.read(8*1024*1024 + 1)
-    if len(raw) > 8*1024*1024:
+        raw = reply.read(CAP + 1)
+    if len(raw) > CAP:
         raise ValueError('benchmark reading over 8 MiB')
-    return json.loads(raw)
+    return raw
 
 
 def fetch(source, key=None):
-    return _get(OPENROUTER, {'Authorization': 'Bearer '+key}) if source == 'openrouter' else _get(ARENA)
+    """A source's answer: OpenRouter's or an LMArena config's JSON ('arena' is the agent board, 'arena:webdev' another),
+    Epoch's archive as bytes ('epoch')."""
+    if source == 'epoch':
+        return _get(EPOCH, {'Accept': '*/*'})
+    if source == 'openrouter':
+        return json.loads(_get(OPENROUTER, {'Authorization': 'Bearer '+key}))
+    return json.loads(_get(ARENA.replace('config=agent', 'config='+source[6:]) if source.startswith('arena:') else ARENA))
 
 
 def _read(fetch, source, parse_it, key):
@@ -167,11 +188,19 @@ def _read(fetch, source, parse_it, key):
 
 
 def refresh_reading(now=None, fetch=fetch, setup=None):
+    """The general reading (`_refresh_general`), then the catalogue's boards (`refresh_boards`): neither has a say in
+    the other. `fetch(source, key)` returns a source's answer."""
+    now = time.time() if now is None else now
+    saved = _refresh_general(now, fetch, setup)
+    refresh_boards(now, fetch, setup)
+    return saved
+
+
+def _refresh_general(now, fetch, setup):
     """Read the sources at most once a day (after an attempt that read nothing, at most once an hour) and keep the
     reading with the one before it, which the two-reading rule of `klass` needs. A failed, empty or reshaped reading
-    keeps the last one. `fetch(source, key)` returns a source's JSON."""
+    keeps the last one."""
     global _reading
-    now = time.time() if now is None else now
     saved = reading()
     if saved and _when(saved['read_at'], now) is not None and now - saved['read_at'] < 86400:
         return saved
@@ -272,9 +301,15 @@ def _version(text):
     return tuple(map(int, text.split('.'))) if isinstance(text, str) and re.fullmatch(r'\d+(\.\d+)*', text) else None
 
 
-def _anchors(saved):
+def _rank(row):
+    """The place of a row's effort among EFFORTS; a row with none (a source that does not say) ranks below all."""
+    return EFFORTS.index(row['effort']) if row.get('effort') in EFFORTS else -1
+
+
+def _anchors(saved, current=None):
     """[(score, class, name)], one per known line in the reading: its newest version, at the highest effort listed
-    for that version, with the line's declared class. A line whose newest version the reading names only as a variant
+    for that version, with the line's declared class. With `current` ({line: version}, `_current`) a line counts only
+    if the reading holds that very version: a board that lacks it is behind the others. A line whose newest version the reading names only as a variant
     ("Claude Opus 5.5 (Max, Default Fallback)") gives no anchor: the clean row of an older version is another, weaker
     model, and as an anchor it would lower its class's floor."""
     rows = [r for r in (saved or {}).get('rows', ()) if isinstance(r, dict)]
@@ -282,8 +317,11 @@ def _anchors(saved):
     for r in rows:
         if r.get('line') in LINES and _version(r.get('version')):
             name, version = r['line'], _version(r['version'])
-            if r.get('effort') in EFFORTS and _number(r.get('intelligence')) is not None:
-                found.setdefault(name, []).append(((version, EFFORTS.index(r['effort'])), r))
+            # A row with no effort is an anchor only on a task-type board (`current` given): the general reading's
+            # anchors stay the rows that name their effort.
+            if (r.get('effort') in EFFORTS or current is not None and r.get('effort') is None) \
+                    and _number(r.get('intelligence')) is not None:
+                found.setdefault(name, []).append(((version, _rank(r)), r))
         elif isinstance(r.get('name'), str) and isinstance(r.get('creator'), str):
             slug = re.sub(r'\s*\(.*$', '', r['name']).lower().replace(' ', '-')
             known = line(slug)
@@ -295,7 +333,7 @@ def _anchors(saved):
         newest[name] = max(newest.get(name, version), version)
     return [(r['intelligence'], LINES[name]['class'], LINES[name]['label'].format(version=r['version']))
             for name, listed in found.items() for (version, _), r in [max(listed, key=lambda item: item[0])]
-            if version == newest[name]]
+            if version == newest[name] and version == (current or {}).get(name, version)]
 
 
 def _place(anchors, score):
@@ -356,8 +394,7 @@ def _match(saved, deployment):
     rows = [r for r in (saved or {}).get('rows', ()) if isinstance(r, dict) and r.get('line') is None
             and isinstance(r.get('name'), str) and isinstance(r.get('creator'), str)
             and _number(r.get('intelligence')) is not None and same(r)]
-    rank = lambda r: EFFORTS.index(r['effort']) if r.get('effort') in EFFORTS else -1
-    top = [r for r in rows if rank(r) == max(map(rank, rows))] if rows else []
+    top = [r for r in rows if _rank(r) == max(map(_rank, rows))] if rows else []
     one = len(top) == 1 and len({(r.get('permaslug'), r['creator'], r['name']) for r in rows}) == 1
     return top[0] if one and '(' not in top[0]['name'] else None
 
@@ -425,6 +462,23 @@ def klass(deployment, saved=None):
     return {**own, **numbers}
 
 
+def _on_board(board, deployment, bare=False):
+    """The one row of a board ({'rows': [...]}) for a route's model, or None. A model of a line is read at the route's
+    own effort when the board lists it, else at the highest it lists (`bare`: a row that names no effort counts too,
+    for a task-type board whose source does not say); a model with no line goes through `_match`."""
+    model = _slug(deployment)
+    known = model and line(model)
+    if not known:
+        return _match(board, deployment)
+    version, effort = _version_effort(deployment, model)
+    listed = [r for r in board['rows'] if isinstance(r, dict) and r.get('line') == known['line']
+              and r.get('version') == '.'.join(map(str, version))
+              and (r.get('effort') in EFFORTS or bare and r.get('effort') is None)]
+    top = max(map(_rank, listed), default=-1)
+    at = [r for r in listed if r['effort'] == effort] or [r for r in listed if _rank(r) == top]
+    return at[0] if len(at) == 1 else None
+
+
 def task(deployment, saved=None):
     """{'score', 'cost_per_task_usd', 'value', 'source', 'as_of', 'effort'} of a route's model from ONE row of the
     LMArena agent board, or None when the board has no single row of it or the row lacks the score or the cost. A model
@@ -436,21 +490,11 @@ def task(deployment, saved=None):
     board = _board(saved)
     if not board:
         return None
-    model = _slug(deployment)
-    known = model and line(model)
-    if known:
-        version, effort = _version_effort(deployment, model)
-        listed = [r for r in board['rows'] if isinstance(r, dict) and r.get('line') == known['line']
-                  and r.get('version') == '.'.join(map(str, version)) and r.get('effort') in EFFORTS]
-        top = max((EFFORTS.index(r['effort']) for r in listed), default=-1)
-        at = [r for r in listed if r['effort'] == effort] or [r for r in listed if EFFORTS.index(r['effort']) == top]
-        row = at[0] if len(at) == 1 else None
-    else:
-        row = _match(board, deployment)
-        if row is None and (named := _match(saved, deployment)):
-            # The class source knows the route by its permaslug and names the model as its creator does (Mistral Large
-            # 4 for mistralai/mistral-large-4-0): that name finds the board's row where the route's id does not.
-            row = _match(board, {'native_profile': {'model': named['creator'] + '/' + named['name'].lower().replace(' ', '-')}})
+    row = _on_board(board, deployment)
+    if row is None and not line(_slug(deployment) or '') and (named := _match(saved, deployment)):
+        # The class source knows the route by its permaslug and names the model as its creator does (Mistral Large
+        # 4 for mistralai/mistral-large-4-0): that name finds the board's row where the route's id does not.
+        row = _match(board, {'native_profile': {'model': named['creator'] + '/' + named['name'].lower().replace(' ', '-')}})
     score, cost = row and _number(row.get('intelligence')), row and _number(row.get('cost_per_task_usd'))
     if score is None or cost is None or cost <= 0:
         return None
@@ -541,3 +585,168 @@ def describe(result):
             text += f", US${result['cost_per_task_usd']:.2f} per task"
         text += '' if result['from'] == 'reading' else '; not confirmed by two readings'
     return text + ')'
+
+
+# Task types: a catalogue of kinds of work, the boards that say how models do at each, and a model's class per type.
+# A model that is the best in general may know nothing of CAD or 3D, so the class is read per type (owner, 2026-11-16).
+# Adding a type, or a source of a reader below, is an edit of task_types.json and no code.
+TYPES = json.loads(Path(__file__).with_name('task_types.json').read_text(encoding='utf-8'))['types']
+READERS = ('arena', 'epoch')
+
+
+def task_type(type_id):
+    return next((t for t in TYPES if t['id'] == type_id), None)
+
+
+def boards_path():
+    return reading_path().with_name('task-boards.json')
+
+
+def source_key(source):
+    return f"{source['reader']}:{source['board']}:{source['column']}"
+
+
+def boards():
+    """{source key: {'read_at', 'as_of', 'rows', maybe 'tried_at'}} as last saved; {} when there is none."""
+    value = _local_json(boards_path())
+    found = value.get('boards') if isinstance(value, dict) and value.get('schema') == BOARDS_SCHEMA else None
+    return {k: v for k, v in found.items() if isinstance(v, dict)} if isinstance(found, dict) else {}
+
+
+def parse_epoch(raw, source):
+    """(rows, as_of) of one CSV member of Epoch's archive, or None when it holds no scored row. Only the member the
+    catalogue names is opened, in memory (never extracted to disk), and only within CAP; a missing member raises. A row's
+    'Model version' is '<model>_<effort>' ('unknown' for none); its organisation is the creator, 'Google DeepMind' for
+    Google's line. `as_of` is the newest release date on the board: Epoch states no date for a board itself."""
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        info = archive.getinfo(source['board'])
+        if info.file_size > CAP:
+            raise ValueError('archive member over 8 MiB')
+        text = archive.read(info).decode('utf-8-sig')
+    items, others, dates = [], [], []
+    for r in csv.DictReader(io.StringIO(text)):
+        slug, sep, effort = (r.get('Model version') or '').rpartition('_')
+        slug, effort = (slug, effort) if sep else (effort, '')
+        if sep and effort not in EFFORTS and effort != 'unknown':
+            slug, effort = slug+'_'+effort, None  # a mode with no effort of ours (none, minimal): a variant, not the model
+        effort = effort if effort in EFFORTS else None
+        try:
+            score = float(r.get(source['column']))
+        except (TypeError, ValueError):
+            score = None
+        org, known = r.get('Organization'), line(slug)
+        dates.append(r.get('Release date') or '')
+        if known and isinstance(org, str) and org.casefold().startswith(known['vendor'].casefold()):
+            items.append(((known['line'], '.'.join(map(str, parse(slug)[2])), effort), score, None, None, None))
+        else:
+            others.append((org, slug, None, score, None, None, None))
+    rows = _rows(items) + _others(others)
+    return (rows, max(filter(None, dates), default=None)) if rows else None
+
+
+def _current(kept):
+    """{line: its newest version on any saved board}. The anchors of a board must be these versions: a board that stopped
+    at an older one (an aged source) would place a new model against models it is no longer measured beside."""
+    best = {}
+    for board in kept.values():
+        for r in board.get('rows') or () if isinstance(board, dict) else ():
+            if isinstance(r, dict) and r.get('line') in LINES and (v := _version(r.get('version'))):
+                best[r['line']] = max(best.get(r['line'], v), v)
+    return best
+
+
+def _due(entry, now):
+    """True when a saved board is older than a day and no try was made in the last hour."""
+    read, tried = (_when((entry or {}).get(k), now) for k in ('read_at', 'tried_at'))
+    return not (read is not None and now - read < 86400 or tried is not None and now - tried < 3600)
+
+
+def refresh_boards(now, fetch, setup=None):
+    """Read the catalogue's boards that are due: Epoch's archive once for all its boards, each LMArena config once. A
+    board that fails keeps its saved rows and never stops another; a machine that declined API use reads nothing."""
+    from .environment import read
+    from .relay_io import write_json_atomic
+    setup = read() if setup is None else setup
+    if 'error' in setup or (setup.get('api_providers') or {}).get('use') is False:
+        return
+    saved = boards()
+    sources = {source_key(s): s for t in TYPES for s in t['sources']}
+    due = {k: s for k, s in sources.items() if _due(saved.get(k), now)}
+    if not due:
+        return
+    kept, archive = {k: v for k, v in saved.items() if k in sources}, []
+    for key, s in due.items():
+        if s['reader'] == 'epoch':
+            if not archive:  # one GET for every Epoch board; a failed one is not asked again in this pass
+                archive.append(_read(fetch, 'epoch', lambda raw: raw, None))
+            found = _read(lambda source, k: archive[0], 'epoch', lambda raw: parse_epoch(raw, s), None)
+        else:
+            found = _read(fetch, 'arena:'+s['board'], lambda body: parse_arena(body, s['column'], s.get('category')), None)
+        if found and found[0]:
+            sign = 1 if s['higher_is_better'] else -1  # one direction for _place: a higher number is better
+            kept[key] = {'read_at': now, 'as_of': found[1],
+                         'rows': [{**r, 'intelligence': sign*r['intelligence']} for r in found[0]]}
+        else:
+            kept[key] = {**kept.get(key, {}), 'tried_at': now}
+    boards_path().parent.mkdir(parents=True, exist_ok=True)
+    write_json_atomic(boards_path(), {'schema': BOARDS_SCHEMA, 'boards': kept})
+
+
+def type_class(deployment, kind, kept):
+    """A route's class for a task type (`kind`, a row of TYPES; `kept`, `boards()`): from the first source of the type
+    whose board places the model, with the same anchors as for a model with no line ({'class', 'type', 'label',
+    'general': False, 'source', 'board', 'kind', 'read_at', 'effort'}); else the general class, marked general
+    ({'class' or None, 'type', 'label', 'general': True}). A board without the newest versions of the known lines
+    places nobody: an aged source drops out by itself."""
+    current = _current(kept)
+    for source in kind['sources']:
+        board = kept.get(source_key(source))
+        rows = board.get('rows') if isinstance(board, dict) else None
+        row = isinstance(rows, list) and _on_board(board, deployment, bare=True)
+        placed = row and _place(_anchors(board, current), row['intelligence'])
+        if placed:
+            relation = measured_as(deployment)[1]
+            return {'class': placed[0], 'type': kind['id'], 'label': kind['label'], 'general': False,
+                    'source': source['name'], 'board': source['board'], 'kind': source['kind'],
+                    'read_at': board.get('read_at'), 'effort': row.get('effort'),
+                    **({'base': row['name'], 'relation': relation} if relation and 'name' in row else {})}
+    general = klass(deployment)
+    return {'class': general and general['class'], 'type': kind['id'], 'label': kind['label'], 'general': True}
+
+
+def _day(stamp):
+    day = datetime.fromtimestamp(stamp, timezone.utc) if type(stamp) in (int, float) else None
+    return f'{day.day} {day:%b}' if day else 'never'
+
+
+def describe_type(found):
+    """One phrase for `tare models --type`: 'middling for mathematics (Epoch FrontierMath, read 16 Nov)', or the general
+    class and why: 'frontier (general: no board places it for CAD)'."""
+    if found['general']:
+        return (f"{found['class']} (general: " if found['class'] else 'none (no general class either: ') \
+            + f"no board places it for {found['label']})"
+    votes = ', votes' if found['kind'] == 'preference' else ''
+    return f"{found['class']} for {found['label']} ({found['source']}{votes}, read {_day(found['read_at'])})" + _of_base(found)
+
+
+def types_report(kept):
+    """The catalogue with what each source holds now: [{'id', 'label', 'description', 'sources': [{'name', 'reader',
+    'board', 'kind', 'citation', 'read_at', 'as_of', 'anchors', 'known_lines', 'places'}]}]. `anchors` counts the
+    known lines whose newest version the board holds; with none (or no middling one) it places no model."""
+    report, current = [], _current(kept)
+    for kind in TYPES:
+        rows = []
+        for s in kind['sources']:
+            board = kept.get(source_key(s)) or {}
+            anchors = _anchors(board, current) if isinstance(board.get('rows'), list) else []
+            rows.append({**{k: s[k] for k in ('name', 'reader', 'board', 'kind', 'citation')},
+                         'read_at': board.get('read_at'), 'as_of': board.get('as_of'), 'anchors': len(anchors),
+                         'known_lines': len(LINES), 'places': _place(anchors, 0) is not None})
+        report.append({'id': kind['id'], 'label': kind['label'], 'description': kind['description'], 'sources': rows})
+    return report
+
+
+def describe_source(row):
+    text = f"{row['name']} ({row['kind']}): " + (f"read {_day(row['read_at'])}, " if row['read_at'] else 'not read yet, ')
+    text += f"{row['anchors']} of {row['known_lines']} known lines"
+    return text + ('' if row['places'] else '; ' + ('no anchors' if not row['anchors'] else 'no middling anchor') + ': places no model')
