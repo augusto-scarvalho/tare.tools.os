@@ -490,8 +490,11 @@ def klass(deployment, saved=None):
 
 def _on_board(board, deployment, bare=False):
     """The one row of a board ({'rows': [...]}) for a route's model, or None. A model of a line is read at the route's
-    own effort when the board lists it, else at the highest it lists (`bare`: a row that names no effort counts too,
-    for a task-type board whose source does not say); a model with no line goes through `_match`."""
+    own effort when the board lists it, else at the highest it lists; a model with no line goes through `_match`.
+    `bare` is a task-type board: a row that names no effort counts too, and the model is always read at the highest
+    effort listed, as the lines that rank it are. Read at the route's own effort where listed and at the highest where
+    not, a route at medium (not listed) outranked the same model's route at high (listed), and a line at its default
+    effort fell below lines it leads at theirs."""
     model = _slug(deployment)
     known = model and line(model)
     if not known:
@@ -501,7 +504,7 @@ def _on_board(board, deployment, bare=False):
               and r.get('version') == '.'.join(map(str, version))
               and (r.get('effort') in EFFORTS or bare and r.get('effort') is None)]
     top = max(map(_rank, listed), default=-1)
-    at = [r for r in listed if r['effort'] == effort] or [r for r in listed if _rank(r) == top]
+    at = [r for r in listed if r['effort'] == effort and not bare] or [r for r in listed if _rank(r) == top]
     return at[0] if len(at) == 1 else None
 
 
@@ -584,15 +587,24 @@ def describe_record(tally):
     return text
 
 
-def short(deployment, needs):
-    """How many classes a route's class falls short of the class a unit needs: 0 when it reaches it. A model with
-    no class (no line and no row of the reading to place it by) counts as cheap: nothing known places it higher."""
-    found = klass(deployment) or {}
-    return max(0, ORDER.index(needs) - ORDER.index(found.get('class') or 'cheap'))
+def judged(deployment, kind=None, kept=None):
+    """{'class', 'source'} a route is judged by for a unit: its class for the task type `kind` (an id of TYPES) when a
+    board places it ('source' is that board's name; `kept`, `boards()`, is read when not given), else its general
+    class ('source': 'general'), exactly as with no `kind`. A model with no class (no line and no row of the reading
+    to place it by) counts as cheap: nothing known places it higher."""
+    found = kind and task_type(kind) and type_class(deployment, task_type(kind), boards() if kept is None else kept)
+    if found:  # type_class falls back to the general class itself
+        return {'class': found['class'] or 'cheap', 'source': 'general' if found['general'] else found['source']}
+    return {'class': (klass(deployment) or {}).get('class') or 'cheap', 'source': 'general'}
 
 
-def reaches(deployment, needs):
-    return short(deployment, needs) == 0
+def short(deployment, needs, kind=None, kept=None):
+    """How many classes a route's class (`judged`) falls short of the class a unit needs: 0 when it reaches it."""
+    return max(0, ORDER.index(needs) - ORDER.index(judged(deployment, kind, kept)['class']))
+
+
+def reaches(deployment, needs, kind=None, kept=None):
+    return short(deployment, needs, kind, kept) == 0
 
 
 def describe(result):

@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_core import PydanticCustomError
 from compute_plane.native_journal import io_path, regular, save_json
 from compute_plane.native_models import encode, object_json
+from .model_signals import TYPES
 
 
 class Record(BaseModel):
@@ -64,6 +65,12 @@ class GraphTask(Record):
         'frontier: a complex refactor, a subtle bug, concurrency, security-sensitive or architecture work across '
         'many files. tare gives the task to the cheapest available model of that class or above; when unsure '
         'between two, say the higher.'))
+    # The ids are the catalogue's (relay/task_types.json): a new type needs no edit here.
+    kind: Literal[tuple(t['id'] for t in TYPES)] | None = Field(default=None, description=(
+        'The type of work this task is, when it is clearly one of: '
+        + ', '.join(t['id'] for t in TYPES).replace('professional', 'professional (legal, consulting, finance)')
+        + '. tare then judges each model by how it does at that type of work, where a public benchmark measures it, '
+        'instead of by its general class. Leave it out when the task is none of these or mixes several.'))
 
 
 class Plan(Proposal):
@@ -108,8 +115,9 @@ def validate(role, value):
         result.pop('tasks')  # Preserve existing handoff bytes when graph planning is unused.
     elif role == 'planner':
         for task, given in zip(result['tasks'], value['tasks']):
-            if 'needs' not in given:
-                task.pop('needs')  # Likewise for a task that states no need: a plan saved before the field keeps its digest.
+            for field in ('needs', 'kind'):
+                if field not in given:
+                    task.pop(field)  # Likewise for a task that states no need or type: a plan saved before the field keeps its digest.
     if role == 'explorer':
         # Likewise for an explorer that lists no places, concludes nothing or marks no location.
         if 'locations' not in value:
