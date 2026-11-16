@@ -3821,8 +3821,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 73089,
-      "sha256": "64a4c7fe5b513b0854af721e9469ee788bbb0c3e10175abe8b21e2edd9b45d16"
+      "size_bytes": 73161,
+      "sha256": "40637c5492acfb63a60eaf5341a8a3d67f961ef44d607518aebfeef53b63720e"
     },
     {
       "name": "console_setup.py",
@@ -4401,8 +4401,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 17368,
-      "sha256": "2a8002e6614015caa8b71093227c492c409c13610ab79b0a6349933ee85078f8"
+      "size_bytes": 17626,
+      "sha256": "afe11dcc0296bb6f7f05c1d702180e451d5193459d5ec5b0f31c696ea5b59812"
     },
     {
       "name": "push_preflight.py",

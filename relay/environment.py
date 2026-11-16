@@ -845,10 +845,10 @@ def show(value, found):
                  'one reading is one Haiku call on the Claude subscription (about a cent of quota, half a minute, a tab that '
                  'opens and closes). tare quota --sync reads it once.')
     energy = value.get('local_energy') or {}
-    lines.append('  Local energy: ' + (f"US$ {energy['price_kwh']:g} per kWh" if energy.get('price_kwh') else 'no price')
+    lines.append('  Local energy: ' + (f"US$ {energy['price_kwh']:g} per kWh" if energy.get('price_kwh') else 'no price' if energy else 'not measured')
                  + (f", {energy['watts']:g} W under load when the node reports none" if energy.get('watts') else '')
                  + ' (tare setup --energy-price US$_PER_KWH, --local-watts W; off clears). tare quota shows the '
-                 'energy the GPU drew for local calls in the last 7 days.')
+                 'energy the GPU drew for local calls in the last 7 days, measured from the day one of them is set.')
     rules, problems = profile(value)
     if rules or problems:
         lines.append('  automatic routing: your changes for ' + (', '.join(sorted(rules)) or 'no role')

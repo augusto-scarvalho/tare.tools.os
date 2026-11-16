@@ -22,8 +22,10 @@ class Reply(io.BytesIO):
 
 
 @pytest.fixture
-def node(monkeypatch):
-    """The node's /v1/gpu/power: set node.answer to a dict, or to an exception to raise."""
+def node(monkeypatch, providers):
+    """The node's /v1/gpu/power: set node.answer to a dict, or to an exception to raise. A price is set, as on a
+    machine that measures."""
+    environment.save(environment.set_local_energy({}, 'price_kwh', '0.18'))
     class Node:
         answer, asked = {'watts': 300.0, 'samples': 7}, []
 
@@ -77,6 +79,11 @@ def test_no_reading_and_no_declaration_records_nothing_and_the_call_is_unchanged
     assert json.loads((providers/'session'/'spend-posted.json').read_text())['calls'] == 1  # the marker still moves
 
 
+def test_nothing_is_asked_or_recorded_until_a_price_or_watts_is_set(providers, node):
+    environment.save({})
+    assert post(providers) == 0 and node.asked == [] and ledger() == []
+
+
 def test_a_failing_node_never_fails_the_post(providers, node, monkeypatch):
     environment.save(environment.set_local_energy({}, 'watts', '200'))
     node.answer = ConnectionResetError()
@@ -118,6 +125,7 @@ def test_tare_quota_says_the_energy_of_seven_days_with_and_without_a_price(provi
         (providers/f's{hour}').mkdir()
         provider_spend.post(LOCAL, usage(None), providers/f's{hour}', now=NOW + 3600 * (hour + 1), since=NOW + 3600 * hour)
     now = NOW + 6 * 3600
+    environment.save(environment.set_local_energy({}, 'watts', '350'))  # the price cleared since: the kWh stay
     text = provider_quota.render(provider_quota.refresh(now=now), now=now)
     assert 'Local models\n  local: 2.00 kWh in 7 days (GPU only); tare setup --energy-price US$_PER_KWH' in text
     environment.save(environment.set_local_energy({}, 'price_kwh', '0.18'))

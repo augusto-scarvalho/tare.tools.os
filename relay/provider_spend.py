@@ -75,14 +75,16 @@ def record_energy(deployment, began, ended):
     """Add the energy a local route's GPU drew between two times to the ledger, as an 'energy_wh' row for the
     account 'local' (watt-hours, not dollars: the price is read when it is shown). Never money spent: it has no 'usd',
     so spent(), a declared balance and a spending cap do not see it. The watts are the node's measurement; failing
-    that, the ones `tare setup --local-watts` declared; failing both, nothing. Rows added."""
+    that, the ones `tare setup --local-watts` declared; failing both, nothing. Measured only once the user set a price
+    or watts: until then no local endpoint gets a request it did not ask for (a loopback server that is not a tare
+    node would answer 404, or cost its timeout, after every invocation). Rows added."""
     from .challenger import local
     seconds = ended - began
-    if not local(deployment) or not 0 < seconds < 7 * 86400:
+    if not (settings := local_energy()) or not local(deployment) or not 0 < seconds < 7 * 86400:
         return 0
     watts, source = node_watts(deployment, began, ended), 'measured'
     if watts is None:
-        watts, source = local_energy().get('watts'), 'declared'
+        watts, source = settings.get('watts'), 'declared'
     if watts is None:
         return 0
     folder().mkdir(parents=True, exist_ok=True)

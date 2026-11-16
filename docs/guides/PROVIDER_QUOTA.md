@@ -192,7 +192,8 @@ routing.
 
 ## What a local model's energy cost
 
-A local model is not free: its GPU draws power. tare measures that and shows it; nothing routes by it.
+A local model is not free: its GPU draws power. tare measures that and shows it; nothing routes by it. It measures
+from the day you set a price (or declared watts): until then a local endpoint gets no request for it.
 
 - **Measured.** The node samples the card's power (`nvidia-smi`) every 5 seconds and keeps an hour in memory. After
   each invocation that made new calls on a local route, tare asks the node (`GET /v1/gpu/power`, 2 seconds, one
