@@ -239,7 +239,7 @@ Local, Other API) that has a route for that role here. Vendor API is the model o
 Claude, OpenAI for GPT, Google for Gemini); OpenRouter, Bedrock and the OpenCode API are resellers of the same
 models, each a column of its own, so the origin and a reseller can be switched separately. The search finds a row by its name or its technical name
 (`claude/fable`), which the status line shows. Space, Enter or a click on the selected cell ticks it. Nothing is
-written until Save, and Esc asks once before it discards unsaved changes. The file Save writes is the one the
+written until Save, and Esc asks once before it discards unsaved changes. On a cell whose route is `!` for `NOT_QUALIFIED_PIN_ONLY` and has a model line, `p` (or the Prove button) asks to confirm one minimal real call per route, naming each route and its cost line, and then makes it: the same proof as `tare setup --prove ROUTE`, kept in the setup (never the reply), after which the route is automatic where ticked on. Unsaved ticks stay, and Save keeps the proofs. The file Save writes is the one the
 equivalent `tare setup --auto` commands write.
 
 The rows, like `--auto-show`, are the routes the role's automatic path considers, each checked as the paths that
