@@ -194,8 +194,10 @@ def _ranked(role, producer=None, *, check_resources=False):
             cost_tier=row['cost_tier'], cross_vendor=cross, profile_sha256=fingerprint,
             selected_deployment=deployment['id'], availability='CREDENTIAL_PRESENT_HOST_UNPROBED' if key else 'HOST_UNPROBED')
         # Classes short of the wanted one, and above it: a model with no line counts as cheap.
-        gap = ORDER.index((klass(deployment) or {}).get('class') or 'cheap') - ORDER.index(need) if need else 0
+        found = klass(deployment) or {}
+        gap = ORDER.index(found.get('class') or 'cheap') - ORDER.index(need) if need else 0
         fall, above = max(0, -gap), max(0, gap)
+        dated = bool(need) and 'older_than' in found  # an older version of its line: after a current model of its class
         decision['classes_short'] = fall
         cli_backup = (role in {'auditor', 'plan-auditor'} and
                       (deployment['native_profile']['endpoint'] == 'cli://codex' or row['id'] == 'claude-cli'))
@@ -207,8 +209,9 @@ def _ranked(role, producer=None, *, check_resources=False):
         # With `first` off the vendor leaves the order. Then the user's preference, a route that reaches the wanted
         # class before one that falls short (move `fall` to change how much the class weighs against allowance and
         # tier), a lapsing allowance, tier, the exact class before one above it (Sol before Astra on one
-        # subscription, from the class and not from a number per route), primary, CLI backup, table order.
-        rank = (same_family, first and not cross, current().preference(deployment,role), fall, lapse_order(signal), COST[row['cost_tier']], above, row['kind'] != 'primary', cli_backup, order)
+        # subscription, from the class and not from a number per route), a current model before an older version of
+        # another line that lands in the same class (Opus 5.5 before Fable 5.1), primary, CLI backup, table order.
+        rank = (same_family, first and not cross, current().preference(deployment,role), fall, lapse_order(signal), COST[row['cost_tier']], above, dated, row['kind'] != 'primary', cli_backup, order)
         eligible.append((rank, deployment, decision))
     if check_resources:
         kept = []
