@@ -6,7 +6,8 @@ Codex models come from Codex's own per-account cache (~/.codex/models_cache.json
 exists, otherwise from the shipped templates. Claude Code has no listing: a model id that one of its family aliases
 resolves to and no template names yet is offered too (alias_models), read once per executable file. AGY lists its
 models (`agy models`, per account): a newer version of a line its templates have is offered too (agy_profiles), read
-again when the file changes or the reading is a day old.
+again when the file changes or the reading is a day old. A newer version a CLI lists is mirrored to that vendor's
+API too (api_mirror), once the API's own list confirms it: the CLIs are the whitelist, the API's list only a check.
 Discovery keeps the profiles it wrote current (the
 cache records each written file's hash); a profile the user wrote or edited is never replaced.
 """
@@ -20,6 +21,8 @@ import re
 from compute_plane.managed_process import host_executable
 import subprocess
 import tempfile
+import urllib.request
+from urllib.parse import urlsplit
 
 TEMPLATES = Path(__file__).with_name('native_deployments')/'vendor_cli_templates.json'
 # Name on PATH, then the vendors' default Windows install folders.
@@ -190,6 +193,131 @@ def agy_profiles(wanted, reading):
     return found
 
 
+# vendor -> (bundled base API profile, what its naming drops from a model id, the CLI that whitelists the vendor)
+API = {'Anthropic': ('claude-api', 'claude-', 'Claude Code'), 'OpenAI': ('openai-api', '', 'Codex'),
+       'Google': ('gemini-api', 'gemini-', 'AGY')}
+# The only hosts a stored key is ever sent to (the bundled profiles' own endpoints).
+API_HOSTS = ('api.anthropic.com', 'api.openai.com', 'generativelanguage.googleapis.com')
+
+
+def cli_ids(endpoint, reading):
+    """The model ids a CLI lists, as the API mirror's whitelist: Codex's catalogue slugs, the ids Claude Code's
+    aliases resolve to, AGY's Gemini bases (the effort suffix stripped). Each CLI speaks for its own vendor only: a
+    Claude model AGY carries is not AGY's to whitelist."""
+    from .vendor_models import AGY_EFFORT
+    if endpoint == 'cli://codex':
+        own = 'gpt-'
+        found = [m.get('slug') for m in codex_catalog() or [] if isinstance(m, dict) and m.get('visibility') == 'list']
+    elif endpoint == 'cli://claude':
+        own = 'claude-'
+        found = list(((reading or {}).get('models') or {}).values())
+    else:
+        own = 'gemini-'
+        found = [AGY_EFFORT.sub('', i) for i in (reading or {}).get('ids') or [] if AGY_EFFORT.search(i)]
+    return {i for i in found if isinstance(i, str) and i.startswith(own)}
+
+
+def api_key(name):
+    """The stored key: environment, then the vault (the way native_routes.credential_available checks)."""
+    from .native_generation import vault_secret
+    return os.environ.get(name) or vault_secret(name)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None  # a redirect would carry the key's header to another host
+
+
+def api_listing(deployment, key):
+    """The ids of a vendor's own model list: one GET to the bundled profile's endpoint, over https and only to
+    API_HOSTS, the key in a header (never in the URL), no redirect, 15 s. An error carries the class name only."""
+    profile = deployment['native_profile']
+    url = urlsplit(profile['endpoint'])
+    if url.scheme != 'https' or url.hostname not in API_HOSTS:
+        raise ValueError('api_list_host_not_allowed')
+    anthropic = profile['protocol'] == 'anthropic-messages'
+    headers = {'x-api-key': key, 'anthropic-version': '2023-06-01'} if anthropic else {'Authorization': 'Bearer '+key}
+    request = urllib.request.Request(profile['endpoint']+'/models'+('?limit=1000' if anthropic else ''),
+                                     headers={**headers, 'Accept': 'application/json', 'User-Agent': 'tare.tools'})
+    try:
+        with urllib.request.build_opener(_NoRedirect).open(request, timeout=15) as reply:
+            data = json.loads(reply.read(4_000_000))['data']
+        return sorted({m['id'].removeprefix('models/') for m in data if isinstance(m, dict) and isinstance(m.get('id'), str)})
+    except Exception as exc:
+        failure = type(exc).__name__
+    raise OSError(f'{url.hostname} model list failed: {failure}')  # outside the handler: no chained text
+
+
+def api_models(cache, vendor, deployment, key):
+    """A vendor's API list, kept in the cache (ids only) and read at most once a day. An attempt that fails, or
+    lists no id, keeps the last ids and counts as the attempt. `read_at` moves only when the ids change."""
+    reads = cache.setdefault('api_models', {})
+    held = reads.get(vendor) if isinstance(reads.get(vendor), dict) else {}
+    now = datetime.now(timezone.utc)
+    try:
+        fresh = now - datetime.fromisoformat(held['checked_at']) < timedelta(days=1)
+    except (KeyError, TypeError, ValueError):
+        fresh = False
+    if not fresh:
+        try:
+            ids = api_listing(deployment, key)
+        except Exception:
+            ids = None
+        held = {'ids': held.get('ids') or [], 'read_at': held.get('read_at', ''), 'checked_at': now.isoformat()}
+        if ids:
+            if ids != held['ids']:
+                held['read_at'] = now.isoformat()
+            held['ids'] = ids
+        reads[vendor] = held
+    return held
+
+
+def api_mirror(cache, listed, managed):
+    """Profiles for a model a vendor's CLI lists that is a newer version of a line than every bundled profile of
+    that line on the vendor's API (openai-api-gpt-6-2-sol beside openai-api), once the API's own list has it; copied
+    from that line's newest bundled profile that is not Pro. Only with the vendor's key stored and its API not
+    declined here: otherwise nothing is read or written for that vendor. Returns (profiles, {name prefix: endpoint}
+    of the vendors checked), so a profile whose id a CLI or the API list no longer has is retired."""
+    from .environment import allows
+    from .execution_scope import is_pro
+    from .native_catalog import LOCAL, bundled
+    from .vendor_models import line, parse
+    wanted, checked = {}, {}
+    for vendor, (base, strip, cli) in API.items():
+        # The id becomes a profile name; the pattern keeps parse() and the name safe.
+        ids = {i for i in listed if re.fullmatch(r'[a-z0-9]+([.-][a-z0-9]+)*', i) and (line(i) or {}).get('vendor') == vendor}
+        mine = [n for n in managed if n.startswith(base+'-')]
+        bundle = {n: bundled(n) for n in LOCAL if n == base or n.startswith(base+'-')}
+        top, sibling = {}, {}  # per line (family, name): its newest version, and its newest profile that is not Pro
+        for name, value in bundle.items():
+            family, version = parse(value['native_profile']['model'])[:2], parse(value['native_profile']['model'])[2]
+            top[family] = max(top.get(family, ()), version)
+            if not is_pro(value):
+                sibling[family] = max(sibling.get(family, ((), '')), (version, name))
+        candidates = {i for i in ids if parse(i)[:2] in top and parse(i)[2] > top[parse(i)[:2]]}
+        if not ids or not (candidates or mine):
+            continue  # no CLI reading to judge by, or nothing to add or retire: no key read, no request
+        deployment = bundle[base]
+        if not allows(deployment)[0]:
+            continue
+        # Retiring what a CLI dropped needs no key: it is read only when there is an id to confirm.
+        key = api_key(deployment['native_credential_env']) if candidates else None
+        if candidates and not key:
+            continue
+        checked[base+'-'] = deployment['native_profile']['endpoint']
+        held = api_models(cache, vendor, deployment, key) if candidates else {}
+        for model in sorted(candidates & set(held.get('ids') or [])):
+            template = sibling[parse(model)[:2]][1]
+            value = deepcopy(bundle[template])
+            value['id'] = f"{base}-{model.removeprefix(strip).replace('.', '-')}"
+            value['model'] = value['native_profile']['model'] = model
+            value['native_profile'].pop('expected_response_model', None)
+            value['native_profile']['source'] = (f"Mirrors {model}, which {cli} lists; confirmed on the {vendor} API's own model "
+                                                 f"list {held.get('read_at', '')[:10]}; limits and parameters copied from {template}")
+            wanted[value['id']] = value
+    return wanted, checked
+
+
 def desired_profiles(templates, endpoint, executable, reading=None):
     wanted = {name: deployment(template, executable) for name, template in templates.items()
               if template['native_profile']['endpoint'] == endpoint}
@@ -322,6 +450,7 @@ def discover():
     except (OSError, ValueError):
         cache = {}
     report = []
+    listed = set()
     from .environment import allows
     for endpoint in ACK_PROFILE:
         row = {'endpoint': endpoint, 'label': LABEL[endpoint], 'added': [], 'updated': [], 'removed': []}
@@ -340,6 +469,7 @@ def discover():
         managed = cache.setdefault('managed', {})
         reading = {'cli://claude': alias_models, 'cli://agy': agy_models}.get(endpoint, lambda *a: None)(cache, executable)
         wanted = desired_profiles(templates, endpoint, executable, reading)
+        listed |= cli_ids(endpoint, reading)
         for name, value in sorted(wanted.items()):
             state = write_profile(name, value, managed)
             if state:
@@ -347,6 +477,18 @@ def discover():
         for name in sorted(set(managed) - set(wanted)):
             if retire_profile(name, endpoint, managed):
                 row['removed'].append(name)
+    managed = cache.setdefault('managed', {})
+    mirrored, checked = api_mirror(cache, listed, managed)
+    row = {'endpoint': 'api://mirror', 'label': 'API mirror', 'status': 'checked', 'added': [], 'updated': [], 'removed': []}
+    for name, value in sorted(mirrored.items()):
+        if state := write_profile(name, value, managed):
+            row[state].append(name)
+    for name in sorted(n for n in managed if n not in mirrored):
+        for prefix, endpoint in checked.items():
+            if name.startswith(prefix) and retire_profile(name, endpoint, managed):
+                row['removed'].append(name)
+    if row['added'] or row['updated'] or row['removed']:
+        report.append(row)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(json.dumps(cache, indent=1), encoding='utf-8')
     return report

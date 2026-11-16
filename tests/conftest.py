@@ -128,6 +128,9 @@ def disable_installed_flow_assessor(monkeypatch, tmp_path_factory, request):
     monkeypatch.setattr(cli_discovery, 'claude_aliases', no_vendor_cli)
     # Nor `agy models`; a test replaces this to read.
     monkeypatch.setattr(cli_discovery, 'agy_listing', no_vendor_cli)
+    # Nor may discovery read a stored provider key or send it to a vendor's model list; a test replaces these.
+    monkeypatch.setattr(cli_discovery, 'api_key', lambda name: None)
+    monkeypatch.setattr(cli_discovery, 'api_listing', no_vendor_cli)
 
 
 LOOPBACK = ('127.', '::1', 'localhost')
