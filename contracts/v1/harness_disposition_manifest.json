@@ -4391,8 +4391,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 33862,
-      "sha256": "afaefe127ae49b11bd33684068df8cc6ad21e2c51063fdfcae4e033f9b1e58f8"
+      "size_bytes": 34059,
+      "sha256": "3a9535e1aaa5c96182ced4bf4c85140f0f526123739455430458354185bc39df"
     },
     {
       "name": "provider_spend.py",
@@ -4401,8 +4401,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 17626,
-      "sha256": "afe11dcc0296bb6f7f05c1d702180e451d5193459d5ec5b0f31c696ea5b59812"
+      "size_bytes": 18961,
+      "sha256": "044cc6d9f11701c0b39a0ee63b1a6c530484927adbc0614f3d2a33b9bb4d4408"
     },
     {
       "name": "push_preflight.py",
