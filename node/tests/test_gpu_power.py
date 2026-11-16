@@ -5,6 +5,7 @@ from urllib import error, request
 import pytest
 
 from test_gateway_gpu_coordination import gateway, serving
+from tare_node import gpu_lease_run
 from tare_node.gpu_lease_run import PowerLog
 
 
@@ -48,3 +49,16 @@ def test_the_route_answers_the_average_or_says_it_has_none(monkeypatch):
             with pytest.raises(error.HTTPError) as refused:
                 get(bad)
             assert refused.value.code == 400
+
+
+def test_a_service_without_nvidia_smi_on_its_path_reads_it_where_wsl_keeps_it(monkeypatch):
+    ran = []
+
+    def run(argv, **kwargs):
+        ran.append(argv[0])
+        return type('Done', (), {'stdout': '212.5, 40\n'})()
+    monkeypatch.setattr(gpu_lease_run.subprocess, 'run', run)
+    monkeypatch.setattr(gpu_lease_run.shutil, 'which', lambda name: None)  # a systemd service's PATH on WSL
+    assert gpu_lease_run.gpu_sample() == (212.5, 40.0) and ran == ['/usr/lib/wsl/lib/nvidia-smi']
+    monkeypatch.setattr(gpu_lease_run.shutil, 'which', lambda name: '/usr/bin/nvidia-smi')
+    assert gpu_lease_run.gpu_sample() and ran[-1] == '/usr/bin/nvidia-smi'
