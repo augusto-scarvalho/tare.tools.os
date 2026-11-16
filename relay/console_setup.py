@@ -172,7 +172,7 @@ class SetupPanel(SupportPanel):
             yield Static('Offer older CLI models as well?', classes='setup-label')
             yield Select([('Only current models','no'),('Include older models','use')], value='use' if (value.get('clis') or {}).get('old_models') else 'no', allow_blank=False, id='setup-old-models')
         yield Static('Optional reply test', classes='setup-label')
-        yield Static('Sends one short model request. Check its cost first; only Run reply test spends quota or API credit.', classes='setup-note')
+        yield Static('Sends one short model request, then one short task in a throwaway folder. Check its cost first; only Run reply test spends quota or API credit.', classes='setup-note')
         yield Static('Connection to test', classes='setup-label')
         options=[(CLI_LABELS.get(e,e),'cli:'+e.split('://')[1]) for e in self.found['clis']]
         try:

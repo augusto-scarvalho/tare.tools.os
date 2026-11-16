@@ -1,13 +1,25 @@
-"""A proof recorded on this machine (tare setup --prove) admits a pin-only route of a known line automatically."""
+"""A proof recorded on this machine (tare setup --prove) admits a pin-only route of a known line automatically: its
+minimal call answered and its role check, one short implementer session, edited the file and delivered."""
+import hashlib
+import json
+from pathlib import Path
+
 import pytest
 
-from relay import environment, native_catalog, native_generation, native_routes
+from relay import environment, native_agent, native_catalog, native_generation, native_routes
 from test_console_route_matrix import journey
 from test_cross_vendor_auditors import install, pool  # noqa: F401
 from test_cross_vendor_auditors import (
     test_new_models_have_an_author_take_a_pin_and_wait_for_qualification_before_any_automatic_role as wait_for_proof)
+from test_native_agent import Client, deployment as fixture
 
 OK = {'at': '2026-11-14T00:00:00+00:00', 'ok': True, 'cost': 'fixture'}
+CARBON = 'gemini-api-4-carbon'
+READ = ('read', {'repository': 'proof', 'path': 'value.txt'})
+EDIT = ('edit', {'repository': 'proof', 'path': 'value.txt', 'sha256': hashlib.sha256(b'41\n').hexdigest(),
+                 'search': '41', 'replace': '42'})
+DELIVER = ('tare_deliver', {'summary': 'DELIVERY-TEXT changed the value.'})
+RUN_SESSION = native_agent.run_session  # the real one: scripted() replaces it per test
 
 
 def ranked(role):
@@ -16,25 +28,83 @@ def ranked(role):
     return [d['id'] for d in chosen], {c['deployment']: c['reason'] for c in selection['candidates']}
 
 
-def test_a_successful_proof_admits_gemini_carbon_on_the_api_and_a_failed_one_nothing(pool, monkeypatch):
+def scripted(monkeypatch, client):
+    """The role check's real session with a scripted model (no real call): its config, custody, limits and options
+    pass to run_session unchanged, only the model is `client` on a fixture deployment. Returns what each got."""
+    seen = []
+
+    def run(config, deployment, custody, instruction, **options):
+        seen.append({'config': config, 'deployment': deployment['id'], 'custody': Path(custody), **options})
+        return RUN_SESSION(config, fixture(), custody, instruction, client=client, local_counter=client, **options)
+    monkeypatch.setattr(native_agent, 'run_session', run)
+    return seen
+
+
+def test_a_proof_admits_gemini_carbon_only_when_it_answers_and_does_the_task(pool, monkeypatch, capsys):
     monkeypatch.setenv('GEMINI_API_KEY', 'fixture')  # present, never used: generation is a stand-in
     monkeypatch.setattr(environment, 'cost_line', lambda deployment: 'fixture cost')
     answer = [(False, '', {'failure_class': 'HTTP_400'})]
     monkeypatch.setattr(native_generation, 'generate_text', lambda *args, **kwargs: answer[0])
-    name = 'gemini-api-4-carbon'
-    roles = next(r for r in native_routes.configured()['deployments'] if r['id'] == name)['roles']
+    roles = next(r for r in native_routes.configured()['deployments'] if r['id'] == CARBON)['roles']
 
     def state():
-        return {role: (name in ranked(role)[0], ranked(role)[1][name],
-                       {r['route']: r['now'] for r in environment.auto_rows(role)}[name]) for role in roles}
+        return {role: (CARBON in ranked(role)[0], ranked(role)[1][CARBON],
+                       {r['route']: r['now'] for r in environment.auto_rows(role)}[CARBON]) for role in roles}
     pin_only = {role: (False, 'NOT_QUALIFIED_PIN_ONLY', 'NOT_QUALIFIED_PIN_ONLY') for role in roles}
     assert state() == pin_only
-    assert environment.prove(name, lambda line: True)['ok'] is False
+    lazy = scripted(monkeypatch, Client(steps=[READ, DELIVER]))
+    record = environment.prove(CARBON, lambda line: True)
+    assert record['ok'] is False and 'role_check' not in record and lazy == []  # no answer: no task either
     assert state() == pin_only  # a failed proof admits nothing
-    answer[0] = (True, 'OK', {})
-    assert environment.prove(name, lambda line: True)['ok'] is True  # recorded under the name the user typed
+
+    answer[0] = (True, 'REPLY-TEXT', {})
+    assert environment.main(['--prove', CARBON, '--yes']) == 1  # the session delivers without editing
+    assert (f'{CARBON}: not proven: answered, but failed the role check: the session delivered but did not change '
+            'value.txt to 42; a pin-only route stays pin only') in capsys.readouterr().out
+    record = environment.read()['proofs'][CARBON]
+    assert record['ok'] is False and record['role_check'] == {
+        'ok': False, 'reason': 'the session delivered but did not change value.txt to 42'}
+    assert state() == pin_only
+
+    done = scripted(monkeypatch, Client(steps=[READ, EDIT, DELIVER]))
+    record = environment.prove(CARBON, lambda line: True)
+    assert record['ok'] is True and record['role_check']['ok'] is True and 'reason' not in record, record
     assert all(chosen and reason != 'NOT_QUALIFIED_PIN_ONLY' and now == 'usable'
                for chosen, reason, now in state().values()), state()
+    run = done[0]
+    assert run['deployment'] == CARBON and run['delegated_leaf'] is True
+    assert run['limits'] == {'max_model_calls': 6, 'max_seconds': 300}
+    assert run['config']['writable'] == {'proof': ['value.txt']} and run['config']['capabilities'] == ['read', 'edit']
+    for run in (lazy[0], done[0]):  # project and custody shared one temporary folder, gone afterwards
+        assert Path(run['config']['repositories']['proof']).parent == run['custody'].parent
+        assert run['custody'].parent.name.startswith('tare-proof-') and not run['custody'].parent.exists()
+    kept = json.dumps(environment.read()['proofs'])
+    assert 'REPLY-TEXT' not in kept and 'DELIVERY-TEXT' not in kept  # never the reply or the session's text
+
+
+def test_a_model_that_fails_in_the_session_did_not_finish(pool, monkeypatch):
+    from tare_tools_agent_runtime import ModelFailure
+
+    class Failing(Client):
+        def post(self, path, body, control):
+            if path == '/chat/completions':
+                raise ModelFailure('HTTP_400')
+            return super().post(path, body, control)
+    monkeypatch.setenv('GEMINI_API_KEY', 'fixture')
+    monkeypatch.setattr(environment, 'cost_line', lambda deployment: 'fixture cost')
+    monkeypatch.setattr(native_generation, 'generate_text', lambda *args, **kwargs: (True, 'OK', {}))
+    scripted(monkeypatch, Failing())
+    record = environment.prove(CARBON, lambda line: True)
+    assert record['ok'] is False and record['role_check']['ok'] is False
+    assert record['role_check']['reason'] == 'the session did not finish: BLOCKED MODEL_FAILURE HTTP_400'
+    assert environment.read()['proofs'][CARBON] == record
+
+
+def test_a_proof_recorded_before_the_role_check_still_admits(pool, monkeypatch):
+    monkeypatch.setenv('GEMINI_API_KEY', 'fixture')
+    environment.save({'proofs': {CARBON: OK}})  # no role_check: nothing proves again by itself
+    role = next(r for r in native_routes.configured()['deployments'] if r['id'] == CARBON)['roles'][0]
+    assert CARBON in ranked(role)[0]
 
 
 @pytest.mark.parametrize('name', ['opencode-sub-kimi-k3', 'opencode-sub-gemini-4-argon'])
