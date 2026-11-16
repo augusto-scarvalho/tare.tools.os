@@ -194,19 +194,30 @@ def _slug(deployment):
             return slug
 
 
-_versions = (None, {})  # (the catalogue's route names, {line: newest version}): read again when a route is added
+_versions = (None, {})  # (the installed routes and the setup's change time, {line: newest version})
 def _newest():
-    """{line: the newest version of it that a route of the catalogue runs}, shipped templates included."""
+    """{line: the newest version of it this machine can use by itself}: a route installed here whose role-table row
+    is qualified or has answered once on this machine (tare setup --prove). A version tare merely lists lowers
+    nobody: the model in use keeps its class until its successor is proven here."""
     global _versions
+    from . import environment, native_routes
     from .native_catalog import offline_deployments
     from .native_profiles import names
-    stamp = tuple(sorted(names()))
+    try:
+        changed = environment.store().stat().st_mtime_ns
+    except OSError:
+        changed = None
+    stamp = (tuple(sorted(names())), changed)
     if _versions[0] != stamp:
-        found = {}
-        for _, value, _ in offline_deployments(include_unconfigured=True):
+        rows = {row.get('native_catalog', row['id']): row for row in native_routes.configured()['deployments']}
+        proofs, found = {}, {}
+        for name, value, _ in offline_deployments():
             try:
+                row = rows.get(name)
+                if row is not None and row.get('qualified') is False and not native_routes.proven(row, proofs):
+                    continue  # listed, never answered here
                 slug = _slug(value)
-            except (KeyError, TypeError):
+            except (KeyError, TypeError, ValueError, OSError):
                 continue
             if slug:
                 family, name, version = parse(AGY_EFFORT.sub('', slug))
@@ -230,8 +241,9 @@ def klass(deployment, saved=None):
     effort = suffix[1] if suffix else reasoning(deployment)
     version = parse(AGY_EFFORT.sub('', model))[2]
     key = (known['line'], '.'.join(map(str, version)), effort)
-    # The line's class is its newest version's. An older version is another model (Opus 4.6 on Bedrock is not the
-    # Opus 5.5 of the CLI): one class lower, since nothing measured places it higher, until a reading of its own.
+    # The line's class is the class of its newest version usable here. An older version is another model (Opus 4.6
+    # on Bedrock is not the Opus 5.5 of the CLI): one class lower, since nothing measured places it higher, until a
+    # reading of its own.
     newest = _newest().get(known['line'], version)
     own = {'class': known['class'], 'from': 'line'}
     if version < newest:
