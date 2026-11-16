@@ -972,7 +972,6 @@ def prove(name, confirm):
     """One minimal real call on a route, then, when it answered, the role check's short task, only after
     `confirm(cost line)` agrees; the result (never the reply) is kept in the setup, ok only when both passed. A proven
     CLI is recorded for discovery, which then calls it ready."""
-    from datetime import datetime, timezone
     deployment, why = route_for(name)
     if deployment is None:
         return {'ok': False, 'reason': why}
@@ -997,8 +996,14 @@ def prove(name, confirm):
     if ok and cli:
         from .cli_discovery import proven
         proven(deployment['native_profile']['endpoint'], deployment['native_cli']['executable'])
-    record = {'at': datetime.now(timezone.utc).isoformat(timespec='seconds'), 'ok': ok, 'cost': line,
-              **({} if ok else {'reason': reason}), **({'role_check': check} if check else {})}
+    return remember(name, {'ok': ok, 'cost': line, **({} if ok else {'reason': reason}),
+                           **({'role_check': check} if check else {})})
+
+
+def remember(name, record):
+    """Keep a proof's record, with its time, under `proofs[name]` in the setup; returns it."""
+    from datetime import datetime, timezone
+    record = {'at': datetime.now(timezone.utc).isoformat(timespec='seconds'), **record}
     def keep(value):
         value.setdefault('proofs', {})[name] = record
         return value
@@ -1007,6 +1012,28 @@ def prove(name, confirm):
     except ValueError:
         pass  # an unreadable setup keeps no proof, as before
     return record
+
+
+def arrivals():
+    """[(name, deployment)] of the routes a TUI start proves by itself, or asks to (owner, 2026-11-16): a derived
+    role row (native_routes.derived: a newer version of a known line on its vendor's own source), no record at all
+    under proofs (proven, failed or declined: never tried or asked again by itself), usable now (route_for: the
+    setup, the session's flags, its CLI or credential, a plan not spent), and on in the routing profile for at least
+    one role of its row (tare does not spend on a line the user turned off)."""
+    from . import native_routes
+    from .execution_scope import refusal
+    value = read()
+    if 'error' in value:
+        return []
+    tried = value.get('proofs') if isinstance(value.get('proofs'), dict) else {}
+    native_routes.configured()  # builds the derived rows for the routes installed now
+    found = []
+    for row in native_routes._derived[1]:
+        name = row['native_catalog']
+        deployment = None if name in tried else route_for(name)[0]
+        if deployment and any(not refusal(role, deployment, name) for role in row.get('roles', [])):
+            found.append((name, deployment))
+    return found
 
 
 def apply(value):

@@ -517,6 +517,11 @@ class ConversationWorkbench:
             refresh_reading()
         except Exception:  # optional: the last good reading stays, or none (no reference price, as before)
             pass
+        try:  # after the prices a pay-per-token cost line names; delays the readings below only when a version arrived
+            self.prove_arrivals()
+        except Exception as exc:  # optional: the proof waits for the next start, or for p in /routes
+            self.call_from_thread(self.notify, 'Proving new model versions failed: '+type(exc).__name__+': '
+                                  +str(exc)[:200], severity='warning', timeout=12)
         try:  # the benchmark signals behind each route's class, at most once a day; no model call
             from .model_signals import refresh_reading as refresh_signals
             refresh_signals()
@@ -530,6 +535,56 @@ class ConversationWorkbench:
                 provider_quota.refresh()  # states the credit it read
         except Exception:  # optional: without a reading tare learns a spent plan from the failed call, as before
             pass
+
+    def prove_arrivals(self):
+        """A new model version is proven when it arrives (owner, 2026-11-16), once per route (environment.arrivals):
+        by itself on a subscription; on a pay-per-token route only after Prove in the dialog, asked once and before the
+        subscription proofs start. Cancel records the decline, so the next start does not ask again."""
+        from . import environment as env
+        from .challenger_variants import accounting
+        from .console_route_matrix import ProveDialog
+        found = env.arrivals()
+        paid = {name: env.cost_line(d) for name, d in found if accounting(d) != 'quota'}
+        if paid:
+            def answered(yes):
+                if yes:
+                    work = lambda: self.prove_now([(n, d) for n, d in found if n in paid])
+                else:
+                    work = lambda: [env.remember(n, {'ok': None, 'reason': 'not confirmed', 'cost': line})
+                                    for n, line in paid.items()]
+                self.run_worker(work, thread=True, group='auto-proof', exit_on_error=False)
+            self.call_from_thread(self.push_screen, ProveDialog([
+                *(f'{name}: {line}' for name, line in paid.items()),
+                '', 'A newer model version arrived on these pay-per-token routes. Cancel keeps them pin only and is '
+                'not asked again; /routes > Models per role can prove them later.']), answered)
+        self.prove_now([(n, d) for n, d in found if n not in paid])
+
+    def prove_now(self, found):
+        """Prove each (name, deployment) in this worker thread, one after another, saying so before and after."""
+        from textual.worker import get_current_worker
+        from . import environment as env
+        for name, deployment in found:
+            if get_current_worker().is_cancelled:  # the TUI is closing: no proof starts with nobody there
+                return
+            line = env.cost_line(deployment)
+            self.call_from_thread(self.set_status, f'Proving {name}, a new model version: {line}…')
+            try:
+                record = env.prove(name, lambda _: True)  # a subscription, or the user said Prove
+            except Exception as exc:  # recorded as failed: never spent again by itself at each start
+                record = {'ok': False, 'cost': line, 'reason': f'{type(exc).__name__}: {exc}'[:200]}
+                try:
+                    env.remember(name, record)
+                except Exception:
+                    pass
+            if get_current_worker().is_cancelled:
+                return
+            if record.get('ok') is True:
+                self.call_from_thread(self.notify, f'{name} answered and did the task: it is now used automatically '
+                                      "where its line is ticked in /routes, as its line's newest version.", timeout=12)
+            else:
+                self.call_from_thread(self.notify, f"{name} was not proven: {record.get('reason') or 'no reason given'}."
+                                      ' It stays pin only; /routes > Models per role can prove it again.',
+                                      severity='warning', timeout=12)
 
     def read_quota_for_demand(self):
         """Redo the quota reading in the background when a turn starts, so the surplus is judged on a fresh one. The
