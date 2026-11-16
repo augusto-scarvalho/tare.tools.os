@@ -239,3 +239,23 @@ def test_the_shipped_table_ranks_a_placed_route_as_a_line_route_of_its_class_and
     assert placed[kimi_route]['position'] < without[kimi_route]['position']
     # Muse has no row in the reading: it ranks as today, a model with no class counted as cheap
     assert placed[muse]['classes_short'] == without[muse]['classes_short'] == 1
+
+
+def test_the_class_sources_name_finds_the_boards_row_and_a_profile_may_say_what_it_is_measured_as():
+    """Measured 2026-11-16: the route `mistralai/mistral-large-4-0` matches no board row by its id, but the class
+    source knows it by permaslug as "Mistral Large 4", which the board lists; and `meta/muse-spark-1.3-contributor`
+    is Muse Spark 1.3 under a data-sharing term, which only its profile can say."""
+    def board(*rows):
+        return {'as_of': '2026-11-15', 'rows': list(rows)}
+    mistral = route('mistralai/mistral-large-4-0')
+    saved = {**reading([other('mistralai', 'Mistral Large 4', 40, permaslug='mistralai/mistral-large-4-0-20260610')]),
+             'board': board(other('mistral', 'Mistral Large 4', -0.05, cost=0.3), other('mistral', 'Mistral Medium 3.5', -0.2, cost=0.2))}
+    assert signals._match(signals._board(saved), mistral) is None
+    assert signals.task(mistral, saved)['cost_per_task_usd'] == 0.3
+    # without the class source's row there is no name to go by
+    assert signals.task(mistral, {**saved, 'rows': []}) is None
+    muse = {**route('meta/muse-spark-1.3-contributor'), 'native_measured_as': 'meta/muse-spark-1.3'}
+    saved = {**reading([other('meta', 'Muse Spark 1.3', 36, permaslug='meta/muse-spark-1.3-20260902')]),
+             'board': board(other('meta', 'Muse Spark 1.3', 0.01, effort='max', cost=0.5), other('meta', 'Muse Ember', -0.1, cost=0.02))}
+    assert signals._match(saved, muse)['name'] == 'Muse Spark 1.3' and signals.task(muse, saved)['cost_per_task_usd'] == 0.5
+    assert signals.task(route('meta/muse-spark-1.3-contributor'), saved) is None  # the id alone is another name

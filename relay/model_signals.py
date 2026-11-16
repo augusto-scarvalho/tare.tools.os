@@ -319,7 +319,9 @@ def _match(saved, deployment):
     claim (a variant or another date of the model counts), two rows at the top effort, and a name with a bracket left
     (a variant) match nothing."""
     profile = deployment['native_profile']
-    model = profile.get('model')
+    # A profile may say which measured model it serves when its own id is a variant of it with the same weights
+    # (meta/muse-spark-1.3-contributor is Muse Spark 1.3 under a data-sharing term).
+    model = deployment.get('native_measured_as') or profile.get('model')
     if not isinstance(model, str):
         return None
     openrouter = urlsplit(profile.get('endpoint') or '').hostname == 'openrouter.ai'
@@ -416,7 +418,8 @@ def task(deployment, saved=None):
     which); a model with no line goes through `_match`. The value is the score above the board's lowest score, per
     dollar of a task: Arena ratings go below zero, so the lowest listed model is the zero of the scale, a rating alone
     cannot be divided by a cost."""
-    board = _board(reading() if saved is None else saved)
+    saved = reading() if saved is None else saved
+    board = _board(saved)
     if not board:
         return None
     model = _slug(deployment)
@@ -430,6 +433,10 @@ def task(deployment, saved=None):
         row = at[0] if len(at) == 1 else None
     else:
         row = _match(board, deployment)
+        if row is None and (named := _match(saved, deployment)):
+            # The class source knows the route by its permaslug and names the model as its creator does (Mistral Large
+            # 4 for mistralai/mistral-large-4-0): that name finds the board's row where the route's id does not.
+            row = _match(board, {'native_profile': {'model': named['creator'] + '/' + named['name'].lower().replace(' ', '-')}})
     score, cost = row and _number(row.get('intelligence')), row and _number(row.get('cost_per_task_usd'))
     if score is None or cost is None or cost <= 0:
         return None

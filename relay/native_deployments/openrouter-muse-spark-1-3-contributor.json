@@ -27,5 +27,6 @@
   },
   "native_reasoning_levels": [
     "high"
-  ]
+  ],
+  "native_measured_as": "meta/muse-spark-1.3"
 }
