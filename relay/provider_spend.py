@@ -223,6 +223,22 @@ def record(deployment, calls, now=None, since=None):
     return len(rows)
 
 
+def record_receipt(deployment, receipt):
+    """Add to the ledger one direct call made outside a session (native_generation.generate_text's receipt): a setup
+    proof, an explorer's or a researcher's side call. These spent the account's credit and left no row (found
+    2026-11-17, setting OpenRouter's own count beside the ledger). What the provider says it charged goes before a
+    tariff, as in a session's usage report. Rows added; it never raises: a ledger that misses a call loses no result."""
+    try:
+        from compute_plane.native_usage import UsageContract, deployment_contract, normalize_usage, reported_cost
+        contract = deployment_contract(deployment)
+        contract = UsageContract(**contract) if contract else None
+        usage = receipt.get('usage')
+        return record(deployment, [{'call_id': receipt.get('attempt_id'), 'normalized': normalize_usage(usage, contract),
+                                    'cost': reported_cost(usage, contract) or receipt.get('cost')}])
+    except Exception:
+        return 0
+
+
 def spent(name, since, field='usd', reference=False, source=None):
     """Dollars tare recorded for this account from `since` on (field 'allowance': of OpenCode's plan allowance, 'energy_wh':
     of the local account's energy; `reference`: only those valued at a models.dev reference price; `source`: only the

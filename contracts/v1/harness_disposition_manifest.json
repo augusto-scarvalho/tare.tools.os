@@ -2221,8 +2221,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 5537,
-      "sha256": "1fd5e3c90c6e472b664c3e6c4142de7a1f9ed195baa948f0fe02d98f58129c97"
+      "size_bytes": 5696,
+      "sha256": "8a62c4e131250ac68d07c60bc2ab8c11b59eb5e601d1f84abc8bbca4fab07f23"
     },
     {
       "name": "native_generation.py",
@@ -2387,8 +2387,8 @@
     {
       "name": "research.py",
       "path": "tare.tools.os/relay/research.py",
-      "size_bytes": 19701,
-      "sha256": "4d3555976aa7956a8ec7179401364a9e6a48af3e2d9cdd1973100721a1ba3103",
+      "size_bytes": 19876,
+      "sha256": "517cbb2832fbdbeb9949c4da18cd332e90dbc7a2ad88d307fee16b0fa086b572",
       "summary": "Mass web research: deterministic collection, local map/reduce, frontier receives one envelope.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -3821,8 +3821,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 73161,
-      "sha256": "40637c5492acfb63a60eaf5341a8a3d67f961ef44d607518aebfeef53b63720e"
+      "size_bytes": 73309,
+      "sha256": "0c3d8e925079067bc95e5f0f3899bd51ee7a4c85256ffe783715ef6b13169c69"
     },
     {
       "name": "console_setup.py",
@@ -4401,8 +4401,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 24266,
-      "sha256": "9fcff99401da51514a2a5657407b0580d72b1bf9dd4cb0691dcfb00d73f5a1e2"
+      "size_bytes": 25312,
+      "sha256": "1854a27903fb7ac2d9992fc130fe2a2e93873c7446c5cdfac5b09554d81988c7"
     },
     {
       "name": "push_preflight.py",

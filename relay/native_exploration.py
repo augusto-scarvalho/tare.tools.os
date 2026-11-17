@@ -62,6 +62,8 @@ def explore(root, question, *, focus=(), custody, objective, timeout=240,
                 '"remaining":["missing evidence"]}. Cite only supplied source IDs. Snapshot relationships are not '
                 'live verification. No tools, edits, delegation, test execution or approval.'))
         result['native_calls'].append(receipt)
+        from .provider_spend import record_receipt
+        record_receipt(deployment, receipt)  # this call starts no session, so nothing else posts its spend
         result['tokens'] = token_totals(result['native_calls'], deployment.get('native_usage_contract'))
         if not ok:
             raise ValueError('native_exploration:' + receipt['failure_class'])
