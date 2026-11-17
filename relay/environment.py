@@ -1,6 +1,7 @@
 """What this machine's owner chose to use and not to use: local model gateways, vendor CLIs, API providers and
 decision models (D15). One file per machine, beside local-gpu.json, so every frontend and storage root sees the
 same choices. No file, or a category left undecided, keeps today's behaviour: every route tare finds."""
+import copy
 import json
 import os
 from pathlib import Path
@@ -87,6 +88,13 @@ def declined(item):
     return item is False or isinstance(item, dict) and item.get('use') is False
 
 
+def in_use(gateway):
+    """The models of a saved gateway tare uses: the ones its record's 'enabled' names. A record saved before the
+    choice existed has none, and then every model it lists counts as in use (an upgrade switches nothing off)."""
+    models, enabled = gateway.get('models') or [], gateway.get('enabled')
+    return set(models) if enabled is None else set(models) & set(enabled)
+
+
 def allows(deployment, value=None):
     """(True, None) when this machine's setup leaves the route in, else (False, why)."""
     from .execution_scope import current
@@ -110,6 +118,11 @@ def allows(deployment, value=None):
     gateways = [origin(g['origin']) for g in section.get('gateways') or [] if isinstance(g, dict) and g.get('origin')]
     if category == 'local_models' and gateways and item not in gateways:
         return False, f'local gateway {item} is not set up on this machine (tare setup)'
+    model = deployment['native_profile'].get('model')  # the one gate of a model the user switched off (or never on)
+    for gateway in section.get('gateways') or []:
+        if category == 'local_models' and isinstance(gateway, dict) and origin(gateway.get('origin') or '') == item \
+                and model in (gateway.get('models') or []) and model not in in_use(gateway):
+            return False, f'{model} is off at {item} (tare setup --use local:{model})'
     return True, None
 
 
@@ -585,8 +598,25 @@ def refresh_gateway(value):
     """Ask the first saved gateway again, in place (its fleet changed): what it publishes and its default."""
     gateways = (value.get('local_models') or {}).get('gateways') or []
     if gateways:
-        gateways[0] = ask_gateway(gateways[0]['origin'])
+        gateways[0] = keep_choice(ask_gateway(gateways[0]['origin']), gateways[0])
     return value
+
+
+def keep_choice(asked, old=None):
+    """An asked gateway record with the choice of the saved one it replaces: what was in use stays in use, and a
+    model it publishes now that was not published before is off until the user turns it on. A gateway named for
+    the first time starts with every model in use: naming it is the user's act."""
+    asked['enabled'] = sorted(set(old['enabled'] if 'enabled' in old else old.get('models') or [])) \
+        if old else list(asked['models'])
+    return asked
+
+
+def new_models(before, value):
+    """[(origin, model)] a saved gateway publishes now that it did not publish in `before` (a value) and that is
+    off; a gateway that is new in `value` has none, it starts with every model in use."""
+    seen = {g['origin']: set(g.get('models') or []) for g in (before.get('local_models') or {}).get('gateways') or []}
+    return [(g['origin'], m) for g in (value.get('local_models') or {}).get('gateways') or [] if g['origin'] in seen
+            for m in g.get('models') or [] if m not in seen[g['origin']] and m not in in_use(g)]
 
 
 def older(deployment, value=None):
@@ -741,7 +771,7 @@ def generic_profiles(value):
     shipped = {select(n)['native_profile']['model'] for n in LOCAL if shipped_local(n)}
     wanted = {}
     for index, gateway in enumerate((value.get('local_models') or {}).get('gateways') or []):
-        for model in gateway.get('models') or []:
+        for model in sorted(in_use(gateway)):  # a model that is off has no profile; write_generic retires it
             if index == 0 and model in shipped:
                 continue  # the shipped, measured profile serves it
             name = generic_name(gateway['origin'], model)
@@ -801,6 +831,18 @@ def detect():
             'decision_models': {'jev': where('TYPESAFE_API_KEY')}}
 
 
+def set_model(value, model, on, origin=None):
+    """Turn a published model on or off at the saved gateways that publish it (only `origin`'s when given); how many
+    gateways that was. Setting it for a model two gateways publish sets both: the command line names no gateway.
+    apply() then writes or retires its profile."""
+    gateways = (value.get('local_models') or {}).get('gateways') or []
+    hit = [g for g in gateways if model in (g.get('models') or []) and origin in (None, g['origin'])]
+    for gateway in hit:
+        gateway['enabled'] = sorted(in_use(gateway) - {model} | ({model} if on else set()) | (
+            set(gateway.get('enabled') or []) - set(gateway['models'])))  # an unpublished one keeps its choice
+    return len(hit)
+
+
 def choose(value, spec, use):
     """Mark CATEGORY or CATEGORY:ITEM used (True), not used (False) or undecided (None)."""
     category, _, item = spec.partition(':')
@@ -810,8 +852,11 @@ def choose(value, spec, use):
     section = dict(value.get(category) or {})
     if not item:
         section['use'] = use
-    elif category == 'local_models':
-        raise ValueError('Name local gateways with --local-gateway URL.')
+    elif category == 'local_models':  # local:MODEL, a model id of a saved gateway (it may hold ':' itself)
+        if not set_model(value, item, use is True):
+            raise ValueError(f'No saved local gateway publishes {item}: tare setup --local-models lists them; '
+                             'name a gateway with --local-gateway URL.')
+        return value
     else:
         if category == 'search_providers':
             from .web_search import PROVIDERS
@@ -827,6 +872,16 @@ def choose(value, spec, use):
     return value
 
 
+def local_lines(value):
+    """Each saved gateway and its published models, [x] in use and [ ] off."""
+    lines = []
+    for gateway in (value.get('local_models') or {}).get('gateways') or []:
+        used = in_use(gateway)
+        lines.append(f"{gateway['origin']} ({gateway.get('kind')}), asked {gateway.get('observed', '?')}:")
+        lines += [f"  [{'x' if m in used else ' '}] {m}" for m in gateway.get('models') or []]
+    return lines or ['No local gateway is saved: tare setup --local-gateway URL.']
+
+
 def show(value, found):
     lines = [f'This machine ({store()}):' if decided(value) else f'This machine is not set up yet ({store()}).']
     for category, (label, _) in CATEGORIES.items():
@@ -838,7 +893,8 @@ def show(value, found):
         if category == 'local_models':
             for gateway in section.get('gateways') or []:
                 lines.append(f"    gateway {gateway['origin']} ({gateway.get('kind')}): "
-                             f"{len(gateway.get('models') or [])} models, asked {gateway.get('observed', '?')}")
+                             f"{len(gateway.get('models') or [])} models, {len(in_use(gateway))} in use "
+                             f"(tare setup --local-models), asked {gateway.get('observed', '?')}")
     lines.append('  Console credit reading: ' + ('on' if (value.get('console_credit') or {}).get('use') else 'off')
                  + ' (tare setup --console-credit on|off). It reads the Claude API credit from the Console Billing page '
                  'through the Claude in Chrome extension; needs Claude Code signed in and a browser signed in to the Console; '
@@ -899,7 +955,9 @@ def set_local_energy(value, key, text):
 def add_gateway(value, url):
     section = dict(value.get('local_models') or {})
     asked = ask_gateway(url)
-    section['gateways'] = [g for g in section.get('gateways') or [] if origin(g['origin']) != asked['origin']] + [asked]
+    saved = section.get('gateways') or []
+    asked = keep_choice(asked, next((g for g in saved if origin(g['origin']) == asked['origin']), None))
+    section['gateways'] = [g for g in saved if origin(g['origin']) != asked['origin']] + [asked]
     section['use'] = True
     value['local_models'] = section
     return value
@@ -1117,6 +1175,8 @@ def apply(value):
         path = storage_root()/'local-gateway.json'
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({'origin': gateways[0]['origin']}), encoding='utf-8')
+    for gateway in gateways:  # the first save after an older record: write out the choice it implied
+        gateway.setdefault('enabled', sorted(gateway.get('models') or []))
     added, retired = write_generic(value)
     return save(value), added, retired
 
@@ -1156,7 +1216,10 @@ def main(argv=None):
     parser.add_argument('--undecide', action='append', default=[], metavar='CATEGORY[:ITEM]')
     parser.add_argument('--local-gateway', action='append', default=[], metavar='URL',
                         help='A local model gateway; it is asked for its models. The first serves the shipped profiles')
-    parser.add_argument('--refresh', action='store_true', help='Ask the saved gateways for their models again')
+    parser.add_argument('--refresh', action='store_true', help='Ask the saved gateways for their models again; a model '
+                        'they publish now that they did not before is off until you turn it on')
+    parser.add_argument('--local-models', action='store_true', help='List the saved gateways and their models, on or off; '
+                        '--use local:MODEL and --no-use local:MODEL turn one on or off')
     parser.add_argument('--old-models', choices=('on', 'off'), help="Offer the CLIs' older models too (off by default: "
                         'a model a newer one of the same line, or a newer generation, replaces)')
     parser.add_argument('--console-credit', choices=('on', 'off'), help=(
@@ -1234,7 +1297,7 @@ def main(argv=None):
         for role in shown:
             if role not in PROFILE_ROLES:
                 raise ValueError(f'Unknown role {role!r}: use ' + ', '.join(PROFILE_ROLES) + '.')
-        if not changes and not args.reset and not args.json and not shown and not edits:
+        if not changes and not args.reset and not args.json and not shown and not edits and not args.local_models:
             print(show(value, detect()))
             try:
                 if not sys.stdin.isatty():
@@ -1244,6 +1307,7 @@ def main(argv=None):
             except EOFError:  # Windows reports NUL as a terminal: an empty read is no terminal either
                 print('\nNo terminal to ask in: pass --use, --no-use, --local-gateway or --credential.', file=sys.stderr)
                 return 2
+        before = copy.deepcopy(value)
         for spec in args.use:
             value = choose(value, spec, True)
         for spec in args.no_use:
@@ -1299,6 +1363,9 @@ def main(argv=None):
             value, added, retired = apply(auto(value))
             if added or retired:
                 print(f'Generic local profiles: {len(added)} added, {len(retired)} retired.', file=sys.stderr)
+            if found := new_models(before, value):
+                print(f'{len(found)} new local model(s) found, off until you turn them on '
+                      f"(tare setup --use local:MODEL): {', '.join(m for _, m in found)}.", file=sys.stderr)
         elif edits:  # on the file as it is under the lock, not as read above: another writer may have saved since
             value = update(auto)
         if shown or edits:
@@ -1310,6 +1377,9 @@ def main(argv=None):
                                  or ["Automatic routing follows tare's default for every role."])]))
             if not changes and not args.reset:
                 return 0
+        if args.local_models:
+            print('\n'.join(local_lines(value)))
+            return 0
         found = detect()
         print(json.dumps({'setup': summary(), 'found': found}, indent=1) if args.json else show(value, found))
         return 0
