@@ -13,6 +13,8 @@ CLAUDE = {'native_profile': {'protocol': 'vendor-cli', 'endpoint': 'cli://claude
           'native_execution_limits': {'request_seconds': 300}}
 CODEX = {**CLAUDE, 'native_profile': {'protocol': 'vendor-cli', 'endpoint': 'cli://codex'}}
 AGY = {**CLAUDE, 'native_profile': {'protocol': 'vendor-cli', 'endpoint': 'cli://agy'}}
+# The Messages API streams since Kernel #28: a Claude API route is judged by silence like any streaming one.
+MESSAGES = {**STREAMING, 'native_profile': {'protocol': 'anthropic-messages', 'endpoint': 'https://models.example/v1'}}
 UNLIMITED = {name: None for name in ('max_seconds', 'request_seconds', 'connect_seconds', 'read_seconds')}
 # What each caller passes today: a limited session, the unlimited conversation, a planner, an auditor, a work unit.
 CALLERS = {'limited': {'max_seconds': 300}, 'unlimited': UNLIMITED,
@@ -22,7 +24,8 @@ CALLERS = {'limited': {'max_seconds': 300}, 'unlimited': UNLIMITED,
 
 
 @pytest.mark.parametrize('caller', CALLERS)
-@pytest.mark.parametrize('route', [STREAMING, CLAUDE, CODEX, AGY], ids=['streaming-http', 'claude-cli', 'codex-cli', 'agy-cli'])
+@pytest.mark.parametrize('route', [STREAMING, MESSAGES, CLAUDE, CODEX, AGY],
+                         ids=['streaming-http', 'anthropic-messages', 'claude-cli', 'codex-cli', 'agy-cli'])
 def test_a_streaming_route_has_no_total_and_waits_one_silence_window(route, caller):
     limits = resolve(route, CALLERS[caller])
     assert limits['request_seconds'] is None
@@ -34,8 +37,8 @@ def test_a_streaming_route_has_no_total_and_waits_one_silence_window(route, call
 @pytest.mark.parametrize('caller', CALLERS)
 @pytest.mark.parametrize('route', [
     HTTP,  # not streaming: the call cannot show life while it works
-    {**STREAMING, 'native_profile': {'protocol': 'anthropic-messages', 'endpoint': 'https://models.example/v1'}}],
-    ids=['non-streaming-http', 'anthropic-messages'])
+    {**STREAMING, 'native_profile': {'protocol': 'gemini-generate-content', 'endpoint': 'https://models.example/v1'}}],
+    ids=['non-streaming-http', 'gemini-generate-content'])
 def test_a_route_that_cannot_show_life_keeps_the_total_it_had(route, caller):
     limits = resolve(route, CALLERS[caller])
     expected = {'limited': 300, 'unlimited': None, 'planner': 600, 'auditor': 600, 'unit': 900}[caller]
