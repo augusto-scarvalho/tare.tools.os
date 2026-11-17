@@ -277,6 +277,47 @@ def test_no_eligible_reviewer_means_no_review_and_the_plan_returns_as_it_is(conv
     assert 'findings' not in value['review'] and stub.roles() == ['planner'] and tool.calls_committed() == 2
 
 
+@pytest.mark.parametrize('how', ['none', 'self', 'same-family'])
+def test_with_no_other_reviewer_the_planners_own_local_model_reviews_only_where_the_user_ticked_it(conversation, monkeypatch, how):
+    from relay import environment
+    tool, control, stub, parent, state = conversation
+    stub.pick = {'none': (None, {}), 'self': (dict(stub.reviewer, id='fixture-planner'), {}),
+                 'same-family': stub.pick}[how]
+    stub.kind = 'AUDITOR_NOT_INDEPENDENT' if how == 'same-family' else stub.kind
+    asked = []
+    monkeypatch.setattr(environment, 'granted', lambda role, deployment, value=None: asked.append(
+        (role, deployment['id'])) or True)
+    value = delegate(conversation)
+    assert asked == [('plan-auditor', 'fixture-planner')]
+    config, deployment, root, instruction, opts = stub.sessions[1]
+    assert deployment['id'] == stub.sessions[0][1]['id'] and instruction == planning_tools.CRITIC_BRIEF
+    assert config['role'] == 'plan-auditor' and config['capabilities'] == ['read', 'list', 'search']
+    assert value['review']['own_model'] is True and value['review']['independent'] is False
+    assert stub.roles() == ['planner', 'plan-auditor', 'revision']  # its REVISE makes the planner revise once too
+    assert dialog(parent, 'revision').startswith(
+        "Review by the planner's own model as a critic (not independent) of the first plan: REVISE\n")
+    assert receipt(parent)['critic']['own_model'] is True
+
+
+def test_an_accepting_self_review_and_a_same_vendor_review_never_read_as_independent(conversation, monkeypatch):
+    from relay import environment
+    tool, control, stub, parent, state = conversation
+    stub.pick = (None, {})
+    stub.verdict = {'verdict': 'ACCEPT', 'summary': 'Sound.', 'findings': [], 'remaining': [], 'sources': []}
+    monkeypatch.setattr(environment, 'granted', lambda role, deployment, value=None: True)
+    delegate(conversation)
+    assert dialog(parent).startswith("The planner's own model, asked again as a critic, accepted this plan "
+                                     "(not independent).\n\nPlan.")
+
+
+def test_a_same_vendor_revise_is_not_called_independent(conversation):
+    tool, control, stub, parent, state = conversation
+    stub.kind = 'SAME_VENDOR_NOT_INDEPENDENT'
+    stub.revision = {'status': 'EXHAUSTED', 'reason': 'Out of calls.', 'failure_code': 'CALL_LIMIT'}
+    delegate(conversation)
+    assert dialog(parent).startswith('Review by the same vendor (not independent) of this plan: REVISE\n')
+
+
 def test_the_shared_call_budget_that_cannot_fund_a_review_skips_it(conversation):
     tool, control, stub, parent, state = conversation
     state['limits']['max_model_calls'] = 6  # 1 parent + 2 planner + 2 reserved leaves 1

@@ -38,11 +38,16 @@ def review_lines(artifact):
         review = result.get('review') or {}
         if review.get('status') != 'REVIEWED' or Path(result['artifact']).resolve() != artifact.resolve():
             return []
+        own = review.get('own_model') is True  # the user ticked the planner's own local model as plan reviewer
         if review['verdict'] == 'ACCEPT' and not review.get('findings'):
             return ['A reviewer of another vendor accepted this plan.' if review.get('independent') else
+                    "The planner's own model, asked again as a critic, accepted this plan (not independent)." if own else
                     'A reviewer accepted this plan (reviewed by the same vendor: not independent).', '']
         revised = review.get('revised') is True  # the plan below is then the planner's one revision with the findings
-        return ['Independent review of '+('the first' if revised else 'this')+' plan: '+review['verdict'], *(
+        who = ('Independent review' if review.get('independent') else
+               "Review by the planner's own model as a critic (not independent)" if own else
+               'Review by the same vendor (not independent)')
+        return [who+' of '+('the first' if revised else 'this')+' plan: '+review['verdict'], *(
             f'- {f["claim"]}'+(' (Files: '+', '.join(f['paths'])+')' if f.get('paths') else '') for f in review['findings']),
             'The planner revised the plan once with these findings; the plan below is the revised one.' if revised else
             'The reviewer only advises. Implement as it is, or change the plan.', '']
