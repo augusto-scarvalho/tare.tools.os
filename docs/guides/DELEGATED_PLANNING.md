@@ -34,6 +34,8 @@ line's own class, and the model is in the highest class whose weakest anchor it 
 anchor, cheap). It is placed only when the route's model matches exactly one row (an OpenRouter route by the row's
 permaslug, any other by name and vendor) and the two latest readings of one source agree; otherwise it has no class and
 counts as cheap, as before. `tare models` says it as "middling: reaches Gemini 4 Argon on openrouter, 2026-11-16".
+Where a person reads the lowest class (`tare models`, the routes matrix, the plan shown for approval) it is shown as "basic", because the name `cheap`
+read as a judgement of price or quality: the class is the one enough for simple work, and a model in it may be dear. Only the shown word changes: the plan's `needs: cheap`, receipts, `--json` and what a model is told keep `cheap`.
 A model that is the best in general may know nothing of CAD or 3D, so tare also keeps a catalogue of task types
 (`relay/task_types.json`: software engineering, web and front-end, mathematics, physics and natural sciences, legal,
 consulting and finance work, cybersecurity, engineering, CAD, and types with no source yet, among them art and audio made by code, which no public board measures) and, for each, an ordered

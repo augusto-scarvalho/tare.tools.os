@@ -3361,8 +3361,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator model selection; Runtime retains session execution.",
-      "size_bytes": 35965,
-      "sha256": "2888b23d4b873468d6f7dcff17d78402201a17c90a443d5f3dbec625d5c2815e"
+      "size_bytes": 36011,
+      "sha256": "78fcbe66cbece620af7d815f254c69e20821869ddc6a87a63ab5f13084d8870d"
     },
     {
       "name": "model_picker.py",
@@ -4131,8 +4131,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 25878,
-      "sha256": "f416a4bbc5d0f1ce2401287c3581af809532c6f683a47fa3e7893f48acd8cf26"
+      "size_bytes": 25918,
+      "sha256": "fa0fe3e711dd3032676cae309d9547a72b0aa17dee7dd21b26e816f674be35ab"
     },
     {
       "name": "execution_permission_panel.py",
@@ -4451,8 +4451,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 34910,
-      "sha256": "c28f84dfd1147c63b78bd3aa5619475234568f4646901615abdf6bc4ebb9c0a0"
+      "size_bytes": 34924,
+      "sha256": "2467245f6259a15bd08614beca8350ee006248c18cbe68544df700c547e7dc23"
     },
     {
       "name": "console_credit.py",
@@ -4481,8 +4481,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 53089,
-      "sha256": "876d2268a9caa60b7f3fac45e1b7886a5556604a6cdf5b1a9ba535366a135579"
+      "size_bytes": 53431,
+      "sha256": "38a8ad12481c8ce59a7c452cafbb2bd7962932efbdb69a4d966d5ab4d506b222"
     },
     {
       "name": "plan_consumption.py",

@@ -316,11 +316,11 @@ def test_tare_models_type_shows_each_models_class_for_the_type_and_where_it_came
     saved_boards()
     model_choices.main(['--include-unconfigured', '--vendor', 'Google', '--type', 'math'])
     out = capsys.readouterr().out
-    assert 'Class for mathematics: cheap for mathematics (Epoch FrontierMath tiers 1-3, read 14 Nov)' in out
+    assert 'Class for mathematics: basic for mathematics (Epoch FrontierMath tiers 1-3, read 14 Nov)' in out
     assert 'Source: Epoch AI, Capabilities & benchmarking, CC BY 4.0 (epoch.ai/benchmarks); FrontierMath, as of 2026-11-10.' in out
     model_choices.main(['--include-unconfigured', '--vendor', 'Google', '--type', '3d'])
     out = capsys.readouterr().out
-    assert 'Class for 3D modelling: cheap (general: no board places it for 3D modelling)' in out and 'Source: Epoch' not in out
+    assert 'Class for 3D modelling: basic (general: no board places it for 3D modelling)' in out and 'Source: Epoch' not in out
 
 
 def test_tare_models_type_in_json_marks_a_class_from_a_board_and_one_that_is_general(capsys):

@@ -1,5 +1,6 @@
 """Model signals: matching a source's names to model lines, the saved reading, and the class of a route."""
 import json
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -183,7 +184,7 @@ def test_the_hand_class_serves_when_there_is_no_reading_and_a_model_without_a_li
         assert signals.klass(route(model)) == {'class': name, 'from': 'line'}
     assert signals.klass(route('moonshotai/kimi-k3.1-pro')) is None and signals.klass(route('gpt-realtime-2.1')) is None
     assert signals.describe(None).startswith('none') and signals.describe({'class': 'cheap', 'from': 'line'}) \
-        == 'cheap (line default)'
+        == 'basic (line default)'
 
 
 def test_tare_models_shows_the_class_numbers_source_and_attribution(capsys, keyed):
@@ -192,7 +193,7 @@ def test_tare_models_shows_the_class_numbers_source_and_attribution(capsys, keye
     signals.refresh_reading(NOW + 2*DAY, fetch=serve({'openrouter': OPENROUTER, 'arena': ARENA}))
     model_choices.main(['--include-unconfigured', '--vendor', 'Google'])
     out = capsys.readouterr().out
-    assert 'Class: cheap (reading; openrouter 2026-11-14: intelligence 30.8)' in out  # AGY Flash, high
+    assert 'Class: basic (reading; openrouter 2026-11-14: intelligence 30.8)' in out  # AGY Flash, high
     assert 'Class: frontier (line default)' in out  # Carbon at medium: the reading is at high
     assert 'Source: Artificial Analysis (artificialanalysis.ai) via OpenRouter' in out
 
@@ -262,4 +263,13 @@ def test_an_older_version_of_a_line_is_one_class_lower_and_a_bedrock_id_is_read_
                'native_profile': {'model': 'us.anthropic.claude-opus-4-6-v1', 'parameters_json': '{}'}}
     found = signals.klass(bedrock)
     assert found == {'class': 'cheap', 'from': 'line', 'older_than': '5.5'}
-    assert signals.describe(found) == 'cheap (line default, one class lower: an older version than 5.5)'
+    assert signals.describe(found) == 'basic (line default, one class lower: an older version than 5.5)'
+
+
+def test_the_lowest_class_is_shown_as_basic_and_its_value_stays_cheap():
+    assert [signals.shown(c) for c in signals.ORDER] == ['basic', 'middling', 'frontier'] and signals.shown('x') == 'x'
+    assert signals.describe_record(Counter({'ran': 1, 'passed': 1, ('needs', 'cheap', 'ran'): 1,
+                                                     ('needs', 'cheap', 'passed'): 1})).endswith('needed basic: 1 of 1 passed')
+    assert signals.ORDER[0] == 'cheap'
+    from relay.native_artifacts import GraphTask
+    assert GraphTask.model_json_schema()['properties']['needs']['anyOf'][0]['enum'] == ['cheap', 'middling', 'frontier']

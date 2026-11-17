@@ -114,7 +114,8 @@ def describe(name, value):
         group, connection = 'API', 'API · ' + (urlsplit(endpoint).hostname or endpoint)
     if 'native_auto_routes' in value:
         # Resolved when a new session starts; a blocked or exhausted turn continues on the next tier.
-        key, label, group, connection = name, 'tare auto', 'tare', 'cheap → middling → frontier'
+        from .model_signals import ORDER, shown
+        key, label, group, connection = name, 'tare auto', 'tare', ' → '.join(map(shown, ORDER))
         from .execution_scope import current
         scope=current()
         if scope.only or scope.prefer=='local':

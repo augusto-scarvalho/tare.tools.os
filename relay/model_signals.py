@@ -49,6 +49,12 @@ EPOCH = 'https://epoch.ai/data/benchmark_data.zip'  # one archive of CSV files, 
 BOARDS_SCHEMA = 'tare.tools/task-boards/1'
 CAP = 8*1024*1024  # the most accepted from the network, and from one member of the archive once opened
 ORDER = ('cheap', 'middling', 'frontier')  # ascending: a route reaches a need when its class is not before it
+
+
+def shown(name):
+    """The word a person reads for a class: 'cheap' is the lowest class, enough for simple work, and a model in it may be dear.
+    Only for text a person reads; the value stays 'cheap' in plans, receipts, JSON and what a model is told."""
+    return 'basic' if name == 'cheap' else name
 BRACKET = re.compile(r'(.+?)\s*\(([^()]*)\)')
 
 
@@ -588,7 +594,7 @@ def describe_record(tally):
             f"{tally['accepted']} of {tally['audited']} audits accepted; {tally['applied']} applied")
     for needed in ORDER:
         if tally['needs', needed, 'ran']:
-            text += f"; needed {needed}: {tally['needs', needed, 'passed']} of {tally['needs', needed, 'ran']} passed"
+            text += f"; needed {shown(needed)}: {tally['needs', needed, 'passed']} of {tally['needs', needed, 'ran']} passed"
     for kind in TYPES:  # the only measure a type no board covers has (games, art, audio)
         if ran := tally['kind', kind['id'], 'ran']:
             text += (f"; {kind['id']} work: {tally['kind', kind['id'], 'passed']} of {ran} passed, "
@@ -656,9 +662,9 @@ def describe(result):
     if not result:
         return 'none (no model line, and no benchmark row to place it by)'
     if result['from'] == 'anchors':
-        return (f"{result['class']}: {'falls below' if result['class'] == 'cheap' else 'reaches'} {result['anchor']} "
+        return (f"{shown(result['class'])}: {'falls below' if result['class'] == 'cheap' else 'reaches'} {result['anchor']} "
                 f"on {result['source']}, {result['as_of']}") + _of_base(result)
-    text = result['class'] + (' (reading' if result['from'] == 'reading' else ' (line default')
+    text = shown(result['class']) + (' (reading' if result['from'] == 'reading' else ' (line default')
     if result['from'] == 'line' and 'older_than' in result:
         text += f", one class lower: an older version than {result['older_than']}"
     if 'source' in result:
@@ -905,10 +911,10 @@ def describe_type(found):
     """One phrase for `tare models --type`: 'middling for mathematics (Epoch FrontierMath, read 16 Nov)', or the general
     class and why: 'frontier (general: no board places it for CAD)'."""
     if found['general']:
-        return (f"{found['class']} (general: " if found['class'] else 'none (no general class either: ') \
+        return (f"{shown(found['class'])} (general: " if found['class'] else 'none (no general class either: ') \
             + f"no board places it for {found['label']})"
     votes = ', votes' if found['kind'] == 'preference' else ''
-    return f"{found['class']} for {found['label']} ({found['source']}{votes}, read {_day(found['read_at'])})" + _of_base(found)
+    return f"{shown(found['class'])} for {found['label']} ({found['source']}{votes}, read {_day(found['read_at'])})" + _of_base(found)
 
 
 def types_report(kept):

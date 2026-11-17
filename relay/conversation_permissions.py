@@ -16,6 +16,7 @@ import time
 from compute_plane.native_journal import custody_lock, regular, save_json
 from compute_plane.native_models import encode
 
+from .model_signals import shown
 from .worker_wait import waiting_for_user
 
 SCHEMA = 'tare.tools/execution-permission/1'
@@ -44,7 +45,7 @@ def plan_text(root, request):
             out.append('  Checks: '+', '.join([*task.get('verifiers', []), *task.get('test_paths', [])]))
         # What the planner said that chooses the implementer: the user sees it before it runs, and "ask for changes"
         # is how to correct it.
-        hints = [*(['needs a '+task['needs']+' model'] if task.get('needs') else []),
+        hints = [*(['needs a '+shown(task['needs'])+' model'] if task.get('needs') else []),
                  *([task['kind']+' work'] if task.get('kind') else []),
                  *(['critical: the best model for it, whatever it costs'] if task.get('critical') else []),
                  *(['effort '+task['effort']] if task.get('effort') else [])]
