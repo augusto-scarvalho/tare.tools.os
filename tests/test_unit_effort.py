@@ -89,7 +89,7 @@ def test_a_level_the_route_does_not_list_is_clamped_to_the_highest_it_lists_belo
     top_high = ['low', 'medium', 'high']
     ran.found[FABLE]['native_reasoning_levels'] = top_high  # a model that tops at high, asked for max by the board
     assert ran({FABLE: 'low'}, {'fable-5-2': ('frontier', 'max')}, work_type='coding')[FABLE] == 'high'
-    assert ran(unit_effort='max')[FABLE] == 'high'  # the plan's too
+    assert ran(unit_effort='xhigh')[FABLE] == 'high'  # the plan's too
     # a local profile that declares low and medium: the board's max is medium, higher than its own low
     ran.found['cheap']['native_reasoning_levels'] = ['low', 'medium']
     assert ran({'cheap': 'low'}, {'q': ('frontier', 'max')}, work_type='coding')['cheap'] == 'medium'
@@ -119,7 +119,7 @@ def test_a_stated_effort_applies_to_every_automatic_route_lower_ones_included_an
     board = {'fable-5-2': ('frontier', 'max')}
     assert ran({FABLE: 'high'}, board, work_type='coding', unit_effort='medium') == {
         'cheap': None, 'openrouter-deepseek': 'medium', FABLE: 'medium'}  # lower than high, not max
-    assert ran(unit_effort='low')[FABLE] == 'low' and ran(unit_effort='max')[FABLE] == 'max'  # with no type at all
+    assert ran(unit_effort='low')[FABLE] == 'low' and ran(unit_effort='xhigh')[FABLE] == 'xhigh'  # with no type at all
 
 
 def test_a_pin_and_a_route_and_effort_the_coordinator_fixed_are_untouched(ran, monkeypatch):
@@ -143,11 +143,13 @@ def test_the_boards_are_read_once_for_the_whole_unit(ran, monkeypatch):
 
 
 def test_the_field_validates_refuses_an_unknown_level_and_a_plan_saved_before_it_keeps_its_digest():
-    assert GraphTask(**TASK).effort is None and GraphTask(**TASK, effort='max').effort == 'max'
+    assert GraphTask(**TASK).effort is None and GraphTask(**TASK, effort='xhigh').effort == 'xhigh'
+    with pytest.raises(ValueError):  # max is the user's to choose (a pin at @max), never the planner's
+        GraphTask(**TASK, effort='max')
     with pytest.raises(ValueError):
         GraphTask(**TASK, effort='ludicrous')
     assert GraphTask.model_json_schema()['properties']['effort']['description'] == (
-        'How hard the implementer should think on this task: low, medium, high, xhigh or max. Leave it out: for a '
+        'How hard the implementer should think on this task: low, medium, high or xhigh. Leave it out: for a '
         'task that names its type of work tare then raises the model to high (xhigh when the task is critical), else '
         'it runs at the route\'s own effort. State it only when the task clearly needs more thought than that, or is '
         'mechanical and needs little.')
@@ -171,7 +173,7 @@ def test_a_merged_unit_takes_the_highest_effort_its_tasks_state(host):
         tasks.task_plan(tools.root, tools.state['config'], task, {'artifact': str(artifact)})
         return task['plan']['unit']
     assert unit_of({'effort': 'low'}, {'effort': 'xhigh'}, {'effort': 'medium'}, {})['effort'] == 'xhigh'
-    assert unit_of({'effort': 'max'}, {'effort': 'high'})['effort'] == 'max'
+    assert unit_of({'effort': 'xhigh'}, {'effort': 'high'})['effort'] == 'xhigh'
     assert 'effort' not in unit_of({'needs': 'frontier'}, {})
 
 
@@ -208,7 +210,7 @@ def test_the_outcome_row_and_the_delivery_carry_the_effort_it_ran_at_and_why(mon
     tops_high['native_reasoning_levels'] = ['low', 'medium', 'high']
     assert work_units.class_row({'kind': 'coding'}, turn_engine.with_effort(tops_high, 'high')) == {
         'effort': 'high', 'effort_from': 'Board one.csv'}
-    assert work_units.class_row({'effort': 'max'}, turn_engine.with_effort(tops_high, 'high')) == {
+    assert work_units.class_row({'effort': 'xhigh'}, turn_engine.with_effort(tops_high, 'high')) == {
         'effort': 'high', 'effort_from': 'plan'}
     # the plan's effort wins, and is said as the plan's
     assert work_units.class_row({'kind': 'coding', 'effort': 'low'}, at('low')) == {'effort': 'low', 'effort_from': 'plan'}

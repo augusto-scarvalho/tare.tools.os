@@ -2161,8 +2161,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 17616,
-      "sha256": "fbc77ec89e2ef4da3c16d1a17ce8e02b10a6ccd8cb27fdede6efc3434846ca1e"
+      "size_bytes": 17820,
+      "sha256": "6488d429b95e60d3e4e4f19d44ee502d3828c23037537888babff0998bf401b8"
     },
     {
       "name": "native_attempt.py",

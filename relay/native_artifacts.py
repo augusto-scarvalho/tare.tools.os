@@ -77,8 +77,10 @@ class GraphTask(Record):
         'data migration or deletion, a public interface others depend on, a result nobody will check. tare then gives '
         'the task to the best model for its type, whatever it costs. Leave it out for ordinary work: tare then uses '
         'the cheapest model that is good enough.'))
-    effort: Literal[EFFORTS] | None = Field(default=None, description=(
-        'How hard the implementer should think on this task: low, medium, high, xhigh or max. Leave it out: for a '
+    # Without max: tare and the planner never choose it (owner, 2026-11-16: little is gained from it, and it is the
+    # user's to choose, with an implementer pin at @max or by telling the coordinator).
+    effort: Literal[EFFORTS[:-1]] | None = Field(default=None, description=(
+        'How hard the implementer should think on this task: low, medium, high or xhigh. Leave it out: for a '
         'task that names its type of work tare then raises the model to high (xhigh when the task is critical), else '
         'it runs at the route\'s own effort. State it only when the task clearly needs more thought than that, or is '
         'mechanical and needs little.'))
