@@ -29,7 +29,7 @@ def node(monkeypatch):
         state['fleet'] = value
         return node_view(value)
     monkeypatch.setattr(fleet, 'save', save)
-    monkeypatch.setattr(fleet, 'remember', lambda origin: state.update(remembered=origin))
+    monkeypatch.setattr(fleet, 'remember', lambda origin, added=(): state.update(remembered=origin))
     monkeypatch.setattr('relay.gpu.node_token', lambda: 'node-token')
     return state
 
@@ -59,10 +59,11 @@ def test_a_model_the_user_adds_to_the_fleet_is_in_use_at_once(monkeypatch):
     applied = []
     monkeypatch.setattr(environment, 'read', lambda: saved)
     monkeypatch.setattr(environment, 'ask_gateway', lambda origin: {'origin': origin, 'kind': 'ninfer', 'observed': 'now',
-                                                                    'models': ['mine', 'qwen38-gsq', 'spare']})
+                                                                    'models': ['elsewhere', 'mine', 'qwen38-gsq', 'spare']})
     monkeypatch.setattr(environment, 'apply', applied.append)
-    fleet.remember(ORIGIN)
-    assert applied[0]['local_models']['gateways'][0]['enabled'] == ['mine', 'qwen38-gsq']  # `spare` stays off
+    fleet.remember(ORIGIN, added={'mine': {}, 'spare': {}})
+    # `spare` was already published and off: it stays off. `elsewhere` appeared on the node but was not added here.
+    assert applied[0]['local_models']['gateways'][0]['enabled'] == ['mine', 'qwen38-gsq']
 
 
 def test_tare_auto_runs_the_default_of_the_nodes_fleet(monkeypatch):

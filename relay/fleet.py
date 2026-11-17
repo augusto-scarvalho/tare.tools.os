@@ -29,24 +29,25 @@ def save(origin, token, fleet):
         raise ValueError(f'The node kept its fleet: {reason}') from None
 
 
-def remember(origin):
+def remember(origin, added=()):
     """After the fleet changed: this machine's setup asks the node again, so the picker shows what it serves now,
-    tare auto runs its default and an own model gets its generic profile."""
+    tare auto runs its default and an own model gets its generic profile. `added`: the names this change put in the
+    fleet; the ones that are new here are in use at once (the user added them), while any other model the node
+    started publishing meanwhile stays off like every discovery."""
     from .environment import apply, read, refresh_gateway
     value = read()
     gateways = (value.get('local_models') or {}).get('gateways') or []
     if 'error' not in value and gateways and gateways[0]['origin'].rstrip('/') == origin:
         before = set(gateways[0].get('models') or [])
         gateway = refresh_gateway(value)['local_models']['gateways'][0]
-        # What a fleet change added is in use at once: the user added it here, unlike a model found on a later ask.
-        gateway['enabled'] = sorted(set(gateway['enabled']) | set(gateway['models']) - before)
+        gateway['enabled'] = sorted(set(gateway['enabled']) | (set(gateway['models']) - before) & set(added))
         apply(value)
 
 
 def change(origin, token, fleet):
     """Save the fleet on the node and in this machine's view of it; the node's answer (see `view`)."""
     value = save(origin, token, fleet)
-    remember(origin)
+    remember(origin, added=[*(fleet.get('models') or []), *(fleet.get('custom') or {})])  # what the user put in the fleet
     return value
 
 
