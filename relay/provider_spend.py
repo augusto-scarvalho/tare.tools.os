@@ -4,7 +4,8 @@ For OpenCode's subscription, which charges nothing per call, it keeps the plan a
 Most providers publish no balance for an ordinary API key. The operator states the balance once (tare quota --set
 ACCOUNT AMOUNT) and tare subtracts the dollars its own sessions record from then on. It counts tare's use only: use
 of the same key elsewhere needs a new statement. A credit that renews each month and does not carry over (Anthropic's
-Max plan API credit) is stated with --renews DAY [GRANT]: from each renewal the balance is the grant again.
+Max plan API credit) is stated with --renews DAY [GRANT]: from each renewal the balance is the grant again. A credit
+that lapses on a day and never renews (a cloud's promotional credit) is stated with --expires DATE.
 """
 import calendar
 import json
@@ -286,15 +287,20 @@ def declared():
             } if isinstance(value, dict) else {}
 
 
-def declare(name, usd, now=None, renews=None, window=None):
+def declare(name, usd, now=None, renews=None, window=None, expires=None):
     """State the balance of an account as of now; the spend counted against it starts here. `renews`: (day of the
     month, dollars each cycle brings) for a credit that renews and does not carry over. `window`: (start, end, dollars
-    granted) for a credit read from the Console, which lapses at `end`; one entry has `renews` or `window`, not both."""
+    granted) for a credit read from the Console, which lapses at `end`; one entry has `renews` or `window`, not both.
+    `expires`: the epoch a credit stated by hand lapses at, never renewing: a window from now holding the balance."""
     if name not in DECLARABLE:
         raise ValueError('unknown account ' + repr(name) + '; one of ' + ', '.join(sorted(DECLARABLE)))
     if not 0 <= usd < 1e9:
         raise ValueError('the balance is a dollar amount of zero or more')
     entry = {'usd': float(usd), 'at': time.time() if now is None else now}
+    if expires is not None:
+        if window or not (usd > 0 and entry['at'] < expires):
+            raise ValueError('--expires takes a day still to come, for a balance above zero')
+        window = (entry['at'], expires, usd)
     if renews:
         entry['renews'] = {'day': renews[0], 'usd': float(renews[1])}
         if not _renews(entry['renews']):
@@ -305,6 +311,8 @@ def declare(name, usd, now=None, renews=None, window=None):
         entry['window'] = dict(zip(('start', 'end', 'usd'), map(float, window)))
         if not _window(entry['window']):
             raise ValueError('a window is a start before its end and a grant above zero')
+        if expires is not None:
+            entry['window']['stated'] = True  # by the owner, not read from the Console
     from .relay_io import write_json_atomic
     balances = {**declared(), name: entry}
     folder().mkdir(parents=True, exist_ok=True)
@@ -323,7 +331,8 @@ def remaining(name, now=None):
         if (time.time() if now is None else now) >= window['end']:
             return None  # the credit lapsed; the next Console reading states the new one
         total = window['usd']
-        extra = {'renews_at': window['end'], 'cycle_start': window['start'], 'grant': total, 'console': True}
+        extra = {'renews_at': window['end'], 'cycle_start': window['start'], 'grant': total,
+                 'stated' if window.get('stated') else 'console': True}
     elif renews := balance.get('renews'):
         start, end = cycle(renews['day'], time.time() if now is None else now)
         total = renews['usd']
