@@ -16,9 +16,9 @@
     "model": "gpt-6-astra",
     "endpoint": "https://api.openai.com/v1",
     "context_window": 131072,
-    "output_tokens": 8192,
+    "output_tokens": 32768,
     "parameters_json": "{\"reasoning\":{\"effort\":\"medium\",\"mode\":\"pro\"}}",
-    "source": "https://developers.openai.com/api/docs/models/gpt-6-astra; conservative Tare context/output caps, not provider maxima; Pro execution mode: https://developers.openai.com/api/docs/guides/reasoning#reasoning-mode"
+    "source": "https://developers.openai.com/api/docs/models/gpt-6-astra; conservative Tare context/output caps, not provider maxima; the output cap is 32,768, not 8,192, because reasoning tokens count toward max_output_tokens and a response can end incomplete before any visible output; OpenAI recommends reserving at least 25,000 tokens for reasoning and output (https://platform.openai.com/docs/guides/reasoning, read 2026-11-17); Pro execution mode: https://developers.openai.com/api/docs/guides/reasoning#reasoning-mode"
   },
   "native_usage_contract": {
     "layout": "responses-inclusive",

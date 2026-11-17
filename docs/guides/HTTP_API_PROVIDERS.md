@@ -54,8 +54,9 @@ Saved conversations keep their profiles and histories. These additional models d
 change the automatic role policies. Claude API uses the provider's default thinking
 and effort; OpenAI and Gemini expose the levels Tare already supports.
 
-The context limit of 131072 and the output limit of 8192 are conservative Tare ceilings,
-**not** provider maximums. Other parameters supported by ModelProfile
+The context limit of 131072 and the output limit of 32768 are conservative Tare ceilings,
+**not** provider maximums. The output limit is not lower because reasoning tokens count toward it: a response can
+end incomplete before any visible output. Other parameters supported by ModelProfile
 remain configurable in your own profiles; reasoning must follow the protocol and
 not reuse another provider's format indiscriminately.
 
@@ -83,7 +84,8 @@ responses-inclusive; Claude: anthropic-exclusive; Gemini: chat-inclusive, only
 for the compatible counters reported; missing values stay unknown.
 A prior estimated count is not observed usage or proof of billing.
 
-Claude Messages streams (Kernel #28): a session on a Claude API route is judged by the silence of its
+Claude Messages streams (Kernel #28), and so does Gemini through Google's compatible endpoint (Kernel #29): a
+session on a Claude or Gemini API route is judged by the silence of its
 stream (600 s without a byte), not by a total of its own, like the other streaming routes. A direct call
 outside a session (a title, a search) still asks for the complete response.
 Gemini Argon has implicit cache, with no explicit cache configuration. Claude uses

@@ -131,18 +131,23 @@ def codex_login_available(deployment):
 
 
 def supports_streaming(deployment):
-    """Only use transports whose streamed tool frames match the qualified codec."""
-    profile=deployment['native_profile']
-    if profile['protocol'] in {'vendor-cli','gemini-generate-content'}:return False
-    # Google's compatibility endpoint emits complete tool calls without stream
-    # indexes. The full-response codec preserves them and their thought signatures.
-    from urllib.parse import urlsplit
-    return ((deployment.get('native_usage_contract') or {}).get('layout')!='gemini-chat'
-            and urlsplit(profile['endpoint']).hostname!='generativelanguage.googleapis.com')
+    """Every HTTP protocol streams (Gemini's two since Kernel #29); a vendor CLI shows life its own way."""
+    return deployment['native_profile']['protocol']!='vendor-cli'
 
 
 def streaming(deployment):
     return deployment.get('native_streaming',False) and supports_streaming(deployment)
+
+
+def session_streaming(state, deployment):
+    """A saved session streams as it began: its replies carry the adapter's identity, and streaming is part of it.
+    A session saved before the choice was recorded began when Google's compatible endpoint did not stream, whatever
+    its profile says."""
+    if 'streaming' in state:
+        return state['streaming']
+    from urllib.parse import urlsplit
+    return (streaming(deployment) and (deployment.get('native_usage_contract') or {}).get('layout')!='gemini-chat'
+            and urlsplit(deployment['native_profile']['endpoint']).hostname!='generativelanguage.googleapis.com')
 
 
 def inference_client(deployment, profile, *, credential, metadata_only=False, context_guidance=False, **transport):
