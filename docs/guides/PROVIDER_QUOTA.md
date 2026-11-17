@@ -165,7 +165,9 @@ Under each such account `tare quota`, `/usage` and `/quota` add one line, and `t
 
 It is tare's use only, from its own ledger, to set beside the provider's bill. OpenRouter is the one provider whose
 ordinary key also says what the provider counted: its line `OpenRouter's own count for this key: today US$ …, this
-week US$ …, this month US$ … (OpenRouter's day, week and month)` comes from its `/key` endpoint. Anthropic's and
+week US$ …, this month US$ … (OpenRouter's day, week and month)` comes from its `/key` endpoint. The two readings
+stand apart: a key that may not read the account's balance (`/credits` answers 403) still shows its own count, under
+a line saying the balance is unknown. Anthropic's and
 OpenAI's usage and cost reports refuse an ordinary key (HTTP 401 and 403, probed 2026-11-17): they take an admin key.
 
 ### The provider's own count with an admin key (Anthropic, OpenAI)
