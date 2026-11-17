@@ -100,6 +100,34 @@ def test_openrouter_credit_is_what_was_bought_minus_what_was_used():
         provider_quota.parse_openrouter({'data': {}})
 
 
+def test_openrouters_own_count_for_the_key_is_one_note_and_its_failure_keeps_the_balance(monkeypatch):
+    counted = {'data': {'usage': 9.1, 'usage_daily': 0, 'usage_weekly': 0.061, 'usage_monthly': 1.5, 'limit': None}}
+    assert provider_quota.openrouter_use(counted) == ("OpenRouter's own count for this key: today US$ 0.00, this week US$ 0.06, "
+                                                      "this month US$ 1.50 (OpenRouter's day, week and month)")
+    assert provider_quota.openrouter_use({'data': {'usage_weekly': 'x'}}) == '' and provider_quota.openrouter_use([]) == ''
+    from compute_plane import native_models
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def get_observed(self, path, control):
+            if path == '/key':
+                return Client.key()
+            return {'data': {'total_credits': 20, 'total_usage': 15}}, {}
+
+    monkeypatch.setattr(native_models, 'NativeHttpClient', Client)
+    Client.key = staticmethod(lambda: (counted, {}))
+    reading = provider_quota.read_openrouter('k', NOW)
+    assert reading['credit']['remaining'] == 5 and reading['notes'][0].startswith("OpenRouter's own count for this key: today")
+
+    def refused():
+        raise OSError('403')
+    Client.key = staticmethod(refused)
+    assert provider_quota.read_openrouter('k', NOW) == {'credit': {'currency': 'USD', 'total': 20, 'remaining': 5},
+                                                         'source': 'GET https://openrouter.ai/api/v1/credits'}
+
+
 @pytest.fixture
 def providers(monkeypatch, tmp_path):
     monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path))

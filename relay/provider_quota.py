@@ -136,6 +136,17 @@ def parse_openrouter(value):
     return {'currency': 'USD', 'total': total, 'remaining': round(total - used, 6)}
 
 
+def openrouter_use(value):
+    """`GET /key`: the dollars OpenRouter itself counted for this key in its own day, week and month, as one note
+    to set beside tare's own count; '' when it reports none of them."""
+    data = value.get('data') if isinstance(value, dict) else None
+    used = [(label, data[field]) for label, field in (('today', 'usage_daily'), ('this week', 'usage_weekly'),
+                                                     ('this month', 'usage_monthly'))
+            if isinstance(data, dict) and type(data.get(field)) in (int, float)]
+    return ("OpenRouter's own count for this key: " + ', '.join(f'{label} US$ {amount:.2f}' for label, amount in used)
+            + " (OpenRouter's day, week and month)") if used else ''
+
+
 def run(executable, *arguments, timeout=90):
     from .turn_engine import cli_env
     done = subprocess.run([executable, *arguments], capture_output=True, text=True, encoding='utf-8', errors='replace',
@@ -264,9 +275,15 @@ def read_openrouter(key, now):
     from tare_tools_agent_runtime import BindingRef, CancellationToken, ExecutionControl
     control = ExecutionControl(BindingRef('provider-quota', 'openrouter', 'operator', 1, 'openrouter'),
                                CancellationToken(), time.monotonic() + 20)
-    value, _ = NativeHttpClient('https://openrouter.ai/api/v1', credential=lambda: key,
-                                timeout_seconds=20).get_observed('/credits', control)
-    return {'credit': parse_openrouter(value), 'source': 'GET https://openrouter.ai/api/v1/credits'}
+    client = NativeHttpClient('https://openrouter.ai/api/v1', credential=lambda: key, timeout_seconds=20)
+    value, _ = client.get_observed('/credits', control)
+    reading = {'credit': parse_openrouter(value), 'source': 'GET https://openrouter.ai/api/v1/credits'}
+    try:  # a second opinion on what was spent: its failure must not lose the balance
+        if note := openrouter_use(client.get_observed('/key', control)[0]):
+            reading['notes'] = [note]
+    except Exception:
+        pass
+    return reading
 
 
 CLIS = {'cli://claude': ('claude', 'Claude subscription', read_claude),
