@@ -551,8 +551,9 @@ def _of_base(found):
 
 def own_record(storage=None):
     """How each route did as implementer on this machine, from the unit receipts: {route: {'ran', 'passed',
-    'audited', 'accepted', 'applied', and per class a unit needed ('needs', class): [ran, passed]}}. Raw counts,
-    shown and never steering: harder work already goes to stronger models, so they do not compare two."""
+    'audited', 'accepted', 'applied', per class a unit needed ('needs', class, 'ran' | 'passed'), and per type of work
+    a unit named ('kind', id, 'ran' | 'passed' | 'audited' | 'accepted'; a unit of several types counts in each)}}.
+    Raw counts, shown and never steering: harder work already goes to stronger models, so they do not compare two."""
     from collections import Counter, defaultdict
     if storage is None:
         from .native_installation import storage_root
@@ -564,8 +565,12 @@ def own_record(storage=None):
             for row in value['rungs']:
                 tally, passed = found[row['route']], row.get('verdict') == 'VERIFIED'
                 # int: an empty Counter keeps a first bool as it is
-                tally.update(ran=1, passed=int(passed), audited=int('audit' in row),
-                             accepted=int((row.get('audit') or {}).get('verdict') == 'ACCEPT'))
+                counts = dict(ran=1, passed=int(passed), audited=int('audit' in row),
+                              accepted=int((row.get('audit') or {}).get('verdict') == 'ACCEPT'))
+                tally.update(counts)
+                for kind in row.get('kinds') or [row.get('kind')]:
+                    if task_type(kind):
+                        tally.update({('kind', kind, name): count for name, count in counts.items()})
                 if row.get('needs') in ORDER:
                     tally.update({('needs', row['needs'], 'ran'): 1, ('needs', row['needs'], 'passed'): int(passed)})
             if value['result'].get('applied'):
@@ -584,6 +589,10 @@ def describe_record(tally):
     for needed in ORDER:
         if tally['needs', needed, 'ran']:
             text += f"; needed {needed}: {tally['needs', needed, 'passed']} of {tally['needs', needed, 'ran']} passed"
+    for kind in TYPES:  # the only measure a type no board covers has (games, art, audio)
+        if ran := tally['kind', kind['id'], 'ran']:
+            text += (f"; {kind['id']} work: {tally['kind', kind['id'], 'passed']} of {ran} passed, "
+                     f"{tally['kind', kind['id'], 'accepted']} of {tally['kind', kind['id'], 'audited']} audits accepted")
     return text
 
 

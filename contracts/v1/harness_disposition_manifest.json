@@ -4481,8 +4481,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 52341,
-      "sha256": "6aed1ea2004c2f93c5fd1924e7f336479d0c82c5f20d79c8bf03f5a2a7558207"
+      "size_bytes": 53089,
+      "sha256": "876d2268a9caa60b7f3fac45e1b7886a5556604a6cdf5b1a9ba535366a135579"
     },
     {
       "name": "plan_consumption.py",
