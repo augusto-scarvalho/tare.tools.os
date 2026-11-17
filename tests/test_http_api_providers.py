@@ -53,6 +53,10 @@ def api():
                     output = [{'type': 'function_call', 'id': 'fc-1', 'status': 'completed', 'call_id': 'call-1', 'name': 'tare_deliver', 'arguments': '{"summary":"done"}'}]
                 value = {'id': 'resp-1', 'status': 'completed', 'model': model, 'output': output,
                          'usage': {'input_tokens': 20, 'output_tokens': 2, 'total_tokens': 22}}
+            elif self.path.endswith(':generateContent'):
+                part = ({'functionCall': {'name': 'tare_deliver', 'args': {'summary': 'done'}}} if state['tools'] else {'text': 'done'})
+                value = {'candidates': [{'content': {'role': 'model', 'parts': [part]}, 'finishReason': 'STOP'}], 'modelVersion': model,
+                         'usageMetadata': {'promptTokenCount': 20, 'candidatesTokenCount': 2, 'totalTokenCount': 22}}
             elif self.path.endswith('/messages'):
                 content = [{'type': 'text', 'text': 'done'}]
                 if state['tools']:
@@ -200,26 +204,60 @@ def test_saved_gemini_streaming_session_streams_without_replacing_its_profile(ap
     assert api['body'].get('stream') is True and len(api['calls'])==2
 
 
-def test_a_gemini_session_saved_before_it_could_stream_resumes_as_it_began(api,tmp_path,monkeypatch):
+@pytest.mark.parametrize('name,env', [('gemini-api-3-8-flash', 'GEMINI_API_KEY'), ('opencode-sub-gemini-4-argon', 'OPENCODE_API_KEY'),
+                                      ('claude-api', 'ANTHROPIC_API_KEY')], ids=['google-compatible', 'gemini-generate-content', 'anthropic-messages'])
+def test_a_session_saved_before_its_route_could_stream_resumes_as_it_began(api,tmp_path,monkeypatch,name,env):
     """Such a session's profile says `native_streaming: true` while its replies were made without streaming, and
     the adapter's identity (which the saved replies carry) includes streaming: resumed as a streaming one it would be
-    refused with `provider history profile changed`."""
-    dep=local_dep(api,'gemini-api-3-8-flash');dep['native_streaming']=True
+    refused with `provider history profile changed`. What it did is read from its own records, whatever the protocol."""
+    dep=local_dep(api,name);dep['native_streaming']=True
     api['tools']=True
-    monkeypatch.setenv('GEMINI_API_KEY','offline-secret')
+    monkeypatch.setenv(env,'offline-secret')
     path=tmp_path/'profile.json';path.write_text(json.dumps(dep),encoding='utf8')
     project=tmp_path/'project';project.mkdir();session=tmp_path/'session'
     with monkeypatch.context() as before_the_change:
         before_the_change.setattr(native_agent,'streaming',lambda deployment:False)
         assert native_agent.main(['--root',str(project),'--session',str(session),'--native-deployment',str(path),
             '--instruction','Finish.','--no-context'])==0
-    assert not api['body'].get('stream')
+    assert not api['body'].get('stream') and 'stream' not in api['calls'][-1][1].lower()
     state=json.loads((session/'native-agent.json').read_text(encoding='utf8'))
     assert state.pop('streaming') is False and state['deployment']['native_streaming'] is True
     (session/'native-agent.json').write_text(json.dumps(state),encoding='utf8')  # as saved before the choice was recorded
     assert native_agent.main(['--session',str(session),'--resume','--follow-up','Confirm.',
-        '--message-id','next-gemini-message','--stream'])==0
-    assert not api['body'].get('stream') and len(api['calls'])==2
+        '--message-id','next-message','--stream'])==0
+    assert not api['body'].get('stream') and 'stream' not in api['calls'][-1][1].lower() and len(api['calls'])==2
+
+
+def test_a_session_that_streamed_before_the_choice_was_recorded_keeps_streaming(api,tmp_path,monkeypatch):
+    dep=local_dep(api,'gemini-api-3-8-flash');dep['native_streaming']=True
+    api['tools']=True
+    monkeypatch.setenv('GEMINI_API_KEY','offline-secret')
+    path=tmp_path/'profile.json';path.write_text(json.dumps(dep),encoding='utf8')
+    project=tmp_path/'project';project.mkdir();session=tmp_path/'session'
+    assert native_agent.main(['--root',str(project),'--session',str(session),'--native-deployment',str(path),
+        '--instruction','Finish.','--stream','--no-context'])==0
+    state=json.loads((session/'native-agent.json').read_text(encoding='utf8'))
+    assert state.pop('streaming') is True and api['body'].get('stream') is True
+    (session/'native-agent.json').write_text(json.dumps(state),encoding='utf8')
+    assert native_agent.main(['--session',str(session),'--resume','--follow-up','Confirm.',
+        '--message-id','next-message','--stream'])==0
+    assert api['body'].get('stream') is True and len(api['calls'])==2
+
+
+def test_a_legacy_sessions_transport_is_the_last_reply_that_came_back(tmp_path):
+    """Only a reply is history. An attempt that got no response decides nothing, whether it streamed or not."""
+    rule=lambda rows,deployment:(tmp_path/'observations.jsonl').write_text(
+        ''.join(json.dumps({'event':row})+'\n' for row in rows),encoding='utf8') and native_generation.session_streaming({},deployment,tmp_path)
+    streams=select('openai-api');streams['native_streaming']=True
+    whole=select('openai-api');whole['native_streaming']=False
+    reply=lambda streamed:{'purpose':'model','response_sha256':'a'*64,'transport_calls':[{'stream_status':'COMPLETE'} if streamed else {'wall_ms':1}]}
+    refused_before_dispatch={'purpose':'model','error':'CODEX_AUTH','transport_calls':[]}
+    cut_stream={'purpose':'model','error':'CONNECTION','transport_calls':[{'stream_status':'INCOMPLETE'}]}
+    assert native_generation.session_streaming({},streams,tmp_path/'absent') is True  # no record at all: the route's rule
+    assert rule([refused_before_dispatch],streams) is True and rule([refused_before_dispatch],whole) is False
+    assert rule([cut_stream,reply(False)],streams) is False  # the failed streamed attempt does not outvote the saved reply
+    assert rule([reply(True)],whole) is True and rule([reply(False),{'purpose':'count'}],streams) is False
+    assert native_generation.session_streaming({'streaming':False},streams,tmp_path) is False  # a recorded choice is kept
 
 
 @pytest.mark.parametrize('key_name', ['OPENAI_API_KEY', 'CUSTOM_API_KEY'])

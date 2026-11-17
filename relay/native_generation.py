@@ -139,15 +139,28 @@ def streaming(deployment):
     return deployment.get('native_streaming',False) and supports_streaming(deployment)
 
 
-def session_streaming(state, deployment):
+def session_streaming(state, deployment, root):
     """A saved session streams as it began: its replies carry the adapter's identity, and streaming is part of it.
-    A session saved before the choice was recorded began when Google's compatible endpoint did not stream, whatever
-    its profile says."""
+    A session saved before the choice was recorded is read from what it did, not from what its profile says: a
+    profile with `native_streaming: true` did not stream on the Claude API, on Gemini's own protocol or on Google's
+    compatible endpoint when those could not, and resumed as a streaming session its history is refused (`provider
+    history profile changed`). The history is the replies that came back, so the last call that got a response
+    decides: it streamed when its record holds a stream status. An attempt that never got one (a login that had
+    expired, a refused connection) says nothing, and a session with no reply yet has no history to contradict: the
+    route's current rule then applies."""
     if 'streaming' in state:
         return state['streaming']
-    from urllib.parse import urlsplit
-    return (streaming(deployment) and (deployment.get('native_usage_contract') or {}).get('layout')!='gemini-chat'
-            and urlsplit(deployment['native_profile']['endpoint']).hostname!='generativelanguage.googleapis.com')
+    from pathlib import Path
+    try:
+        rows = [json.loads(line).get('event') or {} for line in
+                (Path(root)/'observations.jsonl').read_text(encoding='utf-8').splitlines() if line.strip()]
+    except (OSError, ValueError, AttributeError):
+        rows = []
+    answered = [row.get('transport_calls') or [] for row in rows
+                if row.get('purpose') == 'model' and row.get('response_sha256')]
+    if not answered:
+        return streaming(deployment)
+    return any('stream_status' in call for call in answered[-1])
 
 
 def inference_client(deployment, profile, *, credential, metadata_only=False, context_guidance=False, **transport):
