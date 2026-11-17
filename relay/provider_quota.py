@@ -434,7 +434,8 @@ def surplus(deployment, now=None, cache=None):
     """The one signal that a route's allowance lapses unused: None, or {'lead', 'remaining', 'time_left', 'resets_at',
     'allowance'} while what is left exceeds the share of its window still to run (use first what would be lost, and
     stop once use catches the pace). A subscription route needs every window that limits its model in surplus; an API
-    route needs a declared credit that renews. Nothing else (OpenRouter, a plain balance, a local model) has one.
+    route needs a declared credit that renews or lapses on a stated day. Nothing else (OpenRouter, a plain balance, a
+    local model) has one.
     `cache`: shared by one ranking so the files are read once."""
     from . import provider_spend
     from .turn_engine import usage_account
@@ -535,11 +536,15 @@ def render(report, now=None):
                 if credit.get('console'):  # a window read from the Console: it says where it came from
                     stated = (', lapses ' + datetime.fromtimestamp(credit['renews_at'], timezone.utc).strftime('%a %d %b')
                               + ' (read from the Console ' + datetime.fromtimestamp(credit['declared_at']).strftime('%d %b %H:%M') + ')')
+                elif credit.get('stated'):  # an expiring credit the owner stated: it never renews
+                    # the day the owner stated: the window ends as that day does
+                    stated = (', lapses ' + datetime.fromtimestamp(credit['renews_at'] - 1, timezone.utc).strftime('%a %d %b %Y')
+                              + stated)
                 elif credit.get('renews_at'):
                     stated = ' a cycle, renews ' + datetime.fromtimestamp(credit['renews_at'], timezone.utc).strftime('%a %d %b')
                 pace = credit_pace(credit, now)
                 lines.append(f"{head}: {left} left of US$ {credit['total']:.2f}{stated}"
-                             + (used_first(*pace, 'cycle') if pace else ''))
+                             + (used_first(*pace, 'time to its lapse' if credit.get('stated') else 'cycle') if pace else ''))
                 if credit.get('at_reference_prices'):
                     lines.append(f"    US$ {credit['at_reference_prices']:.2f} of that use is valued at models.dev "
                                  'reference prices, not confirmed tariffs: the balance is only as exact as they are.')
@@ -574,16 +579,24 @@ def main(argv=None):
         'with --set: the credit renews on this day of the month (1-31) and does not carry over; GRANT is the dollars '
         'each cycle brings (default: the amount stated). While more is left than the share of the cycle still to run, '
         'tare uses the account before cheaper routes'))
+    parser.add_argument('--expires', metavar='DATE', help=(
+        'with --set: the credit lapses at the end of this day (YYYY-MM-DD, UTC) and never renews, as a promotional '
+        'cloud credit does. While more is left than the share of the time to that day still to run, tare uses '
+        'the account before cheaper routes'))
     args = parser.parse_args(argv)
     if args.renews and (not args.set or len(args.renews) > 2):
         parser.error('--renews DAY [GRANT] goes with --set ACCOUNT AMOUNT')
+    if args.expires and (not args.set or args.renews):
+        parser.error('--expires DATE goes with --set ACCOUNT AMOUNT, without --renews')
     if args.set:
         from . import provider_spend
         try:
             amount, renews = float(args.set[1]), None
             if args.renews:
                 renews = (int(args.renews[0]), float(args.renews[-1]) if len(args.renews) > 1 else amount)
-            provider_spend.declare(args.set[0], amount, renews=renews)
+            expires = args.expires and (datetime.strptime(args.expires, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+                                        + timedelta(days=1)).timestamp()
+            provider_spend.declare(args.set[0], amount, renews=renews, expires=expires or None)
         except ValueError as exc:
             parser.error(str(exc))
     synced = None

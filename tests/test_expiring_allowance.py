@@ -138,6 +138,34 @@ def test_renewing_credit_half_spent_with_a_quarter_of_the_cycle_left():
     assert provider_quota.surplus(API_KEY, ts(2026, 12, 6, 12)) is None  # spent: nothing to use first
 
 
+def test_a_stated_credit_that_lapses_on_a_day_is_used_first_while_ahead_of_the_pace_and_gone_after_it(monkeypatch):
+    """A cloud's promotional credit (owner, 2026-11-16: go first to the credit that lapses soon): no renewal, an end."""
+    bedrock = {'id': 'bedrock-x', 'native_credential_env': 'AWS_BEARER_TOKEN_BEDROCK', 'native_profile': {'model': 'x'}}
+    start, end = ts(2026, 11, 1), ts(2027, 3, 1)  # 120 days
+    provider_spend.declare('bedrock', 300, now=start, expires=end)
+    assert provider_quota.surplus(bedrock, start + DAY) is None  # nothing lost yet: at the pace
+    signal = provider_quota.surplus(bedrock, start + 60*DAY)
+    assert (signal['remaining'], signal['time_left'], signal['resets_at'], signal['allowance']) == (1.0, 0.5, end, 'bedrock credit')
+    assert provider_spend.record(bedrock, [{'call_id': 'c', 'cost': {'currency': 'USD', 'known_amount': 200}}], start + 30*DAY) == 1
+    assert provider_quota.surplus(bedrock, start + 60*DAY) is None  # a third left with half the time: behind the pace
+    credit = provider_spend.remaining('bedrock', start + 60*DAY)
+    assert (credit['remaining'], credit['total'], credit.get('stated'), 'console' in credit) == (100, 300, True, False)
+    line = provider_quota.render({'observed_at': start, 'accounts': [{'account': 'bedrock', 'name': 'Bedrock', 'kind': 'credit',
+        'status': 'DECLARED', 'observed_at': start, 'credit': credit}]}, now=start + 60*DAY).splitlines()[1]
+    assert line.startswith('  Bedrock: US$ 100.00 left of US$ 300.00, lapses Sun 28 Feb 2027, stated ') and 'surplus' not in line
+    assert provider_spend.remaining('bedrock', end) is None and provider_quota.surplus(bedrock, end + 1) is None  # lapsed
+    for wrong in ({'expires': start - 1}, {'expires': end, 'renews': (14, 100)}, {'expires': end, 'usd': 0}):
+        with pytest.raises(ValueError):
+            provider_spend.declare('bedrock', wrong.pop('usd', 300), now=start, **wrong)
+    monkeypatch.setattr(provider_quota, 'refresh', lambda: {'observed_at': NOW, 'accounts': []})
+    assert provider_quota.main(['--set', 'bedrock', '50', '--expires', '2999-12-31']) == 0
+    for wrong in (['--renews', '14'], ['--expires', 'tomorrow']):
+        with pytest.raises(SystemExit):
+            provider_quota.main(['--set', 'bedrock', '50', '--expires', '2999-12-31', *wrong])
+    window = provider_spend.declared()['bedrock']['window']
+    assert window['end'] == ts(3000, 1, 1) and window['stated'] is True  # the whole stated day, UTC
+
+
 def test_credit_without_renewal_openrouter_and_local_have_no_surplus():
     provider_spend.declare('anthropic-api', 100, now=ts(2026, 11, 14))
     assert provider_quota.surplus(API_KEY, ts(2026, 12, 6)) is None

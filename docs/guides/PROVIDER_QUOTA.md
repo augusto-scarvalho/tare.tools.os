@@ -9,6 +9,7 @@ tare quota --cached   # the last readings, without asking again
 tare quota --json     # the same readings as JSON
 tare quota --set openai-api 25   # state an API balance in dollars; tare counts its own spend down from it
 tare quota --set anthropic-api 100 --renews 14   # a credit that returns each month (day 14) and does not carry over
+tare quota --set bedrock 300 --expires 2027-03-31   # a credit that lapses at the end of that day and never renews
 ```
 
 In the console, `/usage` opens on its first row, **Provider quota and credit**. It shows the saved readings at once
