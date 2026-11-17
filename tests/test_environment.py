@@ -96,7 +96,8 @@ def test_setup_by_flags_offers_only_what_the_gateway_publishes(machine, gateway,
     assert environment.main(['--local-gateway', url, '--no-use', 'api', '--use', 'cli:codex']) == 0
     saved = environment.read()
     assert saved['local_models']['gateways'][0] | {'observed': None} == {
-        'origin': url, 'kind': 'openai', 'models': ['minha-llama', 'qwen38-gsq'], 'observed': None}
+        'origin': url, 'kind': 'openai', 'models': ['minha-llama', 'qwen38-gsq'], 'observed': None,
+        'enabled': ['minha-llama', 'qwen38-gsq']}  # a gateway named by the user starts with every model in use
     assert saved['clis'] == {'items': {'cli://codex': {'use': True}}} and saved['api_providers'] == {'use': False}
     assert json.loads((native_installation.storage_root()/'local-gateway.json').read_text())['origin'] == url
     generic = 'local-127-0-0-1-' + url.rsplit(':', 1)[1] + '-minha-llama'
@@ -112,9 +113,125 @@ def test_setup_by_flags_offers_only_what_the_gateway_publishes(machine, gateway,
     edited.write_text(edited.read_text().replace('32768', '65536'))
     assert environment.main(['--refresh']) == 0
     offered = {r['deployment'] for r in native_catalog.available_models()}
+    other = 'local-127-0-0-1-' + url.rsplit(':', 1)[1] + '-other-model'
     assert 'qwen38-gsq' not in offered and generic in offered and edited.exists()
-    assert 'local-127-0-0-1-' + url.rsplit(':', 1)[1] + '-other-model' in offered
+    assert other not in offered  # published later: off until the user turns it on
+    assert environment.main(['--use', 'local:other-model']) == 0
+    assert other in {r['deployment'] for r in native_catalog.available_models()}
     assert 'Generic local profiles' in capsys.readouterr().err
+
+
+def route(url, model):
+    return {'native_profile': {'protocol': 'openai-chat', 'endpoint': url + '/v1', 'model': model}}
+
+
+def test_a_record_saved_before_the_choice_keeps_every_model_in_use_and_writes_it_on_the_next_save(machine, gateway):
+    url, _ = gateway
+    machine(local_models={'use': True, 'gateways': [{'origin': url, 'kind': 'openai', 'models': ['a', 'b']}]})
+    assert environment.in_use(environment.read()['local_models']['gateways'][0]) == {'a', 'b'}
+    assert environment.allows(route(url, 'a')) == (True, None) and environment.allows(route(url, 'b')) == (True, None)
+    assert set(environment.generic_profiles(environment.read())) == {
+        environment.generic_name(url, 'a'), environment.generic_name(url, 'b')}
+    assert 'enabled' not in environment.read()['local_models']['gateways'][0]  # reading writes nothing
+    environment.apply(environment.read())
+    assert environment.read()['local_models']['gateways'][0]['enabled'] == ['a', 'b']
+
+
+def test_a_model_published_later_is_off_has_no_profile_and_is_refused_until_turned_on(machine, gateway, capsys):
+    from relay import native_catalog
+    url, published = gateway
+    assert environment.main(['--local-gateway', url]) == 0
+    published.append('new-one')
+    capsys.readouterr()
+    assert environment.main(['--refresh']) == 0
+    assert '1 new local model(s) found, off until you turn them on' in capsys.readouterr().err
+    name = environment.generic_name(url, 'new-one')
+    offered = lambda: {r['deployment'] for r in native_catalog.available_models()}
+    assert name not in offered() and environment.generic_name(url, 'minha-llama') in offered()
+    allowed, why = environment.allows(route(url, 'new-one'))
+    assert not allowed and 'new-one is off' in why and environment.allows(route(url, 'minha-llama'))[0]
+    assert environment.main(['--use', 'local:new-one']) == 0
+    assert name in offered() and environment.allows(route(url, 'new-one')) == (True, None)
+    assert environment.main(['--refresh']) == 0 and name in offered()  # a refresh keeps what was chosen
+    assert environment.main(['--no-use', 'local:new-one']) == 0
+    assert name not in offered() and not environment.allows(route(url, 'new-one'))[0]
+    assert environment.main(['--use', 'local:nowhere']) == 1 and 'publishes nowhere' in capsys.readouterr().err
+
+
+def test_a_shipped_local_profile_whose_model_is_off_is_not_listed(machine, gateway):
+    from relay import native_catalog
+    url, _ = gateway
+    assert environment.main(['--local-gateway', url]) == 0
+    offered = lambda: {r['deployment'] for r in native_catalog.available_models()}
+    assert 'qwen38-gsq' in offered()
+    assert environment.main(['--no-use', 'local:qwen38-gsq']) == 0
+    assert 'qwen38-gsq' not in offered()
+    assert not environment.allows(native_catalog.select('qwen38-gsq'))[0]
+    assert environment.main(['--use', 'local:qwen38-gsq']) == 0 and 'qwen38-gsq' in offered()
+
+
+def test_the_command_line_lists_a_gateways_models_with_their_state(machine, gateway, capsys):
+    url, published = gateway
+    assert environment.main(['--local-models']) == 0
+    assert 'No local gateway is saved' in capsys.readouterr().out
+    assert environment.main(['--local-gateway', url]) == 0
+    published.append('new-one')
+    assert environment.main(['--refresh']) == 0
+    capsys.readouterr()
+    assert environment.main(['--local-models']) == 0
+    out = capsys.readouterr().out
+    assert url in out and '[x] minha-llama' in out and '[x] qwen38-gsq' in out and '[ ] new-one' in out
+
+
+def test_the_setup_panel_lists_the_models_toggles_one_by_keyboard_and_saves(machine, gateway, tmp_path, monkeypatch):
+    import asyncio
+    from textual.widgets import Button, Checkbox, Static, TabbedContent
+    from relay import native_catalog
+    from relay.console_setup import SetupPanel
+    from relay.native_console import WorkConsole
+    from test_native_console import FakeBackend
+    url, published = gateway
+    assert environment.main(['--local-gateway', url]) == 0
+    monkeypatch.setattr('relay.cli_discovery.locate', lambda endpoint: None)
+    async def scenario():
+        monkeypatch.delenv('TARE_CLI_DISCOVERY', raising=False)
+        monkeypatch.setattr('relay.cli_discovery.discover', lambda: [])
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant', discover_clis=True)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await app.workers.wait_for_complete(); await pilot.pause()
+            assert app.dispatch_conversation_command('/setup', '')
+            await pilot.pause()
+            panel = app.screen
+            assert isinstance(panel, SetupPanel)
+            panel.query_one('#setup-tabs', TabbedContent).active = 'setup-local'
+            status = lambda: str(panel.query_one('#setup-status', Static).render())
+            boxes = lambda: {panel.model_boxes[b.id][1]: b for b in panel.query('#setup-models Checkbox')}
+            assert {m: b.value for m, b in boxes().items()} == {'minha-llama': True, 'qwen38-gsq': True}
+            published.append('new-one')
+            panel.query_one('#setup-models-refresh', Button).press()
+            for _ in range(100):
+                await pilot.pause(0.05)
+                if 'new model' in status():
+                    break
+            assert '1 new model(s) found' in status() and 'off until you tick them' in status()
+            assert {m: b.value for m, b in boxes().items()}['new-one'] is False  # found, and off
+            assert 'new-one' not in environment.read()['local_models']['gateways'][0]['enabled']
+            boxes()['minha-llama'].focus()  # keyboard only: a focused box toggles on Space
+            await pilot.press('space')
+            boxes()['new-one'].focus()
+            await pilot.press('space')
+            assert boxes()['new-one'].value is True and boxes()['minha-llama'].value is False
+            panel.query_one('#setup-save', Button).press()
+            for _ in range(100):
+                await pilot.pause(0.05)
+                if status().startswith('Saved.'):
+                    break
+            assert status().startswith('Saved.')
+    asyncio.run(scenario())
+    gateway_record = environment.read()['local_models']['gateways'][0]
+    assert gateway_record['enabled'] == ['new-one', 'qwen38-gsq']
+    offered = {r['deployment'] for r in native_catalog.available_models()}
+    assert environment.generic_name(url, 'new-one') in offered and environment.generic_name(url, 'minha-llama') not in offered
 
 
 def test_a_credential_goes_to_the_vault_from_stdin_and_is_never_printed(machine, monkeypatch, capsys):

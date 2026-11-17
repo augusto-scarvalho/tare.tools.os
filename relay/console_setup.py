@@ -1,9 +1,11 @@
 """Connections first; optional local models, helpers and advanced choices have their own tabs."""
 import asyncio
+import copy
 from pathlib import Path
 
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.content import Content
 from textual.widgets import Button, Checkbox, Collapsible, Input, Select, Static, TabbedContent, TabPane
 
 from .console_panels import SupportPanel
@@ -42,6 +44,7 @@ class SetupPanel(SupportPanel):
     SetupPanel Select { width: 1fr; }
     SetupPanel #setup-status { height: auto; max-height: 3; }
     SetupPanel Collapsible { padding: 0; border: none; }
+    SetupPanel #setup-models { height: auto; }
     '''
 
     def compose(self):
@@ -94,6 +97,10 @@ class SetupPanel(SupportPanel):
                         gateways = (value.get('local_models') or {}).get('gateways') or []
                         yield Input(gateways[0]['origin'] if gateways else '', placeholder='http://127.0.0.1:8080', id='setup-gateway')
                         yield Static('Saving a new address asks which models the server offers; it does not load one.', classes='setup-note')
+                        yield Static('Models Tare may use (Space ticks one; a model the server starts offering later stays off until you tick it)', classes='setup-label')
+                        yield Vertical(*self.model_rows(value), id='setup-models')
+                        with Horizontal(classes='setup-actions'):
+                            yield Button('Ask the servers again', id='setup-models-refresh')
                 with TabPane('Web search', id='setup-search'):
                     with VerticalScroll():
                         yield Static('Search the web with an API', classes='setup-label')
@@ -142,6 +149,27 @@ class SetupPanel(SupportPanel):
             with Horizontal(classes='panel-actions'):
                 yield Button('Refresh status', id='setup-refresh')
                 yield Button('Save settings', id='setup-save', classes='panel-primary')
+
+    def model_rows(self, value):
+        """A checkbox per model each saved gateway publishes (ticked: Tare uses it); self.model_boxes maps its id back."""
+        from .environment import in_use
+        self.model_boxes = {}
+        for gateway in (value.get('local_models') or {}).get('gateways') or []:
+            yield Static(gateway['origin'], classes='setup-note', markup=False)
+            for model in gateway.get('models') or []:
+                id = f'setup-model-{len(self.model_boxes)}'
+                self.model_boxes[id] = (gateway['origin'], model)
+                yield Checkbox(Content(model), value=model in in_use(gateway), id=id)  # Content: ids are not markup
+        if not self.model_boxes:
+            yield Static('No models yet. Save a server address above.', classes='setup-note')
+
+    def ticks(self):
+        return [(*self.model_boxes[box.id], box.value) for box in self.query('#setup-models Checkbox')]
+
+    async def show_models(self, value):
+        box = self.query_one('#setup-models', Vertical)
+        await box.remove_children()
+        await box.mount_all(list(self.model_rows(value)))
 
     def key_fields(self, env, *, heading=True):
         where = self.credentials[env]
@@ -333,11 +361,12 @@ class SetupPanel(SupportPanel):
                 self.checks.discard(env)
                 if self.is_mounted:event.button.disabled=False
         elif action=='setup-save':
-            from .environment import add_gateway,apply
-            value=self.chosen();url=self.query_one('#setup-gateway',Input).value.strip()
+            from .environment import add_gateway,apply,set_model
+            value=self.chosen();url=self.query_one('#setup-gateway',Input).value.strip();ticks=self.ticks()
             def save():
                 known=[g['origin'] for g in (value.get('local_models') or {}).get('gateways') or []]
                 selected=value
+                for origin,model,on in ticks:set_model(selected,model,on,origin)  # the same function as tare setup --use local:MODEL
                 if (value.get('local_models') or {}).get('use') is not False and url and url.rstrip('/') not in known:
                     selected=add_gateway(selected,url)
                 return apply(selected)
@@ -348,7 +377,29 @@ class SetupPanel(SupportPanel):
                 message='Could not save settings. Check the local server address and try again.'
             except OSError:
                 message='Could not write settings on this computer. Check disk space and file access, then try again.'
-            if self.is_mounted:self.query_one('#setup-status',Static).update(message)
+            if self.is_mounted:
+                self.query_one('#setup-status',Static).update(message)
+                if message=='Saved.':await self.show_models(self.value)  # a server saved just now shows its models
+        elif action=='setup-models-refresh':
+            from .environment import add_gateway,apply,new_models,read,set_model
+            ticks=self.ticks()
+            def ask():
+                value=read();value={} if 'error' in value else value
+                for origin,model,on in ticks:set_model(value,model,on,origin)  # unsaved ticks survive the refresh
+                before=copy.deepcopy(value)
+                for gateway in list((value.get('local_models') or {}).get('gateways') or []):
+                    value=add_gateway(value,gateway['origin'])
+                return apply(value)[0],new_models(before,value)
+            try:
+                self.value,found=await asyncio.to_thread(ask)
+                message=(f'{len(found)} new model(s) found. They are off until you tick them, then Save settings.'
+                         if found else 'No new models found.')
+            except (ValueError,OSError):
+                message='A server did not answer, or settings could not be written. Nothing was changed.'
+                found=None
+            if self.is_mounted:
+                self.query_one('#setup-status',Static).update(message)
+                if found is not None:await self.show_models(self.value)
         elif action=='setup-cost':await self.check_cost()
         elif action=='setup-run-proof' and self.pending:
             from .environment import prove

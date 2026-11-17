@@ -29,7 +29,7 @@ def node(monkeypatch):
         state['fleet'] = value
         return node_view(value)
     monkeypatch.setattr(fleet, 'save', save)
-    monkeypatch.setattr(fleet, 'remember', lambda origin: state.update(remembered=origin))
+    monkeypatch.setattr(fleet, 'remember', lambda origin, added=(): state.update(remembered=origin))
     monkeypatch.setattr('relay.gpu.node_token', lambda: 'node-token')
     return state
 
@@ -48,6 +48,22 @@ def test_tare_fleet_adds_own_models_sets_the_default_and_removes_on_the_node(nod
     assert node['fleet'] == {'default': 'qwen38-gsq', 'models': ['qwen38-gsq', 'hauhaucs'], 'custom': {}}
     assert fleet.main(['own', 'bad', 'relative/path.gguf']) == 1 and 'absolute path' in capsys.readouterr().out
     assert node['tokens'] == ['node-token'] * 4 and node['remembered'] == ORIGIN
+
+
+def test_a_model_the_user_adds_to_the_fleet_is_in_use_at_once(monkeypatch):
+    """A model found on a later ask is off until the user turns it on; one the user just added to the fleet here is not
+    a discovery."""
+    from relay import environment
+    saved = {'local_models': {'gateways': [{'origin': ORIGIN, 'kind': 'ninfer', 'models': ['qwen38-gsq', 'spare'],
+                                            'enabled': ['qwen38-gsq'], 'observed': 'then'}]}}
+    applied = []
+    monkeypatch.setattr(environment, 'read', lambda: saved)
+    monkeypatch.setattr(environment, 'ask_gateway', lambda origin: {'origin': origin, 'kind': 'ninfer', 'observed': 'now',
+                                                                    'models': ['elsewhere', 'mine', 'qwen38-gsq', 'spare']})
+    monkeypatch.setattr(environment, 'apply', applied.append)
+    fleet.remember(ORIGIN, added={'mine': {}, 'spare': {}})
+    # `spare` was already published and off: it stays off. `elsewhere` appeared on the node but was not added here.
+    assert applied[0]['local_models']['gateways'][0]['enabled'] == ['mine', 'qwen38-gsq']
 
 
 def test_tare_auto_runs_the_default_of_the_nodes_fleet(monkeypatch):

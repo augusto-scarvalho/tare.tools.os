@@ -45,6 +45,14 @@ In **Local models** (or `tare setup --local-gateway URL`, or `TARE_LOCAL_GATEWAY
 address or a host name: `http://aaaaa:8080`, `http://box.local:11434` or a Tailscale name all work. Every model that
 address serves counts as local and gets the protections tare applies to local models.
 
+Below the address, **Local models** lists the models each saved server publishes, one checkbox each (Tab to it,
+Space or Enter ticks it; **Save settings** applies the ticks). Tare uses only the ticked ones. **Ask the servers
+again** asks them what they publish now: a model that appears is shown unticked and stays off until you tick it.
+A server you add starts with every model ticked; one saved by an older Tare keeps all of its models in use.
+From the command line, `tare setup --local-models` lists the models (`[x]` in use, `[ ]` off),
+`tare setup --use local:MODEL` or `--no-use local:MODEL` turns one on or off at once, and `tare setup --refresh`
+asks again and says how many new models it found. A model that is off has no profile and no route.
+
 Keys are saved immediately. **Save settings** applies the usage choices and
 shows a confirmation; **Back · Esc** returns to the conversation. Saving everything as
 Automatic also completes the initial setup.
