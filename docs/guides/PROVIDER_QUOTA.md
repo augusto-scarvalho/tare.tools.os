@@ -160,7 +160,10 @@ Under each such account `tare quota`, `/usage` and `/quota` add one line, and `t
   tare's own use: 7 days US$ 1.20 in 42 calls (310k tokens); 30 days US$ 4.80 in 160 calls (1.2M tokens) · charged by the provider
 ```
 
-It is tare's use only, from its own ledger, to set beside the provider's bill. The ending says how the dollars were
+It is tare's use only, from its own ledger, to set beside the provider's bill. OpenRouter is the one provider whose
+ordinary key also says what the provider counted: its line `OpenRouter's own count for this key: today US$ …, this
+week US$ …, this month US$ … (OpenRouter's day, week and month)` comes from its `/key` endpoint. Anthropic's and
+OpenAI's usage and cost reports refuse an ordinary key (HTTP 401 and 403, probed 2026-11-17): they take an admin key. The ending says how the dollars were
 known: `charged by the provider`, `valued at the provider's tariff`, `valued at models.dev reference prices, not a
 confirmed tariff`, or `valued partly at a tariff or a reference price`. Only OpenRouter and OpenCode report what a call
 cost; for every other provider the dollars are tare's valuation of the tokens. When some calls could not be valued the
