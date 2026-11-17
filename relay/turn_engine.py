@@ -349,6 +349,25 @@ def usage_account(deployment):
     return 'codex' if profile.get('protocol') == 'openai-codex-responses' else None
 
 
+def codex_limit(deployment, failed, observations, now):
+    """When a Codex Direct call was refused because the ChatGPT plan's usage is spent: the kernel's model_failed event
+    `failed` is the HTTP 429 whose own type is `usage_limit_reached` (observed on this route in 2026-11, with no
+    Retry-After; a passing rate limit has another type). Returns {'kind': 'account', 'resets_at', 'cause'} for
+    note_usage_limit, else None. The account is the ChatGPT one, which the Codex CLI's routes share."""
+    profile = deployment.get('native_profile') or {}
+    if profile.get('protocol') != 'openai-codex-responses' or not failed:
+        return None
+    if (failed.get('code') or failed.get('reason')) != 'HTTP_429':  # a model call says code; a context summary says reason
+        return None
+    receipt = next((call for row in reversed(observations) if row.get('call_id') == failed.get('call_id')
+                    for call in reversed(row.get('transport_calls') or [])
+                    if (call.get('provider_error') or {}).get('type') == 'usage_limit_reached'), None)
+    if receipt is None:
+        return None
+    after = receipt.get('retry_after')
+    return {'kind': 'account', 'resets_at': now + after if type(after) is int else None, 'cause': 'allowance_spent'}
+
+
 def usage_limits_path():
     from .native_installation import storage_root
     return storage_root()/'serve'/'usage-limits.json'
@@ -1440,9 +1459,19 @@ def with_effort(deployment, effort, *, at_least=False):
         effort = declared_effort(deployment, effort)
     value = deepcopy(deployment)
     profile = value['native_profile']
+    if profile.get('endpoint') == 'cli://agy':
+        # AGY's level is its model id (one id per effort): the id registered for the level is the call to make, as
+        # the picker makes it (model_choices.realization). With none registered the route stays whole: a parameter
+        # naming another level than the id would describe a call that is not the one made.
+        model = (value.get('native_reasoning_models') or {}).get(effort)
+        if not model:
+            return value
+        profile['model'] = value['model'] = model
+        if 'expected_response_model' in profile:
+            profile['expected_response_model'] = model
     original = json.loads(profile.get('parameters_json') or '{}')
     params = reasoning_parameters(value, effort)
-    if params == original:
+    if params == original and profile.get('model') == deployment['native_profile'].get('model'):
         return value
     profile['parameters_json'] = json.dumps(params)
     deployment_profile(value, profile['model'])
