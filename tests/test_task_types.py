@@ -75,19 +75,22 @@ def test_the_catalogue_is_well_formed_and_lists_the_types_with_no_source_yet():
     for t in signals.TYPES:
         assert all(isinstance(t[k], str) and t[k] for k in ('id', 'label', 'description')) and isinstance(t['sources'], list)
         for s in t['sources']:
-            assert s['reader'] in signals.READERS and s['kind'] in ('outcome', 'preference')
+            assert s['reader'] in signals.READERS and s['kind'] in ('outcome', 'preference', 'reported')
             assert isinstance(s['higher_is_better'], bool) and all(s[k] for k in ('board', 'column', 'name', 'citation'))
             assert s['reader'] != 'epoch' or s['board'].endswith('.csv')
-            assert s['reader'] not in ('page', 'script') or s['board'].startswith('https://') and s['model']
+            assert s['reader'] not in ('page', 'script', 'json') or s['board'].startswith('https://') and s['model']
             assert s['reader'] != 'script' or all(s[k] for k in ('script', 'rows'))
+            assert s['reader'] != 'json' or s['rows']
             assert s['reader'] not in ('page', 'script') or 'licen' not in s['citation'].lower()  # none is claimed
     keys = [signals.source_key(s) for t in signals.TYPES for s in t['sources']]
     assert len(keys) == len(set(keys))
-    assert {t['id'] for t in signals.TYPES if not t['sources']} == {'3d', 'games', 'art', 'audio', 'medicine', 'data', 'writing', 'philosophy'}
+    assert {t['id'] for t in signals.TYPES if not t['sources']} == {'3d', 'games', 'art', 'audio', 'data', 'writing', 'philosophy'}
     assert {t['id'] for t in signals.TYPES if t['sources']} == {
-        'coding', 'web', 'math', 'science', 'professional', 'security', 'engineering', 'cad'}
-    # legal work reads APEX-Agents first and the public LegalBench page after it
-    assert [s['reader'] for s in signals.task_type('professional')['sources']] == ['epoch', 'page']
+        'coding', 'web', 'math', 'science', 'professional', 'security', 'engineering', 'cad', 'medicine'}
+    # legal work reads APEX-Agents first, then the public LegalBench page, then the Legal Benchmarks page
+    assert [s['name'] for s in signals.task_type('professional')['sources']] == [
+        'Epoch APEX-Agents', 'Vals AI LegalBench', 'Legal Benchmarks']
+    assert [(s['reader'], s['kind']) for s in signals.task_type('medicine')['sources']] == [('json', 'reported')]
 
 
 def test_a_model_is_placed_by_the_first_source_that_places_it():
@@ -161,8 +164,10 @@ def table(head, *rows):
 def page_html(src, rows=PAGE_ROWS):
     """An invented page in the structure of a shipped source: a table after a decoy one (reader 'page'), or a JSON
     script (reader 'script', the rows at the catalogue's path)."""
-    if src['reader'] == 'script':
+    if src['reader'] in ('script', 'json'):
         found = [{**nested(src['model'], n), **nested(src['organisation'], o), **nested(src['column'], v)} for n, o, v in rows]
+        if src['reader'] == 'json':  # the data file itself, with its own date
+            return json.dumps({**nested(src['rows'], found), **nested(src['as_of'], '2026-11-02')}).encode()
         body = f'<script id="{src["script"]}" type="application/json">{json.dumps(nested(src["rows"], found))}</script>'
     else:
         body = table(['Check', 'Result'], ['<td>a</td>', '<td>1</td>']) + table(
@@ -171,7 +176,7 @@ def page_html(src, rows=PAGE_ROWS):
     return f'<html><body>{body}</body></html>'.encode()
 
 
-PAGES = {s['board']: s for t in signals.TYPES for s in t['sources'] if s['reader'] in ('page', 'script')}
+PAGES = {s['board']: s for t in signals.TYPES for s in t['sources'] if s['reader'] in ('page', 'script', 'json')}
 
 
 def served(zip_bytes, web_rows, calls, down=()):
@@ -475,3 +480,21 @@ def test_a_board_ranks_the_known_lines_instead_of_trusting_their_general_class()
     assert [at(.85), at(.79), at(.45), at(.25)] == ['frontier', 'middling', 'middling', 'cheap']
     seven = {signals.source_key(ONE): board(ONE, ('kimi-k3.1-pro_max', 'Moonshot', .85), anchors=upside[:7])}
     assert signals.type_class(KIMI, kind, seven)['general']  # a quarter of too few lines is one line: it places nobody
+
+
+def test_a_data_file_that_is_json_itself_is_read_like_a_pages_script_with_its_own_date():
+    """A leaderboard published as a JSON file (reader 'json'): the rows, the model, the score and the file's date by
+    dotted paths. Scores as each lab reported them are said as such."""
+    source = {'reader': 'json', 'board': 'https://example.test/data.json', 'rows': 'models', 'model': 'name',
+              'organisation': 'lab', 'column': 'score', 'as_of': 'updated'}
+    body = json.dumps({'updated': '2026-11-02', 'models': [
+        {'name': 'GPT-6.1 Sol', 'lab': 'OpenAI', 'score': 61.5}, {'name': 'Some Other Model', 'lab': 'Lab', 'score': '40.0%'},
+        {'name': 'Pending Model', 'lab': 'Lab', 'score': None}]}).encode()
+    rows, as_of = signals.parse_script(body, source)
+    assert as_of == '2026-11-02' and len(rows) == 2 and sorted(r['intelligence'] for r in rows) == [40.0, 61.5]
+    assert signals.parse_script(body, {**source, 'as_of': 'models'})[1] is None  # not a date: no date
+    assert signals.parse_script(json.dumps({'updated': 'x', 'models': []}).encode(), source) is None  # no scored row
+    with pytest.raises(KeyError):
+        signals.parse_script(body, {**source, 'rows': 'elsewhere'})
+    found = {'class': 'frontier', 'label': 'medicine', 'source': 'Board', 'kind': 'reported', 'read_at': NOW, 'general': False}
+    assert signals.describe_type(found) == 'frontier for medicine (Board, as each lab reported it, read 14 Nov)'
