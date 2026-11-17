@@ -15,12 +15,24 @@ COST = {'free': 0, 'flat': 1, 'free-credit': 2, 'metered': 3}
 # (owner, 2026-11-15): planning is where the strongest model pays, so the planner wants frontier (Astra, Fable,
 # Carbon). Checking code and plans for defects is done as well or better by the class below (Sol, Opus, Argon), so
 # the reviewers want middling. A route that falls short goes last; one above the wanted class is used after the
-# exact one on the same kind of allowance. What a user wants otherwise is ticked in /routes > Models per role.
+# exact one on the same kind of allowance. What a user wants otherwise is ticked in /routes > Models per role, and the class a role asks for is chosen in /routes > Order (wanted()).
 # The implementer and a conversation (coordinator) want cheap: the cheapest sufficient route first, the class nearest
 # the floor first on each kind of allowance. tare auto's tiers are floors of class over this order, raised on a
 # failure (turn_engine.implementer_tiers); a unit's `needs` reorders its own routes.
 WANTED = {'planner': 'frontier', 'plan-auditor': 'middling', 'auditor': 'middling', 'implementer': 'cheap',
           'coordinator': 'cheap'}
+def wanted(role):
+    """The class `role` asks for: the owner's choice (/routes > Order, the routing policy's `wanted`), else WANTED.
+    A saved value that is not a class of a role of WANTED counts as not set."""
+    from .model_signals import ORDER
+    from .turn_engine import policy
+    try:
+        choice = policy().get('wanted', {}).get(role)
+    except (OSError, ValueError, AttributeError):
+        choice = None
+    return choice if role in WANTED and choice in ORDER else WANTED.get(role)
+
+
 # The roles that want the cheapest sufficient route: among pay-per-token routes it is the best score per dollar of a
 # task (model_signals.task), the planner's frontier is bought for its strength. Owner, 2026-11-16.
 CHEAPEST = {'implementer', 'coordinator', 'auditor', 'plan-auditor'}
@@ -271,7 +283,7 @@ def _ranked(role, producer=None, *, check_resources=False, work_type=None):
     from .turn_engine import cross_vendor_first
     first = bool(author) and cross_vendor_first()  # off: --any_vendor_auditor or /routes
     from .model_signals import ORDER, boards, judged, klass, task
-    need = WANTED.get(role)
+    need = wanted(role)
     kinds = [work_type] if isinstance(work_type, str) else list(work_type or ())
     kept = boards() if kinds else None  # read once for the whole ranking
     try:
