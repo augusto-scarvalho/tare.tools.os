@@ -144,7 +144,8 @@ def test_the_subscription_is_a_plan_and_the_api_is_paid_per_token():
     assert not execution_scope.Scope(only='api').allows(sub, 'implementer')[0]
     assert execution_scope.Scope(only='api').allows(api, 'implementer')[0]
     assert accounting(sub) == 'quota' and accounting(api) == 'usd'
-    assert usage_keys(sub) == ('opencode-sub', 'opencode-sub:glm-5.3-flash') and usage_keys(api) == ()
+    assert usage_keys(sub) == ('opencode-sub', 'opencode-sub:glm-5.3-flash')
+    assert usage_keys(api) == ('opencode-api', 'opencode-api:glm-5.3-flash')  # its own account: a spent plan does not park it
     assert identities(sub['id'], sub)[0] == 'opencode-sub' and identities(api['id'], api)[0] == 'opencode-api'
     assert model_choices.describe(api['id'], api)['route']['label'] == 'OpenCode API'
     listed = model_choices.projection(provider='opencode-sub', role='implementer', include_unconfigured=True)

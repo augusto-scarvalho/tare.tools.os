@@ -316,10 +316,6 @@ def refresh(now=None):
                              "Allowance tare's own sessions used: US$ {:.2f} in the last 5 h, US$ {:.2f} in 7 days, "
                              'US$ {:.2f} in 30 days.'.format(*used) if used[2] else
                              "tare's own sessions recorded no allowance use in the last 30 days."]})
-    for reading in accounts:  # a limit a refused call recorded, which no provider reading shows
-        if reading['kind'] == 'subscription' and (until := parked(reading['account'], now)):
-            reading['parked_until'] = until
-            reading.setdefault('notes', []).insert(0, 'A refused call left this account out until ' + clock(until, now) + '.')
     for variable, (account, name) in UNREPORTED.items():
         credit = provider_spend.remaining(account)
         reading = {'account': account, 'name': name, 'kind': 'credit', 'observed_at': now}
@@ -331,6 +327,10 @@ def refresh(now=None):
                              'This provider has no balance endpoint for an API key. State the balance with '
                              'tare quota --set ' + account + " AMOUNT, or in the console's /quota, and tare counts "
                              'down from it.'})
+    for reading in accounts:  # a limit a refused call recorded (a spent plan, an API account with no credit), which no reading shows
+        if until := parked(reading['account'], now):
+            reading['parked_until'] = until
+            reading.setdefault('notes', []).insert(0, 'A refused call left this account out until ' + clock(until, now) + '.')
     if energy := provider_spend.energy_report(now):  # the local models' GPU energy (never money spent)
         accounts.append({'account': provider_spend.LOCAL, 'name': 'Local models', 'kind': 'local', 'status': 'MEASURED',
                          'observed_at': now, 'energy': energy})

@@ -39,6 +39,22 @@ def account(deployment):
     return ACCOUNTS.get(deployment.get('native_credential_env'))
 
 
+def no_credit(deployment, failed, observations):
+    """Whether an API account refused this call for lack of credit: the kernel's model_failed event `failed` is an
+    HTTP 4xx whose own reason says so. HTTP 402 is that by definition (OpenRouter's "Insufficient credits", Anthropic's
+    billing_error); OpenAI answers 429 with the type insufficient_quota; Anthropic also answers 400 with "Your credit
+    balance is too low". A passing rate limit (429 with any other type) and every other refusal are not."""
+    if not account(deployment) or not failed:
+        return False
+    code = str(failed.get('code') or failed.get('reason'))  # a model call says code; a context summary says reason
+    if not code.startswith('HTTP_4'):
+        return False
+    reason = next((call['provider_error'] for row in reversed(observations) if row.get('call_id') == failed.get('call_id')
+                   for call in reversed(row.get('transport_calls') or []) if isinstance(call.get('provider_error'), dict)), {})
+    return (code == 'HTTP_402' or reason.get('type') in ('insufficient_quota', 'billing_error')
+            or 'credit balance is too low' in str(reason.get('message') or '').lower())
+
+
 def post(deployment, usage, session, now=None, since=None):
     """Add to the ledger the dollars of this session's calls that were not added yet (a session is resumed and its
     usage report is cumulative, so the session keeps how many calls it already posted)."""

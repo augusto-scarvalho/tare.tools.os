@@ -751,7 +751,9 @@ def quota_before_review(job, result):
         events = [r.event() for r in NativeJournal(job/'session/journal.jsonl').snapshot().records]
     except (OSError, ValueError):
         return False
-    return (any(e['kind'] == 'model_failed' and e.get('code') in ('CLI_USAGE_LIMIT', 'HTTP_429', 'BILLING_SOURCE_REFUSED')
+    # API_CREDIT_SPENT is read off the refusal's own reason (provider_spend.no_credit): whatever 4xx carried it
+    return (any(e['kind'] == 'model_failed' and (e.get('code') in ('CLI_USAGE_LIMIT', 'HTTP_429', 'BILLING_SOURCE_REFUSED')
+                                                 or result['failure_code'] == 'API_CREDIT_SPENT')
                 for e in events) and not any(e['kind'] == 'model_returned' for e in events))
 
 

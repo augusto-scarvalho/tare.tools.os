@@ -70,10 +70,14 @@ def provider_limit_guidance(result):
     if 'CLI_QUALIFICATION_INTERRUPTED' in (result.get('reason'), result.get('failure_code')):
         return (f'The check of {cli}\'s new release was cut short, so your request was not sent. Resume to '
                 'check it again and continue.')
-    if result.get('failure_code') in ('CLI_USAGE_LIMIT', 'PLAN_USAGE_LIMIT'):
+    if result.get('failure_code') in ('CLI_USAGE_LIMIT', 'PLAN_USAGE_LIMIT', 'API_CREDIT_SPENT'):
         limit = result.get('usage_limit') or {}
         until = limit.get('until')
         when = f" until {time.strftime('%H:%M', time.localtime(until))}" if type(until) in (int, float) else ''
+        if limit.get('cause') == 'no_credit':
+            return (f"The provider refused this call because the {limit.get('account') or 'API'} account has no credit "
+                    f"left. tare leaves its routes out{when} and then tries again. Add credit at the provider, or choose "
+                    'another model; /quota shows what tare knows of each account.')
         if limit.get('cause') == 'unknown_billing_source':
             return (f"OpenCode billed this call to '{limit.get('billing_source')}', which the subscription profiles do "
                     f"not accept, so the session stopped and tare leaves this model{when}. If you changed plans, add "
@@ -285,7 +289,8 @@ def conversation_result(result, *, exit_code=None):
     elif status != 'PROPOSED':
         meanings = {'GPU_STATUS_UNKNOWN': 'the local model is unavailable',
                     'CLI_USAGE_LIMIT': 'the quota or usage limit is exhausted',
-                    'PLAN_USAGE_LIMIT': "this model's plan allowance is exhausted"}
+                    'PLAN_USAGE_LIMIT': "this model's plan allowance is exhausted",
+                    'API_CREDIT_SPENT': 'the API account has no credit left'}
         recorded = list(dict.fromkeys(str(value) for value in (
             result.get('reason'), result.get('failure_code')) if value))
         reason = '; '.join(meanings.get(value, '('+value+')') for value in recorded)

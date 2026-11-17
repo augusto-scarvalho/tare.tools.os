@@ -1286,6 +1286,15 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                         result['usage_limit'] = {**limit, 'account': usage_account(deployment),
                                                  'until': note_usage_limit(deployment, limit['resets_at'],
                                                                            kind=limit['kind'])}
+                    else:
+                        # An API account refused the call for lack of credit: its routes are left for a while, as a
+                        # spent plan's are. No provider says when credit returns, so it is asked again after the default.
+                        from .provider_spend import account, no_credit
+                        if no_credit(deployment, last, raw_observations):
+                            from .turn_engine import note_usage_limit
+                            result['failure_code'] = 'API_CREDIT_SPENT'
+                            result['usage_limit'] = {'kind': 'account', 'cause': 'no_credit', 'account': account(deployment),
+                                                     'until': note_usage_limit(deployment)}
             if spend_policy:
                 result['spend'] = model.report()
             messages = [record.event() for record in journal.snapshot().records
