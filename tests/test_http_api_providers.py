@@ -244,6 +244,22 @@ def test_a_session_that_streamed_before_the_choice_was_recorded_keeps_streaming(
     assert api['body'].get('stream') is True and len(api['calls'])==2
 
 
+def test_a_legacy_sessions_transport_is_the_last_reply_that_came_back(tmp_path):
+    """Only a reply is history. An attempt that got no response decides nothing, whether it streamed or not."""
+    rule=lambda rows,deployment:(tmp_path/'observations.jsonl').write_text(
+        ''.join(json.dumps({'event':row})+'\n' for row in rows),encoding='utf8') and native_generation.session_streaming({},deployment,tmp_path)
+    streams=select('openai-api');streams['native_streaming']=True
+    whole=select('openai-api');whole['native_streaming']=False
+    reply=lambda streamed:{'purpose':'model','response_sha256':'a'*64,'transport_calls':[{'stream_status':'COMPLETE'} if streamed else {'wall_ms':1}]}
+    refused_before_dispatch={'purpose':'model','error':'CODEX_AUTH','transport_calls':[]}
+    cut_stream={'purpose':'model','error':'CONNECTION','transport_calls':[{'stream_status':'INCOMPLETE'}]}
+    assert native_generation.session_streaming({},streams,tmp_path/'absent') is True  # no record at all: the route's rule
+    assert rule([refused_before_dispatch],streams) is True and rule([refused_before_dispatch],whole) is False
+    assert rule([cut_stream,reply(False)],streams) is False  # the failed streamed attempt does not outvote the saved reply
+    assert rule([reply(True)],whole) is True and rule([reply(False),{'purpose':'count'}],streams) is False
+    assert native_generation.session_streaming({'streaming':False},streams,tmp_path) is False  # a recorded choice is kept
+
+
 @pytest.mark.parametrize('key_name', ['OPENAI_API_KEY', 'CUSTOM_API_KEY'])
 def test_setup_key_save_preserves_pending_choices(monkeypatch, key_name):
     from relay.console_setup import SetupPanel

@@ -144,8 +144,10 @@ def session_streaming(state, deployment, root):
     A session saved before the choice was recorded is read from what it did, not from what its profile says: a
     profile with `native_streaming: true` did not stream on the Claude API, on Gemini's own protocol or on Google's
     compatible endpoint when those could not, and resumed as a streaming session its history is refused (`provider
-    history profile changed`). A call that streamed left a stream status in its record; a session with no model
-    call yet has no history to contradict."""
+    history profile changed`). The history is the replies that came back, so the last call that got a response
+    decides: it streamed when its record holds a stream status. An attempt that never got one (a login that had
+    expired, a refused connection) says nothing, and a session with no reply yet has no history to contradict: the
+    route's current rule then applies."""
     if 'streaming' in state:
         return state['streaming']
     from pathlib import Path
@@ -154,10 +156,11 @@ def session_streaming(state, deployment, root):
                 (Path(root)/'observations.jsonl').read_text(encoding='utf-8').splitlines() if line.strip()]
     except (OSError, ValueError, AttributeError):
         rows = []
-    calls = [row.get('transport_calls') or [] for row in rows if row.get('purpose') == 'model']
-    if not calls:
+    answered = [row.get('transport_calls') or [] for row in rows
+                if row.get('purpose') == 'model' and row.get('response_sha256')]
+    if not answered:
         return streaming(deployment)
-    return any('stream_status' in call for made in calls for call in made)
+    return any('stream_status' in call for call in answered[-1])
 
 
 def inference_client(deployment, profile, *, credential, metadata_only=False, context_guidance=False, **transport):
