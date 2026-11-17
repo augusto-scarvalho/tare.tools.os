@@ -112,7 +112,8 @@ def test_a_chosen_route_and_a_pin_are_never_reordered(unit, monkeypatch, types):
 def test_the_outcome_row_carries_the_type_and_the_class_it_was_judged_by(types):
     from relay.work_units import class_row
     assert class_row({'needs': 'frontier'}, SOL) == {'needs': 'frontier', 'route_class': 'middling'}  # as today
-    assert class_row({'kind': 'coding'}, SOL) == {}  # a type with no need ranks nothing, so records nothing
+    assert class_row({'kind': 'coding'}, SOL) == {'kinds': ['coding']}  # no need ranks nothing, but the work keeps its type
+    assert class_row({'kinds': ['audio', 'art']}, SOL) == {'kinds': ['audio', 'art']}  # as the plan keeps them
     # the boards of this machine are the saved ones: none here, so the general class, said as such
     assert class_row({'needs': 'frontier', 'kind': 'coding'}, SOL) == {
         'needs': 'frontier', 'route_class': 'middling', 'kind': 'coding', 'class_source': 'general'}
@@ -154,7 +155,9 @@ def test_the_unit_takes_the_type_of_the_task_that_needs_the_most(host):
     both = unit_of({'needs': 'middling', 'kind': 'coding'}, {'needs': 'frontier', 'kind': 'math'})
     assert (both['needs'], both['kind']) == ('frontier', 'math')
     assert 'kind' not in unit_of({'needs': 'frontier'}, {'needs': 'cheap', 'kind': 'math'})  # the hardest has none
-    assert 'kind' not in unit_of({'kind': 'math'})  # no need: no ranking, so no type kept
+    lone = unit_of({'kind': 'math'})
+    assert 'kind' not in lone and lone['kinds'] == ['math']  # no need: no ranking, but the type is kept for the record
+    assert both['kinds'] == ['coding', 'math'] and 'kinds' not in unit_of({'needs': 'frontier'})
 
 
 def test_the_planner_reads_each_types_few_words_from_the_catalogue():
