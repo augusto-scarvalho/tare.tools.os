@@ -187,13 +187,24 @@ def record(deployment, calls, now=None, since=None):
         # OpenCode's subscription charges nothing; each reply says how much of the plan's allowance it used.
         allowance = amount((cost.get('opencode') or {}).get('allowance')) if plan else 0.0
         source = (cost.get('opencode') or {}).get('billing_source')
+        tokens = {k: v for k, key in (('in', 'input_tokens'), ('out', 'output_tokens'), ('cache_read', 'cache_read_tokens'),
+                                      ('cache_write', 'cache_write_tokens'))
+                  if type(v := (((call.get('normalized') or {}).get('tokens')) or {}).get(key)) is int}
         if name and usd > 0:
             # Valued at a models.dev reference price, not a tariff: it counts down all the same, and the row says
-            # which entry priced it and the day that price was read.
+            # which entry priced it and the day that price was read. 'basis' says how the dollars were known.
             tariff = cost.get('tariff')
-            rows.append(json.dumps({**row, 'account': name, 'usd': usd, **({
-                'reference': True, 'price_source': tariff['source'], 'price_read': tariff.get('effective_at')}
-                if is_reference(tariff) else {})}))
+            rows.append(json.dumps({**row, 'account': name, 'usd': usd, **({'tokens': tokens} if tokens else {}),
+                'basis': 'charged' if cost.get('basis') == 'provider_reported' else 'reference' if is_reference(tariff) else 'tariff',
+                **({'reference': True, 'price_source': tariff['source'], 'price_read': tariff.get('effective_at')}
+                   if is_reference(tariff) else {})}))
+        elif name and (tokens.get('in', 0) > 0 or tokens.get('out', 0) > 0):
+            # Tokens were spent and tare could not value them: the row adds no dollars (spent() and remaining() are
+            # unchanged) but own_use() counts it, so a balance that counts down too slowly is said to. A call the
+            # provider itself charged nothing for (a free model on OpenRouter) is valued, at zero: not one of those.
+            free = cost.get('basis') == 'provider_reported' and cost.get('currency') == 'USD'
+            rows.append(json.dumps({**row, 'account': name, 'usd': 0, 'tokens': tokens,
+                                    **({'basis': 'charged'} if free else {'unpriced': True})}))
         elif plan and (allowance > 0 or source in PLANS):  # a reply inside the plan's limits still names its plan
             rows.append(json.dumps({**row, 'account': plan, 'allowance': allowance, **({'plan': source} if source in PLANS else {})}))
         elif sub and (value := equivalent(deployment, call)) > 0:
@@ -230,6 +241,43 @@ def spent(name, since, field='usd', reference=False, source=None):
     except OSError:
         pass
     return round(total, 6)
+
+
+def own_use(name, now):
+    """tare's own use of an API account over the last 7 and 30 days, from one pass over the ledger, or None without a
+    row in 30 days: {'7d': {...}, '30d': {...}}, each {'usd', 'calls', 'tokens' (in + out over the rows that kept them,
+    else None), 'unpriced' (calls tare could not value), 'basis' (sorted: how the rows with dollars were known; a row
+    from before 'basis' was kept counts as 'reference' when it says so, else it names none)}."""
+    spans = {'7d': now - 7*86400, '30d': now - 30*86400}
+    found = {k: {'usd': 0.0, 'calls': 0, 'tokens': None, 'unpriced': 0, 'basis': set()} for k in spans}
+    try:
+        with open(folder()/'provider-spend.jsonl', encoding='utf-8') as ledger:
+            for line in ledger:
+                try:
+                    row = json.loads(line)
+                    if row['account'] != name:
+                        continue
+                    at, usd = float(row['at']), float(row['usd'])
+                except (ValueError, KeyError, TypeError):
+                    continue  # a torn line is not a call; an energy or allowance row has no dollars
+                kept = row.get('tokens') if isinstance(row.get('tokens'), dict) else {}
+                counted = [kept[k] for k in ('in', 'out') if type(kept.get(k)) is int]
+                basis = row.get('basis') or ('reference' if row.get('reference') else None)
+                for span, start in spans.items():
+                    if at >= start:
+                        use = found[span]
+                        use['usd'] += usd
+                        use['calls'] += 1
+                        use['unpriced'] += bool(row.get('unpriced'))
+                        if counted:
+                            use['tokens'] = (use['tokens'] or 0) + sum(counted)
+                        if usd > 0 and basis:
+                            use['basis'].add(basis)
+    except OSError:
+        pass
+    if not found['30d']['calls']:
+        return None
+    return {k: {**v, 'usd': round(v['usd'], 6), 'basis': sorted(v['basis'])} for k, v in found.items()}
 
 
 def equivalents(name, since):
