@@ -131,14 +131,8 @@ def codex_login_available(deployment):
 
 
 def supports_streaming(deployment):
-    """Only use transports whose streamed tool frames match the qualified codec."""
-    profile=deployment['native_profile']
-    if profile['protocol'] in {'vendor-cli','gemini-generate-content'}:return False
-    # Google's compatibility endpoint emits complete tool calls without stream
-    # indexes. The full-response codec preserves them and their thought signatures.
-    from urllib.parse import urlsplit
-    return ((deployment.get('native_usage_contract') or {}).get('layout')!='gemini-chat'
-            and urlsplit(profile['endpoint']).hostname!='generativelanguage.googleapis.com')
+    """Every HTTP protocol streams (Gemini's two since Kernel #29); a vendor CLI shows life its own way."""
+    return deployment['native_profile']['protocol']!='vendor-cli'
 
 
 def streaming(deployment):

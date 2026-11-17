@@ -2231,8 +2231,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 22515,
-      "sha256": "8e48b2a8d31c494f387b85aa882eea08665f85c0b7cab91548ba48fa835e292e"
+      "size_bytes": 22097,
+      "sha256": "1128ae04c7cae369d0621a8b570bf7f80e315036ed9d26e1c77b204d1ceee744"
     },
     {
       "name": "native_installation.py",
@@ -2481,8 +2481,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns the product turn coordination shared by its frontends; the agent loop stays in the runtime.",
-      "size_bytes": 106330,
-      "sha256": "94eef69f83cfb2a23d4051148cb3b9273ff6861418067a16d9b64806a1a3e4d6"
+      "size_bytes": 106301,
+      "sha256": "0dce56aaffa9c6283c7e737d2d92d9db13d2c7460a30c1307b56b5f7307129af"
     },
     {
       "name": "audit_report.py",
@@ -3351,8 +3351,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator model selection; Runtime retains session execution.",
-      "size_bytes": 21609,
-      "sha256": "efb80bace1ff1a6704dc87c6f2d544e2687cad19c29ea1ed50aabdaa51f69918"
+      "size_bytes": 21543,
+      "sha256": "bf17ed5ed18562ddf4a1f36f2800fecbd72cc4007e0c3d57cf5e2418cacda552"
     },
     {
       "name": "model_choices.py",
@@ -3371,8 +3371,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator model selection; Runtime retains session execution.",
-      "size_bytes": 10415,
-      "sha256": "780ea14cdc0a81f6dad614057f64f972775a2bdb9544c1f88dfa48a7af09d4eb"
+      "size_bytes": 10231,
+      "sha256": "716603ce82743ed6015e373396ce11ab94d7161414c3b239aa682ec6be4be7b0"
     },
     {
       "name": "execution_usage.py",

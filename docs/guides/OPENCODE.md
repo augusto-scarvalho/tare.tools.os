@@ -97,8 +97,8 @@ delivery tool. It does so only for models whose OpenCode entry accepts a named `
 by the budget notice. A Messages profile (Claude Haiku) also marks its prompt for caching (`cache_control`), which
 that API requires; the other families cache on their own.
 
-Gemini 4 Argon runs on Gemini's own `generateContent` API, the only one OpenCode lists for it, and returns complete
-responses without streaming. It is a frontier model, so its route is also a planner and auditor reserve, like the
+Gemini 4 Argon runs on Gemini's own `generateContent` API, the only one OpenCode lists for it, and streams
+like the other routes (Kernel #29). It is a frontier model, so its route is also a planner and auditor reserve, like the
 other Gemini 4 Argon routes; it completed a typed audit and a typed plan through tare on 2026-11-10. Automatic
 selection therefore picks it to review another vendor's work before any route paid per token (the operator's
 choice of 2026-11-10: subscription before paid). It never reviews a Google model's work, and an exact pin

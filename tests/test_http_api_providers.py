@@ -66,7 +66,19 @@ def api():
                 if state['tools']:
                     msg['tool_calls'] = [{'id': 'call-1', 'type': 'function', 'function': {'name': 'tare_deliver', 'arguments': '{"summary":"done"}'}}]
                 value = {'model': model, 'choices': [{'finish_reason': 'tool_calls' if state['tools'] else 'stop', 'message': msg}]}
+                if body.get('stream'):
+                    return self.chat_events(value)
             self.reply(value)
+        def chat_events(self, value):
+            # The same answer as Google's compatible endpoint streams it (seen for real, 2026-11-17): the tool call
+            # whole and without an index, usage on every chunk and growing, and `stop` where the whole answer says
+            # `tool_calls`.
+            frame = lambda delta, out, finish=None: {'model': value['model'], 'usage': {'prompt_tokens': 20, 'completion_tokens': out, 'total_tokens': 20 + out},
+                                                     'choices': [{'index': 0, 'delta': {'role': 'assistant', **delta}, 'finish_reason': finish}]}
+            message = value['choices'][0]['message']
+            rows = [frame({'tool_calls': message['tool_calls']} if 'tool_calls' in message else {'content': message['content']}, 1),
+                    frame({}, 2, 'stop')]
+            self.stream([json.dumps(row) for row in rows] + ['[DONE]'])
         def events(self, value):
             # The same answer as the Messages API streams it: the tool's input arrives as JSON fragments.
             block = value['content'][0]
@@ -79,12 +91,14 @@ def api():
                     {'type': 'content_block_stop', 'index': 0},
                     {'type': 'message_delta', 'delta': {'stop_reason': value['stop_reason']}, 'usage': {'output_tokens': 2}},
                     {'type': 'message_stop'}]
+            self.stream([json.dumps(row) for row in rows])
+        def stream(self, data):
             state['calls'].append((self.command, self.path, dict(self.headers)))
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream')
             self.send_header('Connection', 'close')
             self.end_headers()
-            self.wfile.write(''.join('event: %s\ndata: %s\n\n' % (row['type'], json.dumps(row)) for row in rows).encode())
+            self.wfile.write(''.join('data: %s\n\n' % row for row in data).encode())
             self.close_connection = True
         def reply(self, value):
             state['calls'].append((self.command, self.path, dict(self.headers)))
@@ -154,8 +168,8 @@ def test_public_cli_tools(api, tmp_path, monkeypatch, name, model, protocol, env
     root = tmp_path / 'project'; root.mkdir()
     args = ['--root', str(root), '--session', str(tmp_path/'session'), '--native-deployment', str(path),
             '--instruction', 'Finish.', '--no-context']
-    # The public console preference streams the Claude codec (Kernel #28) and must still work for Gemini's
-    # complete responses.
+    # The public console preference streams the Claude codec (Kernel #28) and Google's compatible endpoint
+    # (Kernel #29).
     if protocol == 'anthropic-messages' or env=='GEMINI_API_KEY': args.append('--stream')
     assert native_agent.main(args) == 0
     assert len(api['calls']) == 1
@@ -163,12 +177,12 @@ def test_public_cli_tools(api, tmp_path, monkeypatch, name, model, protocol, env
     assert api['body']['model'] == model
     if name.endswith('-pro'):
         assert api['body']['reasoning'] == {'effort': 'medium', 'mode': 'pro'}
-    assert api['body'].get('stream', False) is (protocol == 'anthropic-messages')
+    assert api['body'].get('stream', False) is (protocol == 'anthropic-messages' or env == 'GEMINI_API_KEY')
     saved = (tmp_path/'session'/'native-agent.json').read_text(encoding='utf-8')
     assert 'offline-secret' not in saved
 
 
-def test_saved_gemini_streaming_session_uses_supported_transport_without_replacing_its_profile(api,tmp_path,monkeypatch):
+def test_saved_gemini_streaming_session_streams_without_replacing_its_profile(api,tmp_path,monkeypatch):
     dep=local_dep(api,'gemini-api-3-8-flash');dep['native_streaming']=True
     api['tools']=True
     monkeypatch.setenv('GEMINI_API_KEY','offline-secret')
@@ -177,13 +191,13 @@ def test_saved_gemini_streaming_session_uses_supported_transport_without_replaci
     assert native_agent.main(['--root',str(project),'--session',str(session),'--native-deployment',str(path),
         '--instruction','Finish.','--stream','--no-context'])==0
     before=json.loads((session/'native-agent.json').read_text(encoding='utf8'))
-    assert before['deployment']['native_streaming'] is True and not api['body'].get('stream')
+    assert before['deployment']['native_streaming'] is True and api['body'].get('stream') is True
     assert native_agent.main(['--session',str(session),'--resume','--follow-up','Confirm.',
         '--message-id','next-gemini-message','--stream'])==0
     after=json.loads((session/'native-agent.json').read_text(encoding='utf8'))
     for key in ('deployment','instruction','prompt_capsule','conversation_tool_specs'):
         assert after.get(key)==before.get(key)
-    assert not api['body'].get('stream') and len(api['calls'])==2
+    assert api['body'].get('stream') is True and len(api['calls'])==2
 
 
 @pytest.mark.parametrize('key_name', ['OPENAI_API_KEY', 'CUSTOM_API_KEY'])
