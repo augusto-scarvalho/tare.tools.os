@@ -265,7 +265,7 @@ def delivery_view(value, *, config=None, unit=None):
     """Actionable facts for the coordinator; custody paths remain in the host records."""
     result = {k: value[k] for k in ('verdict', 'applied', 'application', 'application_files',
                                   'reason', 'files', 'route', 'checks', 'suite',
-                                  'checks_before', 'checks_after', 'already_red', 'checks_set_aside', 'needs', 'route_class', 'kind', 'class_source', 'review_edits', 'source_state', 'implementer_report',
+                                  'checks_before', 'checks_after', 'already_red', 'checks_set_aside', 'needs', 'route_class', 'kind', 'class_source', 'critical', 'review_edits', 'source_state', 'implementer_report',
                                   'verification', 'summary', 'remaining', 'next', 'folder_access_request','last_attempt','implementation_stop') if k in value}
     if value.get('needs') and value.get('route_class'):
         from .model_signals import ORDER
@@ -713,6 +713,10 @@ def task_plan(root, config, task, result):
         unit['needs'] = hardest['needs']
         if hardest.get('kind'):  # its type too: a type with no need is no ranking
             unit['kind'] = hardest['kind']
+    if any(t.get('critical') for t in tasks):  # one critical task makes the whole unit so
+        unit['critical'] = True
+        if kind := next((t['kind'] for t in tasks if t.get('critical') and t.get('kind')), None):
+            unit.setdefault('kind', kind)  # a critical task's type when the hardest task states none
     # A promised Python test module is part of the executable check selection,
     # even when the planner listed only existing tests in test_paths. Its missing
     # baseline is red; it must exist and pass after implementation.
