@@ -327,6 +327,10 @@ def refresh(now=None):
                              'This provider has no balance endpoint for an API key. State the balance with '
                              'tare quota --set ' + account + " AMOUNT, or in the console's /quota, and tare counts "
                              'down from it.'})
+    for reading in accounts:  # tare's own use of each API account, from the ledger (kept apart from what the provider says)
+        if reading['kind'] == 'credit' and (use := provider_spend.own_use(reading['account'], now)):
+            reading['own_use'] = use
+            reading.setdefault('notes', []).append(own_use_line(use))
     for reading in accounts:  # a limit a refused call recorded (a spent plan, an API account with no credit), which no reading shows
         if until := parked(reading['account'], now):
             reading['parked_until'] = until
@@ -524,6 +528,27 @@ def day_end(text):
 def clock(epoch, now):
     when = datetime.fromtimestamp(epoch)
     return when.strftime('%H:%M' if when.date() == datetime.fromtimestamp(now).date() else '%a %d %b %H:%M')
+
+
+def own_use_line(use):
+    """What tare's own calls on an API account came to, as one note: dollars, calls and tokens over 7 and 30 days, how
+    the dollars were known, and the calls it could not value (a stated balance counts down too slowly for those)."""
+    def amount(n):
+        return str(n) if n < 1000 else f'{n/1000:.0f}k' if n < 999500 else f'{n/1e6:.1f}M'
+
+    def span(days, v):
+        calls = v['calls']
+        return (f"{days} days US$ {v['usd']:.2f} in {calls} call{'s' * (calls != 1)}"
+                + (f" ({amount(v['tokens'])} tokens)" if v['tokens'] is not None else ''))
+    week, month = use['7d'], use['30d']
+    basis = month['basis']
+    ending = ('charged by the provider' if basis == ['charged'] else "valued at the provider's tariff" if basis == ['tariff']
+              else 'valued at models.dev reference prices, not a confirmed tariff' if basis == ['reference']
+              else 'valued partly at a tariff or a reference price' if basis else '')
+    n = month['unpriced']
+    return ("tare's own use: " + span(7, week) + '; ' + span(30, month) + (' · ' + ending if ending else '')
+            + (f" · {n} call{'s' * (n != 1)} tare could not value: their tokens are counted, their cost is not, "
+               'so a stated balance counts down too slowly' if n else ''))
 
 
 def energy_line(energy):

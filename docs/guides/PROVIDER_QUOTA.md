@@ -145,10 +145,29 @@ the charge of each of its calls to `<storage>/serve/provider-spend.jsonl` when i
 - The API routes carry no tariff of their own: their calls are valued at the models.dev reference price
   ([HTTP providers, Prices](HTTP_API_PROVIDERS.md#prices)), which can be wrong, and the balance is only as exact as
   it. The row then says how much of the use since the statement was valued that way.
-- A call whose cost is unknown (no price for that model) adds nothing, so the figure can only be too high.
+- A call whose cost is unknown (no price for that model) adds no dollars, so the figure can only be too high. Its
+  tokens are kept (see below).
+- Each row also keeps the call's tokens (`in`, `out`, `cache_read`, `cache_write`) and `basis`: `charged` (the
+  provider reported the cost; only OpenRouter and OpenCode do), `reference` (a models.dev reference price) or
+  `tariff`. A call with tokens and no known dollars is a row with `usd: 0` and `unpriced: true`: it moves no balance.
+  Rows written before this change have neither.
 - Single text calls outside a session (a flow assessment, a title) are not added yet.
-- Routing does not act on a stated balance: at zero the row says "none left" and the provider's own refusal is
-  what stops the route.
+
+Under each such account `tare quota`, `/usage` and `/quota` add one line, and `tare quota --json` has it as `own_use`
+(`7d` and `30d`: `usd`, `calls`, `tokens`, `unpriced`, `basis`):
+
+```text
+  tare's own use: 7 days US$ 1.20 in 42 calls (310k tokens); 30 days US$ 4.80 in 160 calls (1.2M tokens) · charged by the provider
+```
+
+It is tare's use only, from its own ledger, to set beside the provider's bill. The ending says how the dollars were
+known: `charged by the provider`, `valued at the provider's tariff`, `valued at models.dev reference prices, not a
+confirmed tariff`, or `valued partly at a tariff or a reference price`. Only OpenRouter and OpenCode report what a call
+cost; for every other provider the dollars are tare's valuation of the tokens. When some calls could not be valued the
+line adds `N calls tare could not value: their tokens are counted, their cost is not, so a stated balance counts
+down too slowly`. Calls recorded before this change count in dollars and calls only (no tokens).
+- A stated balance counted down to zero leaves that account's routes out until a new one is stated (the guard
+  described above). A balance above zero changes no order, except a credit in surplus that renews or lapses.
 
 A reading that fails (the CLI is signed out, the provider does not answer in time) is shown as "no reading" with
 the reason, and the other providers are still read.
