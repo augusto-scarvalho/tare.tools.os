@@ -12,6 +12,12 @@ tare quota --set anthropic-api 100 --renews 14   # a credit that returns each mo
 tare quota --set bedrock 300 --expires 2027-03-31   # a credit that lapses at the end of that day and never renews
 ```
 
+A known balance is also a guard: while a stated balance is counted down to zero, or OpenRouter's own reading (under
+an hour old) shows none, that account's routes are left out instead of being tried and refused, and the line says
+`its routes are left out while nothing is left`. A new statement or reading with credit brings them back at once. An
+account with no known balance is never left out. tare counts only its own use, and it leaves the routes out even if
+the key could still bill a card beyond the stated credit: state a new balance to keep using it.
+
 In the console, `/usage` opens on its first row, **Provider quota and credit**. It shows the saved readings at once
 and asks every provider again in the background (no model call, about 15 seconds); the row changes when the new
 reading lands. Reopen `/usage` to read again.

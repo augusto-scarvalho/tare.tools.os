@@ -391,7 +391,8 @@ def note_usage_limit(deployment, resets_at=None, now=None, kind=None):
 
 def usage_limited(deployment, now=None):
     """Until when this deployment's account, or its own model, has no usage left, else None: a failed call said so
-    (note_usage_limit), or the provider's own quota reading shows a window of this model at zero (tare quota)."""
+    (note_usage_limit), or the provider's own quota reading shows a window of this model at zero (tare quota); for an
+    API route, its account's known balance is spent (provider_quota.balance_spent)."""
     keys = usage_keys(deployment)
     try:
         limits = json.loads(usage_limits_path().read_text(encoding='utf-8')) if keys else {}
@@ -407,6 +408,10 @@ def usage_limited(deployment, now=None):
     if keys:
         from .provider_quota import spent_until
         if read := spent_until(deployment, now):
+            found.append(read)
+    else:  # an API route: its account's known balance, spent
+        from .provider_quota import balance_spent
+        if read := balance_spent(deployment, now):
             found.append(read)
     return max(found) if found else None
 
@@ -443,8 +448,10 @@ def available(name, probe=True):
         delay = limited - now
         seconds = (min(86400, max(0, round(delay)))
                    if math.isfinite(delay) and delay <= 7*86400 else USAGE_LIMIT_DEFAULT_SECONDS)
+        from .provider_spend import account
         return None, Unavailable(
-            f"{usage_account(deployment)} usage limit reached; retry in {seconds}s",
+            f"{usage_account(deployment)} usage limit reached; retry in {seconds}s" if usage_account(deployment) else
+            f"{account(deployment)} has no balance left; it is used again once tare quota (/quota) shows one",
             'QUOTA_EXHAUSTED', retry_after_seconds=seconds)
     from .native_generation import codex_login_available
     if not codex_login_available(deployment):
