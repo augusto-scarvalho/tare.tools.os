@@ -218,6 +218,14 @@ def _detail(tool, args, output):
     return _clip(text, DETAIL_CHARS)
 
 
+RAN = re.compile(r'^\$ (.+?) \(exit (-?\d+)\)\s*$', re.M)  # a line of work_units.run_checks' report
+
+
+def _ran(text):
+    """[(check, exit code)] of the checks tare itself ran around a delegated implementation, from its report."""
+    return [(name[:80], int(code)) for name, code in RAN.findall(_text(text))][:40]
+
+
 def step(tool, args, status, output):
     """One recorded tool call, reduced to what the funnel reads."""
     subject = next((str(args[k]) for k in ('path', 'name', 'query', 'pattern', 'command', 'url') if args.get(k)), '')
@@ -233,6 +241,12 @@ def step(tool, args, status, output):
         if tool == 'implement':  # the raw values, for certain()
             value.update({k: output[s] for k, s in (('verdict', 'verdict'), ('files', 'files_scope'))
                           if isinstance(output.get(s), str) and (k == 'verdict' or output.get('files'))})
+            # The checks tare ran itself inside the delegation, before and after the implementer: no step of this
+            # turn shows them, and a side agent that judged by the steps alone said "no test ran" of a turn whose
+            # unit ran three checks green twice (2026-11-15).
+            ran = {when: found for when in ('before', 'after') if (found := _ran(output.get('checks_' + when)))}
+            if ran:
+                value['checks'] = ran
         stop = output.get('implementation_stop')
         if isinstance(stop, dict) and isinstance(stop.get('reason'), str):  # an attempt that changed nothing
             said.append(f"implementer stopped {stop['reason']}")
@@ -369,7 +383,24 @@ def certain(turn):
         sentence = [f'The last implementation attempt was applied to the project files{said}.']
     else:
         sentence = []
-    return sentence + facts(turn)
+    return sentence + _checked(last) + facts(turn)
+
+
+def _checked(last):
+    """One sentence of the checks tare ran itself around the last delegated implementation, or none: which ran after
+    the implementer and whether they passed, and how they stood before it."""
+    checks = (last or {}).get('checks') or {}
+    after, before = checks.get('after') or [], checks.get('before') or []
+    if not (after or before):
+        return []
+
+    def said(found):
+        failed = [name for name, code in found if code != 0]
+        names = ', '.join(name for name, _ in found[:6]) + (' and others' if len(found) > 6 else '')
+        return f"{names}: " + ('all passed' if not failed else ', '.join(failed[:4]) + ' failed')
+    return ["The host itself ran the unit's checks inside that delegation, which the recorded steps do not show"
+            + (f"; after the implementer, {said(after)}" if after else '; no completed check result was recorded after the implementer')  # a timed-out check leaves no exit line
+            + (f"; before it, {said(before)}" if before else '') + '.']
 
 
 def events(turn, found):
