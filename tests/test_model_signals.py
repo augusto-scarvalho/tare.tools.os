@@ -230,6 +230,21 @@ def test_a_routes_own_record_as_implementer_is_counted_from_the_unit_receipts_an
     assert rows['gemini-api-3-8-flash']['implementer_record']['needs.middling.ran'] == 2
 
 
+def test_the_own_record_counts_each_type_of_work_a_unit_named(tmp_path):
+    """The only measure of a type no board covers (owner, 2026-11-16: games, art, audio). A unit of several types
+    counts in each; an id the catalogue does not hold and a receipt saved before `kind` count in none."""
+    receipt(tmp_path, 's', 'a', [{'route': 'r', 'verdict': 'VERIFIED', 'kind': 'audio', 'audit': {'verdict': 'ACCEPT'}}])
+    receipt(tmp_path, 's', 'b', [{'route': 'r', 'verdict': 'NOT_VERIFIED', 'kind': 'art', 'kinds': ['art', 'audio']}])
+    receipt(tmp_path, 's', 'c', [{'route': 'r', 'verdict': 'VERIFIED', 'kind': 'no-such-type'}])
+    receipt(tmp_path, 's', 'd', [{'route': 'r', 'verdict': 'VERIFIED'}])
+    tally = signals.own_record(tmp_path)['r']
+    assert [tally['kind', 'audio', k] for k in ('ran', 'passed', 'audited', 'accepted')] == [2, 1, 1, 1]
+    assert (tally['kind', 'art', 'ran'], tally['kind', 'art', 'passed'], tally['ran']) == (1, 0, 4)
+    assert not any(k[1] == 'no-such-type' for k in tally if isinstance(k, tuple))
+    assert signals.describe_record(tally).endswith(
+        '; art work: 0 of 1 passed, 0 of 0 audits accepted; audio work: 1 of 2 passed, 1 of 1 audits accepted')
+
+
 def test_an_older_version_of_a_line_is_one_class_lower_and_a_bedrock_id_is_read_as_its_model():
     """The version is part of what a model is: Fable 5.1 is not Fable 5.2, and the Opus 4.6 that Bedrock's free
     credit runs is not the Opus 5.5 of the CLI and the API (owner, 2026-11-15)."""
