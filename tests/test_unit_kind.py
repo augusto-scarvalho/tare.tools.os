@@ -52,7 +52,7 @@ def test_a_board_that_places_the_model_judges_it_by_the_type_else_by_the_general
     # in general Sol is middling and Astra frontier; on this board Sol leads and Astra trails
     assert signals.judged(SOL)['class'] == 'middling' and signals.judged(ASTRA)['class'] == 'frontier'
     sol, astra = signals.judged(SOL, 'coding', KEPT), signals.judged(ASTRA, 'coding', KEPT)
-    assert sol == {'class': 'frontier', 'source': 'Board one.csv'} and astra['class'] == 'cheap'
+    assert (sol['class'], sol['source'], sol['score']) == ('frontier', 'Board one.csv', .90) and astra['class'] == 'cheap'
     assert not signals.reaches(SOL, 'frontier') and signals.reaches(SOL, 'frontier', 'coding', KEPT)  # now reaches it
     assert signals.reaches(ASTRA, 'frontier') and not signals.reaches(ASTRA, 'middling', 'coding', KEPT)  # no longer
     assert signals.short(ASTRA, 'frontier', 'coding', KEPT) == 2
@@ -72,9 +72,9 @@ def faked(monkeypatch, boards):
     def placed(deployment, kind, kept):
         model = deployment['native_profile']['model']
         if kept and 'fable' in model:
-            return {'class': 'cheap', 'general': False, 'source': 'Board'}
+            return {'class': 'cheap', 'general': False, 'source': 'Board', 'score': .5}
         if kept and 'deepseek' in model:
-            return {'class': 'frontier', 'general': False, 'source': 'Board'}
+            return {'class': 'frontier', 'general': False, 'source': 'Board', 'score': .5}
         return {'class': (signals.klass(deployment) or {}).get('class'), 'general': True}
     monkeypatch.setattr(signals, 'type_class', placed)
     return reads

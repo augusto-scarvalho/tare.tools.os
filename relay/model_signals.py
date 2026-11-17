@@ -588,14 +588,25 @@ def describe_record(tally):
 
 
 def judged(deployment, kind=None, kept=None):
-    """{'class', 'source'} a route is judged by for a unit: its class for the task type `kind` (an id of TYPES) when a
+    """{'class', 'source'[, 'score']} a route is judged by for a unit: its class for the task type `kind` (an id of TYPES) when a
     board places it ('source' is that board's name; `kept`, `boards()`, is read when not given), else its general
     class ('source': 'general'), exactly as with no `kind`. A model with no class (no line and no row of the reading
     to place it by) counts as cheap: nothing known places it higher."""
     found = kind and task_type(kind) and type_class(deployment, task_type(kind), boards() if kept is None else kept)
     if found:  # type_class falls back to the general class itself
-        return {'class': found['class'] or 'cheap', 'source': 'general' if found['general'] else found['source']}
+        return {'class': found['class'] or 'cheap', 'source': 'general' if found['general'] else found['source'],
+                **({} if found['general'] else {'score': found['score']})}  # the board's score ranks a critical unit
     return {'class': (klass(deployment) or {}).get('class') or 'cheap', 'source': 'general'}
+
+
+def best_first(deployment, kind=None, kept=None):
+    """A sort key for a critical unit: the best route first, by the class `judged` gives it, then (with a `kind`) a route
+    a board placed before one judged generally, boards in the catalogue's order, then the higher score on that board.
+    Ties keep the caller's order, so cost only breaks them. {'class', 'source', 'score'} -> a tuple to sort by."""
+    used = judged(deployment, kind, kept)
+    names = [s['name'] for s in task_type(kind)['sources']] if kind and task_type(kind) else []
+    return (-ORDER.index(used['class']), names.index(used['source']) if used['source'] in names else len(names),
+            -used.get('score', 0))
 
 
 def short(deployment, needs, kind=None, kept=None):
@@ -846,7 +857,7 @@ def type_class(deployment, kind, kept):
             relation = measured_as(deployment)[1]
             return {'class': placed[0], 'type': kind['id'], 'label': kind['label'], 'general': False,
                     'source': source['name'], 'board': source['board'], 'kind': source['kind'],
-                    'read_at': board.get('read_at'), 'effort': row.get('effort'),
+                    'read_at': board.get('read_at'), 'effort': row.get('effort'), 'score': row['intelligence'],
                     **({'base': row['name'], 'relation': relation} if relation and 'name' in row else {})}
     general = klass(deployment)
     return {'class': general and general['class'], 'type': kind['id'], 'label': kind['label'], 'general': True}

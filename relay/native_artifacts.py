@@ -71,6 +71,11 @@ class GraphTask(Record):
         + ', '.join(t['id'] for t in TYPES).replace('professional', 'professional (legal, consulting, finance)')
         + '. tare then judges each model by how it does at that type of work, where a public benchmark measures it, '
         'instead of by its general class. Leave it out when the task is none of these or mixes several.'))
+    critical: bool | None = Field(default=None, description=(
+        'true when a wrong result here would be costly, or hard to notice or undo: security-sensitive code, money, a '
+        'data migration or deletion, a public interface others depend on, a result nobody will check. tare then gives '
+        'the task to the best model for its type, whatever it costs. Leave it out for ordinary work: tare then uses '
+        'the cheapest model that is good enough.'))
 
 
 class Plan(Proposal):
@@ -115,9 +120,9 @@ def validate(role, value):
         result.pop('tasks')  # Preserve existing handoff bytes when graph planning is unused.
     elif role == 'planner':
         for task, given in zip(result['tasks'], value['tasks']):
-            for field in ('needs', 'kind'):
+            for field in ('needs', 'kind', 'critical'):
                 if field not in given:
-                    task.pop(field)  # Likewise for a task that states no need or type: a plan saved before the field keeps its digest.
+                    task.pop(field)  # Likewise for a task that states no need, type or criticality: a plan saved before the field keeps its digest.
     if role == 'explorer':
         # Likewise for an explorer that lists no places, concludes nothing or marks no location.
         if 'locations' not in value:
