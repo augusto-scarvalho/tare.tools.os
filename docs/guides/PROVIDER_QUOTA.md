@@ -166,7 +166,28 @@ Under each such account `tare quota`, `/usage` and `/quota` add one line, and `t
 It is tare's use only, from its own ledger, to set beside the provider's bill. OpenRouter is the one provider whose
 ordinary key also says what the provider counted: its line `OpenRouter's own count for this key: today US$ …, this
 week US$ …, this month US$ … (OpenRouter's day, week and month)` comes from its `/key` endpoint. Anthropic's and
-OpenAI's usage and cost reports refuse an ordinary key (HTTP 401 and 403, probed 2026-11-17): they take an admin key. The ending says how the dollars were
+OpenAI's usage and cost reports refuse an ordinary key (HTTP 401 and 403, probed 2026-11-17): they take an admin key.
+
+### The provider's own count with an admin key (Anthropic, OpenAI)
+
+An admin key is a different kind of key: it manages the organization (members, keys, limits), and only an
+organization's admin can create it. An individual Claude Console account has none until it sets up an organization.
+
+1. Create it: Anthropic, in the Claude Console under **Admin keys** (`sk-ant-admin01-…`); OpenAI, in the
+   organization settings under **Admin keys** (`sk-admin-…`). Where the console offers scopes, grant only the reading
+   of usage and cost.
+2. Store it under its own name, in a terminal: `tare setup --credential ANTHROPIC_ADMIN_KEY` or
+   `tare setup --credential OPENAI_ADMIN_KEY` (it asks for the key without showing it).
+3. `tare quota` and `/quota` then show, under the account,
+   `Anthropic's own count for the organization: 7 days US$ …, 30 days US$ … (UTC days, every key of the organization)`.
+
+tare sends that key to the provider's cost report (`GET /v1/organizations/cost_report`,
+`GET /v1/organization/costs`) and nowhere else: no route names these variables, so no model call can carry one; the
+setup does not list it as a provider; a redirect is refused; nothing of the answer is kept but its dollar figures. A
+key the report refuses shows `… did not read Anthropic's cost report: HTTP 401. It takes an admin key of the
+organization, not an ordinary API key.` The count is the whole organization's, every key and every workspace, in UTC
+days; tare's own use is the last 7 and 30 days of its own calls. To stop, delete the key from the vault
+(Windows Credential Manager, service `universal-agent-harness`). Google has no such report for an API key. The ending says how the dollars were
 known: `charged by the provider`, `valued at the provider's tariff`, `valued at models.dev reference prices, not a
 confirmed tariff`, or `valued partly at a tariff or a reference price`. Only OpenRouter and OpenCode report what a call
 cost; for every other provider the dollars are tare's valuation of the tokens. When some calls could not be valued the

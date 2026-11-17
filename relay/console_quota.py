@@ -52,6 +52,9 @@ class QuotaPanel(SupportPanel):
                 yield Static('State a balance only for an account tare should count down from: stating it restarts '
                              'the count. A day renews the credit each month; a date lapses it, once.',
                              classes='quota-note')
+                yield Static("For Anthropic's or OpenAI's own count of the organization, store an admin key of it in a "
+                             'terminal: tare setup --credential ANTHROPIC_ADMIN_KEY (or OPENAI_ADMIN_KEY). It is sent '
+                             'to the cost report only, never to a model.', classes='quota-note', markup=False)
                 yield Vertical(id='quota-accounts')
                 yield Static('Local models', classes='quota-name')
                 yield row('Energy price, US$ per kWh', Input(self.price, id='quota-energy'))

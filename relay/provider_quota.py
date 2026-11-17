@@ -21,6 +21,8 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from urllib.error import HTTPError
+from urllib.request import Request, build_opener
 from pathlib import Path
 
 SCHEMA = 'tare.tools/provider-quota/1'
@@ -145,6 +147,68 @@ def openrouter_use(value):
             if isinstance(data, dict) and type(data.get(field)) in (int, float)]
     return ("OpenRouter's own count for this key: " + ', '.join(f'{label} US$ {amount:.2f}' for label, amount in used)
             + " (OpenRouter's day, week and month)") if used else ''
+
+
+def anthropic_days(body):
+    """`GET /v1/organizations/cost_report`: [(start of a UTC day, dollars)] from its daily buckets, whose amounts are
+    decimal strings in cents."""
+    return [(datetime.fromisoformat(bucket['starting_at'].replace('Z', '+00:00')).timestamp(),
+             sum(float(row['amount']) for row in bucket.get('results') or [] if str(row.get('currency')).upper() == 'USD') / 100)
+            for bucket in body['data']]
+
+
+def openai_days(body):
+    """`GET /v1/organization/costs`: [(start of a UTC day, dollars)] from its daily buckets."""
+    return [(float(bucket['start_time']),
+             sum(float(row['amount']['value']) for row in bucket.get('results') or []
+                 if str(row['amount'].get('currency')).lower() == 'usd'))
+            for bucket in body['data']]
+
+
+# What a provider itself counted for the whole organization, where an ordinary API key may not ask (probed
+# 2026-11-17: Anthropic answers it HTTP 401, OpenAI HTTP 403). It takes an admin key, a different kind of key that
+# manages the organization: the owner creates it and stores it under its own name (tare setup --credential NAME).
+# tare sends it to that provider's cost report and nowhere else: no route names these variables, so no model call can
+# carry one. account: (the variable, the provider's name, the endpoint, the path for a first day, extra headers,
+# the parser).
+ADMIN_REPORTS = {
+    'anthropic-api': ('ANTHROPIC_ADMIN_KEY', 'Anthropic', 'https://api.anthropic.com/v1',
+                      lambda start: '/organizations/cost_report?limit=31&starting_at='
+                      + datetime.fromtimestamp(start, timezone.utc).strftime('%Y-%m-%dT00:00:00Z'),
+                      {'anthropic-version': '2026-10-21'}, anthropic_days),
+    'openai-api': ('OPENAI_ADMIN_KEY', 'OpenAI', 'https://api.openai.com/v1',
+                   lambda start: f'/organization/costs?bucket_width=1d&limit=31&start_time={int(start)}', None, openai_days),
+}
+
+
+def provider_count(account, now):
+    """One note of what the provider counted for the organization in the last 7 and 30 UTC days, read with the stored
+    admin key; a note of the failure when the key is refused (an ordinary key stored under the admin name is); None
+    when no admin key is stored. The note never holds the key or the provider's message."""
+    variable, name, endpoint, path, headers, parse = ADMIN_REPORTS[account]
+    key = secret(variable)
+    if not key:
+        return None
+    from .web_search import NoRedirect
+    day = 86400
+    first = (now // day - 29) * day  # 30 UTC days, today included
+    try:
+        # ponytail: the kernel's HTTP client takes no query string and both reports need one, so this is a plain GET:
+        # redirects refused (the key belongs to this one endpoint), bounded in time and size, nothing of the answer
+        # or the error kept but its numbers and its HTTP status. Move it to the kernel's client when that takes a query.
+        request = Request(endpoint + path(first), headers={'Authorization': 'Bearer ' + key, 'Accept': 'application/json',
+                                                           'User-Agent': 'tare', **(headers or {})})
+        with build_opener(NoRedirect()).open(request, timeout=20) as reply:
+            body = json.loads(reply.read(4 * 1024 * 1024))
+        days = parse(body)
+        week = sum(usd for start, usd in days if start >= (now // day - 6) * day)
+        more = ' or more: the report has further pages' if body.get('has_more') else ''
+        return (f"{name}'s own count for the organization: 7 days US$ {week:.2f}, 30 days US$ "
+                f"{sum(usd for _, usd in days):.2f}{more} (UTC days, every key of the organization)")
+    except Exception as exc:  # the reading of the account must not fail for a report
+        why = f'HTTP {exc.code}' if isinstance(exc, HTTPError) else type(exc).__name__
+        return (f"{variable} did not read {name}'s cost report: {why}. It takes an admin key of the organization, "
+                'not an ordinary API key.')
 
 
 def run(executable, *arguments, timeout=90):
@@ -339,11 +403,15 @@ def refresh(now=None):
         if credit:
             accounts.append({**reading, 'status': 'DECLARED', 'credit': credit,
                              'source': 'the stated balance less the spend tare recorded since'})
-        elif secret(variable) and account != 'opencode-api':  # OpenCode's key is listed as its subscription above
+        elif (secret(variable) or account in ADMIN_REPORTS and secret(ADMIN_REPORTS[account][0])) and account != 'opencode-api':
+            # OpenCode's key is listed as its subscription above; an admin key alone still has its report to show
             accounts.append({**reading, 'status': 'NOT_REPORTED', 'reason':
                              'This provider has no balance endpoint for an API key. State the balance with '
                              'tare quota --set ' + account + " AMOUNT, or in the console's /quota, and tare counts "
                              'down from it.'})
+    for reading in accounts:  # the provider's own count, where the owner stored an admin key for it
+        if reading['account'] in ADMIN_REPORTS and (note := provider_count(reading['account'], now)):
+            reading.setdefault('notes', []).append(note)
     for reading in accounts:  # tare's own use of each API account, from the ledger (kept apart from what the provider says)
         if reading['kind'] == 'credit' and (use := provider_spend.own_use(reading['account'], now)):
             reading['own_use'] = use
