@@ -30,7 +30,9 @@
        {"reader": "epoch", "board": "apex_agents_external.csv", "column": "Pass@1 score", "higher_is_better": true, "kind": "outcome", "name": "Epoch APEX-Agents",
         "citation": "APEX-Agents, as collected by Epoch AI (epoch.ai/benchmarks); the data keeps its source's own licence"},
        {"reader": "page", "board": "https://www.vals.ai/benchmarks/legal_bench", "model": "Model", "column": "Accuracy", "higher_is_better": true, "kind": "outcome", "name": "Vals AI LegalBench",
-        "citation": "LegalBench as run by Vals AI (vals.ai/benchmarks/legal_bench), read from its public leaderboard page"}]},
+        "citation": "LegalBench as run by Vals AI (vals.ai/benchmarks/legal_bench), read from its public leaderboard page"},
+       {"reader": "page", "board": "https://www.legalbenchmarks.ai/leaderboard/models", "model": "Model", "column": "Task pass rate", "higher_is_better": true, "kind": "outcome", "name": "Legal Benchmarks",
+        "citation": "Legal Benchmarks (legalbenchmarks.ai), contract workflows and data extraction, read from its public leaderboard page"}]},
     {"id": "security", "label": "cybersecurity", "description": "Cybersecurity: finding and reasoning about vulnerabilities.",
      "sources": [
        {"reader": "page", "board": "https://cwe-bench.com/", "model": "Model", "column": "Pass@1", "higher_is_better": true, "kind": "outcome", "name": "CWE-bench",
@@ -50,7 +52,10 @@
      "description": "Art made by code: sprites, pixel art, tiles and images drawn by a program the model writes, not by an image generator.", "sources": []},
     {"id": "audio", "label": "audio made by code", "hint": "sound effects and music synthesised by code",
      "description": "Audio made by code: sound effects, voices and music synthesised by a program the model writes, not by an audio generator.", "sources": []},
-    {"id": "medicine", "label": "medicine and life sciences", "description": "Medicine and the life sciences: clinical and biological questions.", "sources": []},
+    {"id": "medicine", "label": "medicine and life sciences", "description": "Medicine and the life sciences: clinical and biological questions.",
+     "sources": [
+       {"reader": "json", "board": "https://healthbenchprofessional.com/data/leaderboard.json", "rows": "models", "model": "name", "organisation": "lab", "column": "score", "as_of": "updated", "higher_is_better": true, "kind": "reported", "name": "HealthBench Professional",
+        "citation": "HealthBench Professional, a benchmark by OpenAI; scores as each lab reported them, collected by healthbenchprofessional.com (CC BY 4.0), read from its public data file"}]},
     {"id": "data", "label": "data analysis", "description": "Data analysis: cleaning, querying and reading data.", "sources": []},
     {"id": "writing", "label": "writing", "description": "Writing: prose, documentation and editing.", "sources": []},
     {"id": "philosophy", "label": "philosophy", "description": "Philosophy: argument, ethics and conceptual analysis.", "sources": []}
