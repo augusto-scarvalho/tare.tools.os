@@ -31,6 +31,24 @@ def test_delivery_contract_overrides_an_exploration_only_coordinator_note(planne
     assert not calls[0][0]['writable'] and not calls[0][0]['verifiers']
 
 
+@pytest.mark.parametrize('is_local', [True, False], ids=['local planner', 'hosted planner'])
+def test_a_local_planner_is_asked_for_a_worked_example_on_every_task(planner, monkeypatch, is_local):
+    """Every planner reads the rule for a critical task where it fills the plan (the `critical` field's description).
+    A local planner is asked in its brief, for every task: it is the one that gets plans wrong."""
+    from relay import challenger
+    root,state,candidate=planner; state['conversation_flow']=True
+    calls=[];stub_child(monkeypatch,candidate,calls)
+    monkeypatch.setattr(challenger,'local',lambda deployment:is_local)
+    control=execution();tool=wrap(root,state,control)
+    owner=conversation_tasks.ConversationTools(tool,root,state,'turn')
+    owner.understand({'intent':'deliver','relation':'new','objective':'Fix the defect.',
+        'criteria':['The corrected behavior is verified.']})
+    assert tool.execute(request({'instruction':'Plan it.'}),control).status=='succeeded'
+    assert (native_artifacts.EVERY_TASK_EXAMPLES in calls[0][3]) is is_local
+    assert native_artifacts.CRITICAL_EXAMPLES not in calls[0][3]  # the brief never ties the rule to `critical`
+    assert native_artifacts.CRITICAL_EXAMPLES in native_artifacts.GraphTask.model_json_schema()['properties']['critical']['description']
+
+
 @pytest.fixture
 def incomplete(tmp_path):
     session=tmp_path/'planning'/'request'/'session';session.mkdir(parents=True)
