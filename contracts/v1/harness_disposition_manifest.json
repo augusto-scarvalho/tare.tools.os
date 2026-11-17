@@ -2481,8 +2481,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns the product turn coordination shared by its frontends; the agent loop stays in the runtime.",
-      "size_bytes": 103950,
-      "sha256": "bd82ed6523bbed7a3b1b885400ae9ee45d284ca5f071d91364af408b7092c6a2"
+      "size_bytes": 104662,
+      "sha256": "18e4124b699809130fa3b27485bac5e5f18dbb55b8883bf41c238b4de3f948ef"
     },
     {
       "name": "audit_report.py",
@@ -3361,8 +3361,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator model selection; Runtime retains session execution.",
-      "size_bytes": 36011,
-      "sha256": "78fcbe66cbece620af7d815f254c69e20821869ddc6a87a63ab5f13084d8870d"
+      "size_bytes": 35949,
+      "sha256": "91c91ce884e5df392db11f052eeb61c6da2134acb3b54ed7571b4cafe41ef463"
     },
     {
       "name": "model_picker.py",
