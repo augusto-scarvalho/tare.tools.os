@@ -28,6 +28,28 @@ class PlanChangeRequested(PermissionError):
     """The user sent the shown plan back for changes; nothing was implemented."""
 
 
+def review_lines(artifact):
+    """What the critic of a critical plan said, from the receipt beside the plan's artifact (planning/<job>/); nothing
+    when there was no review. First in the text: it is what the user should read before saying yes."""
+    from .native_agent import read_json
+    path = artifact.parent.parent/'receipt.json'
+    try:
+        result = read_json(regular(path), 65536).get('result') or {} if path.is_file() else {}
+        review = result.get('review') or {}
+        if review.get('status') != 'REVIEWED' or Path(result['artifact']).resolve() != artifact.resolve():
+            return []
+        if review['verdict'] == 'ACCEPT' and not review.get('findings'):
+            return ['A reviewer of another vendor accepted this plan.' if review.get('independent') else
+                    'A reviewer accepted this plan (reviewed by the same vendor: not independent).', '']
+        revised = review.get('revised') is True  # the plan below is then the planner's one revision with the findings
+        return ['Independent review of '+('the first' if revised else 'this')+' plan: '+review['verdict'], *(
+            f'- {f["claim"]}'+(' (Files: '+', '.join(f['paths'])+')' if f.get('paths') else '') for f in review['findings']),
+            'The planner revised the plan once with these findings; the plan below is the revised one.' if revised else
+            'The reviewer only advises. Implement as it is, or change the plan.', '']
+    except (OSError, ValueError, KeyError, TypeError):
+        return []  # a review that cannot be read never hides the plan
+
+
 def plan_text(root, request):
     """The whole saved plan, readable, from the artifact whose sha256 the request binds."""
     path = regular(Path(request['artifact']))
@@ -37,7 +59,7 @@ def plan_text(root, request):
     if hashlib.sha256(raw).hexdigest() != request['plan']:
         raise ValueError('The saved plan changed after it was proposed.')
     plan = json.loads(raw)['payload']
-    out = [plan.get('summary', ''), '', 'Steps:', *(f'{n}. {s}' for n, s in enumerate(plan.get('steps', []), 1))]
+    out = [*review_lines(path), plan.get('summary', ''), '', 'Steps:', *(f'{n}. {s}' for n, s in enumerate(plan.get('steps', []), 1))]
     for task in plan.get('tasks', []):
         out += ['', '• '+task['title'], '  '+task.get('summary', ''), '  Files: '+', '.join(task['target_paths'])]
         out += ['  Done when: '+c for c in task.get('criteria', [])]

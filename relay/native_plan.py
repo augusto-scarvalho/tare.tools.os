@@ -224,12 +224,12 @@ def route(deployment, reason):
 
 
 
-def select_route(choice, role, reason, producer=None):
+def select_route(choice, role, reason, producer=None, work_type=None):
     from .execution_scope import for_role
-    with for_role(role):return _select_route(choice,role,reason,producer)
+    with for_role(role):return _select_route(choice,role,reason,producer,work_type)
 
 
-def _select_route(choice, role, reason, producer=None):
+def _select_route(choice, role, reason, producer=None, work_type=None):
     from .execution_scope import current,planner_candidates
     from .native_routes import executed_decision
     scope=current()
@@ -266,7 +266,7 @@ def _select_route(choice, role, reason, producer=None):
         return choice, {**route(choice, reason),
             'executed_decision': executed_decision('CONFIGURED', choice.get('id'), [choice.get('id')])}
     from .native_routes import ranked, reviewers
-    deployments, selection = (reviewers(producer, role) if role == 'plan-auditor'
+    deployments, selection = (reviewers(producer, role, work_type=work_type) if role == 'plan-auditor'
                               else ranked(role, producer))
     if not deployments:
         return None, {'deployment': None, 'model': None, 'reason': 'NO_ELIGIBLE_NATIVE_ROLE', 'selection': selection,

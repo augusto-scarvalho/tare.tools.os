@@ -788,8 +788,8 @@ def recover_completed_plan(root, config, value):
                     or result.get('status') not in {'PLANNED','HANDOFF_TOO_LARGE'}):
                 continue
             artifact = regular(Path(result['artifact']))
-            if artifact.resolve() != (receipt.parent/'session/artifact.json').resolve():
-                continue
+            if artifact.resolve() not in {(receipt.parent/n/'artifact.json').resolve() for n in ('session', 'revision')}:
+                continue  # the planner's, or the one revision of it the critic's findings caused
             recorded = read_input(artifact)
             payload=recorded['artifact']['payload']
             if recorded['artifact']['role'] != 'planner' or not payload.get('tasks'):
