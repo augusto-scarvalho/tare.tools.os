@@ -98,6 +98,16 @@ def test_plan_dialog_shows_the_whole_plan_and_sends_the_requested_changes(tmp_pa
             assert buttons == ['Implement this plan', *([] if files_allowed else ['Implement, always allow edits here']),
                                'Change the plan', 'Deny']
             assert app.focused.id == 'permission-once' and panel.query_one('.permission-detail').max_scroll_y > 0
+            # the keys that scroll reach the plan though a button has the focus, and the focus stays on it
+            detail = panel.query_one('.permission-detail')
+            await pilot.press('pagedown'); await pilot.pause()
+            assert detail.scroll_y > 0 and app.focused.id == 'permission-once'
+            await pilot.press('end'); await pilot.pause()
+            assert detail.scroll_y == detail.max_scroll_y
+            await pilot.press('pageup'); await pilot.pause()
+            assert detail.scroll_y < detail.max_scroll_y
+            await pilot.press('home'); await pilot.pause()
+            assert detail.scroll_y == 0
             changes = panel.query_one('#permission-changes', Input)
             changes.focus(); changes.value = 'Keep a.py short'
             await pilot.press('enter'); await pilot.pause()
