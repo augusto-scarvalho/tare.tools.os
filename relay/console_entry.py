@@ -56,6 +56,7 @@ COMMANDS = (('/new', '', 'Save this conversation and start a new one'),
             ('/routes', '', 'Choose the routes per role and their fallback order'),
             ('/guidance', '', 'Read and change the guidance tare and each CLI send to the models'),
             ('/fleet', '', 'Choose the local models the GPU node serves and the one tare auto runs'),
+            ('/quota', '', 'See what is left of each subscription and API credit, and state a balance'),
             ('/setup', '', 'Choose what tare uses on this machine: local models, CLIs, API providers'),
             ('/tools', '', 'Inspect effective tools and project instructions'),
             ('/skills', '', 'Preview and use a project skill'),
@@ -75,7 +76,7 @@ COMMANDS = (('/new', '', 'Save this conversation and start a new one'),
             ('/attach', '[PATH]', 'Preview and attach a file or image'),
             ('/help', '', 'Show command help'))
 CONVERSATION_COMMANDS = {'/new', '/model', '/reasoning', '/diff', '/sessions', '/project', '/permissions', '/backlog', '/terminal', '/files', '/resume', '/attach', '/delivery'}
-CONVERSATION_COMMANDS |= {'/artifacts', '/tasks', '/team', '/usage', '/tools', '/skills', '/challenger', '/storage', '/delegation', '/routes', '/guidance', '/fleet', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up', '/missed'}
+CONVERSATION_COMMANDS |= {'/artifacts', '/tasks', '/team', '/usage', '/tools', '/skills', '/challenger', '/storage', '/delegation', '/routes', '/guidance', '/fleet', '/quota', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up', '/missed'}
 COMMAND_SHORTCUTS = {'/diff': 'F3', '/sessions': 'F1', '/terminal': 'F4', '/project': 'F5', '/files': 'F8'}
 
 
@@ -122,6 +123,8 @@ HELP = ('Conversation sends ordinary messages directly to the assistant, with wo
         'protocol texts; each change goes back to its default with one button. '
         '/fleet chooses the local models the GPU node serves (those tare.tools qualified first, your own too) and '
         'the default tare auto runs. '
+        '/quota shows what is left of each subscription and API credit and lets you state a balance, a renewal day '
+        'or a lapse date, and the energy price of the local GPU. '
         '/setup chooses what tare uses on this machine (local models, CLIs, API providers, decision models) and '
         'proves a route after showing its cost. '
         '/tools shows effective tools and instructions; /skills previews project skills and adds a path to your draft. '

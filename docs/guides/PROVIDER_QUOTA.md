@@ -16,6 +16,14 @@ In the console, `/usage` opens on its first row, **Provider quota and credit**. 
 and asks every provider again in the background (no model call, about 15 seconds); the row changes when the new
 reading lands. Reopen `/usage` to read again.
 
+`/quota` opens the same text on a screen of its own, **Quota, credit and cost**, and under it the fields to state what
+the providers do not report: for each API account the reading lists, `Balance, US$`, `Renews on day` and `or lapses on
+(YYYY-MM-DD)` (what `--set`, `--renews` and `--expires` take), and `Energy price, US$ per kWh` (what `tare setup
+--energy-price` holds). **Save** writes the accounts whose Balance is filled and nothing else, because stating a balance
+restarts the count; one wrong field (a day or a date without a balance, both a day and a date, a past date) saves
+nothing and the status line says which account and why. **Read again** asks the providers again. The screen shows and
+asks for no key; keys stay in `/setup`.
+
 ```text
 Subscriptions
   Claude subscription · plan max_20x

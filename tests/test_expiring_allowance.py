@@ -402,7 +402,7 @@ def test_render_marks_what_is_used_first_and_says_the_credit_renews():
     assert '· in surplus: 23% left, 14% of the window left' in week
     assert 'in surplus' not in next(line for line in lines if line.strip().startswith('5 h'))
     assert next(line for line in lines if 'Claude API' in line).endswith(
-        'US$ 50.00 left of US$ 100.00 a cycle, renews Mon 14 Dec · in surplus: 50% left, 25% of the cycle left')
+        'US$ 50.00 left of US$ 100.00 a cycle, renews Mon 14 Dec · in surplus: 50% left, 25% of the cycle left: used first')
 
 
 def test_a_demand_in_the_tui_starts_one_quota_refresh_and_a_second_one_right_after_starts_none(tmp_path, monkeypatch):

@@ -307,6 +307,11 @@ com uma nova contagem.
 
 ### Consultar uso, tarefas, ferramentas e skills do projeto
 
+- `/quota` abre a mesma leitura numa tela própria, **Quota, credit and cost**, e abaixo dela os campos para declarar
+  o que os fornecedores não informam: por conta de API, `Balance, US$`, `Renews on day` e `or lapses on (YYYY-MM-DD)`,
+  e o `Energy price, US$ per kWh`. **Save** grava só as contas com saldo preenchido (declarar um saldo reinicia a
+  contagem); um campo errado não grava nada e a linha de estado diz qual conta e por quê. **Read again** consulta os
+  fornecedores de novo. A tela nunca mostra nem pede chave: as chaves ficam no `/setup`.
 - `/usage` abre na primeira linha, **Provider quota and credit**: o que resta em cada assinatura
   e em cada conta de API, com a hora da leitura. A leitura salva aparece na hora e o painel
   consulta cada fornecedor de novo em segundo plano, sem chamada de modelo (veja
