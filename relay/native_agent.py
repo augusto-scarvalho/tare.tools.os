@@ -79,10 +79,10 @@ def configuration(value):
         from .project_admission import validate
         value['project_admission'] = validate(value['project_admission'])
         selected = value.get('instruction_repositories')
-        readonly_review = (role == 'auditor' and not value.get('writable') and not value.get('verifiers')
+        readonly_review = (role in ('auditor', 'plan-auditor') and not value.get('writable') and not value.get('verifiers')
                            and isinstance(selected, list) and len(selected) == 1 and selected[0] in roots)
         if not readonly_review and (len(roots) != 1 or selected is not None):
-            raise ValueError('Project admission requires one project; a read-only auditor may add evidence roots with one instruction project.')
+            raise ValueError('Project admission requires one project; a read-only auditor or plan auditor may add evidence roots with one instruction project.')
     if type(value.get('terminal',False)) is not bool:
         raise ValueError('native_agent_terminal_boolean_required')
     if value.get('terminal') and role != 'implementer':
