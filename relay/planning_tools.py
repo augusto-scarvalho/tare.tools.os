@@ -319,8 +319,10 @@ class PlanningTools:
                               inner() if callable(inner) else Decimal(0)])
 
     @for_role('planner')
-    def choose(self, args):
-        from .turn_engine import available
+    def choose(self, args, kinds=None):
+        """`kinds`: the recorded demand's types of work, which order only an automatic choice (no pin, no route the
+        coordinator chose, no temporary policy, no list the owner saved)."""
+        from .turn_engine import available, planner_routes, policy
         routes = self.planning['routes']
         trace = getattr(self, '_trace', None)
         chosen = args.get('route')
@@ -346,6 +348,12 @@ class PlanningTools:
         if not scope.changes('planner'):
             candidates=[(chosen,routes[chosen])] if chosen else [(n,routes[n]) for n in self.route_names()]
         mode = 'TEMPORARY_POLICY' if scope.changes('planner') else ('CONFIGURED' if chosen else 'AUTOMATIC')
+        if mode == 'AUTOMATIC' and kinds and not policy().get('planner'):
+            # The session's routes in the order the role table ranks them now for the demand's types: a route that
+            # falls short of frontier at any of them goes after (owner, 2026-11-16: a planner that knows nothing of the
+            # type is no use, however strong in general). A route no longer ranked keeps its place after them.
+            order = planner_routes(kinds)
+            candidates.sort(key=lambda item: order.index(item[0]) if item[0] in order else len(order))
         visited = []
         skipped = []
         refused = None  # the coordinator's chosen planner, switched off for the planner by the routing profile
@@ -409,7 +417,7 @@ class PlanningTools:
         trace = {}
         self._trace = trace
         try:
-            name, deployment = self.choose(args)
+            name, deployment = self.choose(args, (active or {}).get('kinds'))
         finally:
             self._trace = None
         route_repair = route_requalification(self.root, active, cohort, self.planning['routes'], name, deployment) if exhausted and not requalification else None
