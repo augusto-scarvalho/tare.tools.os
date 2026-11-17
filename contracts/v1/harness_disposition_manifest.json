@@ -2151,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 131357,
-      "sha256": "e138737a6a1046c625b9280097aac0726a5e7a231a8268248d4b56b6c12c495b"
+      "size_bytes": 131442,
+      "sha256": "755a81edc5622b90578c185a16ca9047ee027d5dfc9c83e7d55450940280e57a"
     },
     {
       "name": "native_artifacts.py",
@@ -2231,8 +2231,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 22097,
-      "sha256": "1128ae04c7cae369d0621a8b570bf7f80e315036ed9d26e1c77b204d1ceee744"
+      "size_bytes": 22727,
+      "sha256": "d906a2cc8525784043d0901fdab4212666c5c072c508341994f5eca3f34f463e"
     },
     {
       "name": "native_installation.py",

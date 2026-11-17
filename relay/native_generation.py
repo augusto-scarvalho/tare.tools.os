@@ -139,6 +139,17 @@ def streaming(deployment):
     return deployment.get('native_streaming',False) and supports_streaming(deployment)
 
 
+def session_streaming(state, deployment):
+    """A saved session streams as it began: its replies carry the adapter's identity, and streaming is part of it.
+    A session saved before the choice was recorded began when Google's compatible endpoint did not stream, whatever
+    its profile says."""
+    if 'streaming' in state:
+        return state['streaming']
+    from urllib.parse import urlsplit
+    return (streaming(deployment) and (deployment.get('native_usage_contract') or {}).get('layout')!='gemini-chat'
+            and urlsplit(deployment['native_profile']['endpoint']).hostname!='generativelanguage.googleapis.com')
+
+
 def inference_client(deployment, profile, *, credential, metadata_only=False, context_guidance=False, **transport):
     """Compose inference/auth only; the caller retains all agent execution. `context_guidance`: the call carries the
     common text Context, so a vendor CLI may leave out the blocks it stands for (/guidance)."""

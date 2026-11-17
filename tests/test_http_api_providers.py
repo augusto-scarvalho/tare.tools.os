@@ -200,6 +200,28 @@ def test_saved_gemini_streaming_session_streams_without_replacing_its_profile(ap
     assert api['body'].get('stream') is True and len(api['calls'])==2
 
 
+def test_a_gemini_session_saved_before_it_could_stream_resumes_as_it_began(api,tmp_path,monkeypatch):
+    """Such a session's profile says `native_streaming: true` while its replies were made without streaming, and
+    the adapter's identity (which the saved replies carry) includes streaming: resumed as a streaming one it would be
+    refused with `provider history profile changed`."""
+    dep=local_dep(api,'gemini-api-3-8-flash');dep['native_streaming']=True
+    api['tools']=True
+    monkeypatch.setenv('GEMINI_API_KEY','offline-secret')
+    path=tmp_path/'profile.json';path.write_text(json.dumps(dep),encoding='utf8')
+    project=tmp_path/'project';project.mkdir();session=tmp_path/'session'
+    with monkeypatch.context() as before_the_change:
+        before_the_change.setattr(native_agent,'streaming',lambda deployment:False)
+        assert native_agent.main(['--root',str(project),'--session',str(session),'--native-deployment',str(path),
+            '--instruction','Finish.','--no-context'])==0
+    assert not api['body'].get('stream')
+    state=json.loads((session/'native-agent.json').read_text(encoding='utf8'))
+    assert state.pop('streaming') is False and state['deployment']['native_streaming'] is True
+    (session/'native-agent.json').write_text(json.dumps(state),encoding='utf8')  # as saved before the choice was recorded
+    assert native_agent.main(['--session',str(session),'--resume','--follow-up','Confirm.',
+        '--message-id','next-gemini-message','--stream'])==0
+    assert not api['body'].get('stream') and len(api['calls'])==2
+
+
 @pytest.mark.parametrize('key_name', ['OPENAI_API_KEY', 'CUSTOM_API_KEY'])
 def test_setup_key_save_preserves_pending_choices(monkeypatch, key_name):
     from relay.console_setup import SetupPanel
