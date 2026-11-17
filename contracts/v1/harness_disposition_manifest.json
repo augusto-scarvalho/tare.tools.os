@@ -2481,8 +2481,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns the product turn coordination shared by its frontends; the agent loop stays in the runtime.",
-      "size_bytes": 101502,
-      "sha256": "0b56c6b7d84418acaa285f74d7c149da9eec5c49609400be8a49f92a2565a7fd"
+      "size_bytes": 101730,
+      "sha256": "3f78539b70b9eb34f199ca6f3f1b4e726be4832546398e5fd25472c382c7fa61"
     },
     {
       "name": "audit_report.py",
@@ -2981,8 +2981,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS selects configured eligible role routes and persists the rationale; existing native Work owner executes and recovers them.",
-      "size_bytes": 31451,
-      "sha256": "c272def4ab41e17a4be670046b0bb78bca6b67cf29c15333d27c7af495d46137"
+      "size_bytes": 32789,
+      "sha256": "cb2cc1a60abdcdcefe091bf2702cc4f9b8028f5926c329672379af9049e199bc"
     },
     {
       "name": "native_serve.py",
@@ -4111,8 +4111,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 76246,
-      "sha256": "ed52c6c3e9734f181d5f5366445db7d994d38e85618440caf1280a4bd9e83932"
+      "size_bytes": 76454,
+      "sha256": "cfcdd521fee937aa2ad51c3496f5620aec5f7468ea3a44f46ff96bf5b14bee37"
     },
     {
       "name": "conversation_workspace.py",

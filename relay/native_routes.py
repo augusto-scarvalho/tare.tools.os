@@ -121,7 +121,7 @@ def credential_available(name):
     return bool(os.environ.get(name) or native_generation.vault_secret(name))
 
 
-def ranked(role, producer=None, *, check_resources=False):
+def ranked(role, producer=None, *, check_resources=False, work_type=None):
     from .execution_scope import for_role
     from .execution_scope import current, pinned
     if current().pin(role):
@@ -130,7 +130,7 @@ def ranked(role, producer=None, *, check_resources=False):
                          'reason': 'EXACT_TEMPORARY_PIN', 'generation_calls': 0,
                          'candidates': [{'eligible': True, 'catalog': value['native_model_choice']['connection'],
                                          'selected_deployment': value['id']}]}
-    with for_role(role):return _ranked(role,producer,check_resources=check_resources)
+    with for_role(role):return _ranked(role,producer,check_resources=check_resources,work_type=work_type)
 
 
 def proven(row, cache, role=None, mirrors=True):
@@ -254,8 +254,9 @@ def admission(row, role, author=None, credentials=None):
     return deployment, auditor, None
 
 
-def _ranked(role, producer=None, *, check_resources=False):
-    """No inference. New automatic dispatch can also observe current capacity."""
+def _ranked(role, producer=None, *, check_resources=False, work_type=None):
+    """No inference. New automatic dispatch can also observe current capacity. `work_type`: the task type of the unit
+    whose change is reviewed; it changes only the class a route is ranked by (`model_signals.judged`)."""
     from .work_audit import identity
     if role not in {'planner', 'plan-auditor', 'auditor', 'implementer', 'coordinator', 'explorer'} or (role in {'plan-auditor', 'auditor'} and producer is None):
         raise ValueError('ROLE_SELECTION_REQUIRES_SUPPORTED_ROLE_AND_AUTHOR')
@@ -268,8 +269,9 @@ def _ranked(role, producer=None, *, check_resources=False):
     fact_cache = {}; evidence = route_facts.supplied_evidence(); observed_facts = {}
     from .turn_engine import cross_vendor_first
     first = bool(author) and cross_vendor_first()  # off: --any_vendor_auditor or /routes
-    from .model_signals import ORDER, klass, task
+    from .model_signals import ORDER, boards, judged, klass, task
     need = WANTED.get(role)
+    kept = boards() if work_type else None  # read once for the whole ranking
     try:
         fleet = native_catalog.local_default()
     except (OSError, ValueError, KeyError, TypeError):
@@ -317,11 +319,21 @@ def _ranked(role, producer=None, *, check_resources=False):
             selected_deployment=deployment['id'], availability='CREDENTIAL_PRESENT_HOST_UNPROBED' if key else 'HOST_UNPROBED')
         # Classes short of the wanted one, and above it: a model with no class (no line, nothing placing it) counts as cheap.
         found = klass(deployment) or {}
-        gap = ORDER.index(found.get('class') or 'cheap') - ORDER.index(need) if need else 0
-        fall, above = max(0, -gap), max(0, gap)
+        # For a unit of a task type, the class a board gives the model for that type, else its general class (owner,
+        # 2026-11-16: an auditor that knows nothing of the type is no use, however strong in general).
+        used = judged(deployment, work_type, kept) if work_type else None
+        general = ORDER.index(found.get('class') or 'cheap') - ORDER.index(need) if need else 0
+        gap = ORDER.index(used['class']) - ORDER.index(need) if used and need else general
+        # The type decides only whether a route falls short. "The exact class before one above it" stays a matter of
+        # the general class: by the type's class, a model that is better at the type than the role asks went after the
+        # others (on the first real boards a legal unit's review moved from the second best model at legal work to
+        # the ninth).
+        fall, above = max(0, -gap), max(0, general)
         # After a current model of a known line in the same class: an older version, or a model with no class at all.
         dated = bool(need) and ('older_than' in found or not found)
         decision['classes_short'] = fall
+        if used:
+            decision.update(kind=work_type, class_source=used['source'])
         cli_backup = (role in {'auditor', 'plan-auditor'} and
                       (deployment['native_profile']['endpoint'] == 'cli://codex' or row['id'] == 'claude-cli'))
         signal = surplus(deployment, cache=lapsing)  # an allowance about to lapse, in surplus: None otherwise
@@ -378,16 +390,17 @@ def independent_auditors(producer):
     return reviewers(producer)
 
 
-def reviewers(producer, role='auditor', *, check_resources=True):
+def reviewers(producer, role='auditor', *, check_resources=True, work_type=None):
     from .execution_scope import for_role
-    with for_role(role):return _reviewers(producer,role,check_resources=check_resources)
+    with for_role(role):return _reviewers(producer,role,check_resources=check_resources,work_type=work_type)
 
 
-def _reviewers(producer, role='auditor', *, check_resources=True):
+def _reviewers(producer, role='auditor', *, check_resources=True, work_type=None):
     """One owner policy for plan reviews, Work audits and conversation audits.
 
     Automatic admission comes from the role table, not model-name guessing.
     Explicit route lists retain their order after the existing independence gate.
+    `work_type`, a unit's task type, ranks the automatic choice by the class for it (`_ranked`); never the owner's list.
     """
     from .turn_engine import cross_vendor_first, policy, pick_auditors
     from .work_audit import identity, independence
@@ -396,7 +409,7 @@ def _reviewers(producer, role='auditor', *, check_resources=True):
     rules = policy()
     from .execution_scope import current
     if current().changes(role) or rules.get('auditor_selection', 'cross_vendor_frontier') == 'cross_vendor_frontier':
-        return ranked(role, producer, check_resources=check_resources)
+        return ranked(role, producer, check_resources=check_resources, work_type=work_type)
     chosen = pick_auditors(producer, rules['auditor'], probe=check_resources, role=role)
     author = identity(producer, 'implementer')
     return [deployment for _, deployment in chosen], {

@@ -1440,15 +1440,16 @@ def with_effort(deployment, effort, *, at_least=False):
     return value
 
 
-def pick_auditors(implementer, names, *, probe=True, role='auditor'):
+def pick_auditors(implementer, names, *, probe=True, role='auditor', work_type=None):
     from .execution_scope import for_role
-    with for_role('auditor'):return _pick_auditors(implementer,names,probe=probe,role=role)
+    with for_role('auditor'):return _pick_auditors(implementer,names,probe=probe,role=role,work_type=work_type)
 
 
-def _pick_auditors(implementer, names, *, probe=True, role='auditor'):
+def _pick_auditors(implementer, names, *, probe=True, role='auditor', work_type=None):
     """[(name, deployment)] of independent auditors: never the implementer's model or bias domain
     (landing policy AUDITOR_NOT_INDEPENDENT); another vendor first (CROSS_VENDOR_AUDITOR_PREFERRED) while
-    cross_vendor_first(). `role` is the routing profile's: plan-auditor for a plan review, auditor for a change."""
+    cross_vendor_first(). `role` is the routing profile's: plan-auditor for a plan review, auditor for a change.
+    `work_type`, the task type of the unit under review, reaches only the automatic choice (native_routes._ranked)."""
     from .execution_scope import current
     if current().pin('auditor'):
         from .execution_scope import pinned
@@ -1457,7 +1458,7 @@ def _pick_auditors(implementer, names, *, probe=True, role='auditor'):
     if names is None:
         from .native_routes import reviewers
         try:
-            selected, _ = reviewers(implementer,role=role,check_resources=probe)
+            selected, _ = reviewers(implementer,role=role,check_resources=probe,work_type=work_type)
         except (ValueError, KeyError, OSError):
             return []  # Unknown producer identity cannot establish independence.
         return [(value['id'], value) for value in selected]
@@ -1495,11 +1496,11 @@ def _pick_auditors(implementer, names, *, probe=True, role='auditor'):
     if first:
         found.sort(key=lambda item: item[0])
     if not found and remap_required:
-        return _pick_auditors(implementer,None,probe=probe,role=role)
+        return _pick_auditors(implementer,None,probe=probe,role=role,work_type=work_type)
     if first and remap_required and all(same_vendor for same_vendor, _, _ in found):
         # The automatic choice replaces what is left of the owner's list only to bring in another vendor.
         from .work_audit import independence as standing
-        remapped = _pick_auditors(implementer,None,probe=probe,role=role)
+        remapped = _pick_auditors(implementer,None,probe=probe,role=role,work_type=work_type)
         if any(standing(implementer, deployment) == 'INDEPENDENT' for _, deployment in remapped):
             return remapped
     return [item[1:] for item in found]
