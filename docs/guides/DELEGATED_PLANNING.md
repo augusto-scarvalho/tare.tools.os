@@ -53,7 +53,8 @@ and how many known lines it holds; `tare models --type math` is `tare models` wi
 example "middling for mathematics (Epoch FrontierMath tiers 1-3, read 16 Nov)" or "frontier (general: no board places
 it for CAD)". `tare models` and the routes matrix also show each route's own record as implementer on this machine
 per type of work its units named ("audio work: 3 of 4 passed, 2 of 2 audits accepted"; a unit of several types counts
-in each): raw counts that steer nothing, and the only measure of a type no board covers. An Epoch row is matched like any other source's: a model of a known line by its slug and its effort, any
+in each; a unit that names a type and no `needs` is counted too, though such a type ranks no route): raw counts that
+steer nothing, and the only measure of a type no board covers. An Epoch row is matched like any other source's: a model of a known line by its slug and its effort, any
 other by name and creator. A page is read from the one URL the catalogue names, once a day like the rest: reader
 `page` takes the first HTML table whose header row holds the source's `model` and `column` headers (and its
 `organisation` one, when it has it), reader `script` takes the rows of a JSON `<script id=...>` at the catalogue's

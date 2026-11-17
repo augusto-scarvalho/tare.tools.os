@@ -686,3 +686,50 @@ def test_a_busy_local_gpu_sends_a_local_sessions_unit_to_the_next_route_at_once(
     busy[0] = False
     assert [n for n, _ in work_units.routes(local)] == ['qwen38-gsq', 'codex-native-gpt-6-1-sol']
     assert [n for n, _ in work_units.routes(local, chosen='qwen38-gsq')] == ['qwen38-gsq']
+
+
+
+def test_a_verified_unit_that_names_a_type_and_no_need_counts_in_that_types_own_record(setup, tmp_path, monkeypatch):
+    """Found 2026-11-17: the receipt kept a unit's type only beside `needs`, so such a run counted in the route's total
+    and was lost to its type. The receipt here is the one the real conversation unit flow writes (real checks, a
+    stand-in for the implementer), read by the own record as it is."""
+    import shutil
+    import sys
+    from pathlib import Path
+    from relay import model_signals
+    config, custody, root = setup
+    repository(root)
+    (root/'tests').mkdir()
+    (root/'tests/test_selected.py').write_text(
+        'from pathlib import Path\ndef test_value(): assert "value = 2" in Path("a.py").read_text()\n')
+    monkeypatch.setattr(turn_engine, 'project_python', lambda path: sys.executable)
+    config.update(conversation_flow=True, verifiers={
+        'tests': {'repository': 'repo', 'argv': [sys.executable, '-m', 'pytest', '-q']}})
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
+    monkeypatch.setattr(work_units, 'routes', lambda *a, **kw: iter([('worker', deployment())]))
+
+    def worker(child, *args, **kwargs):
+        (Path(child['repositories']['repo'])/'a.py').write_text('value = 2\n')
+        return {'status': 'PROPOSED', 'model_calls': 1}
+    monkeypatch.setattr(native_agent, 'run_session', worker)
+    import subprocess
+    # The plan's unit as the session's ledger holds it: what the plan keeps of a task with a type and no need.
+    custody.mkdir(parents=True, exist_ok=True)
+    (custody/work_units.LEDGER).write_text(json.dumps({'plan': {'units': [{
+        'key': 'u1', 'title': 'Set two', 'target_paths': ['a.py'], 'criteria': ['value equals two'], 'verifiers': ['tests'],
+        'test_paths': ['tests/test_selected.py'], 'depends_on': [], 'kinds': ['audio']}]}}), encoding='utf-8')
+    token = work_units.CHECK_PORT.set(lambda argv, **kwargs: subprocess.run(argv, **kwargs))  # the real pytest, unsandboxed
+    try:
+        result = work_units.run_unit(custody, {'config': config, 'conversation_flow': True,
+            'deployment': deployment(), 'limits': {'max_model_calls': 30}, 'deadline_utc': None},
+            {'unit': 'u1'}, lambda: False, review=lambda *a: {'verdict': 'ACCEPT', 'sources': [], 'reference_sources': []})
+    finally:
+        work_units.CHECK_PORT.reset(token)
+    assert result['verdict'] == 'VERIFIED' and result['kinds'] == ['audio'] and 'needs' not in result, result.get('reason')
+    receipt = json.loads(Path(result['receipt']).read_text(encoding='utf8'))
+    row, = receipt['rungs']
+    assert row['kinds'] == ['audio'] and 'kind' not in row and 'route_class' not in row
+    storage = tmp_path/'record'
+    shutil.copytree(custody/'units', storage/'agent-sessions'/'s'/'units')  # where a storage keeps a session's units
+    tally = model_signals.own_record(storage)[row['route']]
+    assert (tally['ran'], tally['passed'], tally['kind', 'audio', 'ran'], tally['kind', 'audio', 'passed']) == (1, 1, 1, 1)

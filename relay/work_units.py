@@ -636,7 +636,9 @@ def class_row(unit, deployment):
     'class_source', or the general class ('general')."""
     critical = {'critical': True} if unit.get('critical') else {}
     stated = unit.get('effort')
-    if not (unit.get('needs') or unit.get('kind') or stated):
+    # Every type the unit's tasks name ('kinds', kept by the plan; a unit saved before it: its parts' types).
+    named = unit.get('kinds') or list(dict.fromkeys(p['kind'] for p in unit.get('parts') or [] if p.get('kind')))
+    if not (unit.get('needs') or unit.get('kind') or stated or named):
         return critical
     from .model_choices import EFFORTS
     from .model_signals import ORDER, capped, judged
@@ -648,9 +650,13 @@ def class_row(unit, deployment):
         unit = {**unit, 'kind': weakest.get('kind')}
         effort_used = max((judged(deployment, p['kind']) for p in parts if p.get('kind')), default=used,
                           key=lambda u: EFFORTS.index(e) if (e := capped(u.get('effort'), unit.get('critical'))) else -1)
-    row = {'needs': unit['needs'], 'route_class': used['class'],
-           **({'kind': unit['kind'], 'class_source': used['source']} if unit.get('kind') else {}),
-           **({'kinds': list(dict.fromkeys(p['kind'] for p in parts if p.get('kind')))} if parts else {})} if unit.get('needs') else {}
+    # A unit that names its types and no need was ranked by no class, but it is still work of those types: the row
+    # keeps them ('kinds' alone), or the route's own record per type (model_signals.own_record) would count the run and
+    # lose its type (found 2026-11-17: an audio unit with no `needs` was missing from the audio record).
+    row = ({'needs': unit['needs'], 'route_class': used['class'],
+            **({'kind': unit['kind'], 'class_source': used['source']} if unit.get('kind') else {}),
+            **({'kinds': named} if parts else {})} if unit.get('needs') else
+           {'kinds': named or [unit['kind']]} if named or unit.get('kind') else {})
     # The effort it ran at, said only when `routes` asked for it: the plan's, else the board's (`judged_effort`), each
     # clamped to the route's supported levels. Read off the route that ran: one that took no such level ran at its own
     # and says nothing.

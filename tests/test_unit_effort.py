@@ -200,20 +200,20 @@ def test_the_outcome_row_and_the_delivery_carry_the_effort_it_ran_at_and_why(mon
     assert work_units.class_row({'needs': 'frontier', 'kind': 'coding'}, at('high')) == {
         'needs': 'frontier', 'route_class': 'frontier', 'kind': 'coding', 'class_source': 'Board one.csv',
         'effort': 'high', 'effort_from': 'Board one.csv'}
-    assert work_units.class_row({'kind': 'coding'}, at('high')) == {'effort': 'high', 'effort_from': 'Board one.csv'}
+    assert work_units.class_row({'kind': 'coding'}, at('high')) == {'kinds': ['coding'], 'effort': 'high', 'effort_from': 'Board one.csv'}
     assert work_units.class_row({'kind': 'coding', 'critical': True}, at('xhigh')) == {
-        'effort': 'xhigh', 'effort_from': 'Board one.csv', 'critical': True}
+        'kinds': ['coding'], 'effort': 'xhigh', 'effort_from': 'Board one.csv', 'critical': True}
     assert 'effort' not in work_units.class_row({'kind': 'coding'}, at('max'))  # its own, above the ceiling: unsaid
     assert 'effort' not in work_units.class_row({'kind': 'coding'}, at('low'))  # the route did not take it: its own, unsaid
     # the level applied is the one recorded: a route that tops at high, asked for max, ran at high
     tops_high = full(API_KEY)
     tops_high['native_reasoning_levels'] = ['low', 'medium', 'high']
     assert work_units.class_row({'kind': 'coding'}, turn_engine.with_effort(tops_high, 'high')) == {
-        'effort': 'high', 'effort_from': 'Board one.csv'}
+        'kinds': ['coding'], 'effort': 'high', 'effort_from': 'Board one.csv'}
     assert work_units.class_row({'effort': 'xhigh'}, turn_engine.with_effort(tops_high, 'high')) == {
         'effort': 'high', 'effort_from': 'plan'}
     # the plan's effort wins, and is said as the plan's
-    assert work_units.class_row({'kind': 'coding', 'effort': 'low'}, at('low')) == {'effort': 'low', 'effort_from': 'plan'}
+    assert work_units.class_row({'kind': 'coding', 'effort': 'low'}, at('low')) == {'kinds': ['coding'], 'effort': 'low', 'effort_from': 'plan'}
     assert work_units.class_row({'effort': 'high'}, at('high')) == {'effort': 'high', 'effort_from': 'plan'}
     assert work_units.class_row({'effort': 'high', 'critical': True}, at('medium')) == {'critical': True}
     assert work_units.class_row({'critical': True}, {}) == {'critical': True} and work_units.class_row({}, {}) == {}
