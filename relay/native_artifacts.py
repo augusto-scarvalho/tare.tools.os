@@ -66,10 +66,11 @@ class GraphTask(Record):
         'frontier: a complex refactor, a subtle bug, concurrency, security-sensitive or architecture work across '
         'many files. tare gives the task to the cheapest available model of that class or above; when unsure '
         'between two, say the higher.'))
-    # The ids are the catalogue's (relay/task_types.json): a new type needs no edit here.
+    # The ids, and the few words that say what an id covers (`hint`), are the catalogue's (relay/task_types.json): a
+    # new type needs no edit here.
     kind: Literal[tuple(t['id'] for t in TYPES)] | None = Field(default=None, description=(
         'The type of work this task is, when it is clearly one of: '
-        + ', '.join(t['id'] for t in TYPES).replace('professional', 'professional (legal, consulting, finance)')
+        + ', '.join(t['id'] + (f" ({t['hint']})" if t.get('hint') else '') for t in TYPES)
         + '. tare then judges each model by how it does at that type of work, where a public benchmark measures it, '
         'instead of by its general class. Leave it out when the task is none of these or mixes several.'))
     critical: bool | None = Field(default=None, description=(

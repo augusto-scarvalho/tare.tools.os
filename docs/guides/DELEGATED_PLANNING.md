@@ -36,7 +36,7 @@ permaslug, any other by name and vendor) and the two latest readings of one sour
 counts as cheap, as before. `tare models` says it as "middling: reaches Gemini 4 Argon on openrouter, 2026-11-16".
 A model that is the best in general may know nothing of CAD or 3D, so tare also keeps a catalogue of task types
 (`relay/task_types.json`: software engineering, web and front-end, mathematics, physics and natural sciences, legal,
-consulting and finance work, cybersecurity, engineering, CAD, and types with no source yet) and, for each, an ordered
+consulting and finance work, cybersecurity, engineering, CAD, and types with no source yet, among them art and audio made by code, which no public board measures) and, for each, an ordered
 list of public boards: LMArena configs, CSV files of Epoch AI's benchmark archive, and four leaderboards that exist
 only as a public page (CWE-bench, Vals AI LegalBench after APEX-Agents, BenchCAD, and Mercor's Physical-Engineering
 leaderboard). Each board is read again once a day with the same rule as the
