@@ -83,7 +83,7 @@ def test_the_catalogue_is_well_formed_and_lists_the_types_with_no_source_yet():
             assert s['reader'] not in ('page', 'script') or 'licen' not in s['citation'].lower()  # none is claimed
     keys = [signals.source_key(s) for t in signals.TYPES for s in t['sources']]
     assert len(keys) == len(set(keys))
-    assert {t['id'] for t in signals.TYPES if not t['sources']} == {'3d', 'games', 'medicine', 'data', 'writing', 'philosophy'}
+    assert {t['id'] for t in signals.TYPES if not t['sources']} == {'3d', 'games', 'art', 'audio', 'medicine', 'data', 'writing', 'philosophy'}
     assert {t['id'] for t in signals.TYPES if t['sources']} == {
         'coding', 'web', 'math', 'science', 'professional', 'security', 'engineering', 'cad'}
     # legal work reads APEX-Agents first and the public LegalBench page after it

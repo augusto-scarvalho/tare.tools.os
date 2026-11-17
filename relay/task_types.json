@@ -25,7 +25,7 @@
      "sources": [
        {"reader": "epoch", "board": "critpt_external.csv", "column": "Accuracy", "higher_is_better": true, "kind": "outcome", "name": "Epoch CritPt",
         "citation": "CritPt, as collected by Epoch AI (epoch.ai/benchmarks); the data keeps its source's own licence"}]},
-    {"id": "professional", "label": "legal, consulting and finance work", "description": "Professional services: legal, consulting and finance tasks done as an agent.",
+    {"id": "professional", "label": "legal, consulting and finance work", "hint": "legal, consulting, finance", "description": "Professional services: legal, consulting and finance tasks done as an agent.",
      "sources": [
        {"reader": "epoch", "board": "apex_agents_external.csv", "column": "Pass@1 score", "higher_is_better": true, "kind": "outcome", "name": "Epoch APEX-Agents",
         "citation": "APEX-Agents, as collected by Epoch AI (epoch.ai/benchmarks); the data keeps its source's own licence"},
@@ -46,6 +46,10 @@
         "citation": "BenchCAD (benchcad.com), read from its public leaderboard page"}]},
     {"id": "3d", "label": "3D modelling", "description": "3D modelling: meshes, scenes and assets.", "sources": []},
     {"id": "games", "label": "game development", "description": "Game development: engines, gameplay code and tools.", "sources": []},
+    {"id": "art", "label": "art made by code", "hint": "sprites, pixel art and images drawn by code",
+     "description": "Art made by code: sprites, pixel art, tiles and images drawn by a program the model writes, not by an image generator.", "sources": []},
+    {"id": "audio", "label": "audio made by code", "hint": "sound effects and music synthesised by code",
+     "description": "Audio made by code: sound effects, voices and music synthesised by a program the model writes, not by an audio generator.", "sources": []},
     {"id": "medicine", "label": "medicine and life sciences", "description": "Medicine and the life sciences: clinical and biological questions.", "sources": []},
     {"id": "data", "label": "data analysis", "description": "Data analysis: cleaning, querying and reading data.", "sources": []},
     {"id": "writing", "label": "writing", "description": "Writing: prose, documentation and editing.", "sources": []},

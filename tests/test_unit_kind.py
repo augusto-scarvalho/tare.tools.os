@@ -155,3 +155,12 @@ def test_the_unit_takes_the_type_of_the_task_that_needs_the_most(host):
     assert (both['needs'], both['kind']) == ('frontier', 'math')
     assert 'kind' not in unit_of({'needs': 'frontier'}, {'needs': 'cheap', 'kind': 'math'})  # the hardest has none
     assert 'kind' not in unit_of({'kind': 'math'})  # no need: no ranking, so no type kept
+
+
+def test_the_planner_reads_each_types_few_words_from_the_catalogue():
+    """An id alone does not say that `art` is art drawn by code and not by an image generator: the catalogue's `hint`
+    goes beside the id in what the planner reads, and a new type with a hint needs no edit of the plan's schema."""
+    text = GraphTask.model_json_schema()['properties']['kind']['description']
+    assert 'art (sprites, pixel art and images drawn by code), audio (sound effects and music synthesised by code),' in text
+    assert 'professional (legal, consulting, finance), security,' in text and ', games, ' in text
+    assert GraphTask(**TASK, kind='art').kind == 'art' and GraphTask(**TASK, kind='audio').kind == 'audio'
