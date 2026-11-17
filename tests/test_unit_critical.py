@@ -46,7 +46,11 @@ def test_the_field_validates_and_a_plan_saved_before_it_keeps_its_digest():
         'true when a wrong result here would be costly, or hard to notice or undo: security-sensitive code, money, a '
         'data migration or deletion, a public interface others depend on, a result nobody will check. tare then gives '
         'the task to the best model for its type, whatever it costs. Leave it out for ordinary work: tare then uses '
-        'the cheapest model that is good enough.')
+        'the cheapest model that is good enough. '
+        'For a task you mark critical, add to its criteria one worked example for each sentence of the request it '
+        'implements, written as "Example: given <the concrete stored data or the command typed>, <command> gives '
+        '<the exact expected result>". Choose the case a plausible wrong reading of that sentence would get wrong, '
+        'and take the expected result from the sentence of the request, not from your design.')
     old = dict(PLAN, tasks=[TASK])
     assert 'critical' not in json.dumps(native_artifacts.validate('planner', old))
     assert native_artifacts.validate('planner', dict(PLAN, tasks=[dict(TASK, critical=True)]))['tasks'][0]['critical'] is True
