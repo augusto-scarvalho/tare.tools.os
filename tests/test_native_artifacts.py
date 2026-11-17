@@ -44,7 +44,7 @@ def test_codex_object_codec_preserves_actual_role_handoffs(setup,role,explicit_n
         task=dict(key='change',title='Change source',summary='One change',cluster='fixture',
                   priority='P1',criteria=['Selected verifier passes'],target_paths=['a.py'],depends_on=[])
         value['tasks']=[task]
-        wire['tasks']=[dict(task,verifiers=None,test_paths=None,needs={'omitted':True},kind={'omitted':True})]
+        wire['tasks']=[dict(task,verifiers=None,test_paths=None,needs={'omitted':True},kind={'omitted':True},critical={'omitted':True})]
     if role=='explorer':
         location=dict(repository='repo',path='a.py',line=1,claim='Observed source')
         value['locations']=[location]
