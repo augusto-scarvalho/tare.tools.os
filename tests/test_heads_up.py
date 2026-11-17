@@ -556,6 +556,27 @@ def test_certain_says_what_the_last_implementation_did_then_what_tare_checked():
     assert heads_up.certain(turn(implemented('project'))) == [
         'The last implementation attempt was applied to the project files.']
     assert heads_up.certain(turn(implemented())) == []  # no outcome recorded: nothing is certain
+    # The checks tare ran inside the delegation are no step of the turn: the writer is told of them, or it says "no test
+    # ran" of a unit whose checks ran green before and after the implementer (2026-11-15).
+    green = '$ godot-import (exit 0)\nok\n$ tests (exit 0)\n2 passed\n$ conversation-diff (exit 0)\n'
+    checked = heads_up.step('implement', {'note': 'Do it.'}, 'succeeded', {
+        'verdict': 'VERIFIED', 'files': ['a.py'], 'files_scope': 'project', 'checks_before': green, 'checks_after': green})
+    assert checked['checks'] == {when: [('godot-import', 0), ('tests', 0), ('conversation-diff', 0)] for when in ('before', 'after')}
+    assert heads_up.certain(turn(checked)) == [
+        'The last implementation attempt was applied to the project files (verdict VERIFIED).',
+        "The host itself ran the unit's checks inside that delegation, which the recorded steps do not show; after the "
+        'implementer, godot-import, tests, conversation-diff: all passed; before it, godot-import, tests, '
+        'conversation-diff: all passed.']
+    red = heads_up.step('implement', {}, 'succeeded', {'verdict': 'NOT_VERIFIED', 'checks_before': '$ tests (exit 1)\n1 failed\n',
+                                                      'checks_after': '$ tests (exit 1)\n1 failed\n$ lint (exit 0)\n'})
+    assert heads_up.certain(turn(red)) == [
+        "The host itself ran the unit's checks inside that delegation, which the recorded steps do not show; after the "
+        'implementer, tests, lint: tests failed; before it, tests: tests failed.']
+    timed_out = heads_up.step('implement', {}, 'succeeded', {'checks_before': '$ tests (exit 0)',
+                                                            'checks_after': 'tests: more than 600 s (timeout)'})
+    assert heads_up.certain(turn(timed_out))[0].endswith(  # a timed-out check leaves no exit line: not "none ran"
+        'no completed check result was recorded after the implementer; before it, tests: all passed.')
+    assert 'checks' not in implemented('project', 'PASS') and 'checks' not in heads_up.step('demand', {}, 'succeeded', {'checks_after': green})
     # the last implement step wins, and the delivery sentence comes before the facts
     both = turn(implemented('project', 'PASS'), failed, implemented(UNAPPLIED, 'REVISE'))
     assert heads_up.certain(both) == [
