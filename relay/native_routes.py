@@ -80,6 +80,8 @@ def local_models():
     value = read()
     section = value.get('local_models') or {}
     gateways = section.get('gateways') or [] if section.get('use') else []
+    if not gateways:
+        return {}  # no local gateway saved: nothing to read
     try:
         installed = names()
         stamp = json.dumps([gateways, str(directory()), installed], sort_keys=True, default=str)
@@ -425,7 +427,7 @@ def _ranked(role, producer=None, *, check_resources=False, work_type=None):
         # resort, so a machine with only unmeasured routes still runs; the node's own default model is not one.
         # In any role a local model the user granted it (its row does not give the role) and with no class goes after
         # every route with one, and among such routes in the order /routes shows them (`shown`: by label, then id).
-        by_grant = ('implementer' if role == 'coordinator' else role) not in roles(row, current())
+        by_grant = ('implementer' if role == 'coordinator' else role) not in roles(row, current()) and grant(row, role)
         unclassed = not found and (native_catalog.LOCAL.get(row.get('native_catalog', row['id']), row.get(
             'native_catalog', row['id'])) != fleet if role in {'implementer', 'coordinator'} else by_grant)
         if unclassed and by_grant:
