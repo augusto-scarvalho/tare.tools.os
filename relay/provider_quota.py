@@ -337,16 +337,31 @@ def agy_plan(executable, now):
 def read_openrouter(key, now):
     from compute_plane.native_models import NativeHttpClient
     from tare_tools_agent_runtime import BindingRef, CancellationToken, ExecutionControl
-    control = ExecutionControl(BindingRef('provider-quota', 'openrouter', 'operator', 1, 'openrouter'),
-                               CancellationToken(), time.monotonic() + 20)
     client = NativeHttpClient('https://openrouter.ai/api/v1', credential=lambda: key, timeout_seconds=20)
-    value, _ = client.get_observed('/credits', control)
-    reading = {'credit': parse_openrouter(value), 'source': 'GET https://openrouter.ai/api/v1/credits'}
-    try:  # a second opinion on what was spent: its failure must not lose the balance
-        if note := openrouter_use(client.get_observed('/key', control)[0]):
+
+    def get(path):  # each request on its own 20 s: one that times out must not leave the other no time
+        return client.get_observed(path, ExecutionControl(BindingRef('provider-quota', 'openrouter', 'operator', 1, 'openrouter'),
+                                                          CancellationToken(), time.monotonic() + 20))[0]
+    # Two readings that stand apart: the account's balance (`/credits`, which OpenRouter refuses to a key that may
+    # not manage the account) and what this key itself spent (`/key`, which any key may ask). Neither loses the other.
+    reading, refused = {'source': 'GET https://openrouter.ai/api/v1/credits'}, None
+    try:
+        reading['credit'] = parse_openrouter(get('/credits'))
+    except Exception as exc:
+        refused = exc
+    try:
+        if note := openrouter_use(get('/key')):
             reading['notes'] = [note]
     except Exception:
         pass
+    if refused is not None:
+        if 'notes' not in reading:
+            raise refused  # neither answered: no reading, as before
+        code = getattr(refused, 'code', None)
+        why = code if isinstance(code, str) and re.fullmatch(r'[A-Z0-9_]{1,40}', code) else type(refused).__name__
+        reading['notes'].insert(0, f"OpenRouter did not report the account's balance to this key ({why}): the balance "
+                                   'is unknown, and unknown is not zero. What the key itself spent:')
+        reading['source'] = 'GET https://openrouter.ai/api/v1/key'
     return reading
 
 

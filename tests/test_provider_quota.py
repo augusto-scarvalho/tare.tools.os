@@ -123,6 +123,40 @@ def test_openrouters_own_count_for_the_key_is_one_note_and_its_failure_keeps_the
 
     def refused():
         raise OSError('403')
+    # Found 2026-11-17: a key that may not read the account's balance (`/credits` answers 403) may still read its own
+    # spend, and tare did not ask. The balance stays unknown; the key's count is shown; nothing is left out for it.
+    from tare_tools_agent_runtime import ModelFailure
+
+    controls = []
+
+    class KeyOnly(Client):
+        def get_observed(self, path, control):
+            controls.append(control)
+            if path == '/credits':
+                raise ModelFailure('HTTP_403')
+            return counted, {}
+
+    monkeypatch.setattr(native_models, 'NativeHttpClient', KeyOnly)
+    alone = provider_quota.read_openrouter('k', NOW)
+    assert 'credit' not in alone and alone['source'].endswith('/key') and alone['notes'] == [
+        "OpenRouter did not report the account's balance to this key (HTTP_403): the balance is unknown, and unknown is "
+        'not zero. What the key itself spent:',
+        "OpenRouter's own count for this key: today US$ 0.00, this week US$ 0.06, this month US$ 1.50 "
+        "(OpenRouter's day, week and month)"]
+    # each request has its own deadline: a balance request that used its whole time leaves the key's request its own
+    assert len(controls) == 2 and controls[0] is not controls[1] and controls[1].remaining_seconds() > 15
+    shown = provider_quota.render({'observed_at': NOW, 'accounts': [{'account': 'openrouter', 'name': 'OpenRouter',
+        'kind': 'credit', 'status': 'OBSERVED', 'observed_at': NOW, **alone}]}, NOW).splitlines()
+    assert shown[1] == '  OpenRouter' and shown[2].startswith("    OpenRouter did not report") and 'this month US$ 1.50' in shown[3]
+
+    class Neither(Client):
+        def get_observed(self, path, control):
+            raise ModelFailure('HTTP_403')
+
+    monkeypatch.setattr(native_models, 'NativeHttpClient', Neither)
+    with pytest.raises(ModelFailure):  # no reading at all, as before
+        provider_quota.read_openrouter('k', NOW)
+    monkeypatch.setattr(native_models, 'NativeHttpClient', Client)
     Client.key = staticmethod(refused)
     assert provider_quota.read_openrouter('k', NOW) == {'credit': {'currency': 'USD', 'total': 20, 'remaining': 5},
                                                          'source': 'GET https://openrouter.ai/api/v1/credits'}
