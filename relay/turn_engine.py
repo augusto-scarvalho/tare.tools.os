@@ -153,13 +153,19 @@ def cross_vendor_first():
 ROUTE_ROLES = ('implementer', 'planner', 'auditor', 'researcher', 'vision', 'heads_up')
 
 
-def save_policy(roles, *, auditor_selection=None, any_vendor_auditor=None, wanted=None):
+def save_policy(roles, *, auditor_selection=None, any_vendor_auditor=None, wanted=None, effort_ceiling=None):
     """Save the owner's routes per role ({role: [[name, ...], ...]}, tiers in order; a role other than the implementer
     keeps one flat list, in order). Every name must be a route tare knows; an empty role keeps tare's default.
     any_vendor_auditor: True stops putting auditors of another vendor first, False puts them first again (the key
     goes), None keeps what is saved. wanted: {role: class} the owner asks of the roles of native_routes.WANTED, None
-    keeps what is saved; only the roles that differ from tare's table are kept, so the others follow it."""
-    from .model_signals import ORDER
+    keeps what is saved; only the roles that differ from tare's table are kept, so the others follow it.
+    effort_ceiling: {'ordinary' | 'critical': level}, the most a board's effort raises a route to
+    (model_signals.ceiling), kept the same way."""
+    from .model_signals import CEILING, CEILINGS, EFFORTS, ORDER
+    names = {name: default for default, name in ((CEILING[k], CEILINGS[k]) for k in CEILINGS)}  # name: tare's level
+    for name, level in (effort_ceiling or {}).items():
+        if name not in names or level not in EFFORTS:
+            raise ValueError(f'Unknown effort ceiling: {name} {level}. Units: {", ".join(names)}; levels: {", ".join(EFFORTS)}.')
     from .native_catalog import select
     from .native_routes import WANTED, configured
     for role, choice in (wanted or {}).items():
@@ -195,6 +201,11 @@ def save_policy(roles, *, auditor_selection=None, any_vendor_auditor=None, wante
         wanted = {r: c for r, c in old.items() if r in WANTED and c in ORDER} if isinstance(old, dict) else {}
     if differ := {r: c for r, c in wanted.items() if c != WANTED[r]}:
         saved['wanted'] = differ
+    if effort_ceiling is None:
+        old = existing.get('effort_ceiling')
+        effort_ceiling = {n: e for n, e in old.items() if n in names and e in EFFORTS} if isinstance(old, dict) else {}
+    if differ := {n: e for n, e in effort_ceiling.items() if e != names[n]}:
+        saved['effort_ceiling'] = differ
     if any_vendor_auditor is None:
         any_vendor_auditor = existing.get('any_vendor_auditor') is True
     if any_vendor_auditor:
