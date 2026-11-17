@@ -123,10 +123,61 @@ def snapshot():
     return {'routes': routes, 'route_order': surplus_first(list(routes)) if policy().get('planner') else list(routes)}
 
 
+def review_of(out, payload, independent):
+    """The critic's verdict as the coordinator reads it: at most five findings, each a claim and the files to change."""
+    if payload.get('verdict') not in ('ACCEPT', 'REVISE', 'INCONCLUSIVE'):
+        return {**out, 'status': 'FAILED', 'reason': 'INVALID_VERDICT'}
+    return {**out, 'status': 'REVIEWED', 'verdict': payload['verdict'], 'independent': independent,
+            'findings': [{'claim': f['claim'][:1500], 'paths': list(f.get('paths') or [])[:10]}
+                         for f in payload.get('findings') or []][:5]}
+
+
+def settled(row, job):
+    """A receipt an interruption left RUNNING after the planner delivered but before the review and revision ended
+    (the planner's own result is saved before either starts): what completed stands and nothing is dispatched again.
+    A review that finished is kept, a revision artifact that completed is the plan, and an unfinished review or
+    revision is not repeated: the plan that is valid stands, the original with whatever findings were recorded.
+    Pure: it returns the receipt as it would be finished."""
+    mark = row.get('critic')
+    if row.get('status') != 'RUNNING' or mark is None or not row.get('result'):
+        return row
+    from .delegation_tools import count_calls
+    from .native_artifacts import read_input
+
+    def done(folder):
+        try:
+            return read_input(Path(job)/folder/'artifact.json')['artifact']['payload']
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+    result = deepcopy(row['result'])
+    review = result.get('review')
+    if review is None:  # interrupted during the review
+        out = {'status': 'FAILED', 'route': mark.get('route'), 'model_calls': 0, 'reason': 'INTERRUPTED'}
+        if (payload := done('review/session')) is not None:
+            session = Path(job)/'review/session'
+            out['model_calls'] = count_calls(session) if (session/'journal.jsonl').is_file() else 0
+            review = review_of({k: v for k, v in out.items() if k != 'reason'}, payload, mark.get('independent') is True)
+        result['review'] = review = review or out
+        if review.get('findings'):
+            result['next'] += CRITIC_NEXT
+    if review.get('verdict') == 'REVISE' and review.get('findings') and 'revised' not in review:
+        plan = done('revision')  # interrupted during the revision
+        if plan and plan.get('tasks'):
+            revision = Path(job)/'revision'
+            review.update(revised=True, revision_route=row['route'], revision_model_calls=
+                          count_calls(revision) if (revision/'journal.jsonl').is_file() else 0)
+            result = {**handoff(revision/'artifact.json', plan), 'review': review,
+                      'route': result['route'], 'model_calls': result['model_calls']}
+            result['next'] += CRITIC_REVISED_NEXT
+        else:
+            review.update(revised=False, revision_reason='INTERRUPTED')
+    return {**row, 'status': 'FINISHED', 'result': result}
+
+
 def record(path):
     """Project a proven explicit child resume without rewriting its old receipt."""
     from .native_agent import read_json
-    path=regular(Path(path));row=read_json(path,65536)
+    path=regular(Path(path));row=settled(read_json(path,65536),path.parent)
     if row.get('status')=='RUNNING' and row.get('continuation_of'):
         original=regular(Path(row['continuation_of']))
         if (original.parent.parent==path.parent.parent and original.parent!=path.parent
@@ -422,6 +473,9 @@ class PlanningTools:
             row = read_json(receipt_path, 65536)
             if row['request_sha256'] != identity:
                 raise ValueError('Planning effect arguments changed.')
+            if (finished := settled(row, job)) is not row:
+                save_json(receipt_path, finished)  # what the interruption left unfinished is settled once
+                row = finished
             return row.get('result') or {'status': 'INTERRUPTED', 'reason': 'Prior planning may be charged; it is not repeated.'}
         demand_id = None;revision=0;active=None
         if self.state.get('conversation_flow'):
@@ -581,11 +635,19 @@ class PlanningTools:
             # its own task (a weak local one rated every task cheap in 2 of 15 plans, both with the defect) must not
             # excuse its review (owner, 2026-11-17).
             if self.state.get('conversation_flow') and plan.get('tasks'):
+                # The planner's own result is saved before any review is dispatched: a restart then keeps a valid
+                # plan (`settled` reconciles what finished) and never dispatches the review or revision again.
+                row['result'] = {**result, 'route': name, 'model_calls': planner_calls}
+                row['critic'] = {'stage': 'review'}
+                save_json(receipt_path, row)
                 review = self.critic(row, receipt_path, job, active, deployment, plan, control)
                 result['review'] = review
                 if review.get('findings'):
                     result['next'] += CRITIC_NEXT
                     if review['verdict'] == 'REVISE':  # once, and the revision is not reviewed again
+                        row['result'] = {**row['result'], 'review': deepcopy(review), 'next': result['next']}
+                        row['critic']['stage'] = 'revision'
+                        save_json(receipt_path, row)
                         revised = self.revise(row, receipt_path, job, deployment, config, compose, mission, artifact, review, control)
                         if revised:
                             artifact, plan = revised
@@ -671,15 +733,21 @@ class PlanningTools:
         proposal = review/'proposal'
         outcome = {}
         try:
-            save_json(receipt_path, row)
+            row['critic'] = {'stage': 'review', 'route': out['route'], 'independent': kind == 'INDEPENDENT'}
+            save_json(receipt_path, row)  # an interruption from here on is reconciled by `settled`, not repeated
             proposal.mkdir(parents=True)
             (proposal/'plan.json').write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding='utf-8')
             (proposal/'request.json').write_text(json.dumps({k: (active or {}).get(k) for k in ('objective', 'criteria', 'kinds')},
                 indent=2, ensure_ascii=False), encoding='utf-8')
-            config = {'schema': 'tare.tools/native-agent-config/1', 'role': 'plan-auditor', 'typed_output': True,
-                      'repositories': {**self.state['config']['repositories'], 'proposal': str(proposal)},
-                      'writable': {}, 'verifiers': {}, 'capabilities': ['read', 'list', 'search'],
-                      'specgraph_edit_context': False}
+            # The planner's admission policy and folders, and the project as the one instruction source: `proposal` is
+            # evidence only (an auditor's evidence root), so no instruction the parent would not load becomes active.
+            parent = self.state['config']
+            config = {k: deepcopy(parent[k]) for k in ('folder_access', 'project_admission') if k in parent}
+            config.update(schema='tare.tools/native-agent-config/1', role='plan-auditor', typed_output=True,
+                          repositories={**deepcopy(parent['repositories']), 'proposal': str(proposal)},
+                          instruction_repositories=list(parent['repositories']),
+                          writable={}, verifiers={}, capabilities=['read', 'list', 'search'],
+                          specgraph_edit_context=False)
             with local_slot(reviewer):
                 outcome = run_session(config, reviewer, session, CRITIC_BRIEF,
                     limits={'max_model_calls': calls, 'max_seconds': None if seconds is None else int(seconds),
@@ -689,12 +757,7 @@ class PlanningTools:
             if outcome['status'] != 'PROPOSED':
                 return {**out, 'status': 'FAILED', 'reason': str(outcome.get('failure_code') or outcome['status'])}
             from .native_agent import read_json
-            payload = read_json(regular(session/'artifact.json'), 65536)['payload']
-            if payload.get('verdict') not in ('ACCEPT', 'REVISE', 'INCONCLUSIVE'):
-                return {**out, 'status': 'FAILED', 'reason': 'INVALID_VERDICT'}
-            return {**out, 'status': 'REVIEWED', 'verdict': payload['verdict'], 'independent': kind == 'INDEPENDENT',
-                    'findings': [{'claim': f['claim'][:1500], 'paths': list(f.get('paths') or [])[:10]}
-                                 for f in payload.get('findings') or []][:5]}
+            return review_of(out, read_json(regular(session/'artifact.json'), 65536)['payload'], kind == 'INDEPENDENT')
         except (ValueError, OSError, KeyError, TypeError, ArithmeticError) as exc:
             return {**out, 'status': 'FAILED', 'reason': 'REVIEW_ERROR', 'detail': str(exc)[:300]}
 
@@ -715,7 +778,10 @@ class PlanningTools:
         seconds = resources.child_seconds(default_seconds, control.remaining_seconds(), reserve=5)
         if self.state.get('deadline_utc') is not None:
             seconds = resources.ceiling('time', seconds, self.state['deadline_utc']-time.time()-5)
-        if calls is not None and calls < 2 or seconds is not None and seconds < 10 or control.should_stop():
+        # --unlimited lifts the child's own ceilings; these two children keep theirs whatever the parent allows.
+        calls = default_calls if calls is None else min(calls, default_calls)
+        seconds = default_seconds if seconds is None else min(seconds, default_seconds)
+        if calls < 2 or seconds < 10 or control.should_stop():
             raise ValueError('Not enough shared budget for another child.')
         # Charge the whole allowance before dispatch: a crash then leaves the receipt over-, never under-counting.
         if calls is not None:
@@ -843,7 +909,7 @@ class PlanningTools:
             return self.tools.recover_effect(journal)
         job = regular(self.root/'planning'/hashlib.sha256(request.effect_id.encode()).hexdigest()[:24])
         from .native_agent import read_json
-        row = read_json(job/'receipt.json', 65536) if (job/'receipt.json').is_file() else {}
+        row = settled(read_json(job/'receipt.json', 65536), job) if (job/'receipt.json').is_file() else {}
         if row and row.get('request_sha256') != sha(object_json(request.tool_call.arguments_json)):
             return request, EffectResult(request.effect_id, 'refused', encode({'reason': 'Planning effect arguments changed.'}))
         result = row.get('result') or {'status': 'INTERRUPTED', 'reason': 'Planning outcome is unknown; no automatic repeat.'}

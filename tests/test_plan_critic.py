@@ -65,7 +65,7 @@ class Stub:
         if outcome['status'] == 'PROPOSED':
             save_json(root/'artifact.json', {'payload': {'planner': self.plan, 'revision': self.revised,
                                                           'plan-auditor': self.verdict}[role]})
-        if isinstance(outcome.get('raises'), Exception):
+        if isinstance(outcome.get('raises'), BaseException):
             raise outcome['raises']
         return outcome
 
@@ -301,6 +301,94 @@ def test_a_review_that_fails_never_blocks_the_plan_and_is_still_charged(conversa
     # a crash cannot tell what it spent, so the whole reserved allowance (5) is counted; otherwise its 3 calls
     assert tool.calls_committed() == (7 if how == 'raises' else 5) and receipt(parent)['status'] == 'FINISHED'
     assert delegate(conversation) == value and len(stub.sessions) == 2  # never repeated
+
+
+class Killed(BaseException):
+    """The process ends here: nothing in the planner's tool catches it, as nothing catches a killed process."""
+
+
+def reread(conversation, stub, sessions):
+    """What the same effect returns after the restart: nothing more is dispatched, and conversation recovery reads it."""
+    tool, control, _, parent, state = conversation
+    committed = tool.calls_committed()
+    value = delegate(conversation)
+    assert len(stub.sessions) == sessions and tool.calls_committed() == committed
+    row = planning_tools.record(next((parent/'planning').glob('*/receipt.json')))
+    assert row['status'] == 'FINISHED' and row['result'] == value
+    assert receipt(parent)['status'] == 'FINISHED' and delegate(conversation) == value  # settled once, then stable
+    return value
+
+
+@pytest.mark.parametrize('written', [False, True])
+def test_a_restart_during_the_review_keeps_the_valid_plan_and_never_repeats_the_review(conversation, written):
+    tool, control, stub, parent, state = conversation
+    stub.outcome = {'status': 'PROPOSED' if written else 'EXHAUSTED', 'raises': Killed()}
+    with pytest.raises(Killed):
+        tool.execute(request(), control)
+    assert stub.roles() == ['planner', 'plan-auditor']
+    value = reread(conversation, stub, 2)
+    assert value['status'] == 'PLANNED' and value['plan'] == PLAN
+    if written:  # the review had finished: kept, and the revision it asked for is not dispatched after a restart
+        assert value['review'] == {'status': 'REVIEWED', 'verdict': 'REVISE', 'findings': [FINDING], 'route': 'fixture-critic',
+            'model_calls': 3, 'independent': True, 'revised': False, 'revision_reason': 'INTERRUPTED'}
+        assert value['next'].endswith(planning_tools.CRITIC_NEXT)
+    else:
+        assert value['review'] == {'status': 'FAILED', 'route': 'fixture-critic', 'model_calls': 0, 'reason': 'INTERRUPTED'}
+
+
+@pytest.mark.parametrize('written', [True, False])
+def test_a_restart_during_the_revision_uses_a_finished_revision_and_otherwise_keeps_the_first_plan(conversation, written):
+    tool, control, stub, parent, state = conversation
+    stub.revision = {'status': 'PROPOSED' if written else 'EXHAUSTED', 'raises': Killed()}
+    with pytest.raises(Killed):
+        tool.execute(request(), control)
+    assert stub.roles() == ['planner', 'plan-auditor', 'revision']
+    value = reread(conversation, stub, 3)
+    assert value['review']['findings'] == [FINDING] and value['review']['verdict'] == 'REVISE'
+    if written:
+        assert value['plan'] == REVISED and value['artifact'].replace('\\', '/').endswith('revision/artifact.json')
+        assert value['review']['revised'] is True and value['review']['revision_model_calls'] == 2
+        assert value['next'].endswith(planning_tools.CRITIC_REVISED_NEXT)
+        assert dialog(parent, 'revision').startswith('Independent review of the first plan: REVISE')
+    else:
+        assert value['plan'] == PLAN and value['review']['revised'] is False
+        assert value['review']['revision_reason'] == 'INTERRUPTED' and value['next'].endswith(planning_tools.CRITIC_NEXT)
+
+
+def test_the_critic_and_the_revision_keep_the_planners_admission_and_the_proposal_is_only_evidence(conversation, tmp_path):
+    from relay.project_admission import QUARANTINE
+    tool, control, stub, parent, state = conversation
+    state['config'].update(project_admission=dict(QUARANTINE), folder_access={'grants': str(tmp_path/'grants.json')})
+    delegate(conversation)
+    planner_config, critic_config, revision_config = (s[0] for s in stub.sessions)
+    for config in (planner_config, critic_config, revision_config):  # the policy the parent holds, in every child
+        assert config['project_admission'] == QUARANTINE and config['folder_access'] == state['config']['folder_access']
+    assert revision_config['repositories'] == planner_config['repositories']  # a planner: the same three keys
+    # the project is the one instruction source; the proposal folder is evidence the reviewer reads, never instructions
+    assert critic_config['instruction_repositories'] == ['repo'] and set(critic_config['repositories']) == {'repo', 'proposal'}
+    assert (critic_config['writable'], critic_config['verifiers']) == ({}, {})
+    admitted = native_agent.configuration(critic_config)  # the runtime accepts it as it stands
+    assert admitted['project_admission'] == QUARANTINE and admitted['instruction_repositories'] == ['repo']
+    # the allowance is for a plan auditor and for nothing else: a planner with evidence roots is still refused
+    with pytest.raises(ValueError, match='Project admission requires one project'):
+        native_agent.configuration({**critic_config, 'role': 'planner'})
+    with pytest.raises(ValueError, match='Project admission requires one project'):
+        native_agent.configuration({k: v for k, v in critic_config.items() if k != 'instruction_repositories'})
+
+
+def test_under_an_unlimited_parent_the_critic_and_the_revision_keep_their_own_ceilings(conversation, monkeypatch):
+    from dataclasses import replace
+    from relay import execution_scope
+    tool, control, stub, parent, state = conversation
+    state['limits']['max_model_calls'] = None
+    scope = replace(execution_scope.current(), unlimited=('calls', 'time'))
+    monkeypatch.setattr(execution_scope, 'current', lambda: scope)
+    control = type(control)(control.binding, control.cancellation, 1200, monotonic=lambda: 0)
+    value = json.loads(tool.execute(request(), control).output_json)
+    assert value['plan'] == REVISED and stub.roles() == ['planner', 'plan-auditor', 'revision']
+    assert stub.sessions[0][4]['limits']['max_model_calls'] is None  # the planner itself is lifted, as before
+    assert stub.sessions[1][4]['limits'] == {'max_model_calls': 12, 'max_seconds': 600, 'request_seconds': 600}
+    assert stub.sessions[2][4]['limits'] == {'max_model_calls': 6, 'max_seconds': 600, 'request_seconds': 600}
 
 
 def test_the_flows_selector_takes_the_demands_types_for_the_plan_reviewer(monkeypatch):
