@@ -638,27 +638,35 @@ def class_row(unit, deployment):
     stated = unit.get('effort')
     if not (unit.get('needs') or unit.get('kind') or stated):
         return critical
-    from .model_signals import judged
+    from .model_choices import EFFORTS
+    from .model_signals import ORDER, capped, judged
     used = judged(deployment, unit.get('kind')) if unit.get('needs') or unit.get('kind') else {}
+    parts, effort_used = unit.get('parts') or [], used
+    if ranked := [(p, judged(deployment, p.get('kind'))) for p in parts if p.get('needs')]:
+        # A unit of several types is as good as its weakest part (the class `routes` ranked by); the effort is the highest any part's type asks.
+        weakest, used = min(ranked, key=lambda r: ORDER.index(r[1]['class']))
+        unit = {**unit, 'kind': weakest.get('kind')}
+        effort_used = max((judged(deployment, p['kind']) for p in parts if p.get('kind')), default=used,
+                          key=lambda u: EFFORTS.index(e) if (e := capped(u.get('effort'), unit.get('critical'))) else -1)
     row = {'needs': unit['needs'], 'route_class': used['class'],
-           **({'kind': unit['kind'], 'class_source': used['source']} if unit.get('kind') else {})} if unit.get('needs') else {}
+           **({'kind': unit['kind'], 'class_source': used['source']} if unit.get('kind') else {}),
+           **({'kinds': list(dict.fromkeys(p['kind'] for p in parts if p.get('kind')))} if parts else {})} if unit.get('needs') else {}
     # The effort it ran at, said only when `routes` asked for it: the plan's, else the board's (`judged_effort`), each
     # clamped to the route's supported levels. Read off the route that ran: one that took no such level ran at its own
     # and says nothing.
     from .execution_team import reasoning
     from .model_choices import supported_level
     try:
-        from .model_signals import capped
-        ran, wanted = reasoning(deployment), stated or capped(used.get('effort'), unit.get('critical'))
+        ran, wanted = reasoning(deployment), stated or capped(effort_used.get('effort'), unit.get('critical'))
         if ran and ran == supported_level(deployment, wanted):
-            row.update(effort=ran, effort_from='plan' if stated else used['source'])
+            row.update(effort=ran, effort_from='plan' if stated else effort_used['source'])
     except Exception:
         pass  # a deployment the picker cannot describe: a record, never a failure
     return {**row, **critical}
 
 
 def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None, needs=None, work_type=None,
-           critical=False, unit_effort=None):
+           critical=False, unit_effort=None, parts=None):
     """The implementer routes to try, whichever account the conversation runs on (owner, 2026-11-14): the routes of
     the kind --prefer_* names first, then those whose allowance lapses in surplus (the sooner lapse first), then tare's
     implementer ladder, cheapest tier first (the owner's <storage>/serve/routing.json, else the role table's, cheapest sufficient first). With nothing in
@@ -673,7 +681,10 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
     those one class short, then two, so a weaker one runs only when nothing nearer is available and a hard unit does
     not go to a weak model because its allowance is free. With `work_type` (a task type id), a route is judged by its class for
     that type where a board places it, else by its general class. A `critical` unit takes the best route first
-    (`model_signals.best_first`: class, then the board's score), whatever it costs and whatever `needs` says. A route the coordinator chose, or a pin, is not reordered."""
+    (`model_signals.best_first`: class, then the board's score), whatever it costs and whatever `needs` says. A route the coordinator chose, or a pin, is not reordered.
+    `parts` (a unit of tasks with different hints, from `task_plan`) judges each task by its own `needs` and type: a route is
+    as short as its weakest task, a critical unit as good as its worst critical task, and the effort is the highest any
+    task's type asks."""
     from .native_catalog import select
     from .turn_engine import available, gpu_taken, implementer_tiers, surplus_first, with_effort
     from .execution_scope import current, execution_tiers, is_pro, kind, refusal
@@ -707,8 +718,9 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
     if chosen and chosen not in allowed and not switched_off(chosen):
         raise ValueError("Choose one of tare's implementer routes: " + ', '.join(allowed))
     from .model_choices import supported_level
+    from .model_choices import EFFORTS
     from .model_signals import ORDER, best_first, boards, judged, judged_effort, short
-    kept = boards() if work_type and not chosen else None  # once for the whole ranking and the efforts
+    kept = boards() if (work_type or parts) and not chosen else None  # once for the whole ranking and the efforts
     def at_effort(deployment):
         """The route at the effort the coordinator fixed; else, for an automatic route, the one the plan states, else
         the one a board judged its model at (never lower than its own); either one clamped to the levels the route
@@ -721,7 +733,9 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
             if unit_effort:
                 want = supported_level(deployment, unit_effort)
             else:
-                want = work_type and judged_effort(deployment, judged(deployment, work_type, kept), critical)
+                kinds = [p['kind'] for p in parts if p.get('kind')] if parts else [work_type]
+                want = max(filter(None, (kind and judged_effort(deployment, judged(deployment, kind, kept), critical)
+                                         for kind in kinds)), key=EFFORTS.index, default=None)
             return with_effort(deployment, want) if want else deployment
         except Exception:
             return deployment
@@ -729,9 +743,13 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
         def weaker(name):
             try:
                 deployment = select(name)
-                return best_first(deployment, work_type, kept) if critical else short(deployment, needs, work_type, kept)
+                if not parts:
+                    return best_first(deployment, work_type, kept) if critical else short(deployment, needs, work_type, kept)
+                lack = max((short(deployment, p['needs'], p.get('kind'), kept) for p in parts if p.get('needs')), default=0)
+                # a critical unit: its worst critical task by that task's own type, ties by the weakest task
+                return (max(best_first(deployment, p.get('kind'), kept) for p in parts if p.get('critical')), lack) if critical else lack
             except (ValueError, OSError, KeyError, TypeError):
-                return (1, 0, 0) if critical else len(ORDER)  # after every route that is known
+                return ((1, 0, 0) if not parts else ((1, 0, 0), len(ORDER))) if critical else len(ORDER)  # after every route that is known
         allowed.sort(key=weaker)  # stable: the routes that reach the need first, each part in its own order
     gpu_busy = False
     def names():
@@ -1268,7 +1286,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
     refused = []  # why the routing profile refused the coordinator's chosen route or the session's own model
     choices = [(worker['route'], worker['producer'])] if worker else [(producer['id'], producer)] if producer else routes(
         state.get('deployment') or {}, args.get('route'), args.get('effort'), refused=refused, needs=unit.get('needs'), work_type=unit.get('kind'),
-        critical=bool(unit.get('critical')), unit_effort=unit.get('effort'),
+        critical=bool(unit.get('critical')), unit_effort=unit.get('effort'), parts=unit.get('parts'),
         **({'allow_parent': True} if state.get('conversation_flow') else {}))
     visited = []  # rungs actually reached, for executed_decision only; selection is unchanged
     for rung, (name, deployment) in enumerate(choices):
@@ -1616,7 +1634,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 row['patch'] = str(job/f'patch-{rung+1}.diff')
             result = {'verdict': verdict_, 'reason': reason, 'route': name, 'files': sorted(changed),
                       'checks_before': row['before'], 'checks_after': row['after'],
-                      **{k: row[k] for k in ('needs', 'route_class', 'kind', 'class_source', 'critical', 'effort', 'effort_from') if k in row}}
+                      **{k: row[k] for k in ('needs', 'route_class', 'kind', 'class_source', 'kinds', 'critical', 'effort', 'effort_from') if k in row}}
             if was_red:
                 result['already_red'] = row['already_red'] = was_red
             if set_aside:
@@ -1736,12 +1754,12 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
             keep_tree=True
             row.update(verdict='INCONCLUSIVE',reason=str(exc)[:300])
             result={'verdict':'INCONCLUSIVE','reason':row['reason'],'route':name,'retained_tree':str(tree),
-                    **{k: row[k] for k in ('needs', 'route_class', 'kind', 'class_source', 'critical', 'effort', 'effort_from') if k in row}}
+                    **{k: row[k] for k in ('needs', 'route_class', 'kind', 'class_source', 'kinds', 'critical', 'effort', 'effort_from') if k in row}}
             break
         except (ValueError, OSError, KeyError, subprocess.SubprocessError) as exc:
             row.update(verdict='INCONCLUSIVE', reason=str(exc)[:300])
             result = {'verdict': 'INCONCLUSIVE', 'reason': row['reason'], 'route': name,
-                      **{k: row[k] for k in ('needs', 'route_class', 'kind', 'class_source', 'critical', 'effort', 'effort_from') if k in row}}
+                      **{k: row[k] for k in ('needs', 'route_class', 'kind', 'class_source', 'kinds', 'critical', 'effort', 'effort_from') if k in row}}
             if keep_tree and worker:
                 result['worker']={**worker,'producer':producer_reference(Path(worker['session']).parent,worker['producer'])}
             if state.get('conversation_flow') or 'R0' in row['reason'] or 'R5' in row['reason'] or candidate is not None:
