@@ -223,7 +223,7 @@ class RouteMatrix(Vertical):
 
     def klass(self, row):
         """The class of a row's model as `tare models` gives it (two when its routes differ), '' with no line."""
-        from .model_signals import ORDER, klass
+        from .model_signals import ORDER, klass, shown
         found = set()
         for (name, _), routes in self.cells[self.role].items():
             for _, route, _, _ in routes if name == row else ():
@@ -231,7 +231,7 @@ class RouteMatrix(Vertical):
                     found.add((klass(route) or {}).get('class'))
                 except (ValueError, OSError, KeyError, TypeError):
                     pass  # a route with no model to read has no class
-        return '/'.join(c for c in reversed(ORDER) if c in found)
+        return '/'.join(shown(c) for c in reversed(ORDER) if c in found)
 
     def task(self, route):
         from .model_signals import task
