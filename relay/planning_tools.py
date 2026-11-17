@@ -509,6 +509,11 @@ class PlanningTools:
                          'plan-only or no implementation in the plan narrative, not task criteria; the host '
                          'enforces when implementation is authorized. '
                          if self.state.get('conversation_flow') else 'leave tasks empty. ')
+        if self.state.get('conversation_flow'):
+            from .challenger import local
+            if local(deployment):
+                from .native_artifacts import EVERY_TASK_EXAMPLES
+                task_contract += EVERY_TASK_EXAMPLES + ' '
         mission = {'mission': args['instruction'], 'provided_findings': args.get('context', '')}
         if self.state.get('conversation_flow') and active:
             from .conversation_tasks import BACKLOG_CHECK, detected_checks, retained_candidate

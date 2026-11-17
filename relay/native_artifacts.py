@@ -46,6 +46,22 @@ class Exploration(Proposal):
         'does not settle it, which is not the same as finding nothing.'))
 
 
+# Prose criteria hid a wrong reading from the tests and from the delivery auditor, which both follow the plan
+# (2026-11-17: a sort key that ordered the overdue group by priority shipped green and accepted); a worked example
+# states the same sentence as a case anyone, or a decision model, can check against the request. Every planner reads
+# the rule for a critical task where it fills the plan (the `critical` field). A local planner gets it in its brief
+# for every task (planning_tools; owner, 2026-11-17): it is the planner that got this wrong (the same wrong sort key in at
+# least 4 of 17 plans for one request), and told only about critical tasks it gave examples to ordinary ones anyway and marked
+# one critical for no reason.
+WORKED_EXAMPLES = (
+    'one worked example for each sentence of the request it implements, written as "Example: given <the concrete '
+    'stored data or the command typed>, <command> gives <the exact expected result>". Choose the case a plausible '
+    'wrong reading of that sentence would get wrong, and take the expected result from the sentence of the request, '
+    'not from your design.')
+CRITICAL_EXAMPLES = 'For a task you mark critical, add to its criteria ' + WORKED_EXAMPLES
+EVERY_TASK_EXAMPLES = 'Add to the criteria of every task ' + WORKED_EXAMPLES
+
+
 class GraphTask(Record):
     key: str = Field(pattern=r'^[a-z0-9][a-z0-9-]{0,47}$')
     title: str = Field(min_length=1)
@@ -77,7 +93,7 @@ class GraphTask(Record):
         'true when a wrong result here would be costly, or hard to notice or undo: security-sensitive code, money, a '
         'data migration or deletion, a public interface others depend on, a result nobody will check. tare then gives '
         'the task to the best model for its type, whatever it costs. Leave it out for ordinary work: tare then uses '
-        'the cheapest model that is good enough.'))
+        'the cheapest model that is good enough. ' + CRITICAL_EXAMPLES))
     # Without max: tare and the planner never choose it (owner, 2026-11-16: little is gained from it, and it is the
     # user's to choose, with an implementer pin at @max or by telling the coordinator).
     effort: Literal[EFFORTS[:-1]] | None = Field(default=None, description=(
