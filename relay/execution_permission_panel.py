@@ -2,6 +2,7 @@
 mode) a change whose audit was not independent is applied, a check the sandbox blocked runs outside it, a check
 or command that shows no activity is stopped, or an implementer starts on checks that already fail."""
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Input, Static
 
@@ -9,7 +10,11 @@ from .console_panels import SupportPanel
 
 
 class ExecutionPermissionPanel(SupportPanel):
-    BINDINGS = [('escape', 'deny', 'Deny')]
+    # The focus starts on a button, so the keys that scroll a text went nowhere: a long plan could only be read with
+    # the mouse wheel (seen 2026-11-16). They scroll the detail whatever has the focus.
+    BINDINGS = [('escape', 'deny', 'Deny'), Binding('pagedown', 'page(1)', show=False),
+                Binding('pageup', 'page(-1)', show=False), Binding('end', 'page(0)', show=False),
+                Binding('home', 'page(None)', show=False)]
     DEFAULT_CSS = '''
     ExecutionPermissionPanel .support-body { height: auto; max-height: 90%; max-width: 94; }
     ExecutionPermissionPanel .permission-detail { height: auto; max-height: 18; }
@@ -169,6 +174,12 @@ class ExecutionPermissionPanel(SupportPanel):
             if event.button.id == 'permission-change':
                 self.changes = self.query_one('#permission-changes', Input).value
             self.dismiss(event.button.id.removeprefix('permission-'))
+
+    def action_page(self, direction):
+        """Scroll the detail: a page down (1) or up (-1), to its end (0) or its start (None)."""
+        detail = self.query_one('.permission-detail', VerticalScroll)
+        {1: detail.scroll_page_down, -1: detail.scroll_page_up, 0: detail.scroll_end,
+         None: detail.scroll_home}[direction](animate=False)
 
     def action_deny(self):
         self.dismiss('once' if self.request.get('kind')=='stall' else 'deny')  # Escape never stops a process

@@ -1469,9 +1469,19 @@ def with_effort(deployment, effort, *, at_least=False):
         effort = declared_effort(deployment, effort)
     value = deepcopy(deployment)
     profile = value['native_profile']
+    if profile.get('endpoint') == 'cli://agy':
+        # AGY's level is its model id (one id per effort): the id registered for the level is the call to make, as
+        # the picker makes it (model_choices.realization). With none registered the route stays whole: a parameter
+        # naming another level than the id would describe a call that is not the one made.
+        model = (value.get('native_reasoning_models') or {}).get(effort)
+        if not model:
+            return value
+        profile['model'] = value['model'] = model
+        if 'expected_response_model' in profile:
+            profile['expected_response_model'] = model
     original = json.loads(profile.get('parameters_json') or '{}')
     params = reasoning_parameters(value, effort)
-    if params == original:
+    if params == original and profile.get('model') == deployment['native_profile'].get('model'):
         return value
     profile['parameters_json'] = json.dumps(params)
     deployment_profile(value, profile['model'])
