@@ -46,7 +46,8 @@ def plan_text(root, request):
         # is how to correct it.
         hints = [*(['needs a '+task['needs']+' model'] if task.get('needs') else []),
                  *([task['kind']+' work'] if task.get('kind') else []),
-                 *(['critical: the best model for it, whatever it costs'] if task.get('critical') else [])]
+                 *(['critical: the best model for it, whatever it costs'] if task.get('critical') else []),
+                 *(['effort '+task['effort']] if task.get('effort') else [])]
         if hints:
             out.append('  Model: '+'; '.join(hints))
     out += ['', 'Done when:', *('- '+c for c in plan.get('criteria', []))]

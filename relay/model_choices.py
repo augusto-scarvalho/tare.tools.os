@@ -137,6 +137,16 @@ def describe(name, value):
         'fingerprint': digest(value), 'model': model, 'protocol': protocol, 'openrouter': details(value)}}
 
 
+def supported_level(value, effort):
+    """The level to run a route at when `effort` is wanted, from the levels the picker lists for it (`describe`): the
+    wanted one, else the highest listed below it; None when none is at or below it, or the route lists none. An AGY
+    route is left alone: its level is its model id (`realization`), which `with_effort` does not swap."""
+    if value['native_profile'].get('endpoint') == 'cli://agy' or effort not in EFFORTS:
+        return None
+    listed = describe(value.get('id'), value)['route']['efforts']
+    return next((e for e in reversed(EFFORTS[:EFFORTS.index(effort) + 1]) if e in listed), None)
+
+
 ROLES = ('coordinator', 'planner', 'implementer', 'explorer', 'researcher', 'auditor', 'plan-auditor')
 
 

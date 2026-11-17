@@ -265,7 +265,7 @@ def delivery_view(value, *, config=None, unit=None):
     """Actionable facts for the coordinator; custody paths remain in the host records."""
     result = {k: value[k] for k in ('verdict', 'applied', 'application', 'application_files',
                                   'reason', 'files', 'route', 'checks', 'suite',
-                                  'checks_before', 'checks_after', 'already_red', 'checks_set_aside', 'needs', 'route_class', 'kind', 'class_source', 'critical', 'review_edits', 'source_state', 'implementer_report',
+                                  'checks_before', 'checks_after', 'already_red', 'checks_set_aside', 'needs', 'route_class', 'kind', 'class_source', 'critical', 'effort', 'effort_from', 'review_edits', 'source_state', 'implementer_report',
                                   'verification', 'summary', 'remaining', 'next', 'folder_access_request','last_attempt','implementation_stop') if k in value}
     if value.get('needs') and value.get('route_class'):
         from .model_signals import ORDER
@@ -706,6 +706,7 @@ def task_plan(root, config, task, result):
                                            *(c for t in tasks for c in t['criteria'])])), 'depends_on': [],
             'test_paths': list(dict.fromkeys(p for t in tasks for p in t.get('test_paths', []))),
             'verifiers': list(dict.fromkeys(p for t in tasks for p in t.get('verifiers', [])))}
+    from .model_choices import EFFORTS
     from .model_signals import ORDER
     needy = [t for t in tasks if t.get('needs') in ORDER]
     if needy:  # the hardest task decides: one implementer does them all
@@ -713,6 +714,8 @@ def task_plan(root, config, task, result):
         unit['needs'] = hardest['needs']
         if hardest.get('kind'):  # its type too: a type with no need is no ranking
             unit['kind'] = hardest['kind']
+    if stated := [t['effort'] for t in tasks if t.get('effort') in EFFORTS]:
+        unit['effort'] = max(stated, key=EFFORTS.index)  # the highest any task states: one implementer does them all
     if any(t.get('critical') for t in tasks):  # one critical task makes the whole unit so
         unit['critical'] = True
         if kind := next((t['kind'] for t in tasks if t.get('critical') and t.get('kind')), None):
