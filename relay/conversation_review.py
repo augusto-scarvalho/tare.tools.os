@@ -672,14 +672,16 @@ NOT_INDEPENDENT = 'same-family audit, not independent'
 NO_AUDITOR = 'No independent auditor is available. The candidate remains unapplied.'
 
 
-def available(producer, owner=None):
+def available(producer, owner=None, work_type=None):
     """[(route, deployment)] of auditors. In --local_only mode, where the conversation's TUI can ask the user before
-    applying, an auditor of the implementer's own family is admitted (labelled NOT_INDEPENDENT); headless never."""
+    applying, an auditor of the implementer's own family is admitted (labelled NOT_INDEPENDENT); headless never.
+    `work_type`: the unit's task type, which orders the automatic choice by the class for it."""
     from .turn_engine import pick_auditors, policy
     from .execution_scope import confirmable_audit
     rules = policy()
     with confirmable_audit(getattr(owner, 'permission_directory', None) is not None):
-        return pick_auditors(producer, rules['auditor'] if rules.get('auditor_selection') == 'configured' else None)
+        return pick_auditors(producer, rules['auditor'] if rules.get('auditor_selection') == 'configured' else None,
+                             **({'work_type': work_type} if work_type else {}))
 
 
 def labelled(result):
@@ -926,7 +928,7 @@ def _review(owner, task, tree, producer, unit, changed, checks, control, *, _una
     from .execution_scope import confirmable_audit, current, require, same_family_admitted
     if pinned and not current().allows(pinned[1], 'auditor')[0]:
         pinned = None  # this instance's --auditor pin or allowlist wins over the route of the review it retries
-    candidates = [pinned] if pinned else available(producer, owner)
+    candidates = [pinned] if pinned else available(producer, owner, unit.get('kind'))
     candidates = [(name, dep) for name, dep in candidates if name not in _unavailable]
     if not candidates:
         return {'verdict': 'INCONCLUSIVE', 'reason': NO_AUDITOR}
