@@ -69,7 +69,7 @@ def test_new_phase_default_does_not_shrink_saved_unbounded_planner(planner, monk
     save_json(session/'native-agent.json', {'budget': {'max_model_calls': None}})
     old = session.parent/'receipt.json'
     save_json(old, {'status': 'FINISHED', 'calls_reserved': None, 'calls_used': 4})
-    monkeypatch.setattr(planning_tools.PlanningTools, 'choose', lambda self, args: ('worker', candidate))
+    monkeypatch.setattr(planning_tools.PlanningTools, 'choose', lambda self, args, kinds=None: ('worker', candidate))
     monkeypatch.setattr(planning_tools.PlanningTools, 'delivery_continuation', lambda *args: (old, session))
     calls = []
     monkeypatch.setattr(native_agent, 'run_session', lambda *args, **kw: calls.append((args, kw)))
