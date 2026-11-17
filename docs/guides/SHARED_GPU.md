@@ -115,7 +115,23 @@ for each role. It does not change the order. tare ships a default, and the profi
 from it (key `routing_profile` in this machine's `environment.json`, which the TUI, the CLI and `tare serve`
 share). A model that appears later follows the default, and an update of tare's default keeps your entries. For
 now the default is the routes each role uses today, so the profile can only switch routes off; an "on" entry
-undoes a broader "off". The **Models per role** tab of `/routes` edits it ([below](#the-models-per-role-tab-of-routes)).
+undoes a broader "off". One exception: an "on" naming a local model's route itself grants it that role (below). The
+**Models per role** tab of `/routes` edits it ([below](#the-models-per-role-tab-of-routes)).
+
+- **You grant roles to local models; tare never does.** Every local model in use here (`tare setup --local-models`:
+  a shipped profile the first gateway publishes and uses, or the generic profile tare setup wrote) has a row in the
+  role table, built at load and never saved. Only the roles `relay/role_deployments.json` gives it are on
+  (`local-qwen`: implementer and explorer, planner and auditor under `--local_only`); for any other role it is off
+  until you grant it: a tick in the Models per role tab, or `tare setup --auto ROLE:ROUTE_ID=on` with the route's
+  own id. A grant admits that local route for that role in any mode, not only `--local_only`; under
+  `--prefer_local` a granted planner or auditor is not sent outside. An "off" of the same route still wins, and a
+  broader "on" (`*@local`) grants nothing. Only a route of the `local` source can be granted a role: an "on" for a
+  hosted or reseller route still only undoes an "off". A grant is consent: a pin-only local row granted a role is
+  used for it. A generic profile states its model; with no roster record its vendor is `Local` and its bias domain
+  its own model id, so two different local models audit each other as the same vendor (not independent) and a model
+  never audits itself. A granted planner that declares no reasoning level runs at its own default; one that declares
+  levels keeps the rule (high or above). A granted model with no class goes after every route with one for that role,
+  and such models among themselves in the order the tab shows them; a board that places one ranks it as any route.
 
 The conversation has a role of its own, `coordinator`: the model you talk to when tare auto starts or moves a
 conversation (the TUI's, a `tare serve` chat, `tare-copilot`). The implementer entries no longer decide
@@ -290,7 +306,8 @@ another path refuses it.
 | `n/a` | that source carries it, but not for this role: nothing to tick |
 
 - Unticking writes `off` for the line on that source; ticking it back removes the entry. An `on` is written only to
-  undo a broader `off`. Ticking a cell also removes the version entries of that line on that source for that role,
+  undo a broader `off`, or as a grant: a local model is a row of every role, `[ ]` where its row does not give the
+  role, and a tick there writes an `on` with its route id ("granted by you"); unticking removes it. Ticking a cell also removes the version entries of that line on that source for that role,
   and the status line names them before you save.
 - Bulk actions for the role: a vendor or a source on or off (`claude/*@*`, `*@openrouter`), subscriptions only
   (`opencode-api`, `api`, `openrouter`, `bedrock` and `other-api` off), copy another role's entries, and tare's

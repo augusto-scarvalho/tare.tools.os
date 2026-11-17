@@ -36,6 +36,8 @@ _IDENTITY_FIELDS = {
 }
 # Present only on an identity derived from the model's line, never read from a roster record.
 _LINE_FIELD = "line"
+# The line of a local model no roster record names (_local_row).
+LOCAL_LINE = "local"
 _EVIDENCE_FIELDS = {
     "schema", "train_id", "descriptor_sha256", "candidate_sha256",
     "work_scope_sha256", "specgraph_scope_sha256", "checks",
@@ -147,7 +149,8 @@ def attest_identity(
 
     A roster record always decides. Only when no record names the model id or its wire id does a native route's
     wire id get its line's vendor and bias domain, and only on that vendor's own `endpoint`
-    (vendor_models.origin_line); the identity then says which line it came from.
+    (vendor_models.origin_line), or on a local endpoint (challenger.local) the identity of _local_row; the identity
+    then says which line it came from.
     """
 
     if role not in {"implementer", "auditor"}:
@@ -163,9 +166,11 @@ def attest_identity(
         roster = json.loads(roster_raw)
         derived = model_id not in roster["models"]
         if derived:
+            from relay.challenger import local
             from relay.vendor_models import origin_line
-            model = _line_record(roster["models"], model_id, runtime_key, runtime_model,
-                                 isinstance(endpoint, str) and origin_line(runtime_model, endpoint))
+            model = _line_record(roster["models"], model_id, runtime_key, runtime_model, isinstance(endpoint, str) and (
+                origin_line(runtime_model, endpoint)
+                or local({"native_profile": {"endpoint": endpoint}}) and _local_row(model_id)))
         else:
             model = roster["models"][model_id]
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
@@ -192,6 +197,12 @@ def attest_identity(
         **({_LINE_FIELD: model[_LINE_FIELD]} if derived else {}),
     }
     return _identity_from_payload(payload)
+
+
+def _local_row(model_id: str) -> dict[str, str]:
+    """A local model the roster does not know: vendor Local (the roster's own word for a local model of no known
+    author) and its own id as its bias domain, so two such models are two domains of one vendor."""
+    return {"vendor": "Local", "bias_domain": model_id, "line": LOCAL_LINE}
 
 
 def _line_record(models, model_id, runtime_key, runtime_model, row):
@@ -442,7 +453,7 @@ def verify_identity_against_roster(
         roster = json.loads(roster_raw)
         if _LINE_FIELD in payload:
             from relay.vendor_models import line
-            row = line(payload["runtime_model"])
+            row = _local_row(identity.model_id) if payload[_LINE_FIELD] == LOCAL_LINE else line(payload["runtime_model"])
             model = _line_record(roster["models"], identity.model_id, payload["runtime_key"],
                                  payload["runtime_model"], row if row and row["line"] == payload[_LINE_FIELD] else None)
         else:

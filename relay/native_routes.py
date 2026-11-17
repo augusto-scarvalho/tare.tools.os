@@ -55,8 +55,49 @@ def configured():
         stamp = None
     if stamp is None or _derived[0] != stamp:  # deriving reads every unnamed profile: once per set of routes
         _derived = (stamp, derived(table['deployments'], roster))
-    table['deployments'] += copy.deepcopy(_derived[1])
+    named = {native_catalog.LOCAL.get(n, n) for row in table['deployments']
+             for n in (row['id'], row.get('native_catalog'))}
+    # A local model in use that no row names gets a row with no role: it holds one only where the user grants it in
+    # /routes (grant(); owner, 2026-11-17: tare never decides alone that a local model may plan or review).
+    table['deployments'] += copy.deepcopy(_derived[1]) + [
+        {'id': name, 'native_catalog': name, 'model': model, 'runner': 'native-http', 'roles': [], 'kind': 'primary',
+         'cost_tier': 'free', 'note': 'Derived at load: a local model in use here; it holds the roles granted in '
+                                      '/routes.'}
+        for name, model in local_models().items() if name not in named]
     return table
+
+
+_local = (None, {})  # (the saved gateways and the installed names, local_models())
+
+
+def local_models():
+    """{catalogue name: model id} of the local models in use here (environment.in_use): each shipped profile whose model
+    the first saved gateway publishes and uses (local-auto, a host-aware alias, aside) and each generic profile tare
+    setup wrote for a model a saved gateway uses. Read again when the gateways or the installed profiles change."""
+    global _local
+    from .environment import generic_profiles, in_use, read, shipped_local
+    from .native_profiles import directory, names
+    value = read()
+    section = value.get('local_models') or {}
+    gateways = section.get('gateways') or [] if section.get('use') else []
+    try:
+        installed = names()
+        stamp = json.dumps([gateways, str(directory()), installed], sort_keys=True, default=str)
+    except (ValueError, OSError):
+        return {}
+    if _local[0] != stamp:
+        found, first = {}, in_use(gateways[0]) if gateways else set()
+        shipped = sorted({native_catalog.LOCAL[n] for n in native_catalog.LOCAL if shipped_local(n)} if first else ())
+        for name in [*shipped, *(n for n in generic_profiles(value) if n in installed)]:
+            try:
+                deployment = native_catalog.select(name)
+            except (ValueError, KeyError, TypeError, OSError):
+                continue
+            if name not in shipped or ('native_host_modes' not in deployment
+                                       and deployment['native_profile']['model'] in first):
+                found[name] = deployment.get('model')
+        _local = (stamp, found)
+    return dict(_local[1])
 
 
 def derived(rows, roster):
@@ -129,6 +170,21 @@ def roles(row, scope):
     return [*row.get('roles', []), *(row.get('local_only_roles', []) if scope.only == 'local' else [])]
 
 
+def grant(row, role, assumed=None):
+    """Whether the user granted `role` to this row's route (environment.granted: an "on" naming a local route itself).
+    `assumed` True takes the grant as given (the /routes matrix shows what a tick would do); either way only a local
+    route can hold one."""
+    from .environment import granted, profile, source
+    entries = (profile(role=role)[0].get(role) or {}).get('on', ())
+    if assumed is None and not any(isinstance(rule, str) for *_, rule in entries):
+        return False  # no "on" for this role names a route: nothing to resolve
+    try:
+        deployment = native_catalog.select(row['native_catalog']) if row.get('native_catalog') else row
+        return bool(assumed) and source(deployment) == 'local' or granted(role, deployment)
+    except (ValueError, KeyError, TypeError, OSError):
+        return False
+
+
 def credential_available(name):
     return bool(os.environ.get(name) or native_generation.vault_secret(name))
 
@@ -197,22 +253,24 @@ def mirror(row, deployment, role=None, cache=None):
     return None
 
 
-def admission(row, role, author=None, credentials=None):
+def admission(row, role, author=None, credentials=None, granted=None):
     """(deployment, auditor identity, reason) of one role-table row under the rules that come before the routing
     profile and any live probe; reason None when they admit it. `author`: the producer's identity, for a review role
     (None checks no independence). `credentials`: a cache shared across rows (credentials, logins, this machine's
-    proofs). The matrix of /routes reads it too (environment.auto_routes), so what it shows cannot drift from what
-    ranks."""
+    proofs). `granted`: grant()'s `assumed`. The matrix of /routes reads it too (environment.auto_routes), so what it
+    shows cannot drift from what ranks."""
     from .work_audit import identity
     from .execution_scope import constrained, current, same_family_admitted
     credentials = {} if credentials is None else credentials
     # A conversation's model is admitted as an implementer row; the routing profile then judges it as coordinator.
+    # A local route also holds a role the user granted it in /routes, in any scope.
     if ('implementer' if role == 'coordinator' else role) not in roles(row, current()):
-        return None, None, 'ROLE_NOT_CONFIGURED'
-    if row.get('qualified') is False and not proven(row, credentials, role):
+        if not grant(row, role, granted):
+            return None, None, 'ROLE_NOT_CONFIGURED'
+    elif row.get('qualified') is False and not proven(row, credentials, role) and not grant(row, role, granted):
         # Registered from a provider's metadata: an exact pin reaches it, automatic selection waits for a live
         # qualification through tare: one answer here (tare setup --prove NAME) for a vendor's own model, or for a
-        # mirror of a model another row serves automatically in this role.
+        # mirror of a model another row serves automatically in this role. The user's grant is consent enough.
         return None, None, 'NOT_QUALIFIED_PIN_ONLY'
     if row.get('runner') != 'native-http':
         return None, None, 'RUNNER_NOT_SUPPORTED_BY_NATIVE_WORK' if role == 'auditor' else 'RUNNER_NOT_SUPPORTED_BY_NATIVE_FLOW'
@@ -365,7 +423,16 @@ def _ranked(role, producer=None, *, check_resources=False, work_type=None):
         # that lands in the same class (Opus 5.5 before Fable 5.1), a proven mirror last, primary, CLI backup, table order.
         # For an implementer or a conversation a route with no class also comes after every route that has one: a last
         # resort, so a machine with only unmeasured routes still runs; the node's own default model is not one.
-        unclassed = role in {'implementer', 'coordinator'} and not found and             native_catalog.LOCAL.get(row.get('native_catalog', row['id']), row.get('native_catalog', row['id'])) != fleet
+        # In any role a local model the user granted it (its row does not give the role) and with no class goes after
+        # every route with one, and among such routes in the order /routes shows them (`shown`: by label, then id).
+        by_grant = ('implementer' if role == 'coordinator' else role) not in roles(row, current())
+        unclassed = not found and (native_catalog.LOCAL.get(row.get('native_catalog', row['id']), row.get(
+            'native_catalog', row['id'])) != fleet if role in {'implementer', 'coordinator'} else by_grant)
+        if unclassed and by_grant:
+            from .model_choices import describe
+            shown = (describe(deployment['id'], deployment)['label'] or deployment['id'], deployment['id'])
+        else:
+            shown = ()
         # Among pay-per-token routes tied up to here, a route with a figure goes first, the best value first; a metered
         # route without one, and every other kind of allowance, keep their order (the term is the same for them).
         value = (task(deployment) or {}).get('value') if role in CHEAPEST and row['cost_tier'] == 'metered' else None
@@ -373,7 +440,7 @@ def _ranked(role, producer=None, *, check_resources=False, work_type=None):
         # here it goes after every route admitted otherwise; the terms before order it as any route (a cheaper
         # allowance still goes first).
         mirrored = row.get('qualified') is False and proven(row, credentials, role) is not True
-        rank = (same_family, first and not cross, current().preference(deployment,role), fall, unclassed, lapse_order(signal), COST[row['cost_tier']], (value is None, -(value or 0)), above, dated, mirrored, row['kind'] != 'primary', cli_backup, order)
+        rank = (same_family, first and not cross, current().preference(deployment,role), fall, unclassed, lapse_order(signal), COST[row['cost_tier']], (value is None, -(value or 0)), above, dated, mirrored, row['kind'] != 'primary', cli_backup, shown, order)
         eligible.append((rank, deployment, decision))
     if check_resources:
         kept = []

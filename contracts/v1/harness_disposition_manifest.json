@@ -2127,8 +2127,8 @@
     {
       "name": "landing_policy.py",
       "path": "tare.tools.os/relay/landing_policy.py",
-      "size_bytes": 22810,
-      "sha256": "fb881eae26050b3de105a6111cc4f4e305d42e7db66ac222f82b9969cef75d2a",
+      "size_bytes": 23510,
+      "sha256": "1ee690e50e203955f24f38e9b44cf3b4dfe01ac75d1b2293f47861f7dd2223d4",
       "summary": "Deterministic smart admission with optional independent cross-model audit.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -2151,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 131454,
-      "sha256": "7b58b2e4ea68afe38e76c97ace3411978a402a1622907323f5f6598740f4c73b"
+      "size_bytes": 131497,
+      "sha256": "a47ae36c728ec6cf7f867a5d420d136257434e30d61ccd106c4711c7a38ada89"
     },
     {
       "name": "native_artifacts.py",
@@ -2981,8 +2981,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS selects configured eligible role routes and persists the rationale; existing native Work owner executes and recovers them.",
-      "size_bytes": 33885,
-      "sha256": "07f4c26a35f1ed1f6c0f4eca446a4730a6c7f27f26d8efb59956503ee43e27a4"
+      "size_bytes": 37985,
+      "sha256": "f409f6dec2235fcfa8b3bc6df78c0d30638eb141709d0f763dc673cae1addb47"
     },
     {
       "name": "native_serve.py",
@@ -3821,8 +3821,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 78215,
-      "sha256": "e591cba8760c0c81e818cf9a195d5e9e4b3b848761f49b59f05abd22e5b879da"
+      "size_bytes": 79922,
+      "sha256": "64664fc0d492b817633a22cf6090964dec5e4eb4e157704b4c8ce749ab41044d"
     },
     {
       "name": "console_setup.py",
@@ -4201,8 +4201,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 3440,
-      "sha256": "2a5a4767ad003afc1e028e8526cedda4bddf5ecd605eed70c70558c0422b0808"
+      "size_bytes": 4168,
+      "sha256": "24b96ab69cbc7caeeaf553fbac97d4cdcf24436c4577754f82f56e1761b04bda"
     },
     {
       "name": "web_search.py",
@@ -4231,8 +4231,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 32421,
-      "sha256": "4857d252ee3a05cc21396dc3ca02f4ac02021a8ee63d88dd2ef24d03e6b9713a"
+      "size_bytes": 32567,
+      "sha256": "3e62e7d04d47777ef0c427e992e65b2f85cbae1d057a553f66c57de0585d0831"
     },
     {
       "name": "command_permission.py",
@@ -4451,8 +4451,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 34924,
-      "sha256": "2467245f6259a15bd08614beca8350ee006248c18cbe68544df700c547e7dc23"
+      "size_bytes": 36248,
+      "sha256": "bcfcdf6f747bea4e87d09836f1a6675c5afc7b066c07b6c21af339080d310c71"
     },
     {
       "name": "console_credit.py",

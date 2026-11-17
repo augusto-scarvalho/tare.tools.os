@@ -139,8 +139,9 @@ def decides(name):
 # Which routes automatic routing may use, per role: `routing_profile`, set with tare setup --auto or the matrix tab of
 # /routes (relay/console_route_matrix.py). tare's default is today's role rows (relay/role_deployments.json and the routing policy's lists); the
 # profile keeps only the owner's differences, so it can only switch routes off, and an "on" entry only undoes a
-# broader "off". Rules above it (setup, qualification, older models, independence, credentials, quota) keep their
-# own reasons. switched_off() is the one answer to "is this route off for this role": automatic paths ask it to skip
+# broader "off", except that an "on" naming a local route itself grants it a role its row does not give it
+# (granted(), native_routes.grant: the user's tick, owner 2026-11-17). Rules above it (setup, qualification, older
+# models, independence, credentials, quota) keep their own reasons. switched_off() is the one answer to "is this route off for this role": automatic paths ask it to skip
 # a route, and execution_scope.admit() asks it where every new start of a role passes, refusing a start the user did
 # not choose (a pick, a pin, a launch flag, the explorers of /delegation). Grammar: docs/guides/SHARED_GPU.md.
 # coordinator: the model a conversation talks to when tare auto starts or moves it (tare auto's tiers, read for a
@@ -323,6 +324,14 @@ def profile_state(role, deployment, value=None, key=None):
     return found and ('off' if found[1] else 'on', found[2])
 
 
+def granted(role, deployment, value=None):
+    """Whether the user granted `role` to this route: its most specific entry is an "on" naming the route itself (a
+    tick in /routes, tare setup --auto ROLE:ID=on; an "off" of it wins a tie), and the route is a local model (source
+    `local`: never a hosted route or a reseller). A broader "on" (`*@local`) grants nothing."""
+    state = profile_state(role, deployment, value=value)
+    return bool(state) and state[0] == 'on' and '@' not in state[1] and source(deployment) == 'local'
+
+
 def switched_off(role, deployment, *names, value=None):
     """An Unavailable (SWITCHED_OFF_FOR_ROLE) when the routing profile switches this route off for `role`, else None.
     `names`: what the caller calls the route, for the message only. It says how the user can switch the route on: by
@@ -341,11 +350,13 @@ def switched_off(role, deployment, *names, value=None):
     return None
 
 
-def auto_routes(role):
+def auto_routes(role, grants=None):
     """[(name, route or None, now)] of the routes automatic `role` routing considers here, checked as each path that
     reaches a route checks it, under that role, without a live probe: `now` is 'usable' when one of those paths takes
-    it, else the first path's reason (a rule). The routing profile does not change it. The paths: coordinator and
-    implementer (tare auto's tiers, turn_engine.implementer_tiers) and planner the list the owner saved (availability;
+    it, else the first path's reason (a rule). The routing profile does not change it. Every local model in use here
+    (native_routes.local_models) is a row of each ranked role: one its role table row does not give the role is
+    checked as if the user granted it, and its name goes into `grants` (a set), off until the user does. The paths:
+    coordinator and implementer (tare auto's tiers, turn_engine.implementer_tiers) and planner the list the owner saved (availability;
     none: local-default for the first two, nothing for the planner) and the role table (native_routes.admission, what
     ranks; a coordinator on the implementer rows; coordinator_policy.eligible judges only a --coordinator pin, not
     this path); explorer its role table; auditor and
@@ -356,8 +367,8 @@ def auto_routes(role):
     from copy import deepcopy
     from .cli_discovery import TEMPLATES
     from .execution_scope import current, for_role
-    from .native_catalog import LOCAL_DEFAULT, select
-    from .native_routes import admission, configured, roles as table_roles
+    from .native_catalog import LOCAL, LOCAL_DEFAULT, select
+    from .native_routes import admission, configured, local_models, roles as table_roles
     from .turn_engine import DEFAULT_POLICY, HELPER_ROUTES, available, implementer_tiers, policy
     from .web_research import DEFAULT_ROUTES, admits, research_api_routes
     templates = json.loads(TEMPLATES.read_text(encoding='utf-8'))
@@ -377,18 +388,22 @@ def auto_routes(role):
         paths.setdefault(name, []).append('list')
     for name in flat(rules.get('researcher', DEFAULT_ROUTES) if role == 'researcher' else []):
         paths.setdefault(name, []).append('research')
+    need, used = 'implementer' if role == 'coordinator' else role, set(local_models())
     table = {row.get('native_catalog', row['id']): row for row in configured()['deployments']
-             if role in RANKED_ROLES and not owner
-             and ('implementer' if role == 'coordinator' else role) in table_roles(row, current())}
+             if role in RANKED_ROLES and not owner and (need in table_roles(row, current()) or LOCAL.get(
+                 row.get('native_catalog'), row.get('native_catalog')) in used)}
+    grantable = {name for name, row in table.items() if need not in table_roles(row, current())}
     for name in table:
         paths.setdefault(name, []).append('table')
+        if grants is not None and name in grantable and paths[name] == ['table']:
+            grants.add(name)
     api_routes, credentials, found = research_api_routes() if role == 'researcher' else set(), {}, []
     with for_role('auditor' if owner else role):  # pick_auditors checks as auditor; every other path as its role
         for name, ways in paths.items():
             known, reasons, row, own = None, [], table.get(name), None
             for way in ways:
                 if way == 'table':
-                    deployment, _, why = admission(row, role, None, credentials)
+                    deployment, _, why = admission(row, role, None, credentials, True if name in grantable else None)
                     own = deployment
                 else:
                     deployment, why = available(name, probe=False)
@@ -413,9 +428,11 @@ def auto_rows(role, value=None):
     ('on' is tare's default; an entry is the owner's) and why one cannot be used now (a rule)."""
     from .provider_quota import surplus
     value = read() if value is None else value
-    rows, lapsing = [], {}
-    for name, known, now in auto_routes(role):
+    rows, lapsing, grants = [], {}, set()
+    for name, known, now in auto_routes(role, grants):
         state = known and profile_state(role, known, value=value)
+        if name in grants:  # a local model its row does not give the role: only the user's grant does
+            state = state if granted(role, known, value) else ('off', 'not granted')
         if now == 'usable' and known and known.get('native_profile') and (signal := surplus(known, cache=lapsing)):
             now += ', used first: ' + signal['allowance']  # an allowance about to lapse (provider_quota.surplus)
         rows.append({'route': name, 'line': route_label(known) if known else '?',
@@ -775,7 +792,9 @@ def generic_profiles(value):
             if index == 0 and model in shipped:
                 continue  # the shipped, measured profile serves it
             name = generic_name(gateway['origin'], model)
-            wanted[name] = {'id': name, 'runner': 'native-http', 'native_counter_protocol': 'utf8-envelope-estimate-v1',
+            # `model` states its identity: vendor Local, its own id as its bias domain (landing_policy.attest_identity)
+            wanted[name] = {'id': name, 'model': model, 'runner': 'native-http',
+                'native_counter_protocol': 'utf8-envelope-estimate-v1',
                 'native_profile': {'protocol': 'openai-chat', 'model': model, 'context_window': 32768,
                     'output_tokens': 4096, 'endpoint': gateway['origin'] + '/v1', 'parameters_json': '{}',
                     'source': f"generic profile for {model} at {gateway['origin']} ({gateway.get('observed', '')[:10]}); "

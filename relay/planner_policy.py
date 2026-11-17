@@ -15,6 +15,10 @@ def effective(deployment, requested=None):
         if execution_scope().allows(deployment,'planner')[0]:
             return deepcopy(deployment)
     item = describe(deployment['id'], deployment)
+    if requested in (None, 'default') and unlevelled(deployment, item):
+        from .execution_scope import current as execution_scope
+        if execution_scope().allows(deployment, 'planner')[0]:
+            return deepcopy(deployment)
     # As the picker does (choices): with no explicit effort, the lowest registered level at or above high.
     level = requested if requested not in (None, 'default') else next(
         (candidate for candidate in LEVELS if candidate in item['route']['efforts']), 'high')
@@ -45,6 +49,16 @@ def effective(deployment, requested=None):
     if reasoning(value) not in LEVELS:
         raise ValueError('Planner connection did not apply the required reasoning level. No model call was made.')
     return value
+
+
+def unlevelled(deployment, item=None):
+    """Whether a planner runs at its own default: a local model the user granted planner in /routes
+    (environment.granted) that declares no reasoning level, so there is nothing to raise. One that declares levels
+    keeps the rule."""
+    from .environment import granted
+    from .model_choices import describe
+    item = item or describe(deployment['id'], deployment)
+    return not item['route']['efforts'] and granted('planner', deployment)
 
 
 def choices(values):
