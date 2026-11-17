@@ -329,7 +329,8 @@ def refresh(now=None):
         elif secret(variable) and account != 'opencode-api':  # OpenCode's key is listed as its subscription above
             accounts.append({**reading, 'status': 'NOT_REPORTED', 'reason':
                              'This provider has no balance endpoint for an API key. State the balance with '
-                             'tare quota --set ' + account + ' AMOUNT and tare counts down from it.'})
+                             'tare quota --set ' + account + " AMOUNT, or in the console's /quota, and tare counts "
+                             'down from it.'})
     if energy := provider_spend.energy_report(now):  # the local models' GPU energy (never money spent)
         accounts.append({'account': provider_spend.LOCAL, 'name': 'Local models', 'kind': 'local', 'status': 'MEASURED',
                          'observed_at': now, 'energy': energy})
@@ -485,8 +486,13 @@ def lapse_order(signal):
 
 def used_first(remaining, time_left, what='window'):
     """The mark `tare quota` puts on a line in surplus, or ''."""
-    return (f" · in surplus: {remaining:.0%} left, {time_left:.0%} of the {what} left"
+    return (f" · in surplus: {remaining:.0%} left, {time_left:.0%} of the {what} left: used first"
             if remaining - time_left >= LEAD else '')
+
+
+def day_end(text):
+    """The epoch the UTC day YYYY-MM-DD ends at: a credit that lapses on a day is good through it."""
+    return (datetime.strptime(text, '%Y-%m-%d').replace(tzinfo=timezone.utc) + timedelta(days=1)).timestamp()
 
 
 def clock(epoch, now):
@@ -558,7 +564,8 @@ def render(report, now=None):
                 pace = (row.get('window') in LENGTHS and type(row.get('resets_at')) in (int, float) and row['resets_at'] > now
                         and now - FRESH <= account['observed_at'] <= now)
                 mark = used_first(row['remaining'], (row['resets_at'] - now) / LENGTHS[row['window']]) if pace else ''
-                lines.append(f"    {row['label']:<32}{left:>10}   {resets}{mark}".rstrip())
+                out = ' · its routes are left out until then' if row['remaining'] <= 0 and row.get('resets_at') else ''  # what spent_until acts on
+                lines.append(f"    {row['label']:<32}{left:>10}   {resets}{mark}{out}".rstrip())
                 lines.append('      ' + plan_consumption.line(row.get('consumption')))
             lines += ['    ' + note for note in account.get('notes', [])]
     lines += ['', 'Read ' + clock(report['observed_at'], now) + ' from each provider; no model call was made.']
@@ -594,8 +601,7 @@ def main(argv=None):
             amount, renews = float(args.set[1]), None
             if args.renews:
                 renews = (int(args.renews[0]), float(args.renews[-1]) if len(args.renews) > 1 else amount)
-            expires = args.expires and (datetime.strptime(args.expires, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-                                        + timedelta(days=1)).timestamp()
+            expires = args.expires and day_end(args.expires)
             provider_spend.declare(args.set[0], amount, renews=renews, expires=expires or None)
         except ValueError as exc:
             parser.error(str(exc))

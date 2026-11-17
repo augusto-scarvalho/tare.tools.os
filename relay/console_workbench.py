@@ -129,7 +129,8 @@ def quota_row(reading=False):
     report = provider_quota.cached()
     note = 'Reading each provider again; no model call is made.' if reading else 'Reopen /usage to read again.'
     return {'id': 'quota', 'label': 'Provider quota and credit',
-            'body': provider_quota.render(report) + '\n' + note if report else 'No reading yet. ' + note}
+            'body': provider_quota.render(report) + '\nChange a balance in /quota.\n' + note if report
+            else 'No reading yet. ' + note}
 
 
 def observed_tasks(history, *, busy=False, result=None, profile=''):
@@ -474,6 +475,10 @@ class ConversationWorkbench:
     def action_fleet(self):
         from .console_fleet import FleetPanel
         self.push_screen(FleetPanel())
+
+    def action_quota(self):
+        from .console_quota import QuotaPanel
+        self.push_screen(QuotaPanel())
 
     def action_setup(self):
         from .console_setup import SetupPanel

@@ -287,11 +287,12 @@ def declared():
             } if isinstance(value, dict) else {}
 
 
-def declare(name, usd, now=None, renews=None, window=None, expires=None):
+def declare(name, usd, now=None, renews=None, window=None, expires=None, dry=False):
     """State the balance of an account as of now; the spend counted against it starts here. `renews`: (day of the
     month, dollars each cycle brings) for a credit that renews and does not carry over. `window`: (start, end, dollars
     granted) for a credit read from the Console, which lapses at `end`; one entry has `renews` or `window`, not both.
-    `expires`: the epoch a credit stated by hand lapses at, never renewing: a window from now holding the balance."""
+    `expires`: the epoch a credit stated by hand lapses at, never renewing: a window from now holding the balance.
+    `dry`: check it all and write nothing (the /quota panel validates every account before it saves any)."""
     if name not in DECLARABLE:
         raise ValueError('unknown account ' + repr(name) + '; one of ' + ', '.join(sorted(DECLARABLE)))
     if not 0 <= usd < 1e9:
@@ -299,12 +300,12 @@ def declare(name, usd, now=None, renews=None, window=None, expires=None):
     entry = {'usd': float(usd), 'at': time.time() if now is None else now}
     if expires is not None:
         if window or not (usd > 0 and entry['at'] < expires):
-            raise ValueError('--expires takes a day still to come, for a balance above zero')
+            raise ValueError('a credit lapses on a day still to come and holds a balance above zero')
         window = (entry['at'], expires, usd)
     if renews:
         entry['renews'] = {'day': renews[0], 'usd': float(renews[1])}
         if not _renews(entry['renews']):
-            raise ValueError('--renews takes a day of the month (1-31) and a grant above zero')
+            raise ValueError('a credit renews on a day of the month (1-31) with a grant above zero')
     if window:
         if renews:
             raise ValueError('a credit has renews or a window, not both')
@@ -313,6 +314,8 @@ def declare(name, usd, now=None, renews=None, window=None, expires=None):
             raise ValueError('a window is a start before its end and a grant above zero')
         if expires is not None:
             entry['window']['stated'] = True  # by the owner, not read from the Console
+    if dry:
+        return entry
     from .relay_io import write_json_atomic
     balances = {**declared(), name: entry}
     folder().mkdir(parents=True, exist_ok=True)

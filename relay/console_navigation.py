@@ -246,12 +246,12 @@ class ConversationNavigation:
     def dispatch_conversation_command(self, name, arguments):
         """Handle UI commands without passing them to the model or flow router."""
         workbench = {'/artifacts', '/tasks', '/team', '/usage', '/tools', '/skills'}
-        if name not in {'/new', '/model', '/reasoning', '/diff', '/sessions', '/terminal', '/files', '/project', '/permissions', '/backlog', '/delivery', '/challenger', '/storage', '/delegation', '/routes', '/guidance', '/fleet', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up', '/missed'} | workbench:
+        if name not in {'/new', '/model', '/reasoning', '/diff', '/sessions', '/terminal', '/files', '/project', '/permissions', '/backlog', '/delivery', '/challenger', '/storage', '/delegation', '/routes', '/guidance', '/fleet', '/quota', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up', '/missed'} | workbench:
             return False
         if arguments and name != '/missed':  # /missed takes the words the reply should have said
             self.set_status(name+' takes no arguments. Your draft has been kept.')
             return True
-        if (self.sending_message or self.busy) and name not in {'/terminal', '/files', '/tasks', '/team', '/usage', '/challenger', '/storage', '/missed'}:
+        if (self.sending_message or self.busy) and name not in {'/terminal', '/files', '/tasks', '/team', '/usage', '/quota', '/challenger', '/storage', '/missed'}:
             self.set_status('Wait for the current operation before using '+name+'.')
             return True
         if Path(self.selection().root).resolve() != Path(self.workspace_root).resolve():
@@ -306,6 +306,9 @@ class ConversationNavigation:
         elif name == '/fleet':
             prompt.clear()
             self.action_fleet()
+        elif name == '/quota':
+            prompt.clear()
+            self.action_quota()
         elif name == '/setup':
             prompt.clear()
             self.action_setup()
