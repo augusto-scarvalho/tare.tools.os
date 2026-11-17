@@ -5,6 +5,8 @@ import hashlib
 import json
 from pathlib import Path
 
+import sys
+
 import pytest
 
 from relay import execution_scope, model_signals as signals, native_artifacts, native_catalog, turn_engine, work_units
@@ -108,11 +110,29 @@ def test_a_route_that_lists_no_level_or_none_at_or_below_the_wanted_one_is_left_
     assert list(ran(unit_effort='low')) == ['cheap', 'openrouter-deepseek', FABLE]  # the unit still gets every route
 
 
-def test_an_agy_route_is_left_at_its_own_effort_its_level_being_its_model_id():
-    agy = {'id': 'agy-x', 'native_profile': {'endpoint': 'cli://agy', 'model': 'gemini-4-argon-high', 'protocol': 'vendor-cli'},
-           'native_reasoning_models': {e: 'gemini-4-argon-' + e for e in ('low', 'medium', 'high')}}
-    assert supported_level(agy, 'low') is None and supported_level(agy, 'max') is None
-    assert signals.judged_effort(agy, {'effort': 'max'}) is None
+def test_an_agy_route_changes_level_by_changing_its_model_id_and_only_to_a_level_it_has_an_id_for():
+    """AGY lists one model id per effort. tare left its routes at their own level; it now swaps the id, as the model
+    picker does, so a plan's effort and a board's reach an AGY route too (owner, 2026-11-17)."""
+    agy = {'id': 'agy-gemini-4-argon-cli', 'runner': 'native-cli', 'model': 'gemini-4-argon-high',
+           'native_cli': {'executable': str(Path(sys.executable)), 'version': '1.2.7'},
+           'native_counter_protocol': 'utf8-envelope-estimate-v1',
+           'native_profile': {'endpoint': 'cli://agy', 'model': 'gemini-4-argon-high', 'protocol': 'vendor-cli',
+                              'context_window': 1048576, 'output_tokens': 16384, 'source': 'test',
+                              'parameters_json': '{"effort":"high"}'},
+           'native_reasoning_models': {e: 'gemini-4-argon-' + e for e in ('low', 'medium', 'high')}}  # an id per level
+    assert agy['native_profile']['model'] == 'gemini-4-argon-high' and sorted(agy['native_reasoning_models']) == ['high', 'low', 'medium']
+    assert supported_level(agy, 'low') == 'low' and supported_level(agy, 'max') == 'high'  # the highest it has an id for
+    low = turn_engine.with_effort(agy, 'low')
+    assert (low['model'], low['native_profile']['model']) == ('gemini-4-argon-low', 'gemini-4-argon-low')
+    assert json.loads(low['native_profile']['parameters_json'])['effort'] == 'low'
+    assert agy['native_profile']['model'] == 'gemini-4-argon-high'  # the saved deployment is untouched
+    assert signals.judged_effort(low, {'effort': 'max'}) == 'high'  # a board's effort, capped, now reaches it
+    assert signals.judged_effort(agy, {'effort': 'max'}) is None  # already there: never lower, nothing to raise
+    assert turn_engine.with_effort(low, 'high')['native_profile']['model'] == 'gemini-4-argon-high'
+    # a level it has no id for leaves the route whole: never a parameter that names another level than its id
+    assert turn_engine.with_effort(agy, 'xhigh') == agy
+    lone = {k: v for k, v in low.items() if k != 'native_reasoning_models'}
+    assert turn_engine.with_effort(lone, 'high') == lone and supported_level(lone, 'high') == 'low'
 
 
 def test_a_stated_effort_applies_to_every_automatic_route_lower_ones_included_and_replaces_the_board(ran):
