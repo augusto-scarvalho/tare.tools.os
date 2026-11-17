@@ -133,7 +133,7 @@ def codex_login_available(deployment):
 def supports_streaming(deployment):
     """Only use transports whose streamed tool frames match the qualified codec."""
     profile=deployment['native_profile']
-    if profile['protocol'] in {'vendor-cli','anthropic-messages','gemini-generate-content'}:return False
+    if profile['protocol'] in {'vendor-cli','gemini-generate-content'}:return False
     # Google's compatibility endpoint emits complete tool calls without stream
     # indexes. The full-response codec preserves them and their thought signatures.
     from urllib.parse import urlsplit

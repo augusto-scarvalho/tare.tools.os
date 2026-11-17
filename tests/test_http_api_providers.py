@@ -59,12 +59,33 @@ def api():
                     content = [{'type': 'tool_use', 'id': 'call-1', 'name': 'tare_deliver', 'input': {'summary': 'done'}}]
                 value = {'id': 'msg-1', 'type': 'message', 'role': 'assistant', 'model': model,
                          'stop_reason': 'tool_use' if state['tools'] else 'end_turn', 'content': content}
+                if body.get('stream'):
+                    return self.events(value)
             else:
                 msg = {'role': 'assistant', 'content': 'done'}
                 if state['tools']:
                     msg['tool_calls'] = [{'id': 'call-1', 'type': 'function', 'function': {'name': 'tare_deliver', 'arguments': '{"summary":"done"}'}}]
                 value = {'model': model, 'choices': [{'finish_reason': 'tool_calls' if state['tools'] else 'stop', 'message': msg}]}
             self.reply(value)
+        def events(self, value):
+            # The same answer as the Messages API streams it: the tool's input arrives as JSON fragments.
+            block = value['content'][0]
+            start, delta = (({'type': 'text', 'text': ''}, {'type': 'text_delta', 'text': block['text']}) if block['type'] == 'text'
+                            else ({**block, 'input': {}}, {'type': 'input_json_delta', 'partial_json': json.dumps(block['input'])}))
+            rows = [{'type': 'message_start', 'message': {**value, 'content': [], 'stop_reason': None,
+                                                          'usage': {'input_tokens': 20, 'output_tokens': 1}}},
+                    {'type': 'content_block_start', 'index': 0, 'content_block': start},
+                    {'type': 'content_block_delta', 'index': 0, 'delta': delta},
+                    {'type': 'content_block_stop', 'index': 0},
+                    {'type': 'message_delta', 'delta': {'stop_reason': value['stop_reason']}, 'usage': {'output_tokens': 2}},
+                    {'type': 'message_stop'}]
+            state['calls'].append((self.command, self.path, dict(self.headers)))
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Connection', 'close')
+            self.end_headers()
+            self.wfile.write(''.join('event: %s\ndata: %s\n\n' % (row['type'], json.dumps(row)) for row in rows).encode())
+            self.close_connection = True
         def reply(self, value):
             state['calls'].append((self.command, self.path, dict(self.headers)))
             raw = json.dumps(value).encode()
@@ -133,7 +154,8 @@ def test_public_cli_tools(api, tmp_path, monkeypatch, name, model, protocol, env
     root = tmp_path / 'project'; root.mkdir()
     args = ['--root', str(root), '--session', str(tmp_path/'session'), '--native-deployment', str(path),
             '--instruction', 'Finish.', '--no-context']
-    # The public console preference must work for the non-streaming Claude codec.
+    # The public console preference streams the Claude codec (Kernel #28) and must still work for Gemini's
+    # complete responses.
     if protocol == 'anthropic-messages' or env=='GEMINI_API_KEY': args.append('--stream')
     assert native_agent.main(args) == 0
     assert len(api['calls']) == 1
@@ -141,7 +163,7 @@ def test_public_cli_tools(api, tmp_path, monkeypatch, name, model, protocol, env
     assert api['body']['model'] == model
     if name.endswith('-pro'):
         assert api['body']['reasoning'] == {'effort': 'medium', 'mode': 'pro'}
-    assert not api['body'].get('stream', False)
+    assert api['body'].get('stream', False) is (protocol == 'anthropic-messages')
     saved = (tmp_path/'session'/'native-agent.json').read_text(encoding='utf-8')
     assert 'offline-secret' not in saved
 
