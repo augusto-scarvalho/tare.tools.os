@@ -398,8 +398,8 @@ class SetupPanel(SupportPanel):
                 message='A server did not answer, or settings could not be written. Nothing was changed.'
                 found=None
             if self.is_mounted:
+                if found is not None:await self.show_models(self.value)  # the boxes first: the message names them
                 self.query_one('#setup-status',Static).update(message)
-                if found is not None:await self.show_models(self.value)
         elif action=='setup-cost':await self.check_cost()
         elif action=='setup-run-proof' and self.pending:
             from .environment import prove
