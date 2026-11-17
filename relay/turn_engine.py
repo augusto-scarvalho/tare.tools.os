@@ -349,6 +349,25 @@ def usage_account(deployment):
     return 'codex' if profile.get('protocol') == 'openai-codex-responses' else None
 
 
+def codex_limit(deployment, failed, observations, now):
+    """When a Codex Direct call was refused because the ChatGPT plan's usage is spent: the kernel's model_failed event
+    `failed` is the HTTP 429 whose own type is `usage_limit_reached` (observed on this route in 2026-11, with no
+    Retry-After; a passing rate limit has another type). Returns {'kind': 'account', 'resets_at', 'cause'} for
+    note_usage_limit, else None. The account is the ChatGPT one, which the Codex CLI's routes share."""
+    profile = deployment.get('native_profile') or {}
+    if profile.get('protocol') != 'openai-codex-responses' or not failed:
+        return None
+    if (failed.get('code') or failed.get('reason')) != 'HTTP_429':  # a model call says code; a context summary says reason
+        return None
+    receipt = next((call for row in reversed(observations) if row.get('call_id') == failed.get('call_id')
+                    for call in reversed(row.get('transport_calls') or [])
+                    if (call.get('provider_error') or {}).get('type') == 'usage_limit_reached'), None)
+    if receipt is None:
+        return None
+    after = receipt.get('retry_after')
+    return {'kind': 'account', 'resets_at': now + after if type(after) is int else None, 'cause': 'allowance_spent'}
+
+
 def usage_limits_path():
     from .native_installation import storage_root
     return storage_root()/'serve'/'usage-limits.json'
