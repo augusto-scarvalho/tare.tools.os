@@ -12,7 +12,7 @@ ROLE_LABELS = {'implementer': 'Implementer · conversations, sessions and the un
                               'the routes switched on for it in Models per role, the cheapest one that is clever '
                               'enough first, a higher floor of class when a route fails; write tiers to fix the '
                               'order yourself',
-               'planner': 'Planner · empty: automatic, the routes switched on for it in Models per role, frontier models first; '
+               'planner': 'Planner · empty: automatic, the routes switched on for it in Models per role, the class asked for above first; '
                          'write routes to fix the order yourself',
                'auditor': 'Your auditor routes · used when you choose your list',
                'researcher': 'Researcher · searches the internet; explorers investigate project files',
@@ -20,6 +20,9 @@ ROLE_LABELS = {'implementer': 'Implementer · conversations, sessions and the un
                'heads_up': 'Heads-up · writes a note after a reply that follows delivered or attempted work, and by the counts tare keeps or every few turns otherwise'}
 AUDITOR_SELECTIONS = [('Automatic · another provider, frontier models', 'cross_vendor_frontier'),
                       ('Use my auditor routes', 'configured')]
+# The five roles of native_routes.WANTED, in the order the screen lists them, with what a person calls them.
+WANTED_ROLES = (('planner', 'Planner'), ('plan-auditor', 'Plan reviewer'), ('auditor', 'Auditor'),
+                ('implementer', 'Implementer'), ('coordinator', 'Conversation'))
 
 
 def as_text(tiers):
@@ -43,6 +46,7 @@ class RoutesPanel(SupportPanel):
     '''
 
     def compose(self):
+        from .native_routes import wanted
         from .turn_engine import ROUTE_ROLES, policy
         value = policy()
         with Vertical(classes='support-body'):
@@ -65,6 +69,12 @@ class RoutesPanel(SupportPanel):
                         yield Static('Automatic prefers another model provider. It uses enabled frontier connections, '
                                      'the class that checks code (Sol, Opus, Argon) before the one above it, subscription quota before metered API. '
                                      'No extra model request is made to choose a reviewer.', classes='routes-label')
+                        yield Static('What class of model each role asks for · a route below it goes last, one above it '
+                                     'after the exact one', classes='routes-label')
+                        for role, name in WANTED_ROLES:
+                            yield Static(name, classes='routes-label')
+                            yield Select(self.class_options(role), value=wanted(role), allow_blank=False,
+                                         id='routes-wanted-' + role)
                         for role in ROUTE_ROLES:
                             yield Static(ROLE_LABELS[role], classes='routes-label')
                             yield TextArea(as_text(value.get(role) or []), id='routes-' + role,
@@ -78,6 +88,14 @@ class RoutesPanel(SupportPanel):
                 with TabPane('Models per role', id='routes-matrix'):
                     yield RouteMatrix()
 
+    @staticmethod
+    def class_options(role):
+        from .model_signals import shown
+        from .native_routes import WANTED
+        text = {'cheap': ' · the cheapest route that is clever enough first', 'middling': '',
+                'frontier': ' · the most capable first'}
+        return [(shown(c) + text[c] + (" (tare's default)" if c == WANTED[role] else ''), c) for c in text]
+
     def on_mount(self):
         # Derived controls follow the value even while Changed is queued or
         # suppressed during restoration; old notifications cannot undo it.
@@ -89,6 +107,7 @@ class RoutesPanel(SupportPanel):
 
     async def on_button_pressed(self, event):
         event.stop()
+        from .native_routes import wanted
         from .turn_engine import ROUTE_ROLES, reset_policy, save_policy
         if event.button.id == 'routes-close':
             self.action_close()
@@ -98,7 +117,8 @@ class RoutesPanel(SupportPanel):
                 roles = {role: from_text(self.query_one('#routes-' + role, TextArea).text) for role in ROUTE_ROLES}
                 value = await asyncio.to_thread(save_policy, roles,
                     auditor_selection=self.query_one('#routes-auditor-selection', Select).value,
-                    any_vendor_auditor=not self.query_one('#routes-cross-vendor-first', Checkbox).value)
+                    any_vendor_auditor=not self.query_one('#routes-cross-vendor-first', Checkbox).value,
+                    wanted={role: self.query_one('#routes-wanted-' + role, Select).value for role, _ in WANTED_ROLES})
                 message = 'Saved. New sessions take these routes; new reviews use this reviewer choice.'
             else:
                 value = await asyncio.to_thread(reset_policy)
@@ -106,6 +126,8 @@ class RoutesPanel(SupportPanel):
             for role in ROUTE_ROLES:
                 self.query_one('#routes-' + role, TextArea).load_text(as_text(value.get(role) or []))
             self.query_one('#routes-auditor-selection', Select).value = value['auditor_selection']
+            for role, _ in WANTED_ROLES:
+                self.query_one('#routes-wanted-' + role, Select).value = wanted(role)
             self.query_one('#routes-cross-vendor-first', Checkbox).value = value.get('any_vendor_auditor') is not True
             if self.query_one(RouteMatrix).routes is not None:  # its rows follow these lists
                 self.query_one(RouteMatrix).open()

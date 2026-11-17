@@ -106,7 +106,7 @@ def test_describe_says_it_in_one_phrase():
     middling = signals.klass(route(KIMI), twice(kimi(55)))
     assert signals.describe(middling) == 'middling: reaches Gemini 4 Argon on openrouter, 2026-11-16'
     assert signals.describe(signals.klass(route(KIMI), twice(kimi(5)))) == \
-        'cheap: falls below Gemini 4 Argon on openrouter, 2026-11-16'
+        'basic: falls below Gemini 4 Argon on openrouter, 2026-11-16'
 
 
 @pytest.mark.parametrize('rows', [
