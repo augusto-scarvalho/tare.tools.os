@@ -673,7 +673,7 @@ def describe(result):
 # A model that is the best in general may know nothing of CAD or 3D, so the class is read per type (owner, 2026-11-16).
 # Adding a type, or a source of a reader below, is an edit of task_types.json and no code.
 TYPES = json.loads(Path(__file__).with_name('task_types.json').read_text(encoding='utf-8'))['types']
-READERS = ('arena', 'epoch', 'page', 'script')
+READERS = ('arena', 'epoch', 'page', 'script', 'json')
 
 
 def task_type(type_id):
@@ -806,19 +806,21 @@ def parse_page(raw, source):
 
 
 def parse_script(raw, source):
-    """(rows, None) of a JSON `<script id=...>` of a page that has no table (a Next.js page's `__NEXT_DATA__`): the
-    catalogue gives the script's id (`script`), the dotted path to the list of rows (`rows`) and, as dotted paths in a
-    row, the `model`, the score (`column`) and optionally the `organisation`. A path that is not there raises: a
-    reading that failed, which keeps the saved board."""
+    """(rows, as_of) of a JSON `<script id=...>` of a page that has no table (a Next.js page's `__NEXT_DATA__`; reader
+    'script'), or of a data file that is JSON itself (reader 'json'): the catalogue gives the script's id (`script`,
+    for a page), the dotted path to the list of rows (`rows`) and, as dotted paths in a row, the `model`, the score
+    (`column`) and optionally the `organisation`; `as_of`, a dotted path to the file's own date, when it states one.
+    A path that is not there raises: a reading that failed, which keeps the saved board."""
     def at(value, path):
         for key in path.split('.'):
             value = value[key]
         return value
-    data = json.loads(_page(raw).scripts[source['script']])
+    data = json.loads(raw if source['reader'] == 'json' else _page(raw).scripts[source['script']])
     org = source.get('organisation')
     rows = _model_rows([(at(r, source['model']), at(r, org) if org else None, _score(at(r, source['column'])))
                         for r in at(data, source['rows'])])
-    return (rows, None) if rows else None
+    date = at(data, source['as_of']) if source.get('as_of') else None
+    return (rows, date if isinstance(date, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}', date) else None) if rows else None
 
 
 def _current(kept):
@@ -850,7 +852,7 @@ def refresh_boards(now, fetch, setup=None):
     saved = boards()
     sources = {source_key(s): s for t in TYPES for s in t['sources']}
     due = {k: s for k, s in sources.items()
-           if _due(saved.get(k), now, 86400 if s['reader'] in ('page', 'script') else 3600)}
+           if _due(saved.get(k), now, 86400 if s['reader'] in ('page', 'script', 'json') else 3600)}
     if not due:
         return
     kept, archive = {k: v for k, v in saved.items() if k in sources}, []
@@ -907,7 +909,7 @@ def describe_type(found):
     if found['general']:
         return (f"{found['class']} (general: " if found['class'] else 'none (no general class either: ') \
             + f"no board places it for {found['label']})"
-    votes = ', votes' if found['kind'] == 'preference' else ''
+    votes = {'preference': ', votes', 'reported': ', as each lab reported it'}.get(found['kind'], '')
     return f"{found['class']} for {found['label']} ({found['source']}{votes}, read {_day(found['read_at'])})" + _of_base(found)
 
 
