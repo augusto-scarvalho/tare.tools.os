@@ -135,3 +135,28 @@ def test_the_panel_shows_the_saved_choice_marks_tares_default_saves_and_restores
             assert [box[r].value for r in box] == ['frontier', 'middling', 'middling', 'cheap', 'cheap']
             assert not app.backend.launches
     asyncio.run(scenario())
+
+
+def test_the_owner_may_move_how_far_a_board_raises_a_routes_effort(tmp_path, monkeypatch):
+    """The ceilings were fixed (high for an ordinary unit, xhigh for a critical one; owner, 2026-11-16). They are the
+    owner's to move (2026-11-17), and only what differs from tare's is kept."""
+    from relay import model_signals as signals, turn_engine
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path))
+    assert (signals.ceiling(False), signals.ceiling(True)) == ('high', 'xhigh')
+    assert signals.capped('max') == 'high' and signals.capped('max', True) == 'xhigh' and signals.capped('low') == 'low'
+    saved = turn_engine.save_policy({}, effort_ceiling={'ordinary': 'medium', 'critical': 'xhigh'})
+    assert saved['effort_ceiling'] == {'ordinary': 'medium'}  # the critical one is tare's own: not kept
+    assert signals.capped('max') == 'medium' and signals.capped('max', True) == 'xhigh'
+    assert turn_engine.save_policy({})['effort_ceiling'] == {'ordinary': 'medium'}  # a save that does not name it keeps it
+    assert turn_engine.save_policy({}, effort_ceiling={'ordinary': 'max', 'critical': 'max'})['effort_ceiling'] == {
+        'ordinary': 'max', 'critical': 'max'}  # the owner may choose max; tare never does
+    assert signals.capped('max') == 'max'
+    for wrong in ({'unit': 'high'}, {'ordinary': 'extreme'}):
+        with pytest.raises(ValueError):
+            turn_engine.save_policy({}, effort_ceiling=wrong)
+    assert signals.capped('max') == 'max'  # a refused save changed nothing
+    assert 'effort_ceiling' not in turn_engine.save_policy({}, effort_ceiling={'ordinary': 'high', 'critical': 'xhigh'})
+    turn_engine.policy_path().write_text('{"effort_ceiling": {"ordinary": "loud"}}', encoding='utf-8')
+    assert signals.ceiling(False) == 'high'  # a malformed value counts as not set
+    turn_engine.reset_policy()
+    assert signals.capped('max') == 'high'

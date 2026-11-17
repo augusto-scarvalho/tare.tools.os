@@ -21,6 +21,7 @@ ROLE_LABELS = {'implementer': 'Implementer · conversations, sessions and the un
 AUDITOR_SELECTIONS = [('Automatic · another provider, frontier models', 'cross_vendor_frontier'),
                       ('Use my auditor routes', 'configured')]
 # The five roles of native_routes.WANTED, in the order the screen lists them, with what a person calls them.
+CEILING_UNITS = ((False, 'Ordinary unit'), (True, 'Critical unit'))  # model_signals.CEILING's two cases
 WANTED_ROLES = (('planner', 'Planner'), ('plan-auditor', 'Plan reviewer'), ('auditor', 'Auditor'),
                 ('implementer', 'Implementer'), ('coordinator', 'Conversation'))
 
@@ -46,6 +47,7 @@ class RoutesPanel(SupportPanel):
     '''
 
     def compose(self):
+        from .model_signals import CEILINGS, ceiling
         from .native_routes import wanted
         from .turn_engine import ROUTE_ROLES, policy
         value = policy()
@@ -75,6 +77,12 @@ class RoutesPanel(SupportPanel):
                             yield Static(name, classes='routes-label')
                             yield Select(self.class_options(role), value=wanted(role), allow_blank=False,
                                          id='routes-wanted-' + role)
+                        yield Static("How far a board may raise a route's effort · a board reads models at max; a "
+                                     "plan's own effort and a pin are not capped", classes='routes-label')
+                        for critical, name in CEILING_UNITS:
+                            yield Static(name, classes='routes-label')
+                            yield Select(self.ceiling_options(critical), value=ceiling(critical), allow_blank=False,
+                                         id='routes-ceiling-' + CEILINGS[critical])
                         for role in ROUTE_ROLES:
                             yield Static(ROLE_LABELS[role], classes='routes-label')
                             yield TextArea(as_text(value.get(role) or []), id='routes-' + role,
@@ -87,6 +95,12 @@ class RoutesPanel(SupportPanel):
                         yield Button("tare's defaults", id='routes-default')
                 with TabPane('Models per role', id='routes-matrix'):
                     yield RouteMatrix()
+
+    @staticmethod
+    def ceiling_options(critical):
+        from .model_choices import EFFORTS
+        from .model_signals import CEILING
+        return [(level + (" (tare's default)" if level == CEILING[critical] else ''), level) for level in EFFORTS]
 
     @staticmethod
     def class_options(role):
@@ -107,6 +121,7 @@ class RoutesPanel(SupportPanel):
 
     async def on_button_pressed(self, event):
         event.stop()
+        from .model_signals import CEILINGS, ceiling
         from .native_routes import wanted
         from .turn_engine import ROUTE_ROLES, reset_policy, save_policy
         if event.button.id == 'routes-close':
@@ -118,7 +133,9 @@ class RoutesPanel(SupportPanel):
                 value = await asyncio.to_thread(save_policy, roles,
                     auditor_selection=self.query_one('#routes-auditor-selection', Select).value,
                     any_vendor_auditor=not self.query_one('#routes-cross-vendor-first', Checkbox).value,
-                    wanted={role: self.query_one('#routes-wanted-' + role, Select).value for role, _ in WANTED_ROLES})
+                    wanted={role: self.query_one('#routes-wanted-' + role, Select).value for role, _ in WANTED_ROLES},
+                    effort_ceiling={CEILINGS[c]: self.query_one('#routes-ceiling-' + CEILINGS[c], Select).value
+                                    for c, _ in CEILING_UNITS})
                 message = 'Saved. New sessions take these routes; new reviews use this reviewer choice.'
             else:
                 value = await asyncio.to_thread(reset_policy)
@@ -128,6 +145,8 @@ class RoutesPanel(SupportPanel):
             self.query_one('#routes-auditor-selection', Select).value = value['auditor_selection']
             for role, _ in WANTED_ROLES:
                 self.query_one('#routes-wanted-' + role, Select).value = wanted(role)
+            for critical, _ in CEILING_UNITS:
+                self.query_one('#routes-ceiling-' + CEILINGS[critical], Select).value = ceiling(critical)
             self.query_one('#routes-cross-vendor-first', Checkbox).value = value.get('any_vendor_auditor') is not True
             if self.query_one(RouteMatrix).routes is not None:  # its rows follow these lists
                 self.query_one(RouteMatrix).open()

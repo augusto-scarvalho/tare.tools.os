@@ -619,11 +619,23 @@ def judged(deployment, kind=None, kept=None):
 # at (owner, 2026-11-16: "max is too much, between high and xhigh"): high for an ordinary unit, xhigh for a critical
 # one. A plan's stated `effort` is the user's and planner's own choice and is not capped.
 CEILING = {False: 'high', True: 'xhigh'}
+CEILINGS = {False: 'ordinary', True: 'critical'}  # their names in the routing policy and on the screen
+
+
+def ceiling(critical=False):
+    """The most a board's effort raises a route to for the unit: the owner's own choice (/routes > Order, the routing
+    policy's `effort_ceiling`), else CEILING. A saved value that is no level counts as not set."""
+    from .turn_engine import policy
+    try:
+        choice = (policy().get('effort_ceiling') or {}).get(CEILINGS[bool(critical)])
+    except (OSError, ValueError, AttributeError):
+        choice = None
+    return choice if choice in EFFORTS else CEILING[bool(critical)]
 
 
 def capped(effort, critical=False):
-    """A board's effort, no higher than CEILING for the unit; None when the board names none."""
-    return min(effort, CEILING[bool(critical)], key=EFFORTS.index) if effort in EFFORTS else None
+    """A board's effort, no higher than `ceiling` for the unit; None when the board names none."""
+    return min(effort, ceiling(critical), key=EFFORTS.index) if effort in EFFORTS else None
 
 
 def judged_effort(deployment, used, critical=False):
