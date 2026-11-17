@@ -1018,6 +1018,8 @@ def prove(name, confirm):
         from .native_generation import generate_text, vault_secret
         answered, content, receipt = generate_text(deployment, deployment['native_profile']['model'], PROOF, 120,
                                                    attempt_label='setup-proof', credential_resolver=vault_secret)
+        from .provider_spend import record_receipt
+        record_receipt(deployment, receipt)  # a proof spends the account's credit like any call
         ok = bool(answered and content.strip())
         reason = '' if ok else str(receipt.get('failure_class') or 'empty reply')[:200]
     check = role_check(deployment) if ok else None  # a route that does not answer is not given a task

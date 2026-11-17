@@ -133,6 +133,8 @@ def native_completion(deployment, receipts, *, job, started, timeout, max_calls)
             attempt_dir=job, attempt_label=stage, control=control, credential_resolver=vault_secret,
             spend_journal=spend_journal)
         receipts.append(receipt)
+        from .provider_spend import record_receipt
+        record_receipt(deployment, receipt)  # the account's running spend (tare quota); the job's own cap is spend_journal
         if not ok:
             raise NativeGenerationError(receipt['failure_class'])
         return text

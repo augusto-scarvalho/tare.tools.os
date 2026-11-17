@@ -147,3 +147,41 @@ def test_quota_shows_the_line_after_the_refused_call_note_and_json_carries_own_u
     assert provider_quota.main(['--json']) == 0
     shown = json.loads(capsys.readouterr().out)
     assert next(a for a in shown['accounts'] if a['account'] == 'openai-api')['own_use']['30d']['calls'] == 1
+
+
+OPENROUTER = {'id': 'or', 'native_credential_env': 'OPENROUTER_API_KEY', 'native_usage_contract': {
+    'layout': 'openrouter-inclusive', 'source': 'test'}, 'native_profile': {'endpoint': 'https://openrouter.ai/api', 'model': 'x/y',
+                                                                         'protocol': 'openai-chat'}}
+
+
+def test_a_direct_call_outside_a_session_is_recorded_with_what_the_provider_charged(storage):
+    """A setup proof, an explorer's or a researcher's side call: they spent credit and left no row (found setting
+    OpenRouter's own count beside the ledger, 2026-11-17)."""
+    usage = {'prompt_tokens': 900, 'completion_tokens': 100, 'total_tokens': 1000, 'cost': 0.004}
+    unpriced = {'currency': None, 'known_amount': None, 'complete': False}  # generate_text had no tariff for the route
+    assert provider_spend.record_receipt(OPENROUTER, {'attempt_id': 'a1', 'usage': usage, 'cost': unpriced}) == 1
+    row, = rows()
+    assert (row['account'], row['usd'], row['basis'], row['call'], row['tokens']['in'], row['tokens']['out']) == (
+        'openrouter', 0.004, 'charged', 'a1', 900, 100)
+    # A provider that returns no cost: the receipt's own tariff value.
+    api_usage = {'input_tokens': 10, 'output_tokens': 5, 'total_tokens': 15}
+    assert provider_spend.record_receipt(API, {'attempt_id': 'a2', 'usage': api_usage,
+                                               'cost': {'currency': 'USD', 'known_amount': '0.5'}}) == 1
+    assert (rows()[1]['account'], rows()[1]['usd'], rows()[1]['basis']) == ('openai-api', 0.5, 'tariff')
+    # A call that was never sent, a route with no API account and a broken receipt add nothing and never raise.
+    assert provider_spend.record_receipt(API, {'attempt_id': 'a3', 'usage': None, 'cost': {'currency': 'USD', 'known_amount': '0'}}) == 0
+    assert provider_spend.record_receipt({'id': 'cli', 'native_profile': {'endpoint': 'cli://claude'}}, {'usage': usage}) == 0
+    assert provider_spend.record_receipt(API, None) == 0 and len(rows()) == 2
+
+
+def test_a_setup_proof_posts_its_call(storage, monkeypatch):
+    from relay import environment
+    usage = {'prompt_tokens': 30, 'completion_tokens': 4, 'total_tokens': 34, 'cost': 0.0002}
+    monkeypatch.setattr(environment, 'route_for', lambda name: (OPENROUTER, None))
+    monkeypatch.setattr(environment, 'cost_line', lambda deployment: 'a cent')
+    monkeypatch.setattr(environment, 'role_check', lambda deployment: None)
+    monkeypatch.setattr(environment, 'remember', lambda name, record: record)
+    monkeypatch.setattr('relay.native_generation.generate_text',
+                        lambda *a, **kw: (True, 'ok', {'attempt_id': 'p1', 'usage': usage, 'cost': {'known_amount': None}}))
+    assert environment.prove('or', lambda line: True)['ok'] is True
+    assert [(r['account'], r['usd'], r['call']) for r in rows()] == [('openrouter', 0.0002, 'p1')]

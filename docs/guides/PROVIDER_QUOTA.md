@@ -145,6 +145,9 @@ the charge of each of its calls to `<storage>/serve/provider-spend.jsonl` when i
 - The API routes carry no tariff of their own: their calls are valued at the models.dev reference price
   ([HTTP providers, Prices](HTTP_API_PROVIDERS.md#prices)), which can be wrong, and the balance is only as exact as
   it. The row then says how much of the use since the statement was valued that way.
+- Every call tare itself makes is counted: a session's (conversation, planner, implementer, auditor), the heads-up
+  writer's, and since 2026-11-17 a setup proof's, an explorer's summary and a researcher's. The old relay mesh's
+  round table and a CLI's readiness probe are not.
 - A call whose cost is unknown (no price for that model) adds no dollars, so the figure can only be too high. Its
   tokens are kept (see below).
 - Each row also keeps the call's tokens (`in`, `out`, `cache_read`, `cache_write`) and `basis`: `charged` (the
