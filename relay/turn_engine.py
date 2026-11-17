@@ -101,13 +101,14 @@ def policy():
     return DEFAULT_POLICY
 
 
-def planner_routes():
+def planner_routes(kinds=None):
     """The planner's route names in order: the owner's saved list (/routes Order tab), else the role table's planner
-    routes as native_routes.ranked ranks them (what the matrix shows), so no list of names is kept in the code."""
+    routes as native_routes.ranked ranks them (what the matrix shows), so no list of names is kept in the code.
+    `kinds`, a demand's types of work, reach only that ranking (its `work_type`)."""
     if saved := policy().get('planner'):
         return saved
     from .native_routes import ranked
-    deployments, selection = ranked('planner')
+    deployments, selection = ranked('planner', work_type=kinds)
     names = {row['selected_deployment']: row['catalog'] for row in selection['candidates'] if row.get('eligible')}
     return [names[value['id']] for value in deployments]
 

@@ -13,6 +13,7 @@ from uuid import uuid4
 from compute_plane.native_journal import regular, save_json
 from compute_plane.native_models import encode, object_json
 from .candidate_checks import ScopeRepair
+from .model_signals import TYPES
 
 
 FILE = 'conversation-tasks.json'
@@ -111,6 +112,12 @@ SPEC = {
                 '(explore, research or plan first) are not criteria. Never weaken criteria to fix tool errors.'},
             'question': {'type': 'string', 'description': 'Empty unless project inspection leaves an essential user '
                 'decision. When nonempty, ask it and wait; planning/execution cannot proceed until the reply.'},
+            # The ids and hints are the catalogue's, as GraphTask.kind lists them (native_artifacts).
+            'kinds': {'type': 'array', 'items': {'type': 'string', 'enum': [t['id'] for t in TYPES]}, 'maxItems': 6,
+                'description': 'The types of work this demand involves, when it is clearly one or more of: '
+                + ', '.join(t['id'] + (f" ({t['hint']})" if t.get('hint') else '') for t in TYPES)
+                + '. tare then picks a planner that is good at every one of them. '
+                'Omit it when the demand is none of these.'},
         }, 'required': ['intent', 'relation'], 'additionalProperties': False}},
     'implement': {
         'description': 'Execute the saved separate planner\'s plan with an implementer. Tare runs checks '
@@ -863,7 +870,7 @@ class ConversationTools:
         return 'initial-'+self.session_id  # Resume is not another user instruction.
 
     def understand(self, args, effect_id=None):
-        if set(args)-{'intent', 'relation', 'objective', 'criteria', 'question'}:
+        if set(args)-{'intent', 'relation', 'objective', 'criteria', 'question', 'kinds'}:
             raise ValueError('Use the declared demand fields.')
         intent, relation = args.get('intent'), args.get('relation')
         if intent not in {'answer', 'investigate', 'plan', 'deliver'} or relation not in {'new', 'continue', 'correct', 'revise'}:
@@ -871,6 +878,10 @@ class ConversationTools:
         criteria = args.get('criteria', [])
         if not isinstance(criteria, list) or len(criteria) > 16 or any(not isinstance(c, str) or not c.strip() for c in criteria):
             raise ValueError('Give up to 16 concrete outcome criteria.')
+        kinds = args.get('kinds', [])
+        ids = [t['id'] for t in TYPES]
+        if not isinstance(kinds, list) or len(kinds) > 6 or any(k not in ids for k in kinds) or len(set(kinds)) < len(kinds):
+            raise ValueError('Give kinds as up to 6 different ids of: '+', '.join(ids)+'.')
         value = load(self.root); task = current(value)
         if (relation == 'new' and task and task.get('delivery') and task['stage'] != 'DELIVERED'
                 and task.get('intent_input') == self.input_id()):
@@ -928,7 +939,8 @@ class ConversationTools:
                     raise ValueError('There are 16 unfinished demands. Resolve or review an existing one before opening another.')
                 value['tasks'].remove(completed)  # the existing journal/artifacts retain its complete history
             task = {'id': 'task-'+uuid4().hex[:12], 'objective': objective, 'criteria': criteria,
-                    'intent': intent, 'intent_input': self.input_id(), 'stage': 'DISCOVERY', 'question': question}
+                    'intent': intent, 'intent_input': self.input_id(), 'stage': 'DISCOVERY', 'question': question,
+                    **({'kinds': kinds} if kinds else {})}
             if assessment: task['interpretation'] = assessment
             value['tasks'].append(task); value['current'] = task['id']
         elif relation == 'revise':
@@ -962,7 +974,8 @@ class ConversationTools:
                 else:task.pop('replan_candidate',None)
             else:task.pop('replan_candidate',None)
             task.update(objective=new_objective,criteria=new_criteria,intent=intent,
-                        intent_input=self.input_id(),stage='DISCOVERY',question=question)
+                        intent_input=self.input_id(),stage='DISCOVERY',question=question,
+                        **({'kinds':kinds} if kinds else {}))  # omitted: the recorded ones, as the objective
             task.pop('plan', None); task.pop('delivery', None)
         else:
             promoting = task['intent'] == 'plan' and intent == 'deliver'
