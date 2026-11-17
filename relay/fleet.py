@@ -36,7 +36,11 @@ def remember(origin):
     value = read()
     gateways = (value.get('local_models') or {}).get('gateways') or []
     if 'error' not in value and gateways and gateways[0]['origin'].rstrip('/') == origin:
-        apply(refresh_gateway(value))
+        before = set(gateways[0].get('models') or [])
+        gateway = refresh_gateway(value)['local_models']['gateways'][0]
+        # What a fleet change added is in use at once: the user added it here, unlike a model found on a later ask.
+        gateway['enabled'] = sorted(set(gateway['enabled']) | set(gateway['models']) - before)
+        apply(value)
 
 
 def change(origin, token, fleet):

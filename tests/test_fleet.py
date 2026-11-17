@@ -50,6 +50,21 @@ def test_tare_fleet_adds_own_models_sets_the_default_and_removes_on_the_node(nod
     assert node['tokens'] == ['node-token'] * 4 and node['remembered'] == ORIGIN
 
 
+def test_a_model_the_user_adds_to_the_fleet_is_in_use_at_once(monkeypatch):
+    """A model found on a later ask is off until the user turns it on; one the user just added to the fleet here is not
+    a discovery."""
+    from relay import environment
+    saved = {'local_models': {'gateways': [{'origin': ORIGIN, 'kind': 'ninfer', 'models': ['qwen38-gsq', 'spare'],
+                                            'enabled': ['qwen38-gsq'], 'observed': 'then'}]}}
+    applied = []
+    monkeypatch.setattr(environment, 'read', lambda: saved)
+    monkeypatch.setattr(environment, 'ask_gateway', lambda origin: {'origin': origin, 'kind': 'ninfer', 'observed': 'now',
+                                                                    'models': ['mine', 'qwen38-gsq', 'spare']})
+    monkeypatch.setattr(environment, 'apply', applied.append)
+    fleet.remember(ORIGIN)
+    assert applied[0]['local_models']['gateways'][0]['enabled'] == ['mine', 'qwen38-gsq']  # `spare` stays off
+
+
 def test_tare_auto_runs_the_default_of_the_nodes_fleet(monkeypatch):
     monkeypatch.setenv('TARE_LOCAL_GATEWAY', ORIGIN)
     def saved(default=None):
