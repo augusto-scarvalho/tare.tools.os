@@ -2151,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 131122,
-      "sha256": "6ea920c38b00f1b0a90b5df0ac68cb5426098e92fd8be957205d3af156201ee0"
+      "size_bytes": 131357,
+      "sha256": "e138737a6a1046c625b9280097aac0726a5e7a231a8268248d4b56b6c12c495b"
     },
     {
       "name": "native_artifacts.py",
@@ -2481,8 +2481,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns the product turn coordination shared by its frontends; the agent loop stays in the runtime.",
-      "size_bytes": 102670,
-      "sha256": "42857dc5c69c8297c7fcafbe5df1ceb51af264b67009bea97976b4178e0f9719"
+      "size_bytes": 103950,
+      "sha256": "bd82ed6523bbed7a3b1b885400ae9ee45d284ca5f071d91364af408b7092c6a2"
     },
     {
       "name": "audit_report.py",

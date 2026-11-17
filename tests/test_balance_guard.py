@@ -136,3 +136,40 @@ def test_a_session_refused_for_lack_of_credit_ends_with_that_code_and_parks_the_
     assert result['usage_limit']['account'] == 'openrouter' and result['usage_limit']['cause'] == 'no_credit'
     until = turn_engine.usage_limited(route)
     assert until == result['usage_limit']['until'] and until >= before + turn_engine.USAGE_LIMIT_DEFAULT_SECONDS
+
+
+CODEX_DIRECT = {'id': 'codex-direct', 'native_profile': {'endpoint': 'https://chatgpt.com', 'model': 'gpt-6-luna',
+                                                         'protocol': 'openai-codex-responses'}}
+
+
+def test_a_codex_direct_refusal_for_a_spent_plan_is_told_from_a_passing_rate_limit():
+    """Observed on this route in 2026-11: HTTP 429 with the type usage_limit_reached and no Retry-After. tare read it
+    as a passing rate limit and left the account in."""
+    spent = [{'call_id': 'c1', 'transport_calls': [{'provider_error': {'type': 'usage_limit_reached'}}]}]
+    failed = {'code': 'HTTP_429', 'call_id': 'c1'}
+    assert turn_engine.codex_limit(CODEX_DIRECT, failed, spent, 1000.0) == {
+        'kind': 'account', 'resets_at': None, 'cause': 'allowance_spent'}
+    timed = [{'call_id': 'c1', 'transport_calls': [{'provider_error': {'type': 'usage_limit_reached'}, 'retry_after': 600}]}]
+    assert turn_engine.codex_limit(CODEX_DIRECT, {'reason': 'HTTP_429', 'call_id': 'c1'}, timed, 1000.0)['resets_at'] == 1600.0
+    passing = [{'call_id': 'c1', 'transport_calls': [{'provider_error': {'type': 'rate_limit_exceeded'}, 'retry_after': 3}]}]
+    assert turn_engine.codex_limit(CODEX_DIRECT, failed, passing, 1000.0) is None
+    assert turn_engine.codex_limit(CODEX_DIRECT, {'code': 'HTTP_500', 'call_id': 'c1'}, spent, 1000.0) is None
+    assert turn_engine.codex_limit(API, failed, spent, 1000.0) is None  # another protocol: an API key's 429 is not a plan's
+    assert turn_engine.codex_limit(CODEX_DIRECT, None, spent, 1000.0) is None
+
+
+
+def test_the_session_reads_a_codex_direct_spent_plan_where_it_reads_opencodes(monkeypatch, storage):
+    """The session's failure path asks the Codex reading where it asks OpenCode's (native_agent.run_session): the
+    same branch, the same code and parking. The reading itself is the test above; here the account it parks."""
+    limit = turn_engine.codex_limit(CODEX_DIRECT, {'code': 'HTTP_429', 'call_id': 'c1'},
+                                    [{'call_id': 'c1', 'transport_calls': [{'provider_error': {'type': 'usage_limit_reached'}}]}], time.time())
+    now = time.time()
+    until = turn_engine.note_usage_limit(CODEX_DIRECT, limit['resets_at'], kind=limit['kind'], now=now)
+    assert until == now + turn_engine.USAGE_LIMIT_DEFAULT_SECONDS  # no Retry-After: asked again after the default
+    cli = {'id': 'codex-cli', 'native_profile': {'endpoint': 'cli://codex', 'model': 'gpt-6.1-sol', 'protocol': 'vendor-cli'}}
+    assert turn_engine.usage_limited(cli, now + 1) == until  # the same ChatGPT account: the CLI's routes too
+    assert turn_engine.usage_limited(API, now + 1) is None
+    import inspect
+    from relay import native_agent
+    assert 'codex_limit(deployment, last, raw_observations' in inspect.getsource(native_agent.run_session)
