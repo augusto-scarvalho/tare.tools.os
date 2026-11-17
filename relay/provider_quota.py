@@ -416,6 +416,32 @@ def spent_until(deployment, now=None):
     return max(found) if found else None
 
 
+def balance_spent(deployment, now=None):
+    """Until when an API route is left out because its account's known balance is spent, else None (owner,
+    2026-11-16: the balance is a guard). Known: a stated balance tare counted down to zero, or OpenRouter's own reading
+    at zero while that reading is fresh. Until the credit renews when it does, else half an hour: it is asked again at
+    each use, so a new statement or reading lifts it at once. No known balance leaves nothing out: unknown is not zero.
+    ponytail: `remaining` scans the spend ledger at each ask; cache it per ranking as `surplus` does if rankings slow."""
+    from . import provider_spend
+    from .turn_engine import USAGE_LIMIT_DEFAULT_SECONDS
+    name = provider_spend.account(deployment)
+    if not name:
+        return None
+    now = time.time() if now is None else now
+    credit = provider_spend.remaining(name, now)
+    if credit is None and name == 'openrouter':
+        credit = next((a.get('credit') for a in (cached() or {}).get('accounts') or []
+                       if a.get('account') == name and a.get('status') == 'OBSERVED'
+                       and type(a.get('observed_at')) in (int, float) and now - FRESH <= a['observed_at'] <= now), None)
+    try:
+        if not credit or credit['remaining'] > 0:
+            return None
+    except (KeyError, TypeError):
+        return None  # an unreadable record is unknown, not a limit
+    renews = credit.get('renews_at')
+    return renews if type(renews) in (int, float) and now < renews <= now + 7 * 86400 else now + USAGE_LIMIT_DEFAULT_SECONDS
+
+
 # The windows tare can place in time. 'session' is Claude's own name for its 5 h window (`Current session: ...`).
 LENGTHS = {'5 h': 5 * 3600, 'session': 5 * 3600, 'week': 7 * 86400}
 LEAD = 0.01  # a smaller lead is no surplus: a window that has just renewed is not one
@@ -550,7 +576,8 @@ def render(report, now=None):
                     stated = ' a cycle, renews ' + datetime.fromtimestamp(credit['renews_at'], timezone.utc).strftime('%a %d %b')
                 pace = credit_pace(credit, now)
                 lines.append(f"{head}: {left} left of US$ {credit['total']:.2f}{stated}"
-                             + (used_first(*pace, 'time to its lapse' if credit.get('stated') else 'cycle') if pace else ''))
+                             + (used_first(*pace, 'time to its lapse' if credit.get('stated') else 'cycle') if pace else '')
+                             + (' · its routes are left out while nothing is left' if credit['remaining'] <= 0 else ''))
                 if credit.get('at_reference_prices'):
                     lines.append(f"    US$ {credit['at_reference_prices']:.2f} of that use is valued at models.dev "
                                  'reference prices, not confirmed tariffs: the balance is only as exact as they are.')
