@@ -21,7 +21,7 @@ from compute_plane.native_journal import NativeObservationJournal, NativeJournal
 from compute_plane.native_usage import MAX_USAGE_BYTES
 from compute_plane.native_models import encode, object_json
 from compute_plane.native_checkpoint import operational_checkpoint
-from .native_generation import deployment_profile, load_deployment, vault_secret, inference_client, streaming
+from .native_generation import deployment_profile, load_deployment, vault_secret, inference_client, streaming, session_streaming
 from . import native_limits
 from .openrouter import observer as route_observer
 
@@ -443,7 +443,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 'config': config, 'deployment': deployment, 'instruction': instruction,
                 'budget': {k: resolved_limits[k] for k in native_limits.BUDGET_DEFAULTS},
                 'timeout': resolved_limits['max_seconds'], 'limits': resolved_limits,
-                'invocations': [], 'authority': 'NONE'}
+                'invocations': [], 'authority': 'NONE', 'streaming': streaming(deployment)}
             from .native_generation import model_context_policy
             state['model_context_policy'] = model_context_policy(deployment)
             if config['role'] in {'auditor', 'planner'} and resolved_limits['max_seconds'] is not None:
@@ -898,7 +898,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 # explicitly deliver; an announcement is only intermediate text.
                 text_completes_turn=not artifact_options.get('delivery_schema_json') and not state.get('delegated_leaf'),
                 verified_delivery=bool(config['verifiers']) and 'verify' in tools.names,
-                streaming=streaming(deployment), on_progress=on_progress,
+                streaming=session_streaming(state, deployment), on_progress=on_progress,
                 elide_edited_reads=deployment.get('native_context_projection', {}).get('elide_edited_reads', False),
                 counter_protocol=deployment.get('native_counter_protocol', 'server-template-tokenize'),
                 observe=route_observer(deployment, client, observations.append), tool_specs_json=tools.tool_specs_json,
@@ -1190,7 +1190,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 'session': str(root), 'profile_digest': adapter.profile_digest,
                 'context_counting': 'estimated' if policy.allow_estimated_counts and adapter.counter_protocol ==
                     'utf8-envelope-estimate-v1' else 'measured_required',
-                'streaming': streaming(deployment),
+                'streaming': session_streaming(state, deployment),
                 'capability_observations': tools.observations(),
                 'usage_file': str(root / 'usage.json'), 'usage_coverage': usage['coverage'],
                 'tokens': usage['tokens'], 'preparation_ms': preparation_ms,

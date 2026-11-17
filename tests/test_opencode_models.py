@@ -157,14 +157,14 @@ PREFERENCE = ['deepseek-v4-1-flash', 'mimo-v2-6-flash', 'glm-5-3-flash', 'gpt-6-
               'gemini-4-argon', 'grok-4-7', 'kimi-k3']
 
 
-def test_gemini_runs_on_its_own_api_without_streaming():
+def test_gemini_runs_on_its_own_api_and_streams():
     from relay import native_generation
     value = native_catalog.select('opencode-sub-gemini-4-argon')
     profile = native_generation.deployment_profile(value, 'gemini-4-argon')
     assert profile.protocol == 'gemini-generate-content'
     assert profile.endpoint == 'https://opencode.ai/inference/go/google/v1beta'
     assert profile.billing_sources == ('free', 'go', 'go-plus') and profile.session_header == 'x-opencode-session'
-    assert not native_generation.supports_streaming(value)
+    assert native_generation.supports_streaming(value)  # since Kernel #29
     # A planner must run at high reasoning or above, and reads the level in this API's own spelling.
     from relay import planner_policy
     from relay.execution_team import reasoning
