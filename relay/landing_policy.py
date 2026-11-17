@@ -167,10 +167,11 @@ def attest_identity(
         derived = model_id not in roster["models"]
         if derived:
             from relay.challenger import local
-            from relay.vendor_models import origin_line
+            from relay.vendor_models import line, origin_line
             model = _line_record(roster["models"], model_id, runtime_key, runtime_model, isinstance(endpoint, str) and (
                 origin_line(runtime_model, endpoint)
-                or local({"native_profile": {"endpoint": endpoint}}) and _local_row(model_id)))
+                or local({"native_profile": {"endpoint": endpoint}}) and not line(runtime_model)
+                and _local_row(model_id)))  # a known hosted line served locally stays unknown
         else:
             model = roster["models"][model_id]
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
