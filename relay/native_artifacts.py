@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_core import PydanticCustomError
 from compute_plane.native_journal import io_path, regular, save_json
 from compute_plane.native_models import encode, object_json
+from .model_choices import EFFORTS
 from .model_signals import TYPES
 
 
@@ -76,6 +77,13 @@ class GraphTask(Record):
         'data migration or deletion, a public interface others depend on, a result nobody will check. tare then gives '
         'the task to the best model for its type, whatever it costs. Leave it out for ordinary work: tare then uses '
         'the cheapest model that is good enough.'))
+    # Without max: tare and the planner never choose it (owner, 2026-11-16: little is gained from it, and it is the
+    # user's to choose, with an implementer pin at @max or by telling the coordinator).
+    effort: Literal[EFFORTS[:-1]] | None = Field(default=None, description=(
+        'How hard the implementer should think on this task: low, medium, high or xhigh. Leave it out: for a '
+        'task that names its type of work tare then raises the model to high (xhigh when the task is critical), else '
+        'it runs at the route\'s own effort. State it only when the task clearly needs more thought than that, or is '
+        'mechanical and needs little.'))
 
 
 class Plan(Proposal):
@@ -120,9 +128,9 @@ def validate(role, value):
         result.pop('tasks')  # Preserve existing handoff bytes when graph planning is unused.
     elif role == 'planner':
         for task, given in zip(result['tasks'], value['tasks']):
-            for field in ('needs', 'kind', 'critical'):
+            for field in ('needs', 'kind', 'critical', 'effort'):
                 if field not in given:
-                    task.pop(field)  # Likewise for a task that states no need, type or criticality: a plan saved before the field keeps its digest.
+                    task.pop(field)  # Likewise for a task that states no need, type, criticality or effort: a plan saved before the field keeps its digest.
     if role == 'explorer':
         # Likewise for an explorer that lists no places, concludes nothing or marks no location.
         if 'locations' not in value:

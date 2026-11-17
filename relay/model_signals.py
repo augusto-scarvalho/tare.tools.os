@@ -595,8 +595,32 @@ def judged(deployment, kind=None, kept=None):
     found = kind and task_type(kind) and type_class(deployment, task_type(kind), boards() if kept is None else kept)
     if found:  # type_class falls back to the general class itself
         return {'class': found['class'] or 'cheap', 'source': 'general' if found['general'] else found['source'],
-                **({} if found['general'] else {'score': found['score']})}  # the board's score ranks a critical unit
+                # the board's score ranks a critical unit; its row's effort is what the route is run at (`judged_effort`)
+                **({} if found['general'] else {'score': found['score'], 'effort': found.get('effort')})}
     return {'class': (klass(deployment) or {}).get('class') or 'cheap', 'source': 'general'}
+
+
+# The most a board's effort raises a route to. Boards read models at max, which is too dear to run every unit of a type
+# at (owner, 2026-11-16: "max is too much, between high and xhigh"): high for an ordinary unit, xhigh for a critical
+# one. A plan's stated `effort` is the user's and planner's own choice and is not capped.
+CEILING = {False: 'high', True: 'xhigh'}
+
+
+def capped(effort, critical=False):
+    """A board's effort, no higher than CEILING for the unit; None when the board names none."""
+    return min(effort, CEILING[bool(critical)], key=EFFORTS.index) if effort in EFFORTS else None
+
+
+def judged_effort(deployment, used, critical=False):
+    """The effort to run a route at because the board that judged it (`used`, from `judged`) read its model at a
+    higher one: the board's, capped (`capped`), or the highest level the route supports below that
+    (`supported_level`), when it is higher than the route's own (unknown counts as lowest), else None: never lower."""
+    from .execution_team import reasoning
+    from .model_choices import supported_level
+    model = _slug(deployment)
+    own = _version_effort(deployment, model)[1] if model and line(model) else reasoning(deployment)
+    level = supported_level(deployment, capped(used.get('effort'), critical))
+    return level if level and EFFORTS.index(level) > (EFFORTS.index(own) if own in EFFORTS else -1) else None
 
 
 def best_first(deployment, kind=None, kept=None):
