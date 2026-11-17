@@ -83,8 +83,9 @@ responses-inclusive; Claude: anthropic-exclusive; Gemini: chat-inclusive, only
 for the compatible counters reported; missing values stay unknown.
 A prior estimated count is not observed usage or proof of billing.
 
-Claude Messages runs **without streaming**: the console's public entry accepts its
-`--stream` preference but does not apply it to this protocol. The response arrives complete.
+Claude Messages streams (Kernel #28): a session on a Claude API route is judged by the silence of its
+stream (600 s without a byte), not by a total of its own, like the other streaming routes. A direct call
+outside a session (a title, a search) still asks for the complete response.
 Gemini Argon has implicit cache, with no explicit cache configuration. Claude uses
 automatic `cache_control` by default; `cache_system` remains available in your own profiles.
 OpenAI uses the Kernel's per-session cache affinity. History must be preserved,
