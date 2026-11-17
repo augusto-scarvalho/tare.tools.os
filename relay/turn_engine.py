@@ -153,13 +153,18 @@ def cross_vendor_first():
 ROUTE_ROLES = ('implementer', 'planner', 'auditor', 'researcher', 'vision', 'heads_up')
 
 
-def save_policy(roles, *, auditor_selection=None, any_vendor_auditor=None):
+def save_policy(roles, *, auditor_selection=None, any_vendor_auditor=None, wanted=None):
     """Save the owner's routes per role ({role: [[name, ...], ...]}, tiers in order; a role other than the implementer
     keeps one flat list, in order). Every name must be a route tare knows; an empty role keeps tare's default.
     any_vendor_auditor: True stops putting auditors of another vendor first, False puts them first again (the key
-    goes), None keeps what is saved."""
+    goes), None keeps what is saved. wanted: {role: class} the owner asks of the roles of native_routes.WANTED, None
+    keeps what is saved; only the roles that differ from tare's table are kept, so the others follow it."""
+    from .model_signals import ORDER
     from .native_catalog import select
-    from .native_routes import configured
+    from .native_routes import WANTED, configured
+    for role, choice in (wanted or {}).items():
+        if role not in WANTED or choice not in ORDER:
+            raise ValueError(f'Unknown role or class: {role} {choice}. Roles: {", ".join(WANTED)}; classes: {", ".join(ORDER)}.')
     defaults = {n for v in DEFAULT_POLICY.values() if isinstance(v, list) for t in v
                 for n in (t if isinstance(t, list) else [t])}  # tare's own names, installed here or not
     defaults |= {row.get('native_catalog', row['id']) for row in configured()['deployments']}  # and its role table's
@@ -185,6 +190,11 @@ def save_policy(roles, *, auditor_selection=None, any_vendor_auditor=None):
     # The owner's reasoning levels (planner_effort, auditor_effort, heads_up_effort) outlive a change of routes.
     existing = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
     saved.update({k: v for k, v in existing.items() if k.endswith('_effort')})
+    if wanted is None:  # the saved choice outlives a change of routes; a malformed one is dropped
+        old = existing.get('wanted')
+        wanted = {r: c for r, c in old.items() if r in WANTED and c in ORDER} if isinstance(old, dict) else {}
+    if differ := {r: c for r, c in wanted.items() if c != WANTED[r]}:
+        saved['wanted'] = differ
     if any_vendor_auditor is None:
         any_vendor_auditor = existing.get('any_vendor_auditor') is True
     if any_vendor_auditor:

@@ -8,8 +8,9 @@ the coordinator is on: `--subscription_only`, `--api_only`, `--local_only`, the
 routing profile (`tare setup --auto`, the "Models per role" matrix) and pins
 limit it. Existing conversations keep their saved tools/routes.
 Without a planner list of your own, the planner is chosen from the role table, the
-routes switched on for it in "Models per role": the ones that reach frontier first,
-then a lapsing allowance, then subscription before metered API. A `/routes` planner
+routes switched on for it in "Models per role": the ones that reach the class the planner
+asks for first (frontier unless you choose another in `/routes` > Order, "What class of model each
+role asks for"; a route above it goes after the exact one, one below it last), then a lapsing allowance, then subscription before metered API. A `/routes` planner
 list you save replaces that choice and keeps its order; the model picker uses the
 same configuration for new planning flows.
 
