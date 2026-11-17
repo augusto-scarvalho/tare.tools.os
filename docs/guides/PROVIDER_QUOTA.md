@@ -18,6 +18,13 @@ an hour old) shows none, that account's routes are left out instead of being tri
 account with no known balance is never left out. tare counts only its own use, and it leaves the routes out even if
 the key could still bill a card beyond the stated credit: state a new balance to keep using it.
 
+A refused call is a guard too. Only OpenRouter and OpenCode return what a call cost, and only OpenRouter reports a
+balance; every other provider returns token counts, which tare values at a tariff or a reference price. So when a
+provider refuses a call for lack of credit (HTTP 402, OpenAI's `insufficient_quota`, Anthropic's "Your credit balance
+is too low"), tare ends the session with `API_CREDIT_SPENT`, leaves that account's routes out for half an hour and
+then tries again; the account's line shows `A refused call left this account out until HH:MM.` A passing rate limit
+is not taken for it.
+
 In the console, `/usage` opens on its first row, **Provider quota and credit**. It shows the saved readings at once
 and asks every provider again in the background (no model call, about 15 seconds); the row changes when the new
 reading lands. Reopen `/usage` to read again.

@@ -332,7 +332,7 @@ def gpu_taken(why):
 
 USAGE_LIMIT_DEFAULT_SECONDS = 30 * 60  # when the CLI does not say when the account resets
 # A route whose account or plan has no usage left: a vendor CLI said so, or an OpenCode subscription model's allowance.
-USAGE_LIMIT_CODES = frozenset({'CLI_USAGE_LIMIT', 'PLAN_USAGE_LIMIT'})
+USAGE_LIMIT_CODES = frozenset({'CLI_USAGE_LIMIT', 'PLAN_USAGE_LIMIT', 'API_CREDIT_SPENT'})
 
 
 def usage_account(deployment):
@@ -355,8 +355,10 @@ def usage_limits_path():
 
 
 def usage_keys(deployment):
-    """The account key, then this route's own model key under it (a limit the CLI scopes to one model)."""
-    account = usage_account(deployment)
+    """The account key, then this route's own model key under it (a limit the CLI scopes to one model). An API
+    route's account is the one its key is billed to: a call refused for lack of credit leaves it out too."""
+    from .provider_spend import account as billed
+    account = usage_account(deployment) or billed(deployment)
     if account is None:
         return ()
     model = (deployment.get('native_profile') or {}).get('model')
@@ -406,13 +408,9 @@ def usage_limited(deployment, now=None):
              and type(entry.get('until')) in (int, float) and math.isfinite(entry['until'])
              and now < entry['until'] <= now + 7*86400]
     if keys:
-        from .provider_quota import spent_until
-        if read := spent_until(deployment, now):
-            found.append(read)
-    else:  # an API route: its account's known balance, spent
-        from .provider_quota import balance_spent
-        if read := balance_spent(deployment, now):
-            found.append(read)
+        from .provider_quota import balance_spent, spent_until
+        # a subscription's window read at zero, or an API account's known balance, spent: each answers only its kind
+        found += [read for read in (spent_until(deployment, now), balance_spent(deployment, now)) if read]
     return max(found) if found else None
 
 
@@ -448,10 +446,13 @@ def available(name, probe=True):
         delay = limited - now
         seconds = (min(86400, max(0, round(delay)))
                    if math.isfinite(delay) and delay <= 7*86400 else USAGE_LIMIT_DEFAULT_SECONDS)
+        from .provider_quota import balance_spent
         from .provider_spend import account
         return None, Unavailable(
             f"{usage_account(deployment)} usage limit reached; retry in {seconds}s" if usage_account(deployment) else
-            f"{account(deployment)} has no balance left; it is used again once tare quota (/quota) shows one",
+            f"{account(deployment)} has no balance left; it is used again once tare quota (/quota) shows one"
+            if balance_spent(deployment) else
+            f"{account(deployment)} refused a call for lack of credit; retry in {seconds}s",
             'QUOTA_EXHAUSTED', retry_after_seconds=seconds)
     from .native_generation import codex_login_available
     if not codex_login_available(deployment):
