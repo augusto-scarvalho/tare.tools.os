@@ -169,9 +169,8 @@ def inference_client(deployment, profile, *, credential, metadata_only=False, co
     if not metadata_only:
         from .execution_scope import require
         require(deployment)
-        from .openrouter import allowed
-        from .environment import read
-        permitted, reason = allowed(deployment, read())
+        from .environment import allows  # here every call passes, a resumed session too: a route switched off stays off
+        permitted, reason = allows(deployment)
         if not permitted:
             raise ValueError(reason)
         if 'native_auto_routes' in deployment or 'native_host_modes' in deployment:

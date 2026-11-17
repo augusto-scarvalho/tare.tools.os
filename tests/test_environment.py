@@ -155,6 +155,10 @@ def test_a_model_published_later_is_off_has_no_profile_and_is_refused_until_turn
     assert environment.main(['--refresh']) == 0 and name in offered()  # a refresh keeps what was chosen
     assert environment.main(['--no-use', 'local:new-one']) == 0
     assert name not in offered() and not environment.allows(route(url, 'new-one'))[0]
+    from types import SimpleNamespace
+    from relay.native_generation import inference_client
+    with pytest.raises(ValueError, match='new-one is off'):  # a saved conversation resumed later is refused too
+        inference_client(route(url, 'new-one'), SimpleNamespace(protocol='openai-chat'), credential=lambda: None)
     assert environment.main(['--use', 'local:nowhere']) == 1 and 'publishes nowhere' in capsys.readouterr().err
 
 
