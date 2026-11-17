@@ -265,7 +265,7 @@ def delivery_view(value, *, config=None, unit=None):
     """Actionable facts for the coordinator; custody paths remain in the host records."""
     result = {k: value[k] for k in ('verdict', 'applied', 'application', 'application_files',
                                   'reason', 'files', 'route', 'checks', 'suite',
-                                  'checks_before', 'checks_after', 'already_red', 'checks_set_aside', 'needs', 'route_class', 'kind', 'class_source', 'critical', 'effort', 'effort_from', 'review_edits', 'source_state', 'implementer_report',
+                                  'checks_before', 'checks_after', 'already_red', 'checks_set_aside', 'needs', 'route_class', 'kind', 'class_source', 'kinds', 'critical', 'effort', 'effort_from', 'review_edits', 'source_state', 'implementer_report',
                                   'verification', 'summary', 'remaining', 'next', 'folder_access_request','last_attempt','implementation_stop') if k in value}
     if value.get('needs') and value.get('route_class'):
         from .model_signals import ORDER
@@ -720,6 +720,11 @@ def task_plan(root, config, task, result):
         unit['critical'] = True
         if kind := next((t['kind'] for t in tasks if t.get('critical') and t.get('kind')), None):
             unit.setdefault('kind', kind)  # a critical task's type when the hardest task states none
+    # Each task's own hints, so a route is judged by its weakest task, not only by the hardest one's. Absent when the
+    # tasks state one set of hints at most: the unit above says it all.
+    hints = [{k: t[k] for k in ('needs', 'kind', 'critical') if t.get(k)} for t in tasks]
+    if len(parts := [h for i, h in enumerate(hints) if h and h not in hints[:i]]) > 1:
+        unit['parts'] = parts
     # A promised Python test module is part of the executable check selection,
     # even when the planner listed only existing tests in test_paths. Its missing
     # baseline is red; it must exist and pass after implementation.
