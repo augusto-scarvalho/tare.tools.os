@@ -54,8 +54,9 @@ Saved conversations keep their profiles and histories. These additional models d
 change the automatic role policies. Claude API uses the provider's default thinking
 and effort; OpenAI and Gemini expose the levels Tare already supports.
 
-The context limit of 131072 and the output limit of 8192 are conservative Tare ceilings,
-**not** provider maximums. Other parameters supported by ModelProfile
+The context limit of 131072 and the output limit of 32768 are conservative Tare ceilings,
+**not** provider maximums. The output limit is not lower because reasoning tokens count toward it: a response can
+end incomplete before any visible output. Other parameters supported by ModelProfile
 remain configurable in your own profiles; reasoning must follow the protocol and
 not reuse another provider's format indiscriminately.
 
