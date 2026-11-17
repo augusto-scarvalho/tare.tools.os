@@ -727,6 +727,10 @@ def task_plan(root, config, task, result):
         unit['critical'] = True
         if kind := next((t['kind'] for t in tasks if t.get('critical') and t.get('kind')), None):
             unit.setdefault('kind', kind)  # a critical task's type when the hardest task states none
+    # Every type the tasks name, for the record only: a type with no need ranks nothing (the unit has no 'kind' then),
+    # but the run is still work of that type and the route's own record per type counts it.
+    if named := list(dict.fromkeys(t['kind'] for t in tasks if t.get('kind'))):
+        unit['kinds'] = named
     # Each task's own hints, so a route is judged by its weakest task, not only by the hardest one's. Absent when the
     # tasks state one set of hints at most: the unit above says it all.
     hints = [{k: t[k] for k in ('needs', 'kind', 'critical') if t.get(k)} for t in tasks]
