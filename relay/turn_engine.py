@@ -1471,7 +1471,7 @@ def with_effort(deployment, effort, *, at_least=False):
             profile['expected_response_model'] = model
     original = json.loads(profile.get('parameters_json') or '{}')
     params = reasoning_parameters(value, effort)
-    if params == original and profile['model'] == deployment['native_profile'].get('model'):
+    if params == original and profile.get('model') == deployment['native_profile'].get('model'):
         return value
     profile['parameters_json'] = json.dumps(params)
     deployment_profile(value, profile['model'])
