@@ -1277,9 +1277,12 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                                              'until': note_usage_limit(deployment, limit.get('resets_at'),
                                                                        kind=limit.get('kind'))}
                 else:
-                    # The OpenCode subscription's allowance is gone: its models are left until it resets.
+                    # The OpenCode subscription's allowance is gone, or the ChatGPT plan's behind a Codex Direct route:
+                    # the account's routes are left until it resets.
                     from .opencode import plan_limit
-                    limit = plan_limit(deployment, last, raw_observations, time.time())
+                    from .turn_engine import codex_limit
+                    limit = (plan_limit(deployment, last, raw_observations, time.time())
+                             or codex_limit(deployment, last, raw_observations, time.time()))
                     if limit:
                         from .turn_engine import note_usage_limit, usage_account
                         result['failure_code'] = 'PLAN_USAGE_LIMIT'
