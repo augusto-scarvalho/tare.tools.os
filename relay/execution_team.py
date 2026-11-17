@@ -186,7 +186,7 @@ def saved_rows(custody, project, history=()):
                     result += '\nA proposal alone does not establish application or approval.'
                     add({'id': child['session_id']+'/invocation/'+latest.get('id', 'not-started'), 'status': status,
                          'actor': person, 'target': mission, 'detail': result})
-                    for pattern in ('planning/*/session', 'delegations/*/session', 'units/*/session-*',
+                    for pattern in ('planning/*/session', 'planning/*/review/session', 'planning/*/revision','delegations/*/session', 'units/*/session-*',
                                     'reviews/*/session', 'web-research/*/session'):
                         for path in session.glob(pattern):
                             if len(queue)+len(seen) >= 100:

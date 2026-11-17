@@ -14,6 +14,27 @@ from .execution_scope import for_role
 # calls and shared spend bounded independently of its wall-clock allowance.
 MAX_CALLS, MAX_SECONDS, MAX_REQUESTS = 6, 600, 3
 RESERVE = 2  # the coordinator must still inspect the handoff and answer
+CRITIC_CALLS, CRITIC_SECONDS = 12, 600  # the critic's own ceiling, inside the shared budget
+# The text measured on 2026-11-17 (a planted-defect experiment: it found them and accepted the sound plans): keep it as is.
+CRITIC_BRIEF = '''You are the frugal critic of the plan in proposal/plan.json. Read the request in proposal/request.json and the project's files, then judge the plan only against what the request asks and what this project needs to keep working. You look for two things, and nothing else.
+
+BLIND SPOT: something the request asks for, or that the existing code or tests require, that the plan does not cover or gets wrong. Cite the request sentence, or the file and lines.
+
+EXCESS: an item of the plan (a step, a criterion, a test, a validation, a helper, an abstraction, a file) that the request does not ask for and that this change does not need in order to be correct and safe. Name the item, and say what would be lost if it were dropped. If something the request cares about would be lost, it is not excess. Thoroughness that protects a requirement of the request is not excess; work that only protects against cases nobody asked about is.
+
+Rules. Do not rewrite the plan and do not propose a different design of the same size. Do not add wishes of your own: a blind spot must trace to the request or to the code. A plan that is already the right size gets verdict ACCEPT with no findings; finding nothing is a valid and common result, and inventing a finding to look useful is a failure. Report at most the five findings that change the most work, most valuable first. Start each finding's claim with "BLIND SPOT:" or "EXCESS:", then the plan item or the missing piece, the evidence, and the smallest change to the plan (what to add or what to delete). Verdict REVISE only when at least one finding should change the plan before anyone implements it.'''
+CRITIC_NEXT = (' An independent reviewer read this plan and listed problems in review.findings. They are advice, not '
+               'orders. Tell the user what they say, and you may ask the planner for a revised plan with delegate_plan.')
+CRITIC_REVISED_NEXT = (' An independent reviewer listed problems in review.findings and the planner revised the plan once '
+                       'with them; this is the revised plan. Tell the user what the reviewer said.')
+# Measured on 2026-11-17: the findings removed the defect only when the planner revised its plan with them.
+CRITIC_REVISION = ('A frugal critic reviewed the previous plan against the request and the project. Its findings are in '
+                   'critic_findings: advice, not orders. For each one, decide: apply it, or keep the plan as it is and say '
+                   'why in `remaining`. Apply a BLIND SPOT only if the request or the code supports it. Apply an EXCESS by '
+                   'deleting the item, not by replacing it with something else. Change nothing the findings do not touch. '
+                   'Deliver the complete revised plan.')
+PREVIOUS_PLAN = ('The attached prior plan is advisory. Reuse valid work; inspect only changed scope and missing evidence. '
+                 'Preserve all current criteria and retain the previous candidate where its paths remain authorized.')
 
 
 def handoff(artifact, plan):
@@ -61,7 +82,7 @@ def incomplete_input(root, active):
                     or result.get('status') != 'PLANNED' or (result.get('plan') or {}).get('tasks')):
                 continue
             artifact = regular(Path(result['artifact']))
-            if artifact.resolve() != (receipt.parent/'session/artifact.json').resolve():
+            if artifact.resolve() not in {(receipt.parent/n/'artifact.json').resolve() for n in ('session', 'revision')}:
                 continue
             value = read_input(artifact)
             if value['artifact']['role'] != 'planner' or value['artifact']['payload'] != result.get('plan'):
@@ -246,8 +267,9 @@ def route_requalification(root, active, prior, routes, name, deployment):
 
 
 def children(root):
-    return [regular(p.parent/'session') for p in regular(Path(root)/'planning').glob('*/receipt.json')
-            if regular(p.parent/'session/native-agent.json').is_file()]
+    """The planner sessions and, beside each, the critic's and the revision's, when they ran."""
+    return [regular(p.parent/name) for p in regular(Path(root)/'planning').glob('*/receipt.json')
+            for name in ('session', 'review/session', 'revision') if regular(p.parent/name/'native-agent.json').is_file()]
 
 
 def committed(root):
@@ -392,7 +414,6 @@ class PlanningTools:
     def run(self, request, args, control):
         from .delegation_tools import count_calls
         from .native_agent import read_json, run_session
-        from .native_spend import settings
         from .work_units import local_slot
         job = regular(self.root/'planning'/hashlib.sha256(request.effect_id.encode()).hexdigest()[:24])
         receipt_path = regular(job/'receipt.json')
@@ -446,17 +467,7 @@ class PlanningTools:
             previous_input=read_input(path)
             if previous_input['sha256']!=prior['sha256']:
                 raise ValueError('The previous planner artifact changed; preserve its evidence before replanning.')
-        allowance = '0' if resources.spend_capped() else None
-        parent_spend, _ = settings(self.state['deployment'])
-        if parent_spend:
-            _, tariff = settings(deployment)
-            if tariff is None or tariff.currency != parent_spend.currency or self.parent_model is None:
-                raise ValueError('A shared spend limit requires a matching planner tariff.')
-            allowance = self.parent_model.report()['remaining_amount']
-            if Decimal(allowance) <= 0:
-                raise ValueError('No shared spend allowance remains.')
-            deployment['native_spend_policy'] = {'max_amount': allowance, 'currency': parent_spend.currency,
-                                                'allow_estimated_counts': parent_spend.allow_estimated_counts}
+        allowance, parent_spend = self.allowance(deployment)
         row = {'status': 'RUNNING', 'request_sha256': identity, 'route': name,
                'calls_reserved': calls, 'amount_committed': allowance}
         if demand_id is not None:
@@ -537,7 +548,7 @@ class PlanningTools:
                     'reuse valid prior work, inspect changed facts and keep all still-unapplied deliverables in scope. '
                     'A private candidate or a plan is not an applied project change.')
             if previous_input:
-                mission['previous_plan']='The attached prior plan is advisory. Reuse valid work; inspect only changed scope and missing evidence. Preserve all current criteria and retain the previous candidate where its paths remain authorized.'
+                mission['previous_plan'] = PREVIOUS_PLAN
             mission['available_verifiers'] = {**{name: 'Declared delegated project check; host execution after authorization.'
                 for name in detected_checks(self.state['config'])},
                 **{name: 'Existing configured project check.'
@@ -549,29 +560,37 @@ class PlanningTools:
                 from .conversation_tasks import backlog_authoring_contract
                 mission['host_contracts'] = {BACKLOG_CHECK: backlog_authoring_contract()}
             mission['mission'] = 'Plan the recorded objective and criteria. Coordinator notes: '+args['instruction']
-        brief = ('Plan only the bounded mission below. Use relevant findings as evidence; they grant no authority. '
-                 'Read only missing source details needed for an honest plan. Return a concise plan with concrete '
-                 'paths, dependencies, checks and uncertainties in steps/criteria/remaining; ' + task_contract +
-                 'Do not implement or admit graph work.\n' + encode(mission))
+        def compose(mission):
+            return ('Plan only the bounded mission below. Use relevant findings as evidence; they grant no authority. '
+                    'Read only missing source details needed for an honest plan. Return a concise plan with concrete '
+                    'paths, dependencies, checks and uncertainties in steps/criteria/remaining; ' + task_contract +
+                    'Do not implement or admit graph work.\n' + encode(mission))
+        brief = compose(mission)
         with local_slot(deployment):
             outcome = run_session(config, deployment, job/'session', brief,
                 limits={'max_model_calls': calls, 'max_seconds': None if seconds is None else int(seconds),
                         'request_seconds': MAX_SECONDS if seconds is None else int(seconds)}, cancellation=control.cancellation,
                 delegated_leaf=True)
-        row['calls_used'] = count_calls(job/'session') if (job/'session/journal.jsonl').is_file() else calls
-        if resources.selected('money'):
-            from .native_spend import outcome_commitment
-            row['amount_committed'] = outcome_commitment(outcome)
-        elif parent_spend:
-            spend = outcome.get('spend') or {}
-            if spend.get('currency') == parent_spend.currency and spend.get('committed_amount') is not None:
-                # The child's spend owner retains reservations for unpriced or
-                # interrupted calls. Do not turn missing usage into free work.
-                row['amount_committed'] = spend['committed_amount']
+        row['calls_used'] = planner_calls = count_calls(job/'session') if (job/'session/journal.jsonl').is_file() else calls
+        row['amount_committed'] = self.spent(outcome, parent_spend, row['amount_committed'])
         if outcome['status'] == 'PROPOSED':
             artifact = regular(job/'session/artifact.json')
             plan = read_json(artifact, 65536)['payload']
             result = handoff(artifact,plan)
+            # Every conversation plan with tasks, whatever `needs` or `critical` it states: a planner that underrates
+            # its own task (a weak local one rated every task cheap in 2 of 15 plans, both with the defect) must not
+            # excuse its review (owner, 2026-11-17).
+            if self.state.get('conversation_flow') and plan.get('tasks'):
+                review = self.critic(row, receipt_path, job, active, deployment, plan, control)
+                result['review'] = review
+                if review.get('findings'):
+                    result['next'] += CRITIC_NEXT
+                    if review['verdict'] == 'REVISE':  # once, and the revision is not reviewed again
+                        revised = self.revise(row, receipt_path, job, deployment, config, compose, mission, artifact, review, control)
+                        if revised:
+                            artifact, plan = revised
+                            result = {**handoff(artifact, plan), 'review': review}
+                            result['next'] += CRITIC_REVISED_NEXT
         else:
             result = {'status': outcome['status'], 'reason': outcome.get('reason'),
                       'failure_code': outcome.get('failure_code'),
@@ -582,9 +601,178 @@ class PlanningTools:
                     'Inspect the listed local validation issues; this is not evidence of quota or provider failure.')
         row['attempts'] = [executed_attempt(deployment, {'status': outcome['status'], 'reason': outcome.get('reason'),
                                                          'failure_code': outcome.get('failure_code')})]
-        row.update(status='FINISHED', result={**result, 'route': name, 'model_calls': row['calls_used']})
+        row.update(status='FINISHED', result={**result, 'route': name, 'model_calls': planner_calls})
         save_json(receipt_path, row)
         return row['result']
+
+    def allowance(self, deployment):
+        """(the child's spend allowance, the parent's spend policy); a shared limit caps `deployment` to what remains."""
+        from . import execution_resources as resources
+        from .native_spend import settings
+        allowance = '0' if resources.spend_capped() else None
+        parent_spend, _ = settings(self.state['deployment'])
+        if parent_spend:
+            _, tariff = settings(deployment)
+            if tariff is None or tariff.currency != parent_spend.currency or self.parent_model is None:
+                raise ValueError('A shared spend limit requires a matching planner tariff.')
+            allowance = self.parent_model.report()['remaining_amount']
+            if Decimal(allowance) <= 0:
+                raise ValueError('No shared spend allowance remains.')
+            deployment['native_spend_policy'] = {'max_amount': allowance, 'currency': parent_spend.currency,
+                                                'allow_estimated_counts': parent_spend.allow_estimated_counts}
+        return allowance, parent_spend
+
+    @staticmethod
+    def spent(outcome, parent_spend, default):
+        """What a child's outcome commits against the shared money."""
+        from . import execution_resources as resources
+        if resources.selected('money'):
+            from .native_spend import outcome_commitment
+            return outcome_commitment(outcome)
+        if parent_spend:
+            spend = outcome.get('spend') or {}
+            if spend.get('currency') == parent_spend.currency and spend.get('committed_amount') is not None:
+                # The child's spend owner retains reservations for unpriced or
+                # interrupted calls. Do not turn missing usage into free work.
+                return spend['committed_amount']
+        return default
+
+    def critic(self, row, receipt_path, job, active, planner, plan, control):
+        """One independent read-only review of a conversation plan that has tasks (owner, 2026-11-17). Advice
+        only: it never blocks, loops or raises; whatever happens the plan returns as it is, with the reason. Its calls
+        and money join the planner's receipt, so every shared budget counts them like the planner's own."""
+        from .execution_scope import require
+        from .native_agent import run_session
+        from .native_plan import select_route
+        from .work_audit import independence
+        from .work_units import local_slot
+        out = {'status': 'SKIPPED', 'route': None, 'model_calls': 0}
+        try:
+            reviewer, info = select_route('auto', 'plan-auditor', 'AUTOMATIC_INDEPENDENT_REVIEWER', planner,
+                                          work_type=(active or {}).get('kinds'))
+            if reviewer is None:
+                off = any(c.get('reason') == 'SWITCHED_OFF_FOR_ROLE' for c in (info.get('selection') or {}).get('candidates', []))
+                return {**out, 'reason': 'SWITCHED_OFF_FOR_ROLE' if off else 'NO_INDEPENDENT_REVIEWER'}
+            out['route'] = reviewer['id']
+            kind = independence(planner, reviewer)
+            if reviewer['id'] == planner['id'] or kind in (None, 'AUDITOR_NOT_INDEPENDENT'):
+                return {**out, 'reason': 'NO_INDEPENDENT_REVIEWER'}  # the planner never reviews its own plan
+            require(reviewer, 'plan-auditor')
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            return {**out, 'reason': 'REVIEWER_UNAVAILABLE', 'detail': str(exc)[:300]}
+        from .turn_engine import streaming
+        reviewer = streaming(deepcopy(reviewer))
+        try:
+            calls, seconds, allowance, parent_spend, before, money = self.fund(
+                row, receipt_path, reviewer, CRITIC_CALLS, CRITIC_SECONDS, control)
+        except (ValueError, OSError, KeyError, TypeError, ArithmeticError) as exc:
+            return {**out, 'reason': 'SHARED_BUDGET', 'detail': str(exc)[:300]}
+        review, session = job/'review', job/'review/session'
+        proposal = review/'proposal'
+        outcome = {}
+        try:
+            save_json(receipt_path, row)
+            proposal.mkdir(parents=True)
+            (proposal/'plan.json').write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding='utf-8')
+            (proposal/'request.json').write_text(json.dumps({k: (active or {}).get(k) for k in ('objective', 'criteria', 'kinds')},
+                indent=2, ensure_ascii=False), encoding='utf-8')
+            config = {'schema': 'tare.tools/native-agent-config/1', 'role': 'plan-auditor', 'typed_output': True,
+                      'repositories': {**self.state['config']['repositories'], 'proposal': str(proposal)},
+                      'writable': {}, 'verifiers': {}, 'capabilities': ['read', 'list', 'search'],
+                      'specgraph_edit_context': False}
+            with local_slot(reviewer):
+                outcome = run_session(config, reviewer, session, CRITIC_BRIEF,
+                    limits={'max_model_calls': calls, 'max_seconds': None if seconds is None else int(seconds),
+                            'request_seconds': CRITIC_SECONDS if seconds is None else int(seconds)},
+                    cancellation=control.cancellation, delegated_leaf=True)
+            out.update(model_calls=self.settle(row, session, calls, before, money, outcome, parent_spend, allowance))
+            if outcome['status'] != 'PROPOSED':
+                return {**out, 'status': 'FAILED', 'reason': str(outcome.get('failure_code') or outcome['status'])}
+            from .native_agent import read_json
+            payload = read_json(regular(session/'artifact.json'), 65536)['payload']
+            if payload.get('verdict') not in ('ACCEPT', 'REVISE', 'INCONCLUSIVE'):
+                return {**out, 'status': 'FAILED', 'reason': 'INVALID_VERDICT'}
+            return {**out, 'status': 'REVIEWED', 'verdict': payload['verdict'], 'independent': kind == 'INDEPENDENT',
+                    'findings': [{'claim': f['claim'][:1500], 'paths': list(f.get('paths') or [])[:10]}
+                                 for f in payload.get('findings') or []][:5]}
+        except (ValueError, OSError, KeyError, TypeError, ArithmeticError) as exc:
+            return {**out, 'status': 'FAILED', 'reason': 'REVIEW_ERROR', 'detail': str(exc)[:300]}
+
+    def fund(self, row, receipt_path, deployment, default_calls, default_seconds, control):
+        """Reserve one more child on the planner's receipt, as the planner was: the shared call, time and money
+        ceilings, then its own. Returns (calls, seconds, allowance, parent_spend, calls before, money before); raises
+        ValueError when the shared budget cannot fund it."""
+        from . import execution_resources as resources
+        from .delegation_tools import count_calls
+        before, money = row['calls_used'], row['amount_committed']
+        save_json(receipt_path, row)  # the shared figures below must already count what the receipt has used
+        allowance, parent_spend = self.allowance(deployment)
+        calls = resources.child_calls(default_calls)
+        maximum = self.state['limits']['max_model_calls']
+        if maximum is not None:
+            calls = resources.ceiling('calls', calls, maximum-count_calls(self.root)
+                                      -resources.known_calls(self.calls_committed())-RESERVE)
+        seconds = resources.child_seconds(default_seconds, control.remaining_seconds(), reserve=5)
+        if self.state.get('deadline_utc') is not None:
+            seconds = resources.ceiling('time', seconds, self.state['deadline_utc']-time.time()-5)
+        if calls is not None and calls < 2 or seconds is not None and seconds < 10 or control.should_stop():
+            raise ValueError('Not enough shared budget for another child.')
+        # Charge the whole allowance before dispatch: a crash then leaves the receipt over-, never under-counting.
+        if calls is not None:
+            row['calls_used'] = before+calls
+        row['amount_committed'] = money if allowance is None else None if money is None else str(Decimal(money)+Decimal(allowance))
+        save_json(receipt_path, row)
+        return calls, seconds, allowance, parent_spend, before, money
+
+    def settle(self, row, session, calls, before, money, outcome, parent_spend, allowance):
+        """Replace the reservation of `fund` by what the child used; returns its model calls."""
+        from .delegation_tools import count_calls
+        from .native_spend import total_amounts
+        used = count_calls(session) if (session/'journal.jsonl').is_file() else (calls or 0)
+        row['calls_used'] = before+used
+        cost = total_amounts([money, self.spent(outcome, parent_spend, allowance)])
+        row['amount_committed'] = None if cost is None else str(cost)
+        return used
+
+    def revise(self, row, receipt_path, job, deployment, config, compose, mission, artifact, review, control):
+        """The same planner route revises the plan once with the critic's findings (owner, 2026-11-17: they removed
+        the defect only when the planner used them). Returns (artifact, plan), or None when it was not funded, failed
+        or delivered no tasks: the first plan then stands with its findings. Never raises; never reviewed again.
+        `review` records the outcome."""
+        from .native_agent import read_json, run_session
+        from .native_artifacts import read_input
+        from .work_units import local_slot
+        deployment, session = deepcopy(deployment), job/'revision'
+        review['revised'] = False
+        try:
+            brief = compose({**mission, 'previous_plan': PREVIOUS_PLAN, 'critic_note': CRITIC_REVISION,
+                             'critic_findings': [f['claim'] for f in review['findings']]})
+            config = {**config, 'input_artifacts': [read_input(artifact)]}
+            calls, seconds, allowance, parent_spend, before, money = self.fund(
+                row, receipt_path, deployment, MAX_CALLS, MAX_SECONDS, control)
+        except (ValueError, OSError, KeyError, TypeError, ArithmeticError):
+            review['revision_reason'] = 'NOT_FUNDED'
+            return None
+        try:
+            with local_slot(deployment):
+                outcome = run_session(config, deployment, session, brief,
+                    limits={'max_model_calls': calls, 'max_seconds': None if seconds is None else int(seconds),
+                            'request_seconds': MAX_SECONDS if seconds is None else int(seconds)},
+                    cancellation=control.cancellation, delegated_leaf=True)
+            review['revision_model_calls'] = self.settle(row, session, calls, before, money, outcome, parent_spend, allowance)
+            if outcome['status'] != 'PROPOSED':
+                review['revision_reason'] = str(outcome.get('failure_code') or outcome['status'])
+                return None
+            revised = regular(session/'artifact.json')
+            plan = read_json(revised, 65536)['payload']
+            if not plan.get('tasks'):
+                review['revision_reason'] = 'NO_TASKS'
+                return None
+        except (ValueError, OSError, KeyError, TypeError, ArithmeticError):
+            review['revision_reason'] = 'REVISION_ERROR'
+            return None
+        review.update(revised=True, revision_route=row['route'])
+        return revised, plan
 
     def delivery_continuation(self, active, cohort, name, deployment):
         """One explicit same-route repair uses the saved read-only planner and its ceilings."""
