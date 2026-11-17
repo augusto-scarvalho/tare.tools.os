@@ -42,6 +42,13 @@ def plan_text(root, request):
         out += ['  Done when: '+c for c in task.get('criteria', [])]
         if task.get('test_paths') or task.get('verifiers'):
             out.append('  Checks: '+', '.join([*task.get('verifiers', []), *task.get('test_paths', [])]))
+        # What the planner said that chooses the implementer: the user sees it before it runs, and "ask for changes"
+        # is how to correct it.
+        hints = [*(['needs a '+task['needs']+' model'] if task.get('needs') else []),
+                 *([task['kind']+' work'] if task.get('kind') else []),
+                 *(['critical: the best model for it, whatever it costs'] if task.get('critical') else [])]
+        if hints:
+            out.append('  Model: '+'; '.join(hints))
     out += ['', 'Done when:', *('- '+c for c in plan.get('criteria', []))]
     if plan.get('remaining'):
         out += ['', 'Left uncertain by the planner:', *('- '+r for r in plan['remaining'])]

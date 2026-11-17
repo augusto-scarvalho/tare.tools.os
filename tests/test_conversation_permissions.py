@@ -778,3 +778,18 @@ def test_one_approval_covers_the_tasks_corrections_but_not_a_new_plan(host, tmp_
         asking = pool.submit(permissions.authorize, tools.root, tools.state, replanned, 'replanned', control, directory)
         assert wait_request(tools.root)['plan'] == 'f'*64  # a new plan asks again
         assert not asking.done()
+
+
+def test_the_shown_plan_says_what_chooses_each_tasks_implementer(tmp_path):
+    """needs, kind and critical decide which model implements a task: the user reads them before approving."""
+    import hashlib
+    task = {'title': 'Fix the ledger', 'summary': 'Round once.', 'target_paths': ['ledger.py'], 'criteria': ['Totals match.']}
+    plain_task = {**task, 'title': 'Rename a label'}
+    hinted = {**task, 'needs': 'middling', 'kind': 'math', 'critical': True}
+    (tmp_path/'planning').mkdir()
+    artifact = tmp_path/'planning'/'plan.json'
+    artifact.write_bytes(json.dumps({'payload': {'summary': 'S', 'steps': [], 'tasks': [hinted, plain_task], 'criteria': []}}).encode())
+    request = {'artifact': str(artifact), 'plan': hashlib.sha256(artifact.read_bytes()).hexdigest()}
+    text = permissions.plan_text(tmp_path, request)
+    assert '  Model: needs a middling model; math work; critical: the best model for it, whatever it costs' in text
+    assert text.count('  Model: ') == 1  # a task that states none of them has no such line, as before
