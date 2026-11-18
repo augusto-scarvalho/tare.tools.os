@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -171,7 +172,7 @@ def attest_identity(
             model = _line_record(roster["models"], model_id, runtime_key, runtime_model, isinstance(endpoint, str) and (
                 origin_line(runtime_model, endpoint)
                 or local({"native_profile": {"endpoint": endpoint}}) and not line(runtime_model)
-                and _local_row(model_id)))  # a known hosted line served locally stays unknown
+                and _local_row(model_id, roster["models"])))  # a known hosted line served locally stays unknown
         else:
             model = roster["models"][model_id]
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
@@ -200,10 +201,17 @@ def attest_identity(
     return _identity_from_payload(payload)
 
 
-def _local_row(model_id: str) -> dict[str, str]:
-    """A local model the roster does not know: vendor Local (the roster's own word for a local model of no known
-    author) and its own id as its bias domain, so two such models are two domains of one vendor."""
-    return {"vendor": "Local", "bias_domain": model_id, "line": LOCAL_LINE}
+def _local_row(model_id: str, models: dict) -> dict[str, str]:
+    """A local model the roster does not know. An id that names a family of the roster (qwen38-ninfer: qwen) gets
+    that family's vendor and bias domain, so a variant never passes as independent of its family; otherwise vendor
+    Local (the roster's own word for a local model of no known author) and its own id as its bias domain, so two
+    such models are two domains of one vendor."""
+    words = re.split(r"[^a-z0-9]+", model_id.lower())  # a family starts a word: qwen38, never sampLING
+    family = [r for r in models.values() if len(stem := str(r.get("bias_domain", "")).split("/")[-1].split("-")[0]) > 2
+              and any(word.startswith(stem) for word in words)]
+    known = next((r for r in family if r["vendor"] != "Local"), family[0] if family else None)
+    return ({"vendor": known["vendor"], "bias_domain": known["bias_domain"], "line": LOCAL_LINE} if known else
+            {"vendor": "Local", "bias_domain": model_id, "line": LOCAL_LINE})
 
 
 def _line_record(models, model_id, runtime_key, runtime_model, row):
@@ -454,7 +462,8 @@ def verify_identity_against_roster(
         roster = json.loads(roster_raw)
         if _LINE_FIELD in payload:
             from relay.vendor_models import line
-            row = _local_row(identity.model_id) if payload[_LINE_FIELD] == LOCAL_LINE else line(payload["runtime_model"])
+            row = (_local_row(identity.model_id, roster["models"]) if payload[_LINE_FIELD] == LOCAL_LINE
+                   else line(payload["runtime_model"]))
             model = _line_record(roster["models"], identity.model_id, payload["runtime_key"],
                                  payload["runtime_model"], row if row and row["line"] == payload[_LINE_FIELD] else None)
         else:
