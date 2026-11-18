@@ -23,9 +23,9 @@ BLIND SPOT: something the request asks for, or that the existing code or tests r
 EXCESS: an item of the plan (a step, a criterion, a test, a validation, a helper, an abstraction, a file) that the request does not ask for and that this change does not need in order to be correct and safe. Name the item, and say what would be lost if it were dropped. If something the request cares about would be lost, it is not excess. Thoroughness that protects a requirement of the request is not excess; work that only protects against cases nobody asked about is.
 
 Rules. Do not rewrite the plan and do not propose a different design of the same size. Do not add wishes of your own: a blind spot must trace to the request or to the code. A plan that is already the right size gets verdict ACCEPT with no findings; finding nothing is a valid and common result, and inventing a finding to look useful is a failure. Report at most the five findings that change the most work, most valuable first. Start each finding's claim with "BLIND SPOT:" or "EXCESS:", then the plan item or the missing piece, the evidence, and the smallest change to the plan (what to add or what to delete). Verdict REVISE only when at least one finding should change the plan before anyone implements it.'''
-CRITIC_NEXT = (' An independent reviewer read this plan and listed problems in review.findings. They are advice, not '
+CRITIC_NEXT = (' A reviewer read this plan and listed problems in review.findings. They are advice, not '
                'orders. Tell the user what they say, and you may ask the planner for a revised plan with delegate_plan.')
-CRITIC_REVISED_NEXT = (' An independent reviewer listed problems in review.findings and the planner revised the plan once '
+CRITIC_REVISED_NEXT = (' A reviewer listed problems in review.findings and the planner revised the plan once '
                        'with them; this is the revised plan. Tell the user what the reviewer said.')
 # Measured on 2026-11-17: the findings removed the defect only when the planner revised its plan with them.
 CRITIC_REVISION = ('A frugal critic reviewed the previous plan against the request and the project. Its findings are in '
@@ -152,7 +152,8 @@ def settled(row, job):
     result = deepcopy(row['result'])
     review = result.get('review')
     if review is None:  # interrupted during the review
-        out = {'status': 'FAILED', 'route': mark.get('route'), 'model_calls': 0, 'reason': 'INTERRUPTED'}
+        out = {'status': 'FAILED', 'route': mark.get('route'), 'model_calls': 0, 'reason': 'INTERRUPTED',
+               **({'own_model': True} if mark.get('own_model') else {})}
         if (payload := done('review/session')) is not None:
             session = Path(job)/'review/session'
             out['model_calls'] = count_calls(session) if (session/'journal.jsonl').is_file() else 0
@@ -717,13 +718,17 @@ class PlanningTools:
         try:
             reviewer, info = select_route('auto', 'plan-auditor', 'AUTOMATIC_INDEPENDENT_REVIEWER', planner,
                                           work_type=(active or {}).get('kinds'))
-            if reviewer is None:
-                off = any(c.get('reason') == 'SWITCHED_OFF_FOR_ROLE' for c in (info.get('selection') or {}).get('candidates', []))
-                return {**out, 'reason': 'SWITCHED_OFF_FOR_ROLE' if off else 'NO_INDEPENDENT_REVIEWER'}
+            kind = reviewer and independence(planner, reviewer)
+            if reviewer is None or reviewer['id'] == planner['id'] or kind in (None, 'AUDITOR_NOT_INDEPENDENT'):
+                from .environment import granted
+                # The planner never reviews its own plan, unless the user ticked its local model as plan reviewer in
+                # /routes: one model, the critic's brief, when no other reviewer can (owner, 2026-11-17).
+                if not granted('plan-auditor', planner):
+                    off = reviewer is None and any(c.get('reason') == 'SWITCHED_OFF_FOR_ROLE'
+                                                   for c in (info.get('selection') or {}).get('candidates', []))
+                    return {**out, 'reason': 'SWITCHED_OFF_FOR_ROLE' if off else 'NO_INDEPENDENT_REVIEWER'}
+                reviewer, kind, out['own_model'] = planner, 'AUDITOR_NOT_INDEPENDENT', True
             out['route'] = reviewer['id']
-            kind = independence(planner, reviewer)
-            if reviewer['id'] == planner['id'] or kind in (None, 'AUDITOR_NOT_INDEPENDENT'):
-                return {**out, 'reason': 'NO_INDEPENDENT_REVIEWER'}  # the planner never reviews its own plan
             require(reviewer, 'plan-auditor')
         except (ValueError, OSError, KeyError, TypeError) as exc:
             return {**out, 'reason': 'REVIEWER_UNAVAILABLE', 'detail': str(exc)[:300]}
@@ -738,7 +743,8 @@ class PlanningTools:
         proposal = review/'proposal'
         outcome = {}
         try:
-            row['critic'] = {'stage': 'review', 'route': out['route'], 'independent': kind == 'INDEPENDENT'}
+            row['critic'] = {'stage': 'review', 'route': out['route'], 'independent': kind == 'INDEPENDENT',
+                             **({'own_model': True} if out.get('own_model') else {})}
             save_json(receipt_path, row)  # an interruption from here on is reconciled by `settled`, not repeated
             proposal.mkdir(parents=True)
             (proposal/'plan.json').write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding='utf-8')
