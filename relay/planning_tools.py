@@ -727,6 +727,9 @@ class PlanningTools:
                     off = reviewer is None and any(c.get('reason') == 'SWITCHED_OFF_FOR_ROLE'
                                                    for c in (info.get('selection') or {}).get('candidates', []))
                     return {**out, 'reason': 'SWITCHED_OFF_FOR_ROLE' if off else 'NO_INDEPENDENT_REVIEWER'}
+                from .work_audit import never_audits
+                if never_audits(planner):  # the roster's "audits": false holds for its own plan too
+                    return {**out, 'reason': 'NO_INDEPENDENT_REVIEWER'}
                 reviewer, kind, out['own_model'] = planner, 'AUDITOR_NOT_INDEPENDENT', True
             out['route'] = reviewer['id']
             require(reviewer, 'plan-auditor')

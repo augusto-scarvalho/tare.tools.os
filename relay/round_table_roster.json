@@ -575,7 +575,8 @@
     "qwen36-moe": {
       "display_name": "Qwen3.6 MoE",
       "vendor": "Qwen",
-      "bias_domain": "qwen/qwen-family",
+      "bias_domain": "qwen/qwen-moe",
+      "audits": false,
       "runtime": {
         "native": "qwen36-moe",
         "native-http": "qwen36-moe"

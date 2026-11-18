@@ -288,7 +288,8 @@ def admission(row, role, author=None, credentials=None, granted=None):
         if deployment.get('model') != row.get('model'):
             raise ValueError('ROLE_PROFILE_IDENTITY_MISMATCH')
         native_generation.deployment_profile(deployment, deployment['native_profile']['model'])
-        auditor = identity(deployment, 'auditor')
+        # A review role needs an auditor identity (a model the roster says never audits has none); others the work's.
+        auditor = identity(deployment, 'auditor' if role in ('auditor', 'plan-auditor') else 'implementer')
     except (ValueError, KeyError, TypeError, OSError):
         return None, None, 'PROFILE_OR_IDENTITY_INVALID'
     deployment=constrained(deployment,role)
