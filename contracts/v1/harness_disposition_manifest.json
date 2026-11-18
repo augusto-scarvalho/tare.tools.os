@@ -3941,8 +3941,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 80673,
-      "sha256": "4a96a1a1157e5197f24d42836785375e8bc691c2b8aa6d74d496356ffa7cb06f"
+      "size_bytes": 80980,
+      "sha256": "b314621722af2f228f34a47b91b752e534ce560f3acaad01b4fa73e3f94054ee"
     },
     {
       "name": "test_selection_pilot.py",

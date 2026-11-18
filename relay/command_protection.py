@@ -264,7 +264,9 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         raise ValueError('Protected commands require one project and no interactive terminal.')
     def public_request():
         value=public_context() if callable(public_context) else public_context
-        if not isinstance(value,str) or len(value.encode())>8192:
+        # The bound is for a reviewer's prompt. Sandboxed checks have no reviewer: their context is only hashed into
+        # the receipt, and a local plan's worked examples made it pass 8 KiB, refusing every check (2026-11-18).
+        if not isinstance(value,str) or not checks_only and len(value.encode())>8192:
             raise ActionRefused('Command review context exceeds 8 KiB; use a smaller demand.')
         return value
     root=Path(next(iter(config['repositories'].values()))).resolve(strict=True)
@@ -1137,7 +1139,7 @@ def protected_work_verifier(control, train_dir, *, descriptor, settings, outside
                      else {'command_protection': policy})}
         packet, _ = work_packet(descriptor, settings['node'], config['repositories'])
         context = encode(packet)
-        if len(context.encode()) > 8192:
+        if not checks_only and len(context.encode()) > 8192:  # a reviewer's bound, as in factory
             raise ValueError('NATIVE_WORK_COMMAND_CONTEXT_OVER_BUDGET')
         effect_id = 'host-verify-' + digest({'cwd': str(root), 'argv': argv,
             'descriptor': descriptor.sha256, 'session': session_id})
