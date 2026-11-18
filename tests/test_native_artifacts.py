@@ -200,6 +200,33 @@ def test_explorer_corrects_a_missing_location_path_without_repeating_discovery(s
     assert 'delivery_payload' not in replies[1]
 
 
+@pytest.mark.parametrize('text,accepted', [('["none open"]', True), ('none open', False), ('{"a": 1}', False)])
+def test_a_list_field_sent_as_its_json_text_is_read_as_the_list(setup, text, accepted):
+    # The local Qwen sent a revised plan's tasks as one JSON string, again after the correction (2026-11-18).
+    config,custody,root=setup
+    config.update(role='explorer',typed_output=True,writable={},verifiers={})
+    value={**payload('explorer',root),'remaining':text}
+    client=Client('openai-chat',[('read',{'repository':'repo','path':'a.py'}),('tare_deliver',value)])
+    result=run(config,custody,client,limits={'max_model_calls':2})
+    if accepted:
+        assert result['status']=='PROPOSED'
+        assert json.loads((custody/'artifact.json').read_text())['payload']['remaining']==['none open']
+    else:
+        assert result['failure_code']=='INVALID_DELIVERY' and not (custody/'artifact.json').exists()
+
+
+def test_an_empty_list_sent_as_text_is_read_before_the_same_family_reading_of_an_accept(tmp_path):
+    # "[]" as text is truthy: read as text, an ACCEPT with no findings would have become a REVISE with none.
+    from types import SimpleNamespace
+    (tmp_path/'a.py').write_bytes(b'value = 1\n')
+    digest = hashlib.sha256(b'value = 1\n').hexdigest()
+    tools = SimpleNamespace(observations=lambda: {'reads': {'repo:a.py': digest}})
+    check = native_artifacts.validator('auditor', tools, {'repo': str(tmp_path)}, same_family_audit=True)
+    result = check({'verdict': 'ACCEPT', 'summary': 'Sound.', 'findings': '[]', 'remaining': '[]',
+                    'sources': [{'repository': 'repo', 'path': 'a.py', 'sha256': digest}]})
+    assert (result['verdict'], result['findings'], result['remaining']) == ('ACCEPT', [], [])
+
+
 def test_an_explorer_listing_places_gets_what_tare_can_derive(tmp_path):
     from types import SimpleNamespace
     (tmp_path/'a.py').write_text('one\ntwo\n', encoding='utf-8')
