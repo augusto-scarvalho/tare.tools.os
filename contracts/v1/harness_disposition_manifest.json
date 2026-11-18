@@ -2127,8 +2127,8 @@
     {
       "name": "landing_policy.py",
       "path": "tare.tools.os/relay/landing_policy.py",
-      "size_bytes": 23612,
-      "sha256": "f4be388bcdfdbf8dc0b4db2fc4423168a15ed64760756a666e82c07ced17ffee",
+      "size_bytes": 24368,
+      "sha256": "5d7ca1c40df1605b0758270021914f1cad231cef7afce769b8196388a0684836",
       "summary": "Deterministic smart admission with optional independent cross-model audit.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",

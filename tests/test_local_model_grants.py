@@ -128,8 +128,8 @@ def test_a_granted_local_planner_runs_at_its_own_default_unless_it_declares_leve
 
 
 def test_generic_local_models_have_an_identity_of_their_own(pool):
-    gateway('gemma-4', 'llama-5')
-    gemma, llama = native_catalog.select(GEMMA), native_catalog.select(environment.generic_name(GATEWAY, 'llama-5'))
+    gateway('gemma-4', 'phi-5')
+    gemma, llama = native_catalog.select(GEMMA), native_catalog.select(environment.generic_name(GATEWAY, 'phi-5'))
     me = work_audit.identity(gemma, 'implementer')
     assert (me.vendor, me.bias_domain, me.payload['line']) == ('Local', 'gemma-4', 'local')
     landing_policy.verify_identity_against_roster(me, native_catalog.roster_path())  # re-derived on a later read
@@ -137,6 +137,17 @@ def test_generic_local_models_have_an_identity_of_their_own(pool):
     assert work_audit.independence(gemma, gemma) == 'AUDITOR_NOT_INDEPENDENT'
     assert work_audit.independence(gemma, native_catalog.select('claude-api-opus-5-5')) == 'INDEPENDENT'
     assert work_audit.identity(native_catalog.select('qwen38-gsq'), 'auditor').vendor == 'Qwen'  # the roster's record
+    # A variant that names a family the roster knows is that family: never independent of it (the same-family audit
+    # then asks the user before applying, as for the shipped Qwen). Owner's side note, 2026-11-18.
+    gateway('gemma-4', 'phi-5', 'qwen38-ninfer', 'sampling-7b')
+    sampling = native_catalog.select(environment.generic_name(GATEWAY, 'sampling-7b'))
+    assert work_audit.identity(sampling, 'implementer').vendor == 'Local'  # a family starts a word: no "ling" here
+    variant = native_catalog.select(environment.generic_name(GATEWAY, 'qwen38-ninfer'))
+    seen = work_audit.identity(variant, 'implementer')
+    assert (seen.vendor, seen.bias_domain, seen.payload['line']) == ('Qwen', 'qwen/qwen-family', 'local')
+    landing_policy.verify_identity_against_roster(seen, native_catalog.roster_path())
+    assert work_audit.independence(variant, native_catalog.select('qwen38-gsq')) == 'AUDITOR_NOT_INDEPENDENT'
+    assert work_audit.independence(variant, gemma) == 'INDEPENDENT'
     hosted = {**gemma, 'native_profile': {**gemma['native_profile'], 'endpoint': 'https://models.example.com/v1'}}
     with pytest.raises(ValueError):  # the same unknown model elsewhere than this machine has no identity
         work_audit.identity(hosted, 'auditor')
