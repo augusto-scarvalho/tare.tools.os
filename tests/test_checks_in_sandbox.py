@@ -60,6 +60,16 @@ def test_a_project_without_protection_runs_its_checks_in_the_sandbox_with_no_rev
         run([sys.executable, '-c', 'print("unregistered")'])
 
 
+def test_a_unit_whose_criteria_pass_8_kib_still_runs_its_checks_in_the_sandbox(host, monkeypatch):
+    # The 8 KiB bound is for a reviewer's prompt; sandboxed checks have none. A local plan's worked examples passed it
+    # and every check of the unit was refused (2026-11-18). A protected project's reviewer keeps the bound.
+    unprotected(host, monkeypatch)
+    long = {**UNIT, 'criteria': ['Example: given a store with ' + 'x' * 200 + ', list gives the row.'] * 50}
+    run = protection.conversation_verifier(host.control, host.custody, host.config, {}, host.root, long, {'check': PASS})
+    done = run(PASS)
+    assert (done.returncode, done.execution_limitation) == (0, None) and 'verified' in done.stdout
+
+
 def test_the_checks_only_gate_admits_registered_argv_and_nothing_else(host, monkeypatch):
     del host.config['command_protection']
     declared = [str(host.executable), '-c', 'print(1)']
