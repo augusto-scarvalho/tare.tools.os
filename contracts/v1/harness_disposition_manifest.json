@@ -3841,8 +3841,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 127860,
-      "sha256": "a4e2e30110a0eb72b58dfdf58bd55079aa1dce078e01fee75c769b6f507b5425"
+      "size_bytes": 128615,
+      "sha256": "bb484a12c3d9f03c6da83838e8cc2cfc5b4662537c4e744a4f2ab47ba3492f86"
     },
     {
       "name": "gpu.py",
@@ -3941,8 +3941,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 80251,
-      "sha256": "37fbd247e599f81f85ecdbb88eaa00886e470f373b5d140091b1029f3d3d4748"
+      "size_bytes": 80673,
+      "sha256": "4a96a1a1157e5197f24d42836785375e8bc691c2b8aa6d74d496356ffa7cb06f"
     },
     {
       "name": "test_selection_pilot.py",

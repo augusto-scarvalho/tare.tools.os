@@ -1461,7 +1461,7 @@ def test_the_sandbox_probe_builds_its_linked_projects_and_removes_them_on_this_p
     # Each platform's own table: 15 cases and cleanup on Windows; bubblewrap's cases on Linux.
     cases = {name: (state, asks) for rows in roots.values() for name, _, state, asks in rows}
     windows = os.name == 'nt'
-    assert len(cases) == sum(map(len, roots.values())) == (15 if windows else 23)
+    assert len(cases) == sum(map(len, roots.values())) == (16 if windows else 24)
     assert ('python-lists-drive' in cases, 'python-task-limit' in cases) == (windows, not windows)
     assert cases.get('node-pnpm-junction' if windows else 'node-pnpm-symlinks') == (('red', True) if windows
                                                                                      else ('green', False))
