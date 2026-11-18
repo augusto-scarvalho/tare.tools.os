@@ -2127,8 +2127,8 @@
     {
       "name": "landing_policy.py",
       "path": "tare.tools.os/relay/landing_policy.py",
-      "size_bytes": 23510,
-      "sha256": "1ee690e50e203955f24f38e9b44cf3b4dfe01ac75d1b2293f47861f7dd2223d4",
+      "size_bytes": 23612,
+      "sha256": "f4be388bcdfdbf8dc0b4db2fc4423168a15ed64760756a666e82c07ced17ffee",
       "summary": "Deterministic smart admission with optional independent cross-model audit.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -2231,8 +2231,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 23594,
-      "sha256": "316e2b2f9687226bf3de42ec04f45c225cf2e845df5c96ce5d62822447b9493c"
+      "size_bytes": 23628,
+      "sha256": "0a420e4bf93364c977f485c53ac9cfd6ff8049696c78a5f173ebb5151c6ebb61"
     },
     {
       "name": "native_installation.py",
@@ -2981,8 +2981,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS selects configured eligible role routes and persists the rationale; existing native Work owner executes and recovers them.",
-      "size_bytes": 37985,
-      "sha256": "f409f6dec2235fcfa8b3bc6df78c0d30638eb141709d0f763dc673cae1addb47"
+      "size_bytes": 38088,
+      "sha256": "c7bcd2a6278673817a703a149807490a7be6db3484c68882ca7adbc4123b251f"
     },
     {
       "name": "native_serve.py",
