@@ -137,7 +137,7 @@ def test_a_local_model_saved_as_vendor_local_is_reattested_as_its_family(mesh, c
     train = strict_train(mesh, implementer=local_before_262(mesh))
     new, old = reattested(mesh, train, 'IDENTITY_ROSTER_MISMATCH', capsys)
     assert (old.vendor, old.bias_domain) == ('Local', 'qwen38-ninfer')
-    assert (new.vendor, new.bias_domain, new.payload['line']) == ('Qwen', 'qwen/qwen3.8-27b-dense', 'local')
+    assert (new.vendor, new.bias_domain, new.payload['line']) == ('Qwen', 'qwen/qwen*', 'local')
     assert new.payload['roster_sha256'] == old.payload['roster_sha256']  # the roster is the same; the derivation is not
 
 
@@ -254,7 +254,7 @@ def test_a_native_work_refused_at_land_is_reattested_and_resumed_to_a_new_audit_
     assert read_identity(folder/'IMPLEMENTER_IDENTITY.json') == old
     if refusal == 'MISMATCH':
         assert (old.vendor, old.bias_domain, new.vendor, new.bias_domain) == (
-            'Local', 'qwen38-ninfer', 'Qwen', 'qwen/qwen3.8-27b-dense')
+            'Local', 'qwen38-ninfer', 'Qwen', 'qwen/qwen*')  # a name proves no lineage: every Qwen
         assert set(record['identities']) == {'implementer'}  # the auditor's receipt still matches
     else:
         assert (new.vendor, new.bias_domain) == (old.vendor, old.bias_domain) and new != old

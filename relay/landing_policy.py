@@ -236,11 +236,13 @@ def _local_row(model_id: str, models: dict) -> dict[str, str]:
     words = re.split(r"[^a-z0-9]+", model_id.lower())  # a family starts a word: qwen38, never sampLING
     # The family is the domain's leading letters (qwen of qwen/qwen3.8-27b-dense): a stem with digits would not
     # start the word qwen38, and a Qwen variant would pass as independent of Qwen.
-    family = [r for r in models.values() if len(stem := re.match(r"[a-z]*", str(r.get("bias_domain", "")).split("/")[-1])[0]) > 2
-              and any(word.startswith(stem) for word in words)]
+    stem = lambda r: re.match(r"[a-z]*", str(r.get("bias_domain", "")).split("/")[-1])[0]
+    family = [r for r in models.values() if len(stem(r)) > 2 and any(word.startswith(stem(r)) for word in words)]
     known = next((r for r in family if r["vendor"] != "Local"), family[0] if family else None)
-    return ({"vendor": known["vendor"], "bias_domain": known["bias_domain"], "line": LOCAL_LINE} if known else
-            {"vendor": "Local", "bias_domain": model_id, "line": LOCAL_LINE})
+    # A name proves no lineage among a family's domains (qwen36-moe-custom may be any Qwen): the whole family, as
+    # `same_domain` reads `qwen/qwen*`.
+    return ({"vendor": known["vendor"], "bias_domain": known["bias_domain"].split("/")[0] + "/" + stem(known) + "*",
+             "line": LOCAL_LINE} if known else {"vendor": "Local", "bias_domain": model_id, "line": LOCAL_LINE})
 
 
 def _line_record(models, model_id, runtime_key, runtime_model, row):
@@ -343,13 +345,20 @@ SAME_VENDOR_AUDIT = "audited by the same vendor: not independent"
 SAME_VENDOR_REVIEW = "reviewed by the same vendor: not independent"
 
 
+def same_domain(one: str, other: str) -> bool:
+    """Whether two bias domains are one lineage: equal, or one is the family a local model got from its name alone
+    (`qwen/qwen*`, `_local_row`), which stands for every domain of that family."""
+
+    return one == other or any(a.endswith("*") and b.startswith(a[:-1]) for a, b in ((one, other), (other, one)))
+
+
 def independence(implementer: AgentIdentity, auditor: AgentIdentity) -> str:
     """How `auditor` stands to `implementer`, the one rule every selection and label uses (owner, 2026-11-14):
     AUDITOR_NOT_INDEPENDENT (same model id or bias domain: refused), INDEPENDENT (another vendor), or
     SAME_VENDOR_NOT_INDEPENDENT (another bias domain of the same vendor: it runs and its verdict counts, but it is
     never called independent and never chosen while an eligible auditor of another vendor exists)."""
 
-    if auditor.model_id == implementer.model_id or auditor.bias_domain == implementer.bias_domain:
+    if auditor.model_id == implementer.model_id or same_domain(auditor.bias_domain, implementer.bias_domain):
         return "AUDITOR_NOT_INDEPENDENT"
     return "INDEPENDENT" if auditor.vendor != implementer.vendor else "SAME_VENDOR_NOT_INDEPENDENT"
 

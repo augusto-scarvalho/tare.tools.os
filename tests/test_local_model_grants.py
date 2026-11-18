@@ -139,15 +139,21 @@ def test_generic_local_models_have_an_identity_of_their_own(pool):
     assert work_audit.identity(native_catalog.select('qwen38-gsq'), 'auditor').vendor == 'Qwen'  # the roster's record
     # A variant that names a family the roster knows is that family: never independent of it (the same-family audit
     # then asks the user before applying, as for the shipped Qwen). Owner's side note, 2026-11-18.
-    gateway('gemma-4', 'phi-5', 'qwen38-ninfer', 'sampling-7b')
+    gateway('gemma-4', 'phi-5', 'qwen38-ninfer', 'sampling-7b', 'qwen36-moe-custom')
     sampling = native_catalog.select(environment.generic_name(GATEWAY, 'sampling-7b'))
     assert work_audit.identity(sampling, 'implementer').vendor == 'Local'  # a family starts a word: no "ling" here
     variant = native_catalog.select(environment.generic_name(GATEWAY, 'qwen38-ninfer'))
     seen = work_audit.identity(variant, 'implementer')
-    assert (seen.vendor, seen.bias_domain, seen.payload['line']) == ('Qwen', 'qwen/qwen3.8-27b-dense', 'local')
+    # Its name proves no lineage among Qwen's domains: it stands for all of them (2026-11-18, after #268 split them)
+    assert (seen.vendor, seen.bias_domain, seen.payload['line']) == ('Qwen', 'qwen/qwen*', 'local')
     landing_policy.verify_identity_against_roster(seen, native_catalog.roster_path())
-    assert work_audit.independence(variant, native_catalog.select('qwen38-gsq')) == 'AUDITOR_NOT_INDEPENDENT'
+    custom = native_catalog.select(environment.generic_name(GATEWAY, 'qwen36-moe-custom'))
+    for qwen in ('qwen38-gsq', 'qwen36-moe', 'swift-next', 'fable-tc'):  # first in the roster, or any other Qwen
+        assert work_audit.independence(variant, native_catalog.select(qwen)) == 'AUDITOR_NOT_INDEPENDENT'
+        assert work_audit.independence(native_catalog.select(qwen), custom) == 'AUDITOR_NOT_INDEPENDENT'
+    assert work_audit.independence(variant, custom) == 'AUDITOR_NOT_INDEPENDENT'
     assert work_audit.independence(variant, gemma) == 'INDEPENDENT'
+    assert landing_policy.same_domain('openai/gpt*', 'openai/gpt') and not landing_policy.same_domain('qwen/qwen*', 'zai/glm-family')
     hosted = {**gemma, 'native_profile': {**gemma['native_profile'], 'endpoint': 'https://models.example.com/v1'}}
     with pytest.raises(ValueError):  # the same unknown model elsewhere than this machine has no identity
         work_audit.identity(hosted, 'auditor')
