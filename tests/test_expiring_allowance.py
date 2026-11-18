@@ -183,7 +183,7 @@ def routes(monkeypatch):
         rows[deployment['id']] = (deployment, cost_tier)
     monkeypatch.setattr(native_routes, 'configured', lambda: {'schema_version': 1, 'deployments': [
         {'id': name, 'cost_tier': tier, 'kind': 'primary'} for name, (_, tier) in rows.items()]})
-    monkeypatch.setattr(native_routes, 'admission', lambda row, role, author=None, credentials=None: (
+    monkeypatch.setattr(native_routes, 'admission', lambda row, role, author=None, credentials=None, **rank: (
         copy.deepcopy(rows[row['id']][0]), None, None))
     put.rows = rows
     return put
