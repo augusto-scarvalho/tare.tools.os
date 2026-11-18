@@ -32,7 +32,7 @@ NO_ROUTE = {'coordinator': 'tare auto cannot start a conversation; it stops befo
             'researcher': '/research and web search say no route is available',
             'vision': 'attached images get no description', 'heads_up': 'no heads-up note is written'}
 LEGEND = ('[x] on   [ ] off by you   ! not usable now: a rule decides, the tick stays yours   ~ a version entry differs'
-          '   . not carried   n/a not offered for this role')
+          '   . not carried   n/a not offered for this role   a tick on a Local model grants it the role')
 
 
 def entries(value, side, role):
@@ -43,17 +43,22 @@ def entries(value, side, role):
     return texts if isinstance(texts, list) else []
 
 
-def reads(value, role, route, key=None):
+def reads(value, role, route, key=None, grant=False):
+    """'on' or 'off'; with `grant` (a local route its row does not give the role) 'on' only where the user granted
+    it."""
+    if grant:
+        return 'on' if env.granted(role, route, value) else 'off'
     found = env.profile_state(role, route, value, key)
     return 'off' if found and found[0] == 'off' else 'on'
 
 
-def make(value, role, pattern, want, cells, sources):
+def make(value, role, pattern, want, cells, sources, grants=frozenset()):
     """Make every cell `pattern` targets read `want` for `role` (a cell: line@source or a route id, and its
     [(route, key)]), storing only differences from tare's default. The entries inside the target go; "off" then writes
     `pattern` itself when a targeted route still reads on, and each cell that still disagrees, because of an entry
     outside the target, gets its own entry: its line on its source, then a version or a route id. So an "on" is
-    written only where something broader is off. `sources`: {id: source} of routes with no line."""
+    written only where something broader is off, or as the grant of a local route in `grants` (route ids: off until
+    granted). `sources`: {id: source} of routes with no line."""
     rule = env.rule_of(pattern)
 
     def covered(text):
@@ -64,13 +69,14 @@ def make(value, role, pattern, want, cells, sources):
             return rule[0] is None and rule[3] in ('*', sources.get(inner))
         return inner is not None and rule[3] in ('*', inner[3]) and all(w in (None, h) for w, h in zip(rule[:3], inner))
     value = env.edit_auto(value, role, lambda side, texts: [t for t in texts if not covered(t)])
-    if want == 'off' and any(reads(value, role, r) == 'on' for _, routes in cells for r, _ in routes):
+    if want == 'off' and any(reads(value, role, r, grant=r.get('id') in grants) == 'on'
+                             for _, routes in cells for r, _ in routes):
         value = env.set_auto(value, f'{role}:{pattern}=off')
     for name, routes in cells:
         if '@' in name and reads(value, role, {}, env.rule_of(name)) != want:
             value = env.set_auto(value, f'{role}:{name}={want}')
         for route, key in routes:
-            if reads(value, role, route) != want:
+            if reads(value, role, route, grant=route.get('id') in grants) != want:
                 own = env.key_label(key, bool(key[2])) if key[0] else route['id']
                 value = env.set_auto(value, f'{role}:{own}={want}')
     return value
@@ -81,13 +87,18 @@ def row_of(route, key):
 
 
 def load():
-    """This machine's setup; per role, (name, route, now, key) of each route automatic routing considers; and each
-    row's label: a line's from the lines table (Claude Fable), a route with no line by its catalogue label or id."""
+    """This machine's setup; per role, (name, route, now, key) of each route automatic routing considers; each
+    row's label: a line's from the lines table (Claude Fable), a route with no line by its catalogue label or id; and
+    per role the ids of the local routes only a grant gives it (no other path reaches them: off until ticked)."""
     from .model_choices import describe
     from .vendor_models import LINES
     value = env.read()
-    routes = {role: [(name, route, now, env.route_key(route)) for name, route, now in env.auto_routes(role) if route]
-              for role in env.PROFILE_ROLES}
+    names = {role: set() for role in env.PROFILE_ROLES}
+    routes = {role: [(name, route, now, env.route_key(route)) for name, route, now in env.auto_routes(role, names[role])
+                     if route] for role in env.PROFILE_ROLES}
+    grants = {role: {r['id'] for n, r, *_ in rows if n in names[role]} - {r['id'] for n, r, *_ in rows
+                                                                            if n not in names[role]}
+              for role, rows in routes.items()}
     labels = {}
     for name, route, _, key in (item for rows in routes.values() for item in rows):
         row = row_of(route, key)
@@ -101,7 +112,7 @@ def load():
                 labels[row] = describe(route['id'], route)['label'] or row
             except (ValueError, OSError, KeyError, TypeError):
                 labels[row] = row
-    return value, routes, labels
+    return value, routes, labels, grants
 
 
 def mirrors(routes):
@@ -169,7 +180,7 @@ class RouteMatrix(Vertical):
     def compose(self):
         self.value = self.routes = self.saved = None
         self.role, self.warned, self.labels, self.proving, self.proved = 'coordinator', False, {}, False, {}  # what a user meets first
-        self.mirrors = {}
+        self.mirrors, self.grants = {}, {}
         self.message, self.extra, self.identities, self.warnings = 'Reading the routes…', [], {}, []
         with Horizontal(classes='matrix-bar'):
             yield Select([(label, role) for role, label in CHOICES.items()], value=self.role, allow_blank=False,
@@ -192,7 +203,7 @@ class RouteMatrix(Vertical):
         self.run_worker(self.load(), group='route-matrix', exclusive=True)
 
     async def load(self):
-        value, routes, labels = await asyncio.to_thread(load)
+        value, routes, labels, self.grants = await asyncio.to_thread(load)
         if self.value is None:
             self.value, self.saved = value, copy.deepcopy(value.get('routing_profile'))
             self.message = ('This machine\'s setup cannot be read: ' + value['error'] + ' (tare setup --reset starts '
@@ -210,7 +221,8 @@ class RouteMatrix(Vertical):
         self.build()
 
     def state(self, route, key=None, role=None):
-        return reads(self.value, role or self.role, route, key)
+        role = role or self.role
+        return reads(self.value, role, route, key, route.get('id') in self.grants.get(role, ()))
 
     def look(self, row, where):
         """(the line's or route's own state, whether a route of it differs, whether one is usable now), or None when
@@ -420,6 +432,9 @@ class RouteMatrix(Vertical):
         from .model_signals import describe_record, describe_task
         reasons = ', '.join(sorted({now for _, _, now, _ in routes} - {'usable'}))
         lead = 'on' if own == 'on' else 'off by you'
+        if all(r['id'] in self.grants.get(self.role, ()) for _, r, _, _ in routes):  # a local model: the tick grants
+            lead = ('granted by you' if own == 'on' else
+                    'not granted: its row does not give it this role; a tick grants it')
         if not usable:
             lead += (', but not used automatically now: ' if own == 'on' else '; not usable now either: ') + reasons + \
                 ' (a tick does not override this rule)'
@@ -512,7 +527,8 @@ class RouteMatrix(Vertical):
         return found
 
     def make(self, value, pattern, want):
-        return make(value, self.role, pattern, want, self.targets(env.rule_of(pattern)), self.sources)
+        return make(value, self.role, pattern, want, self.targets(env.rule_of(pattern)), self.sources,
+                    self.grants.get(self.role, frozenset()))
 
     def toggle(self, row, where):
         """Any cell the source carries for the role ticks; a rule on it stays marked. Nothing to name, nothing to tick."""

@@ -119,7 +119,8 @@ class Scope:
         if self.only and category!=self.only:
             return False,'Excluded by --'+self.only+'_only for this TUI instance.'
         if self.prefer=='local':
-            if role in REVIEW_ROLES and category=='local':
+            from .environment import granted  # the user's grant of this review role to this local model decides
+            if role in REVIEW_ROLES and category=='local' and not granted(role,deployment):
                 return False,'--prefer_local requires an external planner and auditor.'
             if role not in REVIEW_ROLES and category!='local':
                 return False,'--prefer_local keeps this execution role on local models.'

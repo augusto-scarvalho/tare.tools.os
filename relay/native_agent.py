@@ -407,8 +407,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             config, deployment, instruction = state['config'], state['deployment'], state['instruction']
             if config['role'] == 'planner':
                 from .execution_team import reasoning
-                from .planner_policy import LEVELS
-                if reasoning(deployment) not in LEVELS:
+                from .planner_policy import LEVELS, unlevelled
+                if reasoning(deployment) not in LEVELS and not unlevelled(deployment):
                     raise ValueError('Saved planner is below the minimum high reasoning. Preserve its history and '
                                      'start a new high planner using its retained findings; no model call was made.')
         else:
