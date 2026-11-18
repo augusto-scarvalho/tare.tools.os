@@ -732,11 +732,13 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
 
 
 def sandbox_verifiers(verifiers, root):
-    """Registered checks with an absolute program, as the sandbox runs them (relative: the project, then PATH)."""
+    """Registered checks with an absolute program, as the sandbox runs them (relative: the project, then PATH), and
+    without the pytest folder tare put beside the candidate for a run outside it (work_units.without_own_scratch)."""
     import shutil
+    from .work_units import without_own_scratch
     result = {}
     for name, row in verifiers.items():
-        argv = list(row['argv'])
+        argv = without_own_scratch(list(row['argv']), root)
         program = Path(argv[0])
         found = (program if program.is_absolute() else Path(root)/program if len(program.parts) > 1
                  else shutil.which(argv[0]))

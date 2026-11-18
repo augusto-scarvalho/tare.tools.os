@@ -181,6 +181,37 @@ def projects(storage, outside):
     ]}
 
 
+def session_verify(base, root, control, argv):
+    """An implementer's own `verify` of the pytest case, registered as native_agent does without command protection
+    (command_protection.sandbox_verifiers and checks_factory): green, from the sandbox's own pytest folder."""
+    from compute_plane.native_capabilities import NativeCapabilities
+    from compute_plane.native_models import object_json
+    from tare_tools_agent_runtime import EffectRequest, ToolCall
+    from relay import command_protection
+    custody = base/'custody'/'session-verify'
+    (custody/'scratch').mkdir(parents=True)
+    verifiers = command_protection.sandbox_verifiers({'tests': {'repository': 'project', 'argv': argv}}, root)
+    config = {'repositories': {'project': str(root)}, 'writable': {'project': ['.']}, 'verifiers': verifiers}
+    caps = NativeCapabilities(session_id='probe', binding=control.binding, repositories=config['repositories'],
+                              writable=config['writable'], verifiers=verifiers, scratch_root=custody/'scratch',
+                              role='implementer', capabilities=['read', 'verify'], specgraph_edit_context=False)
+    port = command_protection.checks_factory(config, custody, 'probe')(
+        session_id='probe', binding=control.binding, control=control, config=config, custody=custody,
+        scratch=custody/'scratch', capabilities=caps)
+    caps.bind_command_mediation(port)
+    began = time.monotonic()
+    try:
+        value = object_json(caps.execute(EffectRequest('probe', 'verify-session', ToolCall(
+            'verify', 'verify', json.dumps({'name': 'tests'}))), control).output_json)
+    finally:
+        if callable(getattr(port, 'close', None)):
+            port.close()
+    observed = 'green' if value.get('returncode') == 0 else 'red'
+    if observed != 'green':
+        print(f'--- pytest-session-verify:\n{json.dumps(value)[-1500:]}', file=sys.stderr)
+    return 'pytest-session-verify', 'green', observed, round(time.monotonic() - began, 1)
+
+
 def run_cases(base, storage):
     from tare_tools_agent_runtime import BindingRef, CancellationToken, ExecutionControl
     from relay import command_protection, work_units
@@ -247,6 +278,8 @@ def run_cases(base, storage):
                 work_units.CHECK_PORT.reset(token)
                 if callable(getattr(run, 'close', None)):
                     run.close()
+            if 'pytest-own-basetemp' in commands:
+                rows.append(session_verify(base, root, control, commands['pytest-own-basetemp']))
     finally:
         stop.set()
         listener.close()
