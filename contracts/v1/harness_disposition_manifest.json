@@ -1901,8 +1901,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Owns audit/session policy, source evidence or finite case custody; provider execution stays in Kernel.",
-      "size_bytes": 45904,
-      "sha256": "758bf8cf8e1aca218a42ad0ea5d89a0a0d64000f6ef7fff5edbd19984fc020bc"
+      "size_bytes": 45932,
+      "sha256": "4dda5bb892f6856aa31ef6a4e2b0e05bcc3bc751c8c35ca447bbba4c31f83df4"
     },
     {
       "name": "audit_context.py",
@@ -1977,8 +1977,8 @@
     {
       "name": "autonomous_auditor.py",
       "path": "tare.tools.os/relay/autonomous_auditor.py",
-      "size_bytes": 14086,
-      "sha256": "868e37bcccc818430edb5194ed272b0c59c9391f66950ed5cd1564cbd0cc1f3d",
+      "size_bytes": 14186,
+      "sha256": "98e4033c3f582357a4a44f6a9234311bc9952e1291a86171956312130561bc75",
       "summary": "relay/autonomous_auditor.py — on-demand EXTERNAL auditor spawner (agy/Antigravity).",
       "disposition": "EVOLVE_SATELLITE",
       "target_repository": "tare.tools.kernel (Harness Driver)",
@@ -2127,8 +2127,8 @@
     {
       "name": "landing_policy.py",
       "path": "tare.tools.os/relay/landing_policy.py",
-      "size_bytes": 25753,
-      "sha256": "2bbcfe449f09ee57ca97dfef0016066134308e0a59d9579ec7c940965e3574f1",
+      "size_bytes": 26331,
+      "sha256": "25aef75406b753e620077f5aefc0e8bb5c94ab22e8ae380be963f6d136e3545f",
       "summary": "Deterministic smart admission with optional independent cross-model audit.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",

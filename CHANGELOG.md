@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- A local model the roster does not know but whose name names a family (`qwen36-moe-custom`) is no longer given that family's first domain: since #268 split Qwen into one domain per generation, size and architecture, that let `qwen36-moe` audit its own custom variant as merely the same vendor. A name proves no lineage, so such a model now stands for its whole family (`qwen/qwen*`): never independent of any Qwen. Receipts saved with the old domain no longer match and take the reattest path.
 - A test double of `native_routes.admission` accepts the reviewer rule's new arguments (found in CI).
 - The class anchors test expects what the reviewer rule decides: an unplaced Kimi or Muse counts as cheap and may not audit the frontier Astra's work; placed middling, Kimi may.
 - The release export carries `relay/consumer_models.json`, the consumer open-weight list the entry below adds (found by the release package data test in CI).
