@@ -532,6 +532,52 @@ def reattested(train_dir, old_sha256: str, new_sha256: str) -> bool:
     return False
 
 
+def reattest_code(train_id: str, state: Any) -> tuple[Optional[str], str]:
+    """Read-only: the refusal code reattest_train would act on for this train (also what the TUI offers) and why it
+    would still refuse, "" when it would not. The code is None, with why, when the train is not eligible at all. One copy
+    of the rules."""
+
+    if not isinstance(state, dict) or state.get("execution_descriptor") is None:
+        return None, f"'{train_id}' is not a strict train."
+    if state.get("status") != "READY_FOR_LANDING":
+        return None, f"'{train_id}' is {state.get('status')!r}, not READY_FOR_LANDING."
+    try:
+        _verify_admission(train_id, state)
+        code = "ADMITTED"
+    except Exception as exc:
+        code = str(exc) if isinstance(exc, landing_policy.LandingPolicyRejected) else f"{type(exc).__name__}: {exc}"
+    if code not in REATTEST_CODES:
+        return None, f"admission of '{train_id}' is {code}, not {' or '.join(sorted(REATTEST_CODES))}."
+    # A native Work audits again with its saved routes: if landing would refuse every one as the implementer's own
+    # family (a local Qwen variant after the roster names it Qwen, audited by the shipped Qwen), the new audit's model
+    # calls would be wasted. An identity that cannot be computed keeps the refusal reattest_train gives for it.
+    train_dir = TRAINS_DIR / train_id
+    origin = relay_io.read_json(train_dir / "WORK_RUN.json")
+    if isinstance(origin, dict):
+        try:
+            from relay import work_audit
+            new = landing_policy.reattest_identity(
+                landing_policy.read_identity(train_dir / landing_policy.IMPLEMENTER_IDENTITY_FILE),
+                RELAY_DIR / "round_table_roster.json")
+            kinds = {landing_policy.independence(new, work_audit.identity(route["deployment"], "auditor"))
+                     for route in (origin.get("audit") or {}).get("routes", []) if route["eligible"]}
+        except (landing_policy.LandingPolicyRejected, ValueError, KeyError, TypeError, OSError):
+            kinds = set()
+        if kinds == {"AUDITOR_NOT_INDEPENDENT"}:
+            return code, (f"attesting '{train_id}' again would not help: its saved auditor is now read as the same "
+                          "model family as the implementer, so a new audit would be refused "
+                          "(AUDITOR_NOT_INDEPENDENT). Run the Work again to choose another auditor.")
+    return code, ""
+
+
+def reattestable(train_id: str) -> Optional[tuple[str, str]]:
+    """(code, why) of reattest_code when the train is eligible at all, else None. why is "" when attesting again can
+    work. Changes nothing."""
+
+    code, why = reattest_code(train_id, relay_io.read_json(TRAINS_DIR / train_id / "STATE.json"))
+    return (code, why) if code else None
+
+
 def reattest_train(train_id: str, agent: str = "operator") -> bool:
     """Operator path for a strict train whose admission is refused only because the roster no longer matches a saved
     identity (owner, 2026-11-18): re-attest its implementer (and a native Work's audit routes) from the current roster,
@@ -540,19 +586,9 @@ def reattest_train(train_id: str, agent: str = "operator") -> bool:
 
     train_dir = TRAINS_DIR / train_id
     state = relay_io.read_json(train_dir / "STATE.json")
-    if not isinstance(state, dict) or state.get("execution_descriptor") is None:
-        print(f"[REFUSED] reattest: '{train_id}' is not a strict train.")
-        return False
-    if state.get("status") != "READY_FOR_LANDING":
-        print(f"[REFUSED] reattest: '{train_id}' is {state.get('status')!r}, not READY_FOR_LANDING.")
-        return False
-    try:
-        _verify_admission(train_id, state)
-        code = "ADMITTED"
-    except Exception as exc:
-        code = str(exc) if isinstance(exc, landing_policy.LandingPolicyRejected) else f"{type(exc).__name__}: {exc}"
-    if code not in REATTEST_CODES:
-        print(f"[REFUSED] reattest: admission of '{train_id}' is {code}, not {' or '.join(sorted(REATTEST_CODES))}.")
+    code, why = reattest_code(train_id, state)
+    if why:
+        print(f"[REFUSED] reattest: {why}")
         return False
     try:
         old = landing_policy.read_identity(train_dir / landing_policy.IMPLEMENTER_IDENTITY_FILE)

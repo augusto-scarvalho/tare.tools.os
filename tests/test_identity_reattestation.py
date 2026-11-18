@@ -217,6 +217,7 @@ def test_a_native_work_refused_at_land_is_reattested_and_resumed_to_a_new_audit_
     assert (refused['status'] == 'LANDING_REFUSED' if refusal == 'MISMATCH' else
             'AUDITOR_IDENTITY_CHANGED' in refused['error']) and calls == ['one']
     assert relay_mesh.admission_valid(train_id) == (False, 'smart admission invalid: IDENTITY_ROSTER_' + refusal)
+    assert relay_mesh.reattestable(train_id) == ('IDENTITY_ROSTER_' + refusal, '')  # another family's auditor: worth a new audit
 
     custody = audit_custody(origin)
     saved_result = files(custody)
@@ -288,3 +289,35 @@ def test_reattest_needs_resume_and_a_work_whose_admission_passes_is_refused_unch
                                f"'{work_run.train_id_for('work-one')}' is ADMITTED, not IDENTITY_ROSTER_MISMATCH "
                                "or IDENTITY_ROSTER_STALE.")
     assert files(train) == trained and files(custody) == audited and calls == ['one']
+
+
+def test_a_saved_auditor_of_the_implementers_own_family_is_not_re_audited(host, reviewers, monkeypatch, capsys):
+    """The origin case: a local qwen38-ninfer implementer saved as vendor Local and the shipped Qwen as saved auditor,
+    both Qwen after #262. A new audit would spend model calls and be refused (AUDITOR_NOT_INDEPENDENT)."""
+    import tare_ops
+    profiles, calls, _, _ = reviewers
+    local_implementer(host)
+    audit = json.loads(profiles[0].read_bytes())
+    audit['model'] = 'qwen-3.8-27b'
+    profiles[0].write_text(json.dumps(audit), encoding='utf-8')
+    with monkeypatch.context() as before:
+        before.setattr(landing_policy, '_local_row',
+                       lambda model_id, models: {'vendor': 'Local', 'bias_domain': model_id, 'line': 'local'})
+        def die(*a, **kw): raise SystemExit('host interrupted before landing')
+        before.setattr(relay_mesh, 'land_train', die)
+        with pytest.raises(SystemExit):
+            run(host, '--auditor-profile', str(profiles[0]))
+    capsys.readouterr()
+    train, train_id = work_run.train_dir_for('work-one'), work_run.train_id_for('work-one')
+    custody = audit_custody(json.loads((train/'WORK_RUN.json').read_bytes()))
+    assert relay_mesh.admission_valid(train_id) == (False, 'smart admission invalid: IDENTITY_ROSTER_MISMATCH')
+    trained, audited, roster = files(train), files(custody), files(relay_mesh.RELAY_DIR)
+    code, why = relay_mesh.reattestable(train_id)
+    assert code == 'IDENTITY_ROSTER_MISMATCH' and 'would not help' in why and 'AUDITOR_NOT_INDEPENDENT' in why
+    assert 'Run the Work again to choose another auditor' in why
+    assert tare_ops.main(['run', 'work-one', '--resume', '--reattest']) == 1
+    error = json.loads(capsys.readouterr().out)['error']
+    assert error == f"ValueError:WORK_REATTEST_REFUSED: [REFUSED] reattest: {why}"
+    assert relay_mesh.reattest_train(train_id) is False and why in capsys.readouterr().out
+    assert files(train) == trained and files(custody) == audited and files(relay_mesh.RELAY_DIR) == roster
+    assert calls == ['one']  # no new audit call

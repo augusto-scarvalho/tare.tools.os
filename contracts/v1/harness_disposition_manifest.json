@@ -2367,8 +2367,8 @@
     {
       "name": "relay_mesh.py",
       "path": "tare.tools.os/relay/relay_mesh.py",
-      "size_bytes": 94708,
-      "sha256": "3ad4fe935c6e24032ce6bcdaf2b4c8c646afbfaa35676fb3fb796ba2a7412343",
+      "size_bytes": 96868,
+      "sha256": "17479fc04abd5ac7e0297b243a0cfb3b155a4b03e5775badb181811961570d67",
       "summary": "tare.tools Multi-Agent Relay Mesh (MARM) Core Engine v3.0 (TRAIN-06)",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -2661,8 +2661,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 42896,
-      "sha256": "1a214e8b23a7823a9815db100babfe874dad8f04c8472b65e9684d0729126ce2"
+      "size_bytes": 43404,
+      "sha256": "391402da5217d83fd9d8639e66ac05608364d1947d624f810699254a007cbcd0"
     },
     {
       "name": "human_wait.py",
@@ -2681,8 +2681,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 181833,
-      "sha256": "8050a90ba7cf90f868108881b44289ea9a0e31e25ae00fa808b211a15400a331"
+      "size_bytes": 185101,
+      "sha256": "933060ec62b6a8121b8531e37ed6ef038fb58bb31c85498296f4ffcfdf5c8a59"
     },
     {
       "name": "native_display.py",
@@ -2801,8 +2801,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 10463,
-      "sha256": "95661857d1bdb631cae8303c1a2af6b8f9ddc6f6236866f0ac49fdc75e62c840"
+      "size_bytes": 11693,
+      "sha256": "60f9a496e614664103410c3ee233a54a0fb4669b38b5d52e37b9767d132902f7"
     },
     {
       "name": "work_prepare.py",
@@ -2891,8 +2891,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns conversation and cross-flow navigation; execution and evidence owners stay unchanged.",
-      "size_bytes": 42079,
-      "sha256": "af0d3d71c417513bb93b629a80e758ae5408f46b2b52b87959511e0d8f2e4bef"
+      "size_bytes": 42169,
+      "sha256": "e21b8842215479f6a1a55f10f5cf131b1a1e352e31949fac0b83edadaa3117f6"
     },
     {
       "name": "console_recovery.py",

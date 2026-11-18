@@ -415,4 +415,8 @@ Wait for “Work paused” before closing the TUI. **Inspect controls** reads th
 pause after reopening. **Resume** explicitly continues the same attempt and budget.
 To guide an unfinished agent, inspect controls while paused and **Save note**.
 A declined implementation decision can be reopened with **Reconsider decision**;
-it still needs a new answer. See [Work pause](WORK_PAUSE.md) for limits and recovery.
+it still needs a new answer.
+When the selected Work is refused at landing only because the model list no longer matches a saved model identity,
+the Work view explains it and offers **Attest again and re-audit** (after a confirmation: the old verdict is kept
+aside, the same change is audited again with new model calls, and it lands if the new audit accepts); it runs
+`tare run <work> --resume --reattest`. See [Work pause](WORK_PAUSE.md) for limits and recovery.

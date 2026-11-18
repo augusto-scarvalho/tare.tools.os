@@ -59,6 +59,7 @@ class Selection:
     urls: str = ''
     auditor: str = ''
     retry_audit: bool = False
+    reattest: bool = False  # set only by the confirmed re-attestation dialog, never saved with a demand
     recheck_candidate: bool = False
     retry_delivery: bool = False
     repair_plan: bool = False
@@ -248,6 +249,8 @@ def command(selection, resume=False, *, replan=False, assistant=False):
                 args += ['--retry-plan']
             if selection.retry_audit:
                 args += ['--retry-audit']
+            if selection.reattest:
+                args += ['--reattest']
         else:
             args += ['--repo-root', str(root)]
             if selection.auditor:
@@ -513,6 +516,12 @@ class Backend:
         if view and Path(view['request']['repository_root']).resolve() != Path(selection.root).resolve():
             raise ValueError('The pending decision belongs to another project.')
         return view
+
+    def reattest_offer(self, selection):
+        """relay_mesh.reattestable for the selected Work's train: (code, why) or None. Read-only."""
+        from . import relay_mesh
+        from .work_run import train_id_for
+        return relay_mesh.reattestable(train_id_for(selection.work, graph_path=selection.graph_path or None))
 
     def answer_decision(self, selection, digest, decision, note):
         self.decision(selection)
