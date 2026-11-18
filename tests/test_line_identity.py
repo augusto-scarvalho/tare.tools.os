@@ -126,6 +126,14 @@ AGY_CLAUDE = {
 }
 
 
+# The local Swift models, given roster records later (2026-11-18): Swift Next is a MoE of another architecture, a bias
+# domain of its own within Qwen; Swift 27B is the dense 27B's line.
+SWIFT = {
+    'swift-next': [['Qwen', 'qwen/qwen-next', 'swift-next'], 'Qwen'],
+    'swift27b': [['Qwen', 'qwen/qwen-family', 'swift27b'], 'Qwen'],
+}
+
+
 def realized():
     from relay.cli_discovery import TEMPLATES, deployment
     from relay.vendor_models import expand
@@ -161,7 +169,7 @@ def route(endpoint, model, name='fixture'):
 
 def test_every_shipped_identity_is_unchanged_except_four_ids_with_no_record_that_gain_their_line():
     assert all(BEFORE[name] == [U, 'UNKNOWN'] for name in CHANGED)
-    assert shown(realized()) == {**BEFORE, **CHANGED, **AGY_CLAUDE}
+    assert shown(realized()) == {**BEFORE, **CHANGED, **AGY_CLAUDE, **SWIFT}
 
 
 def test_what_the_four_gain_is_audit_never_an_automatic_role(pool):
