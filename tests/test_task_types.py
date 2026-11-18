@@ -82,8 +82,9 @@ def test_the_catalogue_is_well_formed_and_lists_the_types_with_no_source_yet():
             assert s['reader'] != 'script' or all(s[k] for k in ('script', 'rows'))
             assert s['reader'] != 'json' or s['rows']
             assert s['reader'] not in ('page', 'script') or 'licen' not in s['citation'].lower()  # none is claimed
-    keys = [signals.source_key(s) for t in signals.TYPES for s in t['sources']]
-    assert len(keys) == len(set(keys))
+    keys = {signals.source_key(s): s for t in signals.TYPES for s in t['sources']}
+    # one key, one source: BenchLM's reasoning board serves mathematics and science
+    assert all(keys[signals.source_key(s)] == s for t in signals.TYPES for s in t['sources'])
     assert {t['id'] for t in signals.TYPES if not t['sources']} == {'3d', 'games', 'art', 'audio', 'data', 'writing', 'philosophy'}
     assert {t['id'] for t in signals.TYPES if t['sources']} == {
         'coding', 'web', 'math', 'science', 'professional', 'security', 'engineering', 'cad', 'medicine'}
@@ -207,7 +208,7 @@ def test_the_boards_are_read_once_a_day_and_a_failed_source_keeps_its_saved_boar
     calls = []
     signals.refresh_boards(NOW, served(zipped, web, calls), {})
     saved = signals.boards()
-    every = [signals.source_key(s) for t in signals.TYPES for s in t['sources']]
+    every = {signals.source_key(s) for t in signals.TYPES for s in t['sources'] if s['reader'] != 'benchlm'}  # no key here
     assert sorted(saved) == sorted(every) and all(b['read_at'] == NOW and b['rows'] for b in saved.values())
     assert calls.count('epoch') == 1 and sorted(c for c in calls if c != 'epoch' and not c.startswith('page:')) == ['arena:agent', 'arena:webdev']
     assert sorted(c for c in calls if c.startswith('page:')) == sorted('page:' + url for url in PAGES)  # one GET of each named URL
