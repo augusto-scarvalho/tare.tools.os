@@ -235,7 +235,7 @@ def _select_route(choice, role, reason, producer=None, work_type=None):
     scope=current()
     if scope.pin(role):
         from .execution_scope import pinned
-        deployment=pinned(role,producer)
+        deployment=pinned(role,producer,work_type)
         return deployment,{**route(deployment,'EXACT_TEMPORARY_PIN'),
             'executed_decision':executed_decision('EXACT_TEMPORARY_PIN',deployment['id'],[deployment['id']])}
     if scope.changes(role):
@@ -263,9 +263,12 @@ def _select_route(choice, role, reason, producer=None, work_type=None):
         if role == 'planner':
             from .planner_policy import effective
             choice = effective(choice)
+        from .model_signals import may_review
         if role in ('auditor', 'plan-auditor'):
             from .work_audit import identity
-            identity(choice, 'auditor')  # a pinned reviewer too: the roster may say its model never audits
+            identity(choice, 'auditor')  # a pinned reviewer's profile must attest who it is, as a ranked one does
+        if role in ('auditor', 'plan-auditor') and producer is not None and not may_review(choice, producer, work_type):
+            raise ValueError('REVIEWER_BELOW_AUTHOR: '+str(choice.get('id'))+' is two categories or more below the model whose work it reviews')
         return choice, {**route(choice, reason),
             'executed_decision': executed_decision('CONFIGURED', choice.get('id'), [choice.get('id')])}
     from .native_routes import ranked, reviewers

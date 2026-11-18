@@ -230,15 +230,16 @@ def test_the_shipped_table_ranks_a_placed_route_as_a_line_route_of_its_class_and
     def decisions(saved):
         monkeypatch.setattr(signals, 'reading', lambda: saved)
         found, receipt = native_routes.reviewers(producer, 'auditor', check_resources=False)
-        return {r['deployment']: r for r in receipt['candidates'] if r['eligible']}
+        return {r['deployment']: r for r in receipt['candidates']}
     without = decisions(twice())
     placed = decisions(twice(kimi(55)))  # Kimi reaches Argon: middling, the class the auditor wants
     kimi_route, opus, muse = 'openrouter-kimi-k3-1-pro', 'claude-api-opus-5-5', 'openrouter-muse-wonder'
-    assert without[kimi_route]['classes_short'] == 1
-    assert placed[kimi_route]['classes_short'] == 0 == placed[opus]['classes_short']
-    assert placed[kimi_route]['position'] < without[kimi_route]['position']
-    # Muse has no row in the reading: it ranks as today, a model with no class counted as cheap
-    assert placed[muse]['classes_short'] == without[muse]['classes_short'] == 1
+    # Unplaced, Kimi counts as cheap: two categories below the frontier Astra, so it may not review its work
+    # (owner, 2026-11-18); placed middling it may, ranked as a line route of that class.
+    assert not without[kimi_route]['eligible'] and without[kimi_route]['reason'] == 'REVIEWER_BELOW_AUTHOR'
+    assert placed[kimi_route]['eligible'] and placed[kimi_route]['classes_short'] == 0 == placed[opus]['classes_short']
+    # Muse has no row in the reading: a model with no class counts as cheap, refused for frontier work either way
+    assert not placed[muse]['eligible'] and not without[muse]['eligible']
 
 
 def test_the_class_sources_name_finds_the_boards_row_and_a_profile_may_say_what_it_is_measured_as():

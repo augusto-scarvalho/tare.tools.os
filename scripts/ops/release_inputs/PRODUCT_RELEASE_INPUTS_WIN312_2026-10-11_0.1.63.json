@@ -86,7 +86,8 @@
         "relay/prompt_capsules.json",
         "relay/sandbox-python/sitecustomize.py",
         "relay/model_lines.json",
-        "relay/task_types.json"
+        "relay/task_types.json",
+        "relay/consumer_models.json"
       ],
       "package": "tare-tools-os",
       "version": "0.1.63"

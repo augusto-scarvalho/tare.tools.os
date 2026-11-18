@@ -1508,11 +1508,13 @@ def _pick_auditors(implementer, names, *, probe=True, role='auditor', work_type=
     """[(name, deployment)] of independent auditors: never the implementer's model or bias domain
     (landing policy AUDITOR_NOT_INDEPENDENT); another vendor first (CROSS_VENDOR_AUDITOR_PREFERRED) while
     cross_vendor_first(). `role` is the routing profile's: plan-auditor for a plan review, auditor for a change.
-    `work_type`, the task type of the unit under review, reaches only the automatic choice (native_routes._ranked)."""
+    `work_type`, the task type(s) of the work under review, orders only the automatic choice (native_routes._ranked); a
+    pinned or listed auditor two categories below the implementer at it (model_signals.may_review) is refused, the list
+    keeping its order."""
     from .execution_scope import current
     if current().pin('auditor'):
         from .execution_scope import pinned
-        value=pinned('auditor',implementer)
+        value=pinned('auditor',implementer,work_type)
         return [(value['native_model_choice']['connection'],value)]
     if names is None:
         from .native_routes import reviewers
@@ -1548,7 +1550,8 @@ def _pick_auditors(implementer, names, *, probe=True, role='auditor', work_type=
         except (LandingPolicyRejected, KeyError):
             continue
         kind = independence(author, auditor)
-        if kind == 'AUDITOR_NOT_INDEPENDENT':
+        from .model_signals import may_review
+        if kind == 'AUDITOR_NOT_INDEPENDENT' or not may_review(deployment, implementer, work_type):
             continue
         found.append((kind != 'INDEPENDENT', name, deployment))
     first = cross_vendor_first()  # off: the owner's order as it is (--any_vendor_auditor, /routes)

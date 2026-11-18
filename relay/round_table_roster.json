@@ -232,7 +232,7 @@
     "qwen-3.8-27b": {
       "display_name": "Qwen 3.8 27B",
       "vendor": "Qwen",
-      "bias_domain": "qwen/qwen-family",
+      "bias_domain": "qwen/qwen3.8-27b-dense",
       "runtime": {
         "aider": "openai/qwen38-27b",
         "native": "qwen38-gsq",
@@ -261,15 +261,15 @@
     },
     "fable-tc": {
       "display_name": "Fable TC",
-      "vendor": "Local",
-      "bias_domain": "qwen/qwen-family",
+      "vendor": "Qwen",
+      "bias_domain": "qwen/qwen3.6-27b-dense",
       "provenance": {
         "owner_attestation": "repository_owner",
-        "lineage": "operator-authored merge based on open-weight Qwen 3.6",
+        "lineage": "operator-authored fine-tune merge of the open-weight dense Qwen3.6 27B",
         "independent_from": [
           "fable-5"
         ],
-        "statement": "Fable TC has no lineage or weight relationship with Anthropic Fable; conservatively it shares the Qwen family bias domain because it is based on Qwen 3.6 open weights."
+        "statement": "Fable TC has no lineage or weight relationship with Anthropic Fable; it is Qwen's, in the bias domain of its base, the dense Qwen3.6 27B."
       },
       "runtime": {
         "aider": "openai/fable-tc",
@@ -566,7 +566,7 @@
     "hauhaucs-qwen38": {
       "display_name": "HauhauCS (Qwen3.8)",
       "vendor": "Qwen",
-      "bias_domain": "qwen/qwen-family",
+      "bias_domain": "qwen/qwen3.8-27b-dense",
       "runtime": {
         "native": "hauhaucs",
         "native-http": "hauhaucs"
@@ -575,8 +575,7 @@
     "qwen36-moe": {
       "display_name": "Qwen3.6 MoE",
       "vendor": "Qwen",
-      "bias_domain": "qwen/qwen-moe",
-      "audits": false,
+      "bias_domain": "qwen/qwen3.6-35b-a3b-moe",
       "runtime": {
         "native": "qwen36-moe",
         "native-http": "qwen36-moe"
@@ -585,7 +584,7 @@
     "swift-next": {
       "display_name": "Swift Next (Qwen3.8-Flash-Next MoE)",
       "vendor": "Qwen",
-      "bias_domain": "qwen/qwen-next",
+      "bias_domain": "qwen/qwen3.8-flash-next-moe",
       "runtime": {
         "native": "swift-next",
         "native-http": "swift-next"
@@ -594,7 +593,7 @@
     "swift27b": {
       "display_name": "Swift 27B (Qwen3.8 27B)",
       "vendor": "Qwen",
-      "bias_domain": "qwen/qwen-family",
+      "bias_domain": "qwen/qwen3.8-27b-dense",
       "runtime": {
         "native": "swift27b",
         "native-http": "swift27b"
@@ -846,7 +845,7 @@
     "qwen/qwen3.8-omni-flash": {
       "display_name": "Qwen3.8 Omni Flash",
       "vendor": "Qwen",
-      "bias_domain": "qwen/qwen-family",
+      "bias_domain": "qwen/qwen3.8-omni-flash",
       "runtime": {
         "native": "qwen/qwen3.8-omni-flash",
         "native-http": "qwen/qwen3.8-omni-flash"

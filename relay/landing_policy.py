@@ -177,10 +177,6 @@ def attest_identity(
             model = roster["models"][model_id]
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise LandingPolicyRejected("IDENTITY_ROSTER_UNAVAILABLE") from exc
-    if role == "auditor" and isinstance(model, dict) and model.get("audits") is False:
-        # A record may say its model never reviews others' work (Qwen3.6 MoE, two generations behind Qwen3.8: owner,
-        # 2026-11-18); every auditor and plan reviewer is chosen through this identity.
-        raise LandingPolicyRejected("IDENTITY_MODEL_DOES_NOT_AUDIT")
     return _attested(model, roster_raw, derived, agent_id=agent_id.strip(), role=role, model_id=model_id,
                      runtime_key=runtime_key, runtime_model=runtime_model)
 
@@ -238,7 +234,9 @@ def _local_row(model_id: str, models: dict) -> dict[str, str]:
     Local (the roster's own word for a local model of no known author) and its own id as its bias domain, so two
     such models are two domains of one vendor."""
     words = re.split(r"[^a-z0-9]+", model_id.lower())  # a family starts a word: qwen38, never sampLING
-    family = [r for r in models.values() if len(stem := str(r.get("bias_domain", "")).split("/")[-1].split("-")[0]) > 2
+    # The family is the domain's leading letters (qwen of qwen/qwen3.8-27b-dense): a stem with digits would not
+    # start the word qwen38, and a Qwen variant would pass as independent of Qwen.
+    family = [r for r in models.values() if len(stem := re.match(r"[a-z]*", str(r.get("bias_domain", "")).split("/")[-1])[0]) > 2
               and any(word.startswith(stem) for word in words)]
     known = next((r for r in family if r["vendor"] != "Local"), family[0] if family else None)
     return ({"vendor": known["vendor"], "bias_domain": known["bias_domain"], "line": LOCAL_LINE} if known else

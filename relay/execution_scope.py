@@ -171,8 +171,9 @@ def pin_matches(raw,deployment):
     return provider==actual and name==connection.lower() and route['default_effort']==levels[0] and levels[0] in route['efforts']
 
 
-def pinned(role,producer=None):
-    """Admit exactly one live route through existing availability/independence gates."""
+def pinned(role,producer=None,work_type=None):
+    """Admit exactly one live route through existing availability/independence gates; a reviewer also through
+    model_signals.may_review for the work's type(s) `work_type`."""
     scope=current();raw=scope.pin(role)
     if not raw:return None
     from .model_choices import select_exact
@@ -189,6 +190,9 @@ def pinned(role,producer=None):
         author=identity(producer,'implementer');auditor=identity(live,'auditor')
         if independence(author,auditor)=='AUDITOR_NOT_INDEPENDENT' and not same_family_admitted():
             raise ValueError('Pinned auditor is not independent; consult tare models --role auditor.')
+        from .model_signals import may_review
+        if not may_review(live,producer,work_type):
+            raise ValueError('REVIEWER_BELOW_AUTHOR: pinned '+role+' is two categories or more below the model whose work it reviews; consult tare models --role '+role+'.')
     return live
 
 

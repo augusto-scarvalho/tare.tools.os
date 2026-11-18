@@ -110,6 +110,30 @@ audit is still `SAME_VENDOR_NOT_INDEPENDENT` and labelled as above.
 Saved formal-plan reviews and their retries retain the original exact profile;
 changing settings never resamples an accepted or rejected verdict.
 
+A model never reviews or audits the work of a model two categories or more above it
+(`model_signals.may_review`); one below, as Opus reviewing Fable, or equal is fine. The
+category is the one of the dimension reviewed: the unit's task types, the general reading
+only for a type with no board. Hosted models keep their classes (basic, middling,
+frontier), their general class where no board of the type places them, so a hosted
+reviewer is never refused for lacking a board row. Local open-weight models a consumer
+machine runs are not ranked on that scale: they take one of five bands by their base
+model's score (`native_measured_as`) among the consumer models of
+`relay/consumer_models.json` on the same board (its `aliases` are the boards' other
+spellings of a model). A board with fewer than ten of them places no local model
+(`MIN_CONSUMER`: with three, two near-tied models fell two fifths apart); when no board of
+the type reaches it, nor the general reading, local models are not restricted on that
+type. A consumer model keeps
+its resident memory within 32 GB of VRAM and 128 GB of RAM: its weights at Q4_K_M or
+higher precision plus an 8-bit KV cache of 64K tokens, less only the tables its card or
+inference framework documents as kept on SSD and read on demand (Engram tables, for
+example). One that fits only at a lower quantization (Q3, IQ3, Q2) does not count.
+Across the two a local model counts as basic: it reviews middling work, not frontier, and
+any hosted model reviews local work. A local author the board places is never reviewed by
+a local model it does not place (a generic local model, or one with no measure); an author
+no board places restricts nothing. It holds for the
+automatic choice, your auditor list (by the general reading), a pinned or named reviewer
+and a retried review's route: the refused route reads `REVIEWER_BELOW_AUTHOR`.
+
 The default is a preference when an independent reviewer is available. If none
 is eligible, PLAN retains its existing separate-session planner review and marks
 it as **not independently attested**. It never promotes that fallback to an

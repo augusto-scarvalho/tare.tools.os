@@ -195,7 +195,7 @@ def ranked(role, producer=None, *, check_resources=False, work_type=None):
     from .execution_scope import for_role
     from .execution_scope import current, pinned
     if current().pin(role):
-        value = pinned(role, producer)
+        value = pinned(role, producer, work_type)
         return [value], {'schema': 'tare.tools/native-role-selection/1', 'role': role,
                          'reason': 'EXACT_TEMPORARY_PIN', 'generation_calls': 0,
                          'candidates': [{'eligible': True, 'catalog': value['native_model_choice']['connection'],
@@ -255,12 +255,13 @@ def mirror(row, deployment, role=None, cache=None):
     return None
 
 
-def admission(row, role, author=None, credentials=None, granted=None):
+def admission(row, role, author=None, credentials=None, granted=None, producer=None, work_type=None, kept=None):
     """(deployment, auditor identity, reason) of one role-table row under the rules that come before the routing
     profile and any live probe; reason None when they admit it. `author`: the producer's identity, for a review role
     (None checks no independence). `credentials`: a cache shared across rows (credentials, logins, this machine's
-    proofs). `granted`: grant()'s `assumed`. The matrix of /routes reads it too (environment.auto_routes), so what it
-    shows cannot drift from what ranks."""
+    proofs). `granted`: grant()'s `assumed`. `producer`: the producer's deployment, for a review role: a reviewer
+    two categories or more below it for `work_type` (`model_signals.may_review`; `kept`, the boards) is refused. The matrix of
+    /routes reads it too (environment.auto_routes), so what it shows cannot drift from what ranks."""
     from .work_audit import identity
     from .execution_scope import constrained, current, same_family_admitted
     credentials = {} if credentials is None else credentials
@@ -305,6 +306,9 @@ def admission(row, role, author=None, credentials=None, granted=None):
     same_family = bool(author) and independence(author, auditor) == 'AUDITOR_NOT_INDEPENDENT'
     if same_family and not same_family_admitted():
         return deployment, auditor, 'AUDITOR_NOT_INDEPENDENT'
+    from .model_signals import may_review
+    if producer is not None and role in ('auditor', 'plan-auditor') and not may_review(deployment, producer, work_type, kept):
+        return deployment, auditor, 'REVIEWER_BELOW_AUTHOR'
     if deployment['native_profile']['protocol'] == 'vendor-cli':
         executable = deployment.get('native_cli', {}).get('executable')
         if not executable or not Path(executable).is_file():
@@ -354,7 +358,7 @@ def _ranked(role, producer=None, *, check_resources=False, work_type=None):
     for order, row in enumerate(table['deployments']):
         decision = {'deployment': row['id'], 'eligible': False}
         decisions.append(decision)
-        deployment, auditor, reason = admission(row, role, author, credentials)
+        deployment, auditor, reason = admission(row, role, author, credentials, producer=producer, work_type=kinds, kept=kept)
         if reason:
             decision['reason'] = reason; continue
         from .landing_policy import independence

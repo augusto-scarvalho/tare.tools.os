@@ -134,7 +134,10 @@ def test_a_plan_reviewer_is_judged_by_its_weakest_type_and_one_good_at_both_keep
     today, _ = plan_reviewers(ASTRA)
     typed, rows = plan_reviewers(ASTRA, BOTH)
     assert today[0] == 'opencode-sub-gemini-4-argon' and typed[0] == OPUS
-    assert typed.index(FABLE) < typed.index('opencode-sub-gemini-4-argon') and set(typed) == set(today)
+    # Kimi and Muse Wonder have no class (basic): two classes below Astra in general (frontier), one below it for these
+    # types (middling), so only the typed plan has them (model_signals.may_review, owner 2026-11-18).
+    extra = {'openrouter-kimi-k3-1-pro', 'openrouter-muse-wonder'}
+    assert typed.index(FABLE) < typed.index('opencode-sub-gemini-4-argon') and set(typed) == set(today) | extra
 
 
 def test_a_reviewer_of_the_planners_model_or_bias_domain_is_never_picked_whatever_its_class(pool, monkeypatch):
@@ -175,6 +178,8 @@ def test_a_planner_pin_and_an_auditor_pin_are_untouched_and_read_no_board(pin_ca
         name, value = planning_tool({'routes': {}, 'route_order': []}).choose({}, BOTH)
         assert name == 'test-cli' and scope.pin_matches('anthropic/test-cli@max', value)
         assert native_routes.ranked('planner', work_type=BOTH)[1]['reason'] == 'EXACT_TEMPORARY_PIN'
+    # A pinned reviewer is checked for the types (model_signals.may_review): with no saved board, by the general classes.
+    monkeypatch.setattr(signals, 'boards', lambda: {})
     with scope.activated(parse(['--auditor', 'anthropic/test-cli@max'])):
         chosen, receipt = native_routes.reviewers(pin_catalog['producer-cli'], 'plan-auditor', work_type=BOTH)
         assert receipt['reason'] == 'EXACT_TEMPORARY_PIN' and scope.pin_matches('anthropic/test-cli@max', chosen[0])

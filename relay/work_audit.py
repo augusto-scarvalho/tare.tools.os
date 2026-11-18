@@ -22,18 +22,6 @@ def identity(deployment, role):
         endpoint=deployment['native_profile'].get('endpoint'))
 
 
-def never_audits(deployment):
-    """The roster says this model never reviews work ("audits": false; landing_policy.attest_identity)."""
-    from .landing_policy import LandingPolicyRejected
-    try:
-        identity(deployment, 'auditor')
-    except LandingPolicyRejected as exc:
-        return str(exc) == 'IDENTITY_MODEL_DOES_NOT_AUDIT'
-    except (ValueError, KeyError, TypeError, OSError):
-        return False
-    return False
-
-
 def independence(implementer, auditor):
     """landing_policy.independence of two deployments; None when either identity is unknown."""
     from .landing_policy import independence as rule
@@ -63,13 +51,16 @@ def prepare(implementer, deployments, mode):
         from .native_routes import independent_auditors
         deployments, selection = independent_auditors(implementer)
     from .landing_policy import independence as rule
+    from .model_signals import may_review
     producer = identity(implementer, 'implementer')
     routes = []
     for deployment in deployments or []:
         auditor = identity(deployment, 'auditor')
         kind = rule(producer, auditor)
+        if kind != 'AUDITOR_NOT_INDEPENDENT' and not may_review(deployment, implementer):
+            kind = 'REVIEWER_BELOW_AUTHOR'
         routes.append({'deployment': deployment, 'identity_sha256': auditor.sha256,
-            'eligible': kind != 'AUDITOR_NOT_INDEPENDENT',
+            'eligible': kind not in ('AUDITOR_NOT_INDEPENDENT', 'REVIEWER_BELOW_AUTHOR'),
             'reason': ('AUTO_SELECTED_INDEPENDENT' if selection else 'OPERATOR_SELECTED_INDEPENDENT') if kind == 'INDEPENDENT' else kind,
             'cross_vendor': auditor.vendor != producer.vendor})
     return {'mode': 'required' if deployments or selection else mode, 'producer_sha256': producer.sha256,

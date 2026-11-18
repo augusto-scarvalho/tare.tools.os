@@ -67,6 +67,7 @@ def test_a_pinned_same_family_auditor_needs_local_only_mode_and_a_user_to_confir
     monkeypatch.setattr(scope,'pin_matches',lambda raw,value:True)
     monkeypatch.setattr(work_audit,'identity',lambda value,role:SimpleNamespace(
         model_id='qwen-3.8-27b',bias_domain='qwen/qwen-family',vendor='Qwen'))
+    monkeypatch.setattr('relay.model_signals.may_review',lambda *a,**k:True)  # stubs: no model to rank
     with scope.activated(scope.Scope(only=only,pins=(('auditor','ninfer/qwen38-gsq@xhigh'),))),scope.confirmable_audit(confirmable):
         if only and confirmable:
             assert scope.pinned('auditor',{'id':'producer'}) is live

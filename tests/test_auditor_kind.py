@@ -66,9 +66,10 @@ def test_a_route_is_ranked_by_its_class_for_the_type(pool, monkeypatch):
     argon = rows['opencode-sub-gemini-4-argon']
     assert (argon['kind'], argon['class_source'], argon['classes_short']) == ('coding', 'Board one.csv', 1)
     assert 'kind' not in before['opencode-sub-gemini-4-argon']  # with no type the row is today's
-    # A model no board places keeps its general class: Kimi has none, so it counts as cheap, as without a type.
+    # A model no board places keeps its general class: Kimi has none, so it counts as cheap, as without a type, and
+    # cheap is two classes below Fable (model_signals.may_review, owner 2026-11-18): refused with or without the type.
     kimi = rows['openrouter-kimi-k3-1-pro']
-    assert (kimi['class_source'], kimi['classes_short']) == ('general', before['openrouter-kimi-k3-1-pro']['classes_short'])
+    assert kimi['reason'] == before['openrouter-kimi-k3-1-pro']['reason'] == 'REVIEWER_BELOW_AUTHOR'
 
 
 def test_an_auditor_of_the_implementers_model_or_bias_domain_is_never_picked_whatever_its_class(pool, monkeypatch):
@@ -110,13 +111,15 @@ def test_the_owners_order_list_is_never_reordered(pool, monkeypatch):
     fable = native_catalog.select(FABLE)
     today = [name for name, _ in conversation_review.available(fable)]
     assert today == listed  # another vendor first, then the owner's order
-    monkeypatch.setattr(signals, 'boards', not_read)
+    # For the type the list reads the boards, to refuse an auditor two classes below Fable there
+    # (model_signals.may_review), and keeps its order.
     assert [name for name, _ in conversation_review.available(fable, None, 'coding')] == today
     assert ranking(FABLE, 'coding')[0] == today
 
 
 def test_a_pinned_auditor_is_untouched(pin_catalog, monkeypatch):
-    monkeypatch.setattr(signals, 'boards', not_read)
+    # The pin is still checked for the type (model_signals.may_review): with no saved board, by the general classes.
+    monkeypatch.setattr(signals, 'boards', lambda: {})
     producer = pin_catalog['producer-cli']
     with scope.activated(parse(['--auditor', 'anthropic/test-cli@max'])):
         for picked in (turn_engine.pick_auditors(producer, None, work_type='coding'),
@@ -147,8 +150,11 @@ def test_the_review_of_a_unit_asks_for_auditors_of_its_type(host, monkeypatch):
     (root/'a.py').write_bytes(b'value = 2\n')
     asked = []
     monkeypatch.setattr(turn_engine, 'pick_auditors', lambda producer, names, **kw: asked.append(kw) or [])
-    for unit in (task['plan']['unit'], {**deepcopy(task['plan']['unit']), 'kind': 'coding'}):
+    bare = {k: v for k, v in deepcopy(task['plan']['unit']).items() if k not in ('kind', 'kinds')}
+    # The unit's types: every one its tasks name (`kinds`, even with no ranking `kind`), else its `kind`.
+    for unit in (bare, {**bare, 'kind': 'coding'}, {**bare, 'kinds': ['coding', 'math']}):
         result = conversation_review.review(tools, task, root, native_catalog.select('qwen38-gsq'), unit,
                                             {'a.py': b'value = 2\n'}, {'after': 'passed'}, execution)
         assert result == {'verdict': 'INCONCLUSIVE', 'reason': conversation_review.NO_AUDITOR}
-    assert asked == [{}, {'work_type': 'coding'}]  # a unit with no type asks exactly as before
+    # a unit with no type asks exactly as before
+    assert asked == [{}, {'work_type': 'coding'}, {'work_type': ['coding', 'math']}]
