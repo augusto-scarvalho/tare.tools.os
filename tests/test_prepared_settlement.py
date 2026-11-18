@@ -25,7 +25,7 @@ def prepared(host, monkeypatch):
                   node=work_prepared._node(work_run.load_node(relay_mesh.WORK_GRAPH_FILE, 'work-one')))
     calls = []
     monkeypatch.setattr(work_prepared, 'inspect', lambda path: dict(source))
-    monkeypatch.setattr(work_prepared, 'identity', lambda path: work_audit.identity(deployment, 'implementer'))
+    monkeypatch.setattr(work_prepared, 'identity', lambda path, train=None: work_audit.identity(deployment, 'implementer'))
     def apply(path, descriptor, lease):
         calls.append(str(lease.root))
         target = lease.root/'src/value.txt'

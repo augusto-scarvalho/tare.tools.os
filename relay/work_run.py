@@ -290,7 +290,7 @@ def _run_work(work_id, *, deployment="local-qwen", repository_root=None, workspa
               max_compactions=native_limits.UNSET, cancellation=None, resume=False, retry_plan=False,
               wait_before_implement='', expected_work_sha256=None, audit_deployments=None, retry_audit=False, run_id=None, graph_path=None,
               prepared_implementation=None, preparation_source=None, command_protection=None,
-              findings=None, findings_sha256=None):
+              findings=None, findings_sha256=None, reattest=False):
     if bool(findings) != bool(findings_sha256):
         raise ValueError('Provide reviewed findings and their SHA-256 together.')
     if resume and findings is not None:
@@ -377,6 +377,8 @@ def _run_work(work_id, *, deployment="local-qwen", repository_root=None, workspa
             raise ValueError('PLAN_RETRY_REQUIRES_RESUME')
         if retry_audit and (not resume or retry_plan):
             raise ValueError('AUDIT_RETRY_REQUIRES_RESUME_WITHOUT_PLAN_RETRY')
+        if reattest and (not resume or retry_plan or retry_audit):
+            raise ValueError('WORK_REATTEST_REQUIRES_RESUME_WITHOUT_RETRY')
         if prepared_implementation is not None and (not use_native_default or resume or dry_run):
             raise ValueError('PREPARED_IMPLEMENTATION_REQUIRES_NEW_NATIVE_WORK')
         if resume:
@@ -385,6 +387,14 @@ def _run_work(work_id, *, deployment="local-qwen", repository_root=None, workspa
                     or max_compactions is not native_limits.UNSET or dry_run or workspace_parent is not None or wait_before_implement
                     or deployment != 'local-qwen'):
                 raise ValueError('WORK_RESUME_REUSES_ORIGINAL_EXECUTION_OPTIONS')
+            if reattest:  # the operator's re-attestation of this Work's train; the resume below audits it again
+                import io
+                said = io.StringIO()
+                with contextlib.redirect_stdout(said):
+                    reattested = relay_mesh.reattest_train(train_id_for(work_id, graph_path=graph_path), AGENT_ID)
+                sys.stderr.write(said.getvalue())
+                if not reattested:
+                    raise ValueError('WORK_REATTEST_REFUSED: ' + (said.getvalue().strip().splitlines() or [''])[-1])
             from relay.work_resume import resume_settlement
             return resume_settlement(work_id, receipt, stage, cancellation,
                                      graph_path=graph_path, repository_root=repository_root, evidence_factory=evidence_factory, retry_plan=retry_plan, retry_audit=retry_audit)

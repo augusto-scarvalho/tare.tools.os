@@ -34,8 +34,28 @@ Both come from the model's record in `relay/round_table_roster.json`, which alwa
 id that no record names gets them from its line in `relay/model_lines.json` (vendor and bias domain; the model id
 is the wire id), but only on that vendor's own route: its CLI or API, or AGY, which serves Google's and
 Anthropic's lines under their own ids with an effort suffix (`vendor_models.ORIGINS`). Such an identity carries
-`line` (for example `"line": "claude-fable"`) so a receipt shows it was derived, not recorded; an id of no line,
-or a reseller's (OpenRouter, Bedrock, OpenCode, a local gateway), stays without identity and is refused as before.
+`line` (for example `"line": "claude-fable"`) so a receipt shows it was derived, not recorded; an id of no line on a
+hosted route, or a reseller's (OpenRouter, Bedrock, OpenCode), stays without identity and is refused as before. A
+model on a local gateway that no record names and that is no known hosted line gets `"line": "local"`: its family's
+vendor and bias domain when its id names a family of the roster (`qwen38-ninfer`: Qwen, `qwen/qwen-family`), otherwise
+vendor `Local` and its own id as bias domain (`landing_policy._local_row`).
+Landing re-attests the saved implementer and auditor receipts against the current roster
+([`verify_identity_against_roster`](../../relay/landing_policy.py)): a roster edited since the receipt refuses with
+`IDENTITY_ROSTER_STALE`, a roster or derivation that now gives the model another vendor or bias domain with
+`IDENTITY_ROSTER_MISMATCH`. The refusal stays. The operator's way out is `tare run <work> --resume --reattest` for a
+Work (it finds the Work's train where `tare run` keeps it, re-attests, then resumes), or
+`python relay/relay_mesh.py reattest --train <TRAIN_ID>` for a relay-mesh train
+([`reattest_train`](../../relay/relay_mesh.py)): only for a
+strict train at `READY_FOR_LANDING` refused with exactly one of those two codes, it attests the implementer again from
+the current roster (same model, runtime alias and line), moves the admission verdict, auditor identity, audit report
+and old implementer identity into `REATTESTED_<UTC time>/` inside the train with `REATTESTATION.json` (refusal code,
+candidate digest, each re-attested identity's old and new digests), and sends the same candidate back to
+`AUDIT_PENDING`. It never admits or lands: the train needs a new audit and a fresh verdict. For a native Work it also
+re-attests the audit routes saved in `WORK_RUN.json` and sets the Work's audit sessions aside (`code-audit.r<revision>`
+beside them), so no saved `audit-result.json` is reused; the resume then audits the same candidate again, computes a
+new verdict and lands it. The native bindings of the old identity (the accepted proposal, a prepared
+implementation, the audit's producer and routes) accept the new one only when such a record binds exactly that old
+digest to it for this train and candidate ([`reattested`](../../relay/relay_mesh.py)).
 Claude Fable 5.3 therefore cannot audit Claude Fable 5.2, nor AGY's Claude Opus a Claude Opus on Claude Code,
 while Opus may still review Fable (another bias domain of the same vendor). Such a same-vendor audit counts, but it is
 not independent: the admission verdict records `independent: false` with the `CROSS_VENDOR_AUDITOR_PREFERRED`
@@ -68,6 +88,7 @@ when it exists; it is not unfinished work for the trusted local installation.
 - **Audit Sign-off:** `python relay/relay_mesh.py audit --train <TRAIN_ID> --status PASS --agent "<AGENT_ID>"`
 - **Land Release:** `python relay/relay_mesh.py land --train <TRAIN_ID>`
 - **Smart Admit + Land:** `python relay/relay_mesh.py admit --train <TRAIN_ID>`
+- **Re-attest an Identity the Roster No Longer Matches:** `python relay/relay_mesh.py reattest --train <TRAIN_ID>` (back to `AUDIT_PENDING` for a new audit; never lands)
 - **Run Bookkeeper:** `python relay/bookkeeper.py [TRAIN_ID]` (Graphifies evidence, exports HTML/Mermaid, writes journal)
 - **Autonomous Planner Worker:** `python relay/autonomous_planner.py` (Zero-touch Codex planning)
 - **Tripartite Round Table:** `python relay/relay_mesh.py round-table --case <CASE_ID> --doc <DOC_FILE>`

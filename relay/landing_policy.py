@@ -177,10 +177,29 @@ def attest_identity(
             model = roster["models"][model_id]
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise LandingPolicyRejected("IDENTITY_ROSTER_UNAVAILABLE") from exc
+    return _attested(model, roster_raw, derived, agent_id=agent_id.strip(), role=role, model_id=model_id,
+                     runtime_key=runtime_key, runtime_model=runtime_model)
+
+
+def reattest_identity(identity: AgentIdentity, roster_path: str | Path) -> AgentIdentity:
+    """The same agent and model attested again from the current roster, found as verify_identity_against_roster finds
+    it (a derived receipt by its line again: its route was checked when it was first attested). Only for an operator's
+    explicit re-attestation of a receipt the roster no longer matches (relay_mesh.reattest_train)."""
+
+    try:
+        roster_raw = Path(roster_path).read_bytes()
+        model = _roster_model(identity.payload, json.loads(roster_raw)["models"])
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise LandingPolicyRejected("IDENTITY_ROSTER_UNAVAILABLE") from exc
+    return _attested(model, roster_raw, _LINE_FIELD in identity.payload, **{
+        name: identity.payload[name] for name in ("agent_id", "role", "model_id", "runtime_key", "runtime_model")})
+
+
+def _attested(model, roster_raw: bytes, derived: bool, **fields: str) -> AgentIdentity:
     if not isinstance(model, dict):
         raise LandingPolicyRejected("IDENTITY_MODEL_INVALID")
     runtime = model.get("runtime")
-    if not isinstance(runtime, dict) or runtime.get(runtime_key) != runtime_model:
+    if not isinstance(runtime, dict) or runtime.get(fields["runtime_key"]) != fields["runtime_model"]:
         raise LandingPolicyRejected("IDENTITY_RUNTIME_ALIAS_MISMATCH")
     vendor = model.get("vendor")
     bias_domain = model.get("bias_domain")
@@ -188,17 +207,25 @@ def attest_identity(
         raise LandingPolicyRejected("IDENTITY_LINEAGE_UNAVAILABLE")
     payload = {
         "schema": IDENTITY_SCHEMA,
-        "agent_id": agent_id.strip(),
-        "role": role,
-        "model_id": model_id,
-        "runtime_key": runtime_key,
-        "runtime_model": runtime_model,
+        **fields,
         "vendor": vendor,
         "bias_domain": bias_domain,
         "roster_sha256": hashlib.sha256(roster_raw).hexdigest(),
         **({_LINE_FIELD: model[_LINE_FIELD]} if derived else {}),
     }
     return _identity_from_payload(payload)
+
+
+def _roster_model(payload: Mapping[str, Any], models: dict) -> Any:
+    """The record the current roster gives a receipt's model: a derived receipt's from its line again; KeyError if none."""
+
+    if _LINE_FIELD not in payload:
+        return models[payload["model_id"]]
+    from relay.vendor_models import line
+    row = (_local_row(payload["model_id"], models) if payload[_LINE_FIELD] == LOCAL_LINE
+           else line(payload["runtime_model"]))
+    return _line_record(models, payload["model_id"], payload["runtime_key"],
+                        payload["runtime_model"], row if row and row["line"] == payload[_LINE_FIELD] else None)
 
 
 def _local_row(model_id: str, models: dict) -> dict[str, str]:
@@ -456,18 +483,9 @@ def verify_identity_against_roster(
     """
 
     roster_file = Path(roster_path)
-    payload = identity.payload
     try:
         roster_raw = roster_file.read_bytes()
-        roster = json.loads(roster_raw)
-        if _LINE_FIELD in payload:
-            from relay.vendor_models import line
-            row = (_local_row(identity.model_id, roster["models"]) if payload[_LINE_FIELD] == LOCAL_LINE
-                   else line(payload["runtime_model"]))
-            model = _line_record(roster["models"], identity.model_id, payload["runtime_key"],
-                                 payload["runtime_model"], row if row and row["line"] == payload[_LINE_FIELD] else None)
-        else:
-            model = roster["models"][identity.model_id]
+        model = _roster_model(identity.payload, json.loads(roster_raw)["models"])
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise LandingPolicyRejected("IDENTITY_ROSTER_UNAVAILABLE") from exc
     if hashlib.sha256(roster_raw).hexdigest() != identity.payload["roster_sha256"]:
