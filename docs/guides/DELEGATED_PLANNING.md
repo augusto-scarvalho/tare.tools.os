@@ -134,6 +134,16 @@ no board places restricts nothing. It holds for the
 automatic choice, your auditor list (by the general reading), a pinned or named reviewer
 and a retried review's route: the refused route reads `REVIEWER_BELOW_AUTHOR`.
 
+The public boards place few consumer models, so local models are rarely ranked by them
+alone. BenchLM ranks the open-weight models on each of its surfaces, and tare reads it
+for the local scale only when you store your own key: `tare setup --credential
+BENCHLM_API_KEY` (the key is read hidden; BenchLM's free plan gives 1,000 reads a month,
+and tare makes one a day). Its coding rank is a board of the coding type, its reasoning
+rank one of mathematics and science, and its overall rank the general reading between
+two local models (for a type with no board, or an auditor list). It never changes a
+hosted model's class, the data stays in your storage with BenchLM's attribution, and
+without the key nothing is read.
+
 The default is a preference when an independent reviewer is available. If none
 is eligible, PLAN retains its existing separate-session planner review and marks
 it as **not independently attested**. It never promotes that fallback to an

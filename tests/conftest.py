@@ -100,7 +100,7 @@ def disable_installed_flow_assessor(monkeypatch, tmp_path_factory, request):
                         lambda control_root, **kwargs: saved_work_view(fixture_control, **kwargs))
     # Nor any provider credential of the operator's: a fixture test that reached a provider would spend real money.
     for name in ('OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'OPENROUTER_API_KEY', 'DEEPSEEK_API_KEY',
-                 'SERPAPI_API_KEY', 'FIRECRAWL_API_KEY', 'AWS_ACCESS_KEY_ID',
+                 'SERPAPI_API_KEY', 'FIRECRAWL_API_KEY', 'BENCHLM_API_KEY', 'AWS_ACCESS_KEY_ID',
                  'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'AWS_PROFILE'):
         monkeypatch.delenv(name, raising=False)
     # New search fallback must not discover a runner/operator key in the vault.
@@ -108,7 +108,7 @@ def disable_installed_flow_assessor(monkeypatch, tmp_path_factory, request):
     from relay import native_generation
     vault = native_generation.vault_secret
     monkeypatch.setattr(native_generation, 'vault_secret', lambda name:
-        None if name in {'DEEPSEEK_API_KEY', 'SERPAPI_API_KEY', 'FIRECRAWL_API_KEY'} else vault(name))
+        None if name in {'DEEPSEEK_API_KEY', 'SERPAPI_API_KEY', 'FIRECRAWL_API_KEY', 'BENCHLM_API_KEY'} else vault(name))
     # The processes a test starts (the HTTP worker of every model call, tare's CLI and server, a vendor CLI) are out
     # of the socket guard's reach: they inherit a proxy that refuses, and a vault with none of the operator's keys.
     for name in ('HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'https_proxy', 'http_proxy', 'all_proxy'):

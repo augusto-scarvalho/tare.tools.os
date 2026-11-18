@@ -10,7 +10,9 @@
        {"reader": "epoch", "board": "cursorbench_external.csv", "column": "Score", "higher_is_better": true, "kind": "outcome", "name": "Epoch CursorBench",
         "citation": "CursorBench (cursor.com/cursorbench), as collected by Epoch AI (epoch.ai/benchmarks); the data keeps its source's own licence"},
        {"reader": "epoch", "board": "deepswe_external.csv", "column": "Pass@1", "higher_is_better": true, "kind": "outcome", "name": "Epoch DeepSWE",
-        "citation": "DeepSWE (deepswe.datacurve.ai), as collected by Epoch AI (epoch.ai/benchmarks); the data keeps its source's own licence"}]},
+        "citation": "DeepSWE (deepswe.datacurve.ai), as collected by Epoch AI (epoch.ai/benchmarks); the data keeps its source's own licence"},
+       {"reader": "benchlm", "board": "coding", "column": "rank", "higher_is_better": false, "kind": "outcome", "name": "BenchLM coding (open weights)",
+        "citation": "Data from BenchLM.ai; retain supplied publisher attribution and license notices (terms: https://benchlm.ai/terms#data-access). BenchAlign coding rank among open-weight models, read with your own key; it ranks local models only"}]},
     {"id": "web", "label": "web and front-end", "description": "Web and front-end development: building pages and interfaces that people judge by use.",
      "sources": [
        {"reader": "arena", "board": "webdev", "category": "overall", "column": "rating", "higher_is_better": true, "kind": "preference", "name": "LMArena webdev",
@@ -20,11 +22,15 @@
        {"reader": "epoch", "board": "frontiermath_tiers_1_3_v2.csv", "column": "Best score (across scorers)", "higher_is_better": true, "kind": "outcome", "name": "Epoch FrontierMath tiers 1-3",
         "citation": "Epoch AI, Capabilities & benchmarking, CC BY 4.0 (epoch.ai/benchmarks); FrontierMath"},
        {"reader": "epoch", "board": "frontiermath_tier_4_v2.csv", "column": "Best score (across scorers)", "higher_is_better": true, "kind": "outcome", "name": "Epoch FrontierMath tier 4",
-        "citation": "Epoch AI, Capabilities & benchmarking, CC BY 4.0 (epoch.ai/benchmarks); FrontierMath"}]},
+        "citation": "Epoch AI, Capabilities & benchmarking, CC BY 4.0 (epoch.ai/benchmarks); FrontierMath"},
+       {"reader": "benchlm", "board": "reasoning", "column": "rank", "higher_is_better": false, "kind": "outcome", "name": "BenchLM reasoning (open weights)",
+        "citation": "Data from BenchLM.ai; retain supplied publisher attribution and license notices (terms: https://benchlm.ai/terms#data-access). BenchAlign reasoning rank among open-weight models, read with your own key; it ranks local models only"}]},
     {"id": "science", "label": "physics and natural sciences", "description": "Physics and the natural sciences: research-level and graduate-level questions.",
      "sources": [
        {"reader": "epoch", "board": "critpt_external.csv", "column": "Accuracy", "higher_is_better": true, "kind": "outcome", "name": "Epoch CritPt",
-        "citation": "CritPt, as collected by Epoch AI (epoch.ai/benchmarks); the data keeps its source's own licence"}]},
+        "citation": "CritPt, as collected by Epoch AI (epoch.ai/benchmarks); the data keeps its source's own licence"},
+       {"reader": "benchlm", "board": "reasoning", "column": "rank", "higher_is_better": false, "kind": "outcome", "name": "BenchLM reasoning (open weights)",
+        "citation": "Data from BenchLM.ai; retain supplied publisher attribution and license notices (terms: https://benchlm.ai/terms#data-access). BenchAlign reasoning rank among open-weight models, read with your own key; it ranks local models only"}]},
     {"id": "professional", "label": "legal, consulting and finance work", "hint": "legal, consulting, finance", "description": "Professional services: legal, consulting and finance tasks done as an agent.",
      "sources": [
        {"reader": "epoch", "board": "apex_agents_external.csv", "column": "Pass@1 score", "higher_is_better": true, "kind": "outcome", "name": "Epoch APEX-Agents",
@@ -59,5 +65,9 @@
     {"id": "data", "label": "data analysis", "description": "Data analysis: cleaning, querying and reading data.", "sources": []},
     {"id": "writing", "label": "writing", "description": "Writing: prose, documentation and editing.", "sources": []},
     {"id": "philosophy", "label": "philosophy", "description": "Philosophy: argument, ethics and conceptual analysis.", "sources": []}
+  ],
+  "local_general": [
+    {"reader": "benchlm", "board": "overall", "column": "rank", "higher_is_better": false, "kind": "outcome", "name": "BenchLM overall (open weights)",
+     "citation": "Data from BenchLM.ai; retain supplied publisher attribution and license notices (terms: https://benchlm.ai/terms#data-access). BenchAlign overall rank among open-weight models, read with your own key; it ranks local models only"}
   ]
 }

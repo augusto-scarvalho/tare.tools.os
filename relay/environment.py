@@ -1217,8 +1217,9 @@ def store_credential(value, name, stream):
     import keyring
     keyring.set_password('universal-agent-harness', name, secret)
     from .provider_quota import ADMIN_REPORTS
-    if name in {report[0] for report in ADMIN_REPORTS.values()}:
-        return value  # an admin key reads a cost report (tare quota): it is no provider to use for model calls
+    if name in {report[0] for report in ADMIN_REPORTS.values()} | {'BENCHLM_API_KEY'}:
+        # an admin key reads a cost report (tare quota), BenchLM's a benchmark board: neither is a provider of model calls
+        return value
     from .web_search import CREDENTIALS
     return choose(value, 'search:'+CREDENTIALS[name] if name in CREDENTIALS else f'api:{name}', True)
 

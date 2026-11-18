@@ -13,6 +13,8 @@ Beside it, `relay/task_types.json` is the catalogue of task types (coding, mathe
 with the same rule (once a day, no key, nothing on a machine that declined API use), keeps them in
 `serve/task-boards.json`, and a board places a model with the same anchors; a type no board places a model for falls back
 to the general class and says so. Nothing routes by them yet: they are shown (`tare models --type`, `--types`).
+BenchLM's ranks of open-weight models (reader 'benchlm', with the user's own key) are boards of the local scale only:
+they rank local models among themselves (`may_review`) and never class a hosted model.
 
 Only the LMArena agent board carries a cost per task. It is kept beside a reading whose class came from OpenRouter
 (`board`), and `task` gives a route's score and cost per task from one row of it.
@@ -47,6 +49,8 @@ CUTS = {'openrouter': ((56, 'frontier'), (40, 'middling')), 'arena': ((0.14, 'fr
 CITATIONS = {'openrouter': 'Source: Artificial Analysis (artificialanalysis.ai) via OpenRouter (openrouter.ai/rankings)',
              'arena': 'Source: LMArena agent leaderboard, CC BY 4.0 (huggingface.co/datasets/lmarena-ai/leaderboard-dataset)'}
 EPOCH = 'https://epoch.ai/data/benchmark_data.zip'  # one archive of CSV files, about 2.3 MB
+# One page holds every surface of the open-weight models BenchLM ranks (98 on 2026-11-18); read with the user's own key.
+BENCHLM = 'https://data.benchlm.ai/v1/feed/models?openWeights=true&rankedOnly=true&compact=true&limit=250'
 BOARDS_SCHEMA = 'tare.tools/task-boards/1'
 CAP = 8*1024*1024  # the most accepted from the network, and from one member of the archive once opened
 ORDER = ('cheap', 'middling', 'frontier')  # ascending: a route reaches a need when its class is not before it
@@ -190,8 +194,8 @@ def fetch(source, key=None):
         return _get(source[5:], {'Accept': 'text/html'})
     if source == 'epoch':
         return _get(EPOCH, {'Accept': '*/*'})
-    if source == 'openrouter':
-        return json.loads(_get(OPENROUTER, {'Authorization': 'Bearer '+key}))
+    if source in ('openrouter', 'benchlm'):  # the sources read with a key of the user's own
+        return json.loads(_get(OPENROUTER if source == 'openrouter' else BENCHLM, {'Authorization': 'Bearer '+key}))
     return json.loads(_get(ARENA.replace('config=agent', 'config='+source[6:]) if source.startswith('arena:') else ARENA))
 
 
@@ -623,14 +627,16 @@ CONSUMER = {name: row['id'] for row in json.loads(Path(__file__).with_name('cons
 
 
 def _dimension(kind, kept):
-    """([the rows of each kept board of the task type `kind`, in the catalogue's order], [the general reading's rows]).
-    The general reading counts only for two models no board of the type places (owner, 2026-11-18: never the general
-    index when a type board exists)."""
-    sources = (task_type(kind) or {}).get('sources', ()) if kind else ()
-    found = [b['rows'] for s in sources
-             if isinstance(b := (kept or {}).get(source_key(s)), dict) and isinstance(b.get('rows'), list)]
+    """([the rows of each kept board of the task type `kind`, in the catalogue's order], [the general boards' rows]:
+    BenchLM's overall ranking of open-weight models (LOCAL_GENERAL), then the general reading). The general part counts
+    only for two models no board of the type places (owner, 2026-11-18: never the general index when a type board
+    exists). `kept` is `boards()` when not given."""
+    kept = boards() if kept is None else kept
+
+    def rows(sources):
+        return [b['rows'] for s in sources if isinstance(b := kept.get(source_key(s)), dict) and isinstance(b.get('rows'), list)]
     saved = reading()
-    return found, [saved['rows']] if saved else []
+    return rows((task_type(kind) or {}).get('sources', ()) if kind else ()), rows(LOCAL_GENERAL) + ([saved['rows']] if saved else [])
 
 
 MIN_CONSUMER = 10  # a board with fewer consumer models places none: with 3, two near-tied models fell two fifths apart
@@ -764,8 +770,11 @@ def describe(result):
 # Task types: a catalogue of kinds of work, the boards that say how models do at each, and a model's class per type.
 # A model that is the best in general may know nothing of CAD or 3D, so the class is read per type (owner, 2026-11-16).
 # Adding a type, or a source of a reader below, is an edit of task_types.json and no code.
-TYPES = json.loads(Path(__file__).with_name('task_types.json').read_text(encoding='utf-8'))['types']
-READERS = ('arena', 'epoch', 'page', 'script', 'json')
+CATALOGUE = json.loads(Path(__file__).with_name('task_types.json').read_text(encoding='utf-8'))
+TYPES = CATALOGUE['types']
+# Boards that stand for the general reading between two local models only (`_dimension`), never a hosted class.
+LOCAL_GENERAL = CATALOGUE['local_general']
+READERS = ('arena', 'epoch', 'page', 'script', 'json', 'benchlm')
 
 
 def task_type(type_id):
@@ -915,6 +924,19 @@ def parse_script(raw, source):
     return (rows, date if isinstance(date, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}', date) else None) if rows else None
 
 
+def parse_benchlm(body, source):
+    """(rows, as_of, notice) of BenchLM's feed of open-weight models for one surface (`board`: coding, reasoning,
+    overall): each model's published rank there (lower is better), estimated ones included, with its `evidence` (the
+    feed states one per model, its overall one). Every row is a model with no line (`_others`), so no row is ever an
+    anchor of a hosted class. `notice` is BenchLM's attribution and terms, kept with the saved board."""
+    rows = [{**r, 'evidence': (item.get('overall') or {}).get('evidenceStatus')} for item in body['items']
+            for r in _others([(item.get('creator'), item.get('name'), None,
+                               (item.get('surfaceRanks') or {}).get(source['board']), None, None, None)])]
+    date = body.get('dataAsOf')
+    return (rows, date[:10] if isinstance(date, str) else None,
+            {'attribution': body.get('attribution'), 'policy_url': body.get('policyUrl')}) if rows else None
+
+
 def _current(kept):
     """{line: its newest version on any saved board}. The anchors of a board must be these versions: a board that stopped
     at an older one (an aged source) would place a new model against models it is no longer measured beside."""
@@ -934,25 +956,36 @@ def _due(entry, now, wait=3600):
 
 
 def refresh_boards(now, fetch, setup=None):
-    """Read the catalogue's boards that are due: Epoch's archive once for all its boards, each LMArena config once. A
-    board that fails keeps its saved rows and never stops another; a machine that declined API use reads nothing."""
-    from .environment import read
+    """Read the catalogue's boards that are due: Epoch's archive once for all its boards, each LMArena config once,
+    BenchLM's feed once for all its boards and only with the user's own key (BENCHLM_API_KEY). A board that fails keeps
+    its saved rows and never stops another; a machine that declined API use reads nothing."""
+    from .environment import declined, read
+    from .provider_quota import secret
     from .relay_io import write_json_atomic
     setup = read() if setup is None else setup
-    if 'error' in setup or (setup.get('api_providers') or {}).get('use') is False:
+    api = setup.get('api_providers') or {}
+    if 'error' in setup or api.get('use') is False:
         return
     saved = boards()
-    sources = {source_key(s): s for t in TYPES for s in t['sources']}
+    sources = {source_key(s): s for s in [*(s for t in TYPES for s in t['sources']), *LOCAL_GENERAL]}
     due = {k: s for k, s in sources.items()
-           if _due(saved.get(k), now, 86400 if s['reader'] in ('page', 'script', 'json') else 3600)}
+           if _due(saved.get(k), now, 86400 if s['reader'] in ('page', 'script', 'json', 'benchlm') else 3600)}
+    token = any(s['reader'] == 'benchlm' for s in due.values()) \
+        and not declined((api.get('items') or {}).get('BENCHLM_API_KEY')) and secret('BENCHLM_API_KEY')
+    if not token:  # no key (1,000 reads a month on the free plan): nothing is read and no try is recorded
+        due = {k: s for k, s in due.items() if s['reader'] != 'benchlm'}
     if not due:
         return
-    kept, archive = {k: v for k, v in saved.items() if k in sources}, []
+    kept, archive, feed = {k: v for k, v in saved.items() if k in sources}, [], []
     for key, s in due.items():
         if s['reader'] == 'epoch':
             if not archive:  # one GET for every Epoch board; a failed one is not asked again in this pass
                 archive.append(_read(fetch, 'epoch', lambda raw: raw, None))
             found = _read(lambda source, k: archive[0], 'epoch', lambda raw: parse_epoch(raw, s), None)
+        elif s['reader'] == 'benchlm':
+            if not feed:  # one GET for every BenchLM board, as for Epoch's archive
+                feed.append(_read(fetch, 'benchlm', lambda body: body, token))
+            found = _read(lambda source, k: feed[0], 'benchlm', lambda body: parse_benchlm(body, s), None)
         elif s['reader'] == 'arena':
             found = _read(fetch, 'arena:'+s['board'], lambda body: parse_arena(body, s['column'], s.get('category')), None)
         else:  # a public page: one GET of the URL the catalogue names, nothing else of the site
@@ -961,7 +994,8 @@ def refresh_boards(now, fetch, setup=None):
         if found and found[0]:
             sign = 1 if s['higher_is_better'] else -1  # one direction for _place: a higher number is better
             kept[key] = {'read_at': now, 'as_of': found[1] or datetime.fromtimestamp(now, timezone.utc).date().isoformat(),
-                         'rows': [{**r, 'intelligence': sign*r['intelligence']} for r in found[0]]}
+                         'rows': [{**r, 'intelligence': sign*r['intelligence']} for r in found[0]],
+                         **(found[2] if s['reader'] == 'benchlm' else {})}  # BenchLM's attribution stays with its data
         else:
             kept[key] = {**kept.get(key, {}), 'tried_at': now}
     boards_path().parent.mkdir(parents=True, exist_ok=True)
@@ -976,6 +1010,8 @@ def type_class(deployment, kind, kept):
     places nobody: an aged source drops out by itself."""
     current = _current(kept)
     for source in kind['sources']:
+        if source['reader'] == 'benchlm':
+            continue  # open-weight models only, for the local scale (`_band`): never a hosted class (owner, 2026-11-18)
         board = kept.get(source_key(source))
         rows = board.get('rows') if isinstance(board, dict) else None
         row = isinstance(rows, list) and _on_board(board, deployment, bare=True)
