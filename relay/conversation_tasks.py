@@ -305,6 +305,12 @@ def delivery_view(value, *, config=None, unit=None):
         result['next'] = 'Explain the concrete audit failure and stop. The candidate was not applied. '
         result['next'] += 'Name audit.actor.model as the selected auditor. A local call/context/time limit is not evidence of exhausted provider quota. '
         result['next'] += 'Do not repeat implementation or try reading host receipts with project tools.'
+        from .conversation_permissions import NOT_APPLIED_UNACCEPTED, NOT_CONFIRMED
+        if audit.get('reason') in (NOT_APPLIED_UNACCEPTED, NOT_CONFIRMED):
+            # The user's own choice: a local coordinator told it as an audit failure, and an accepting one (2026-11-18).
+            result['next'] = ('The user chose not to apply this change: say that first. Then give the audit as '
+                'audit.verdict states it (INCONCLUSIVE or REJECTED is not an approval) and its open items; the candidate '
+                'is kept, unapplied. Do not call this an audit failure, and do not repeat the implementation.')
         from .conversation_review import CONTEXT_FAILURES, uncovered_review
         if uncovered_review(audit):
             result['audit_state']='COVERAGE_PENDING'

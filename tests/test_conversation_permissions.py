@@ -662,6 +662,7 @@ def test_local_only_lets_the_user_decide_on_a_same_family_audit_that_left_only_o
     else:
         assert not output['applied'] and 'user_decision' not in output['audit']
         assert output['reason'] == ('Audit (same-family audit, not independent) incomplete: '+permissions.NOT_APPLIED_UNACCEPTED)
+        assert output['next'].startswith('The user chose not to apply this change')  # not an audit failure
 
 
 def test_without_a_tui_or_outside_local_only_a_same_family_audit_applies_nothing(host, tmp_path, monkeypatch):
