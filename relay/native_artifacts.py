@@ -1,8 +1,9 @@
 """Optional role handoffs: structured claims, observed sources, no admission authority."""
 import hashlib
+import json
 from pathlib import Path, PurePosixPath
 import re
-from typing import Literal
+from typing import Literal, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_core import PydanticCustomError
@@ -137,7 +138,25 @@ def schema(role):
     return MODELS[role].model_json_schema()
 
 
+def as_list(text):
+    try:
+        return json.loads(text)
+    except ValueError:
+        return None
+
+
+def lists(role, value):
+    """`value` with each list field sent as its JSON text read as the list: a local model did so, again after the
+    correction (Qwen, 2026-11-18). Before anything reads the fields: "[]" as text is no empty list."""
+    if not isinstance(value, dict):
+        return value
+    return {**value, **{key: listed for key, field in MODELS[role].model_fields.items()
+                        if isinstance(value.get(key), str) and get_origin(field.annotation) is list
+                        and isinstance(listed := as_list(value[key]), list)}}
+
+
 def validate(role, value):
+    value = lists(role, value)
     if len(encode(value).encode()) > 32768:
         raise ValueError('native_artifact_over_budget')
     result = MODELS[role].model_validate(value).model_dump()
@@ -187,6 +206,7 @@ def validator(role, tools, roots, *, versioned_targets=False, same_family_audit=
     There an ACCEPT that lists open items is read as not accepted (REVISE with findings, else INCONCLUSIVE), its
     items kept, instead of discarding the whole review; validate() and every other auditor keep refusing it."""
     def check(value):
+        value = lists(role, value)
         if (same_family_audit and role == 'auditor' and isinstance(value, dict) and value.get('verdict') == 'ACCEPT'
                 and (value.get('findings') or value.get('remaining'))):
             value['verdict'] = 'REVISE' if value.get('findings') else 'INCONCLUSIVE'
