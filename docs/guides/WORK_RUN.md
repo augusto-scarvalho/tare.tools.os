@@ -31,7 +31,8 @@ review requires confirmed local cleanup and no pending or uncertain tool effect.
 `--resume --reattest` is for a Work whose landing is refused only because the roster no longer matches a saved
 identity (`IDENTITY_ROSTER_STALE` or `IDENTITY_ROSTER_MISMATCH`): it attests the implementer and audit routes again,
 sets the verdict and the audit sessions aside, and the resume audits the same candidate again and lands it on a new
-verdict ([RELAY_MESH](RELAY_MESH.md)). Any other state or refusal is refused unchanged.
+verdict ([RELAY_MESH](RELAY_MESH.md)). Any other state or refusal is refused unchanged. The TUI's Work view offers
+it as **Attest again and re-audit**, after a confirmation, when the selected Work is in that state.
 
 The qualified profile requires Windows, a local execution repository and named
 checks without an interactive terminal. A file permission never opens its

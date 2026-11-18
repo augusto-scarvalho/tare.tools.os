@@ -44,6 +44,24 @@ def control_copy(view):
             'RESUME_REQUESTED': 'Resume saved. Select Resume to continue Work.'}.get((view or {}).get('status'), '')
 
 
+def reattest_copy(code, blocked=False):
+    """Why the selected Work cannot land and what the operator can do; `code` and `blocked` (attesting again would
+    not help) are relay_mesh.reattestable's."""
+    why = ('the model list changed after the model that wrote or audited it was recorded'
+           if code == 'IDENTITY_ROSTER_STALE' else
+           'the vendor or family of the model that wrote or audited it is now read differently than when it was recorded')
+    return ("This Work's change is ready but cannot land: the record of which model wrote or audited it no longer "
+            f"matches tare's model list ({why}). "
+            + ("Attesting again would not help: its saved auditor is now read as the same model family as the model "
+               "that wrote the change, so a new audit would be refused. Run the Work again to choose another auditor."
+               if blocked else "Its old verdict cannot be reused."))
+
+
+REATTEST_CONFIRM = ('The old verdict and audit are kept aside and never reused. The same change is audited again '
+                    'with the current model list, which makes new model calls. If the new audit accepts, the change '
+                    'lands as a resumed Work does.')
+
+
 def render(action, result):
     """Presentation only: projected readiness is never an execution/admission receipt."""
     if result.get('error') and action not in {'run', 'status'}:

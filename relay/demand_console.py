@@ -99,7 +99,8 @@ class DemandConsole:
     def checkpoint(self, kind, detail=None, *, selection=None, required=True):
         selected = selection or self.selection()
         try:
-            snapshot = {'selection': asdict(selected), 'interface_mode': self.query_one('#mode', Select).value,
+            snapshot = {'selection': asdict(replace(selected, reattest=False)),  # a saved demand never replays the confirmation
+                'interface_mode': self.query_one('#mode', Select).value,
                 'assistant_session': self.assistant_session, 'assistant_history': self.assistant_history,
                 'entry_history': list(self.entry_history),
                 'entry_questions': list(self.entry_questions),

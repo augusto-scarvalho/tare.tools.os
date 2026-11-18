@@ -423,4 +423,8 @@ Espere por “Work paused” antes de fechar o TUI. **Inspect controls** lê a p
 depois de reabrir. **Resume** continua explicitamente a mesma tentativa e o mesmo orçamento.
 Para orientar um agente inacabado, inspecione os controles durante a pausa e use **Save note**.
 Uma decisão de implementação recusada pode ser reaberta com **Reconsider decision**;
-ela ainda precisa de uma nova resposta. Veja [Pausa de Work](../guides/WORK_PAUSE.md) para limites e recuperação.
+ela ainda precisa de uma nova resposta.
+Quando o Work selecionado é recusado no landing só porque a lista de modelos não confere mais com uma identidade
+de modelo salva, a visão do Work explica e oferece **Attest again and re-audit** (após uma confirmação: o veredito
+antigo fica de lado, a mesma mudança é auditada de novo com novas chamadas de modelo, e ela entra se a nova auditoria
+aceitar); isso executa `tare run <work> --resume --reattest`. Veja [Pausa de Work](../guides/WORK_PAUSE.md) para limites e recuperação.

@@ -69,6 +69,31 @@ class ConsentPanel(SupportPanel):
             self.dismiss(event.button.id.removeprefix('consent-'))
 
 
+class ReattestPanel(SupportPanel):
+    """Confirms the identity re-attestation of a Work refused at landing; Cancel, the default, and Escape change nothing."""
+    BINDINGS = [('escape', 'close', 'Cancel')]
+
+    def compose(self):
+        from .work_console import REATTEST_CONFIRM
+        with Vertical(classes='support-body'):
+            yield Static(REATTEST_CONFIRM, markup=False)
+            with Horizontal():
+                yield Button('Cancel', id='reattest-cancel')
+                yield Button('Attest again and re-audit', id='reattest-confirm')
+            yield Static('Escape to cancel.')
+
+    def on_mount(self):
+        self.query_one('#reattest-cancel', Button).focus()
+
+    def action_close(self):
+        self.dismiss(False)
+
+    def on_button_pressed(self, event):
+        if event.button.id in {'reattest-confirm', 'reattest-cancel'}:
+            event.stop()
+            self.dismiss(event.button.id == 'reattest-confirm')
+
+
 class PromptArea(TextArea):
     """Enter sends; completion menus consume their keys before submission."""
 
@@ -266,6 +291,9 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
     #work-note { width: 1fr; height: 1; min-height: 1; border: none; padding: 0 1; }
     #work-note-row Button { width: auto; min-width: 0; height: 1; min-height: 1; border: none; padding: 0 1; margin: 0; }
     #work-control-status { height: auto; max-height: 2; }
+    #reattest-note { display: none; height: auto; margin-top: 1; }
+    #reattest-work { display: none; height: 1; min-height: 1; width: auto; min-width: 0; border: none; padding: 0 1; background: $primary 15%; }
+    #reattest-work:focus { background: $primary 35%; }
     #decision-actions Button { min-width: 0; width: auto; }
     #decision-actions Button { margin-right: 2; }
     #composer > Button:focus, #decision-actions Button:focus, #send-message:focus {
@@ -695,6 +723,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                         yield Input(placeholder='Note for the next agent round', id='work-note', max_length=8192)
                         yield Button('Save note', id='save-work-note', disabled=True)
                     yield Static('', id='work-control-status', markup=False)
+                    yield Static('', id='reattest-note', markup=False)
+                    yield Button('Attest again and re-audit', id='reattest-work')
                     with Horizontal(id='decision-actions'):
                         yield Button('Approve implementation', id='approve-decision', disabled=True)
                         yield Button('Decline implementation', id='decline-decision', disabled=True)
@@ -1066,6 +1096,14 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         self.query_one('#work-note-row').display = mode == 'work' and can_receive
         self.query_one('#work-note', Input).disabled = not can_receive or control_pending
         self.query_one('#save-work-note', Button).disabled = not can_receive or control_pending
+        offer = self.reattest_offer
+        shown = mode == 'work' and offer is not None and offer[0] == self.decision_selection(self.selection())
+        self.query_one('#reattest-note').display = shown
+        self.query_one('#reattest-work').display = shown and not offer[2]  # no button when a new audit would be refused
+        self.query_one('#reattest-work', Button).disabled = self.busy
+        if shown:
+            from .work_console import reattest_copy
+            self.query_one('#reattest-note', Static).update(reattest_copy(offer[1], bool(offer[2])))
         self.query_one('#confirm-order', Button).disabled = self.busy or self.reviewed_order is None
         self.query_one('#confirm-sequence-revision', Button).disabled = self.busy or self.reviewed_sequence_revision is None
         self.query_one('#confirm-demand-outcome', Button).disabled = self.busy or self.reviewed_outcome is None
@@ -1541,7 +1579,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             self.invalidate_message_observations()
         if event.input.id == 'conversation-search' and self.is_mounted:
             self.render_conversations()
-        if event.input.id == 'profile' and self.is_mounted and self.query_one_optional('#mode'):
+        if event.input.id in {'profile', 'work-id'} and self.is_mounted and self.query_one_optional('#mode'):
             self.update_mode()
 
     @work(exclusive=True, group='inspect')
@@ -1553,10 +1591,29 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             if (selection.mode == 'session' and not selection.session) or (selection.mode == 'work' and not selection.work):
                 return
             self.say(await asyncio.to_thread(self.backend.inspect, selection), literal=True)
+            if selection.mode == 'work':
+                await self.refresh_reattest(selection)
             if selection.mode == 'session' and selection.session:
                 await self.refresh_messages()
         except Exception as exc:
             self.say('Inspection unavailable: '+str(exc))
+
+    reattest_offer = None  # (decision_selection, refusal code, why attesting again would not help or '') while the selected Work can be re-attested
+
+    async def refresh_reattest(self, selection):
+        try:
+            offer = await asyncio.to_thread(self.backend.reattest_offer, selection)
+        except Exception:
+            offer = None  # no saved train, or one that cannot be read: nothing to offer
+        self.reattest_offer = (self.decision_selection(selection), *offer) if offer else None
+        self.update_mode()
+
+    def ask_reattest(self):
+        offer = self.reattest_offer
+        if self.busy or not offer or offer[2] or offer[0] != self.decision_selection(self.selection()):
+            self.set_status('Selection changed; open the Work again.')
+            return
+        self.push_screen(ReattestPanel(), lambda ok: ok and self.execute(True, reattest=True))
 
     def on_button_pressed(self, event):
         if event.button.id in {'choose-model', 'choose-reasoning', 'settings-model'}:
@@ -1620,6 +1677,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                    'inspect-work-control': lambda: self.request_work_control('inspect'),
                    'save-work-note': lambda: self.request_work_control('intervene'),
                    'reconsider-decision': lambda: self.answer_decision('reconsider'),
+                   'reattest-work': self.ask_reattest,
                    'sequence-active': self.open_sequence_work,
                    'review-sequence-revision': self.review_sequence_revision,
                    'confirm-sequence-revision': self.confirm_sequence_revision,
@@ -1884,7 +1942,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         self.execute(True, assistant=True, resume_only=True)
 
     def execute(self, resume, *, replan=False, expected_sequence=None, assistant=False, resume_only=False, continuation=None,
-                recheck_candidate=False,retry_delivery=False,repair_plan=False):
+                recheck_candidate=False,retry_delivery=False,repair_plan=False, reattest=False):
         selected=self.selection()
         refusal = None if continuation else self.local_gpu_refusal(selected, resume)
         if refusal:
@@ -1932,6 +1990,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             self.active.recheck_candidate = recheck_candidate
             self.active.retry_delivery = retry_delivery
             self.active.repair_plan = repair_plan
+            if reattest:  # the CLI refuses it together with a retry
+                self.active = replace(self.active, retry_plan=False, retry_audit=False, reattest=True)
             if continuation:
                 from .native_continuity import save_request
                 from .native_agent import session_root
@@ -2004,6 +2064,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         self.last_result = None
         if self.active.mode == 'work':
             self.reviewed_work_control = None
+            self.reattest_offer = None
             self.query_one('#work-control-status', Static).update('')
         self.reviewed_plan = None
         self.reviewed_decision = None
@@ -2224,6 +2285,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 view = result.get('operational_control')
                 self.reviewed_work_control = (selection, view) if view else None
                 self.query_one('#work-control-status', Static).update(control_copy(view))
+                await self.refresh_reattest(selection)
             if snapshot_gap:
                 self.last_result['shell_change_tracking_gap'] = snapshot_gap
             for row in result.get('tool_activity', {}).get('items', []):
