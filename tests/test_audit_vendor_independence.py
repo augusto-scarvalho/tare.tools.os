@@ -368,6 +368,7 @@ def test_a_saved_same_family_delivery_keeps_its_label(tmp_path):
         shown = conversation_tasks.delivery_view(conversation_tasks.retained_delivery(result))
         assert shown['reason'] == f'Audit ({SAME_FAMILY}) incomplete: {reason}', shown['reason']
         assert shown['audit']['audit_label'] == SAME_FAMILY
+        assert shown['next'].startswith('The user chose not to apply') == (reason == permissions.NOT_CONFIRMED)
 
 
 @pytest.mark.parametrize('label', [SAME_VENDOR_AUDIT, SAME_FAMILY])
