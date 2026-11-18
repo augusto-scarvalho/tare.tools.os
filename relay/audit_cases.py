@@ -17,7 +17,7 @@ import sys
 import time
 from datetime import datetime
 
-from relay.landing_policy import attest_identity
+from relay.landing_policy import attest_identity, same_domain
 from relay.relay_io import write_json_atomic, write_text_atomic
 
 
@@ -179,7 +179,7 @@ class AuditCases:
         identities = {}
         for role in ("implementer", "auditor"):
             identities[role] = attest_identity(roster_path=self.roster, role=role, **request[role])
-        require(identities["implementer"].bias_domain != identities["auditor"].bias_domain,
+        require(not same_domain(identities["implementer"].bias_domain, identities["auditor"].bias_domain),
                 "independent_lineage_required")
         return {role: dict(identity.payload) for role, identity in identities.items()}
 

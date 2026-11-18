@@ -149,6 +149,7 @@ def _strict_audit_routing(train_dir: Path, stage: str) -> tuple[object | None, d
         attest_identity,
         model_id_for_runtime,
         read_identity,
+        same_domain,
     )
 
     roster = relay_mesh.RELAY_DIR / "round_table_roster.json"
@@ -174,7 +175,7 @@ def _strict_audit_routing(train_dir: Path, stage: str) -> tuple[object | None, d
             )
         except Exception:
             continue
-        if candidate.bias_domain != implementer.bias_domain:
+        if not same_domain(candidate.bias_domain, implementer.bias_domain):
             candidates[engine] = candidate
     return implementer, candidates
 
@@ -264,7 +265,8 @@ def audit(stage: str, prompt_file: Path, fresh: bool = False) -> int:
         if selected_identity is None:
             log("strict auditor identity was not independently attested; refusing")
             return 1
-        if selected_identity.bias_domain == strict_implementer.bias_domain:
+        from relay.landing_policy import same_domain
+        if same_domain(selected_identity.bias_domain, strict_implementer.bias_domain):
             log("strict auditor shares implementer bias_domain; refusing")
             return 1
         from relay.landing_policy import AUDITOR_IDENTITY_FILE, read_identity, write_identity
