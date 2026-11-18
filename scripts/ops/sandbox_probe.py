@@ -21,6 +21,7 @@ from pathlib import Path
 import shutil
 import socket
 import stat
+import subprocess
 import sys
 import tempfile
 import threading
@@ -61,6 +62,7 @@ def projects(storage, outside):
     write(flat, {
         'test_ok.py': 'import unittest\n\n\nclass Ok(unittest.TestCase):\n    def test_adds(self):\n'
                       '        self.assertEqual(1 + 1, 2)\n',
+        'test_tmp.py': 'def test_writes(tmp_path):\n    (tmp_path / "x").write_text("1")\n',
         'test_fail.py': 'import unittest\n\n\nclass Fail(unittest.TestCase):\n    def test_regression(self):\n'
                         '        self.assertEqual(1 + 1, 3)\n',
         '.env': f'KEY={SECRET}\n',
@@ -152,6 +154,10 @@ def projects(storage, outside):
     return {flat: [
         ('python-test-passes', ['python', '-m', 'unittest', 'test_ok'], 'green', False),
         ('python-assertion-fails', ['python', '-m', 'unittest', 'test_fail'], 'red', False),
+        # pytest's folder where work_units.pytest_scratch puts it beside a candidate, for a run outside the sandbox: in
+        # it the sandbox's own folder is used (WinError 5 creating it, seen 2026-11-17).
+        ('pytest-own-basetemp', ['pytest-python', '-m', 'pytest', '-q', '-p', 'no:cacheprovider', 'test_tmp.py',
+                                 '--basetemp', str(flat.parent/('.'+flat.name+'-pytest'))], 'green', False),
         ('python-reads-outside', ['python', '-c', 'import sys; print(open(sys.argv[1]).read())',
                                   str(outside/'private.txt')], 'red', True),
         ('python-reads-dotenv', ['python', '-c', "print(open('.env').read())"], 'red', True),
@@ -175,13 +181,48 @@ def projects(storage, outside):
     ]}
 
 
+def session_verify(base, root, control, argv):
+    """An implementer's own `verify` of the pytest case, registered as native_agent does without command protection
+    (command_protection.sandbox_verifiers and checks_factory): green, from the sandbox's own pytest folder."""
+    from compute_plane.native_capabilities import NativeCapabilities
+    from compute_plane.native_models import object_json
+    from tare_tools_agent_runtime import EffectRequest, ToolCall
+    from relay import command_protection
+    custody = base/'custody'/'session-verify'
+    (custody/'scratch').mkdir(parents=True)
+    verifiers = command_protection.sandbox_verifiers({'tests': {'repository': 'project', 'argv': argv}}, root)
+    config = {'repositories': {'project': str(root)}, 'writable': {'project': ['.']}, 'verifiers': verifiers}
+    caps = NativeCapabilities(session_id='probe', binding=control.binding, repositories=config['repositories'],
+                              writable=config['writable'], verifiers=verifiers, scratch_root=custody/'scratch',
+                              role='implementer', capabilities=['read', 'verify'], specgraph_edit_context=False)
+    port = command_protection.checks_factory(config, custody, 'probe')(
+        session_id='probe', binding=control.binding, control=control, config=config, custody=custody,
+        scratch=custody/'scratch', capabilities=caps)
+    caps.bind_command_mediation(port)
+    began = time.monotonic()
+    try:
+        value = object_json(caps.execute(EffectRequest('probe', 'verify-session', ToolCall(
+            'verify', 'verify', json.dumps({'name': 'tests'}))), control).output_json)
+    finally:
+        if callable(getattr(port, 'close', None)):
+            port.close()
+    observed = 'green' if value.get('returncode') == 0 else 'red'
+    if observed != 'green':
+        print(f'--- pytest-session-verify:\n{json.dumps(value)[-1500:]}', file=sys.stderr)
+    return 'pytest-session-verify', 'green', observed, round(time.monotonic() - began, 1)
+
+
 def run_cases(base, storage):
     from tare_tools_agent_runtime import BindingRef, CancellationToken, ExecutionControl
     from relay import command_protection, work_units
     tempfile.tempdir = str(base/'tmp')  # the binding's own temporary folders go there too
     os.mkdir(tempfile.tempdir)
     tools = {'python': sys.executable, 'node': shutil.which('node'), 'cargo': shutil.which('cargo'),
-             'venv-python': sys.executable if sys.prefix != sys.base_prefix else None}
+             'venv-python': sys.executable if sys.prefix != sys.base_prefix else None,
+             # pytest is no dependency of tare: the first of these interpreters that has it, if any
+             'pytest-python': next((p for p in (sys.executable, shutil.which('python'), shutil.which('python3'))
+                                    if p and subprocess.run([p, '-c', 'import pytest'], capture_output=True).returncode == 0),
+                                   None)}
     # Without node, no npm: in WSL the npm found may be Windows' (/mnt/c on PATH), which the sandbox cannot start.
     tools['npm'] = tools['node'] and (shutil.which('npm.cmd') or shutil.which('npm'))
     listener = socket.create_server(('127.0.0.1', 0))
@@ -237,6 +278,8 @@ def run_cases(base, storage):
                 work_units.CHECK_PORT.reset(token)
                 if callable(getattr(run, 'close', None)):
                     run.close()
+            if 'pytest-own-basetemp' in commands:
+                rows.append(session_verify(base, root, control, commands['pytest-own-basetemp']))
     finally:
         stop.set()
         listener.close()

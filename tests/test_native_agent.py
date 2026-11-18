@@ -488,6 +488,14 @@ def test_sandbox_verifiers_resolve_a_program_the_way_the_sandbox_needs(tmp_path,
     assert resolved['relative']['argv'] == [str((tmp_path/'tools'/'check.py').resolve()), '-q']
     assert resolved['bare']['argv'] == [str(program.resolve()), 'x']
     assert resolved['missing']['argv'] == ['not-installed']  # left as is: the sandbox then refuses it, saying why
+    # An implementer's own verify ran pytest with the folder tare put beside the candidate, which the sandbox cannot
+    # create (WinError 5, 2026-11-17): it gets the sandbox's own; a folder the check names itself stays.
+    tree = tmp_path/'wt'/'0000abcd'
+    own = ['runner', '-m', 'pytest', '--basetemp', str(tmp_path/'wt'/'.0000abcd-pytest')]
+    mine = ['runner', '-m', 'pytest', '--basetemp', str(tmp_path/'mine')]
+    resolved = command_protection.sandbox_verifiers({'own': {'argv': own}, 'mine': {'argv': mine}}, tree)
+    assert resolved['own']['argv'] == [str(program.resolve()), '-m', 'pytest']
+    assert resolved['mine']['argv'] == [str(program.resolve()), *mine[1:]]
 
 
 @pytest.mark.parametrize('local',[False,True])
