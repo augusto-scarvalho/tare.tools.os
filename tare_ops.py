@@ -289,6 +289,7 @@ def main(argv=None):
     run.add_argument('--run-id', help='Optional caller identity for this run; existing custody cannot be reused')
     run.add_argument('--retry-plan', action='store_true', help='With --resume: explicitly start a new review after a finished plan attempt; preserve previous evidence and saved per-attempt limits')
     run.add_argument('--retry-audit', action='store_true', help='With --resume: new code-audit attempt after operational failure; semantic reviews cannot be retried')
+    run.add_argument('--reattest', action='store_true', help='With --resume: when landing refuses only because the roster no longer matches a saved identity (IDENTITY_ROSTER_STALE/MISMATCH), attest it again, set the verdict and audit aside and audit the same candidate again')
     run.add_argument("--deployment", help="Named native model profile; default local-qwen")
     run.add_argument("--native-deployment", type=Path, help="Native HTTP profile with a registered model identity")
     auditors = run.add_mutually_exclusive_group()
@@ -419,7 +420,7 @@ def main(argv=None):
                                       limits=limits, unlimited=args.unlimited, wait_before_implement=args.wait_before_implement, run_id=args.run_id,
                                       findings=args.findings, findings_sha256=args.findings_sha256,
                                       audit_deployments=audits,
-                                      max_compactions=getattr(args, 'max_compactions', native_limits.UNSET), cancellation=cancel, resume=args.resume, retry_plan=args.retry_plan, retry_audit=args.retry_audit, **policy_options)
+                                      max_compactions=getattr(args, 'max_compactions', native_limits.UNSET), cancellation=cancel, resume=args.resume, retry_plan=args.retry_plan, retry_audit=args.retry_audit, reattest=args.reattest, **policy_options)
             finally:
                 native_signals.restore(previous)
             ok = output["status"] in {"SETTLED", "DRY_RUN", "WAITING_FOR_HUMAN", "HUMAN_DECLINED", "PAUSED", "RESUME_REQUESTED"}

@@ -79,7 +79,7 @@ def run(train, origin, candidate, receipt, stage, cancellation):
     from compute_plane.workspace import qualify_ephemeral_git_worktree, WorkspaceQualificationRejected
     descriptor = read_execution_descriptor(train/'EXECUTION_DESCRIPTOR.json')
     producer = read_identity(train/'IMPLEMENTER_IDENTITY.json')
-    if producer.sha256 != policy['producer_sha256']:
+    if producer.sha256 != policy['producer_sha256'] and not relay_mesh.reattested(train, policy['producer_sha256'], producer.sha256):
         raise ValueError('AUDIT_PRODUCER_IDENTITY_CHANGED')
     custody = audit_custody(origin)
     custody.mkdir(exist_ok=True)
@@ -112,7 +112,7 @@ def run(train, origin, candidate, receipt, stage, cancellation):
             receipt['status'] = 'CANCELLED'; return False
         deployment = route['deployment']
         auditor = identity(deployment, 'auditor')
-        if auditor.sha256 != route['identity_sha256']:
+        if auditor.sha256 != route['identity_sha256'] and not relay_mesh.reattested(train, route['identity_sha256'], auditor.sha256):
             raise ValueError('AUDITOR_IDENTITY_CHANGED')
         from . import work_control
         session = custody/str(number)

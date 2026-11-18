@@ -252,10 +252,13 @@ def inspect(directory):
             'artifact': str(directory), 'sha256': _hash(directory/'prepared.json', 1024*1024)}
 
 
-def identity(directory):
+def identity(directory, train=None):
+    """The prepared model's identity, as prepared or as the operator's reattest of `train` bound it since."""
     value = inspect(directory)
     result = _attest(value['deployment'])
-    if result.sha256 != value['identity_sha256']:
+    from .relay_mesh import reattested
+    if result.sha256 != value['identity_sha256'] and not (
+            train is not None and reattested(train, value['identity_sha256'], result.sha256)):
         raise ValueError('PREPARED_MODEL_IDENTITY_CHANGED')
     return result
 

@@ -318,6 +318,8 @@ FSM: Dict[tuple, Dict[str, Optional[str]]] = {
     ("AUDIT_PENDING", "READY_FOR_LANDING"): {"role": "policy", "evidence": "ADMISSION"},
     ("IN_PROGRESS_AUDITOR", "READY_FOR_LANDING"): {"role": "policy", "evidence": "ADMISSION"},
     ("READY_FOR_LANDING", "LANDED"): {"role": "policy", "evidence": "CAPABILITY"},
+    # Only reattest_train: the same candidate goes back to a new audit after its identity is re-attested.
+    ("READY_FOR_LANDING", "AUDIT_PENDING"): {"role": "operator", "evidence": None},
     ("READY_FOR_HUMAN_APPROVAL", "LANDED"): {"role": "human_gatekeeper", "evidence": "CAPABILITY"},
     # Formal Retirement transitions (U-7D closure)
     ("PLAN_AUDIT_PENDING", "RETIRED"): {"role": ("human_gatekeeper", "operator", "supervisor"), "evidence": None},
@@ -480,29 +482,133 @@ def plan_audit_valid(train_id: str) -> tuple:
 def admission_valid(train_id: str) -> tuple[bool, str]:
     """Recompute the exact smart-admission bundle for the current candidate."""
 
-    train_dir = TRAINS_DIR / train_id
-    state = relay_io.read_json(train_dir / "STATE.json")
+    state = relay_io.read_json(TRAINS_DIR / train_id / "STATE.json")
     if not isinstance(state, dict) or state.get("execution_descriptor") is None:
         return False, "smart admission is available only for strict candidate trains"
     try:
-        descriptor, receipt, _repository_root, _ready = _strict_candidate_context(
-            train_dir, state
-        )
-
-        def _audit_passed() -> bool:
-            return bool(audit_valid(train_id, "AUDIT")[0])
-
-        verdict = landing_policy.verify_admission_bundle(
-            train_dir,
-            roster_path=RELAY_DIR / "round_table_roster.json",
-            train_id=train_id,
-            descriptor_sha256=descriptor.sha256,
-            candidate_sha256=receipt.sha256,
-            audit_passed_validator=_audit_passed,
-        )
+        verdict = _verify_admission(train_id, state)
     except Exception as exc:
         return False, f"smart admission invalid: {exc}"
     return True, f"{landing_policy.VERDICT_FILE} {verdict.sha256[:12]} admitted"
+
+
+def _verify_admission(train_id: str, state: Dict[str, Any]) -> landing_policy.AdmissionVerdict:
+    """admission_valid's recompute; raises its refusal."""
+
+    train_dir = TRAINS_DIR / train_id
+    descriptor, receipt, _repository_root, _ready = _strict_candidate_context(train_dir, state)
+    return landing_policy.verify_admission_bundle(
+        train_dir,
+        roster_path=RELAY_DIR / "round_table_roster.json",
+        train_id=train_id,
+        descriptor_sha256=descriptor.sha256,
+        candidate_sha256=receipt.sha256,
+        audit_passed_validator=lambda: bool(audit_valid(train_id, "AUDIT")[0]),
+    )
+
+
+REATTEST_CODES = frozenset({"IDENTITY_ROSTER_STALE", "IDENTITY_ROSTER_MISMATCH"})
+# What the audit and admission stages wrote and verify_admission_bundle reads; the evidence binds the candidate and stays.
+_REATTEST_ARCHIVED = (landing_policy.VERDICT_FILE, landing_policy.AUDITOR_IDENTITY_FILE, "AUDIT_REPORT.md",
+                      landing_policy.IMPLEMENTER_IDENTITY_FILE)
+
+
+def reattested(train_dir, old_sha256: str, new_sha256: str) -> bool:
+    """Whether reattest_train recorded exactly `old_sha256` -> `new_sha256` for this train and its current candidate:
+    the one condition on which a native Work's saved identity bindings (its accepted proposal, its prepared source,
+    its audit routes) accept a re-attested identity in place of the one they were saved with."""
+
+    train = Path(train_dir)
+    candidate = train / "CANDIDATE_CHANGE.json"
+    if not candidate.is_file():
+        return False
+    digest = relay_io.sha256_hex(candidate.read_bytes())
+    for path in train.glob("REATTESTED_*/REATTESTATION.json"):
+        record = relay_io.read_json(path)
+        if (isinstance(record, dict) and record.get("train_id") == train.name
+                and record.get("candidate_sha256") == digest and isinstance(record.get("identities"), dict)
+                and {"old": old_sha256, "new": new_sha256} in record["identities"].values()):
+            return True
+    return False
+
+
+def reattest_train(train_id: str, agent: str = "operator") -> bool:
+    """Operator path for a strict train whose admission is refused only because the roster no longer matches a saved
+    identity (owner, 2026-11-18): re-attest its implementer (and a native Work's audit routes) from the current roster,
+    archive the verdict and audit (never reused), and send the same candidate back to AUDIT_PENDING for a new audit,
+    which a native Work runs on `tare run <work> --resume`. It never lands or admits."""
+
+    train_dir = TRAINS_DIR / train_id
+    state = relay_io.read_json(train_dir / "STATE.json")
+    if not isinstance(state, dict) or state.get("execution_descriptor") is None:
+        print(f"[REFUSED] reattest: '{train_id}' is not a strict train.")
+        return False
+    if state.get("status") != "READY_FOR_LANDING":
+        print(f"[REFUSED] reattest: '{train_id}' is {state.get('status')!r}, not READY_FOR_LANDING.")
+        return False
+    try:
+        _verify_admission(train_id, state)
+        code = "ADMITTED"
+    except Exception as exc:
+        code = str(exc) if isinstance(exc, landing_policy.LandingPolicyRejected) else f"{type(exc).__name__}: {exc}"
+    if code not in REATTEST_CODES:
+        print(f"[REFUSED] reattest: admission of '{train_id}' is {code}, not {' or '.join(sorted(REATTEST_CODES))}.")
+        return False
+    try:
+        old = landing_policy.read_identity(train_dir / landing_policy.IMPLEMENTER_IDENTITY_FILE)
+        new = landing_policy.reattest_identity(old, RELAY_DIR / "round_table_roster.json")
+    except landing_policy.LandingPolicyRejected as exc:
+        print(f"[REFUSED] reattest: the current roster cannot attest the implementer of '{train_id}': {exc}")
+        return False
+    identities = {"implementer": {"old": old.sha256, "new": new.sha256}}
+    origin = relay_io.read_json(train_dir / "WORK_RUN.json")  # a native Work's saved run
+    custody = None
+    if isinstance(origin, dict):
+        from relay import work_audit
+        custody = work_audit.audit_custody(origin)
+        for route in (origin.get("audit") or {}).get("routes", []):
+            if not route["eligible"]:
+                continue
+            try:
+                now = work_audit.identity(route["deployment"], "auditor").sha256
+            except (ValueError, KeyError, TypeError) as exc:
+                print(f"[REFUSED] reattest: the current roster cannot attest an audit route of '{train_id}': {exc}")
+                return False
+            if now != route["identity_sha256"]:
+                identities["auditor:" + route["deployment"]["id"]] = {"old": route["identity_sha256"], "new": now}
+    folder = train_dir / time.strftime("REATTESTED_%Y%m%dT%H%M%SZ", time.gmtime())
+    archived = {name: relay_io.sha256_hex((train_dir / name).read_bytes())
+                for name in _REATTEST_ARCHIVED if (train_dir / name).exists()}
+    folder.mkdir()
+    for name in archived:
+        os.replace(train_dir / name, folder / name)
+    # A native Work's audit sessions (audit-result.json would otherwise be reused) are set aside where they are, named
+    # for the train revision: a session folder is too deep and heavy to copy into the train and its landed history.
+    aside = (custody.with_name(f"{custody.name}.r{train_revision(state)}")
+             if custody is not None and custody.exists() else None)
+    if aside is not None:
+        custody.rename(aside)
+    relay_io.write_json_atomic(folder / "REATTESTATION.json", {
+        "schema": "tare.tools/identity-reattestation/1", "train_id": train_id, "refusal": code,
+        "candidate_sha256": relay_io.sha256_hex((train_dir / "CANDIDATE_CHANGE.json").read_bytes()),
+        "identities": identities, "archived": archived, "audit_custody_archived": str(aside) if aside else None,
+        "agent": agent, "at": now_iso()})
+    landing_policy.write_identity(train_dir / landing_policy.IMPLEMENTER_IDENTITY_FILE, new)
+    if not transition_train(train_id, "AUDIT_PENDING", "auditor", agent, "operator",
+                            f"{code}: implementer re-attested, verdict and audit archived in {folder.name}",
+                            expected_revision=train_revision(state)):
+        # Put everything back: the old implementer identity replaces the new one.
+        for name in archived:
+            os.replace(folder / name, train_dir / name)
+        if aside is not None:
+            aside.rename(custody)
+        (folder / "REATTESTATION.json").unlink()
+        folder.rmdir()
+        print(f"[REFUSED] reattest: '{train_id}' changed meanwhile; nothing was changed.")
+        return False
+    print(f"[REATTESTED] {train_id}: {code}; implementer {old.sha256[:12]} -> {new.sha256[:12]} "
+          f"({new.vendor}, {new.bias_domain}); archived in {folder.name}; a new audit and verdict are required.")
+    return True
 
 
 def prepare_admission_verdict(
@@ -1782,6 +1888,9 @@ def main() -> None:
         train_id = _arg("--train")
         agent = _arg("--agent", "operator")
         if not unhold_train(train_id, agent):
+            sys.exit(1)
+    elif cmd == "reattest":  # re-attest a strict train's identity the roster no longer matches; never lands
+        if not reattest_train(_arg("--train"), _arg("--agent", "operator")):
             sys.exit(1)
     elif cmd == "release-lease":
         release_lease(_arg("--target"), force=True)

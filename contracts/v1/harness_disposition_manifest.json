@@ -2127,8 +2127,8 @@
     {
       "name": "landing_policy.py",
       "path": "tare.tools.os/relay/landing_policy.py",
-      "size_bytes": 24368,
-      "sha256": "5d7ca1c40df1605b0758270021914f1cad231cef7afce769b8196388a0684836",
+      "size_bytes": 25548,
+      "sha256": "f83fb88362286912174bd0f4b17fb6a2be1064f297698da00d7b3637c3a9162a",
       "summary": "Deterministic smart admission with optional independent cross-model audit.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -2251,8 +2251,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 10941,
-      "sha256": "b8a74ac56a92181d9b824cdecb71b105ce48e53a5ae59e156e6a25fb1124a8b8"
+      "size_bytes": 11481,
+      "sha256": "bb35039291dd97bfa06b586419f5d716bbb923248016a68f09c7604f07d38e74"
     },
     {
       "name": "native_spend.py",
@@ -2367,8 +2367,8 @@
     {
       "name": "relay_mesh.py",
       "path": "tare.tools.os/relay/relay_mesh.py",
-      "size_bytes": 87988,
-      "sha256": "68467dab1461aed256442fe8a7eae2206eaac63d00401a366b711ee8d13379aa",
+      "size_bytes": 94708,
+      "sha256": "3ad4fe935c6e24032ce6bcdaf2b4c8c646afbfaa35676fb3fb796ba2a7412343",
       "summary": "tare.tools Multi-Agent Relay Mesh (MARM) Core Engine v3.0 (TRAIN-06)",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -2637,8 +2637,8 @@
     {
       "name": "work_run.py",
       "path": "tare.tools.os/relay/work_run.py",
-      "size_bytes": 54853,
-      "sha256": "c9a186eddb3f20db77b05cac60ef5c676d835aa74279785e62044ec6fba08c36",
+      "size_bytes": 55560,
+      "sha256": "3309340e12fd486173cf160bac63a8cfdbbeb8cf74819d0bc7433bd0ef2732c0",
       "summary": "`tare run <WorkId>`: execute and settle one explicit Work through the existing train lifecycle.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -2781,8 +2781,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 13851,
-      "sha256": "3b89258df9d652658da84106d2951ad1bee0ae614625745a9fa7844c371a9c46"
+      "size_bytes": 14011,
+      "sha256": "39fa1f6047b9962e18f3bd5f6663c4968a662dba6af39b0db860467d1055516b"
     },
     {
       "name": "work_change.py",
@@ -2831,8 +2831,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 24879,
-      "sha256": "a54371d92e920694a3ca48722cd67b1cc7bf5cf5fe321d8ddabe5bdfae132e7d"
+      "size_bytes": 24886,
+      "sha256": "c09485fbdf680556b4ac2c62e2ffed96bb826e0d7626bff710e7a49cbf0a8323"
     },
     {
       "name": "work_sequence.py",
@@ -3761,8 +3761,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS composes isolated Work preparation and existing admission; Kernel owns workspaces and Runtime owns model execution.",
-      "size_bytes": 19002,
-      "sha256": "71aab1a324b2f1872b17ebd68254a5649c5c8bc44c3593b35415911d933a6e2e"
+      "size_bytes": 19267,
+      "sha256": "1ceb0bd54d50182852f9ac3daef4bb5838b3b0723f1290e8db61ae31ce409062"
     },
     {
       "name": "ci_watch.py",

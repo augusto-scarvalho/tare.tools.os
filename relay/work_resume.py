@@ -229,7 +229,7 @@ def _prepared_candidate(train, descriptor, origin, receipt, stage, cancellation,
         raise ValueError('PREPARED_IMPLEMENTATION_CHANGED')
     from .native_work_host import prepared_plan_context
     prepared_plan_context(train)
-    identity = work_prepared.identity(source['path'])
+    identity = work_prepared.identity(source['path'], train)
     identity_path = train/'IMPLEMENTER_IDENTITY.json'
     if identity_path.exists() and read_identity(identity_path).sha256 != identity.sha256:
         raise ValueError('PREPARED_IMPLEMENTER_IDENTITY_CHANGED')

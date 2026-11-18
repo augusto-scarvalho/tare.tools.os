@@ -48,8 +48,15 @@ def recover_accepted_candidate(train_dir, descriptor, repository_root, custody, 
             raise ValueError('NATIVE_ATTEMPT_IDENTITY_CHANGED')
         identity = read_identity(root/'IMPLEMENTER_IDENTITY.json')
         binding = SimpleNamespace(**saved['binding'])  # historical lookup needs no bearer token
-        proposal = native_proposal(descriptor, saved['result'], NativeJournal(journal_path), binding, identity)
-        if proposal != json.loads(regular(root/'NATIVE_PROPOSAL.json').read_bytes()):
+        recorded = json.loads(regular(root/'NATIVE_PROPOSAL.json').read_bytes())
+        accepted = recorded.get('implementer_identity_sha256') if isinstance(recorded, dict) else None
+        from relay.relay_mesh import reattested
+        # The candidate stays bound to the identity it was accepted with, unless the operator's reattest bound that
+        # one to the current receipt (relay_mesh.reattest_train).
+        held = accepted if accepted != identity.sha256 and reattested(root, accepted, identity.sha256) else identity.sha256
+        proposal = native_proposal(descriptor, saved['result'], NativeJournal(journal_path), binding,
+                                   SimpleNamespace(sha256=held))
+        if proposal != recorded:
             raise ValueError('NATIVE_CANDIDATE_PROPOSAL_CHANGED')
         candidate = read_candidate_receipt(root/'CANDIDATE_CHANGE.json')
         verify_candidate_receipt(candidate, descriptor, repository_root=repository_root)
