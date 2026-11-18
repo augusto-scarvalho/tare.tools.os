@@ -822,7 +822,9 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
              **({'command_protection': config['command_protection']} if protected else {})}
     refused = None
     try:
-        admitted=prepared_checks(commands)
+        from .work_units import without_own_scratch
+        # Registered as the sandbox runs them: pytest's folder is the sandbox's; a run outside keeps `commands`.
+        admitted={name:without_own_scratch(argv,tree) for name,argv in prepared_checks(commands).items()}
         child['verifiers']={name:{'repository':repository,'argv':argv} for name,argv in admitted.items()}
         scratch = Path(custody)/'host-check-scratch'
         scratch.mkdir(parents=True, exist_ok=True)

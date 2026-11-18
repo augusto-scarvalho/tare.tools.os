@@ -217,6 +217,22 @@ def pytest_scratch(argv, python, tree, *, previous_tree=None):
     return argv
 
 
+def without_own_scratch(argv, tree):
+    """`argv` without the --basetemp pytest_scratch put beside `tree` for a run outside the sandbox: in the sandbox it
+    would override the sandbox's own (PYTEST_ADDOPTS), and pytest cannot create it there. An explicit one stays."""
+    own = os.path.normcase(os.path.abspath(Path(tree).parent/('.'+Path(tree).name+'-pytest')))
+    mine = lambda value: os.path.normcase(os.path.abspath(value)) == own
+    out, i = [], 0
+    while i < len(argv):
+        if argv[i] == '--basetemp' and i+1 < len(argv) and mine(argv[i+1]):
+            i += 2
+            continue
+        if not (argv[i].startswith('--basetemp=') and mine(argv[i][len('--basetemp='):])):
+            out.append(argv[i])
+        i += 1
+    return out
+
+
 def scoped_verifiers(config, unit, repository, tree):
     """Compile the automatic conversation pytest default for this unit, preserving custom checks."""
     if not config.get('conversation_flow'):

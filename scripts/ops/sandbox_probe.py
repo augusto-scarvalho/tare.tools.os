@@ -21,6 +21,7 @@ from pathlib import Path
 import shutil
 import socket
 import stat
+import subprocess
 import sys
 import tempfile
 import threading
@@ -61,6 +62,7 @@ def projects(storage, outside):
     write(flat, {
         'test_ok.py': 'import unittest\n\n\nclass Ok(unittest.TestCase):\n    def test_adds(self):\n'
                       '        self.assertEqual(1 + 1, 2)\n',
+        'test_tmp.py': 'def test_writes(tmp_path):\n    (tmp_path / "x").write_text("1")\n',
         'test_fail.py': 'import unittest\n\n\nclass Fail(unittest.TestCase):\n    def test_regression(self):\n'
                         '        self.assertEqual(1 + 1, 3)\n',
         '.env': f'KEY={SECRET}\n',
@@ -152,6 +154,10 @@ def projects(storage, outside):
     return {flat: [
         ('python-test-passes', ['python', '-m', 'unittest', 'test_ok'], 'green', False),
         ('python-assertion-fails', ['python', '-m', 'unittest', 'test_fail'], 'red', False),
+        # pytest's folder where work_units.pytest_scratch puts it beside a candidate, for a run outside the sandbox: in
+        # it the sandbox's own folder is used (WinError 5 creating it, seen 2026-11-17).
+        ('pytest-own-basetemp', ['pytest-python', '-m', 'pytest', '-q', '-p', 'no:cacheprovider', 'test_tmp.py',
+                                 '--basetemp', str(flat.parent/('.'+flat.name+'-pytest'))], 'green', False),
         ('python-reads-outside', ['python', '-c', 'import sys; print(open(sys.argv[1]).read())',
                                   str(outside/'private.txt')], 'red', True),
         ('python-reads-dotenv', ['python', '-c', "print(open('.env').read())"], 'red', True),
@@ -181,7 +187,11 @@ def run_cases(base, storage):
     tempfile.tempdir = str(base/'tmp')  # the binding's own temporary folders go there too
     os.mkdir(tempfile.tempdir)
     tools = {'python': sys.executable, 'node': shutil.which('node'), 'cargo': shutil.which('cargo'),
-             'venv-python': sys.executable if sys.prefix != sys.base_prefix else None}
+             'venv-python': sys.executable if sys.prefix != sys.base_prefix else None,
+             # pytest is no dependency of tare: the first of these interpreters that has it, if any
+             'pytest-python': next((p for p in (sys.executable, shutil.which('python'), shutil.which('python3'))
+                                    if p and subprocess.run([p, '-c', 'import pytest'], capture_output=True).returncode == 0),
+                                   None)}
     # Without node, no npm: in WSL the npm found may be Windows' (/mnt/c on PATH), which the sandbox cannot start.
     tools['npm'] = tools['node'] and (shutil.which('npm.cmd') or shutil.which('npm'))
     listener = socket.create_server(('127.0.0.1', 0))

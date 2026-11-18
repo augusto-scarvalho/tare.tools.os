@@ -57,6 +57,36 @@ def test_candidate_checks_use_the_source_environment_and_owned_pytest_scratch(tm
     assert argv[0] == str(python)
     assert argv[-2:] == ['--basetemp', str(tmp_path/'.candidate-pytest')]
     assert str(candidate) not in str(argv[0]) and 'tests/test_graph.py' in argv
+    # In the sandbox that folder would override the sandbox's own and cannot be made there (WinError 5, 2026-11-17):
+    # the sandbox runs the check without it; a run outside keeps it; a folder the check names itself stays.
+    assert work_units.without_own_scratch(argv, candidate) == argv[:-2]
+    joined = [*argv[:-2], '--basetemp='+str(tmp_path/'.candidate-pytest')]
+    assert work_units.without_own_scratch(joined, candidate) == argv[:-2]
+    explicit = [*argv[:-2], '--basetemp', str(tmp_path/'mine')]
+    assert work_units.without_own_scratch(explicit, candidate) == explicit
+
+
+def test_the_sandbox_registers_a_candidates_checks_without_tares_own_pytest_folder(tmp_path, monkeypatch):
+    from relay import command_protection
+    from compute_plane import native_capabilities
+    seen = {}
+
+    class Stop(Exception):
+        pass
+
+    def capabilities(**kwargs):
+        seen.update(kwargs['verifiers'])
+        raise Stop
+    monkeypatch.setattr(native_capabilities, 'NativeCapabilities', capabilities)
+    monkeypatch.setattr(command_protection, 'prepared_checks', lambda commands: commands)
+    monkeypatch.setattr(command_protection, 'sandbox_available', lambda: True)
+    candidate = tmp_path/'candidate'; candidate.mkdir()
+    argv = ['python', '-m', 'pytest', 'tests', '--basetemp', str(tmp_path/'.candidate-pytest')]
+    with pytest.raises(Stop):
+        command_protection.conversation_verifier(type('C', (), {'binding': None, 'should_stop': lambda self: False})(),
+            tmp_path/'custody', {'repositories': {'repo': str(candidate)}}, {}, candidate,
+            {'repository': 'repo', 'target_paths': []}, {'tests': argv})
+    assert seen == {'tests': {'repository': 'repo', 'argv': argv[:-2]}}
 
 
 @pytest.mark.parametrize('choice', ['once', 'project', 'deny'])
