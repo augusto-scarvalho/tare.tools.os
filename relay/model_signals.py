@@ -17,6 +17,7 @@ to the general class and says so. Nothing routes by them yet: they are shown (`t
 Only the LMArena agent board carries a cost per task. It is kept beside a reading whose class came from OpenRouter
 (`board`), and `task` gives a route's score and cost per task from one row of it.
 """
+import bisect
 import csv
 import io
 import json
@@ -613,6 +614,79 @@ def judged(deployment, kind=None, kept=None):
                 # the board's score ranks a critical unit; its row's effort is what the route is run at (`judged_effort`)
                 **({} if found['general'] else {'score': found['score'], 'effort': found.get('effort')})}
     return {'class': (klass(deployment) or {}).get('class') or 'cheap', 'source': 'general'}
+
+
+# {a board's spelling: the base model} of the open-weight models a consumer machine runs (relay/consumer_models.json
+# says what counts): each row's id and its aliases.
+CONSUMER = {name: row['id'] for row in json.loads(Path(__file__).with_name('consumer_models.json').read_text(encoding='utf-8'))['models']
+            for name in (row['id'], *row.get('aliases', ()))}
+
+
+def _dimension(kind, kept):
+    """([the rows of each kept board of the task type `kind`, in the catalogue's order], [the general reading's rows]).
+    The general reading counts only for two models no board of the type places (owner, 2026-11-18: never the general
+    index when a type board exists)."""
+    sources = (task_type(kind) or {}).get('sources', ()) if kind else ()
+    found = [b['rows'] for s in sources
+             if isinstance(b := (kept or {}).get(source_key(s)), dict) and isinstance(b.get('rows'), list)]
+    saved = reading()
+    return found, [saved['rows']] if saved else []
+
+
+MIN_CONSUMER = 10  # a board with fewer consumer models places none: with 3, two near-tied models fell two fifths apart
+
+
+def _band(rows, deployment):
+    """The fifth (0, the lowest, to 4) a local model's base model (`measured_as`, else its own id) holds among the
+    consumer open-weight models of one board (CONSUMER, any of their spellings) by score, or None when the board has no
+    row of it or fewer than MIN_CONSUMER such models. A model with several rows counts once, at its best; equal scores
+    share a band. The big labs' closed models on the board do not count."""
+    def model(r):
+        return CONSUMER.get(r['name'].lower().replace(' ', '-')) if r.get('line') is None and isinstance(r.get('name'), str) else None
+    best = {}
+    for r in rows:
+        if isinstance(r, dict) and (found := model(r)) and (score := _number(r.get('intelligence'))) is not None:
+            best[found] = max(best.get(found, score), score)
+    base = str(measured_as(deployment)[0] or deployment['native_profile'].get('model') or '').lower()
+    mine = CONSUMER.get(base) or CONSUMER.get(base.rpartition('/')[2])
+    if mine not in best or len(best) < MIN_CONSUMER:
+        return None
+    scores = sorted(best.values())
+    return 5 * bisect.bisect_left(scores, best[mine]) // len(scores)
+
+
+def may_review(reviewer, producer, kind=None, kept=None):
+    """Whether `reviewer` may audit or review `producer`'s work of the task type `kind` (an id of TYPES; a demand's list
+    of them: every one; None: the general reading): not when it is two categories or more below it (owner, 2026-11-18).
+    Open-weight models a consumer machine runs are not ranked on the big labs' scale. Two hosted models compare their
+    classes (`judged`, the general class where no board of the type places one): a hosted reviewer is never refused for
+    lacking a board row, and an author no board of the type places while one places the reviewer restricts nothing. Two
+    local models compare the fifth their base models hold among the consumer models of the first board placing both
+    (`_band`, a board of at least MIN_CONSUMER of them), on the type's boards when one places either, else on the general
+    reading, else with no restriction; there an author none places
+    restricts nothing, and a reviewer none places is refused beside an author one does (fail closed: a generic local
+    model, or one with no measure, has no band). Across the scales a local model counts as cheap: it reviews middling
+    work, not frontier, and a hosted model reviews any local work. Equal is allowed, so a model may review its own work."""
+    kept = boards() if kind and kept is None else kept
+    if not (kind is None or isinstance(kind, str)):
+        return all(may_review(reviewer, producer, one, kept) for one in kind or [None])
+    from .challenger import local
+    mine, theirs = local(reviewer), local(producer)
+    if theirs and not mine:
+        return True
+    if not theirs:
+        author = judged(producer, kind, kept)
+        own = {**author, 'class': 'cheap'} if mine else judged(reviewer, kind, kept)
+        if author['source'] == 'general' and own['source'] != 'general':
+            return True  # a board of the type places the reviewer, not the author: the author has no place there
+        return ORDER.index(own['class']) >= ORDER.index(author['class']) - 1
+    typed, general = _dimension(kind, kept)
+    bands = [(_band(rows, producer), _band(rows, reviewer)) for rows in typed]
+    if not any(band is not None for pair in bands for band in pair):  # no board of the type places either
+        bands = [(_band(rows, producer), _band(rows, reviewer)) for rows in general]
+    placed = [pair for pair in bands if pair[0] is not None]
+    both = [pair for pair in placed if pair[1] is not None]
+    return not placed or bool(both) and both[0][1] >= both[0][0] - 1
 
 
 # The most a board's effort raises a route to. Boards read models at max, which is too dear to run every unit of a type

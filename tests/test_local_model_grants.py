@@ -144,7 +144,7 @@ def test_generic_local_models_have_an_identity_of_their_own(pool):
     assert work_audit.identity(sampling, 'implementer').vendor == 'Local'  # a family starts a word: no "ling" here
     variant = native_catalog.select(environment.generic_name(GATEWAY, 'qwen38-ninfer'))
     seen = work_audit.identity(variant, 'implementer')
-    assert (seen.vendor, seen.bias_domain, seen.payload['line']) == ('Qwen', 'qwen/qwen-family', 'local')
+    assert (seen.vendor, seen.bias_domain, seen.payload['line']) == ('Qwen', 'qwen/qwen3.8-27b-dense', 'local')
     landing_policy.verify_identity_against_roster(seen, native_catalog.roster_path())
     assert work_audit.independence(variant, native_catalog.select('qwen38-gsq')) == 'AUDITOR_NOT_INDEPENDENT'
     assert work_audit.independence(variant, gemma) == 'INDEPENDENT'

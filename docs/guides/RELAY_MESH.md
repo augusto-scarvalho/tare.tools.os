@@ -37,7 +37,8 @@ Anthropic's lines under their own ids with an effort suffix (`vendor_models.ORIG
 `line` (for example `"line": "claude-fable"`) so a receipt shows it was derived, not recorded; an id of no line on a
 hosted route, or a reseller's (OpenRouter, Bedrock, OpenCode), stays without identity and is refused as before. A
 model on a local gateway that no record names and that is no known hosted line gets `"line": "local"`: its family's
-vendor and bias domain when its id names a family of the roster (`qwen38-ninfer`: Qwen, `qwen/qwen-family`), otherwise
+vendor and bias domain when its id starts with the leading letters of a roster domain (`qwen38-ninfer`: Qwen,
+`qwen/qwen3.8-27b-dense`, the first Qwen record's), otherwise
 vendor `Local` and its own id as bias domain (`landing_policy._local_row`).
 Landing re-attests the saved implementer and auditor receipts against the current roster
 ([`verify_identity_against_roster`](../../relay/landing_policy.py)): a roster edited since the receipt refuses with

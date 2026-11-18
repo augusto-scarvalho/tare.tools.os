@@ -928,9 +928,15 @@ def _review(owner, task, tree, producer, unit, changed, checks, control, *, _una
             return result or {'verdict': 'INCONCLUSIVE',
                 'reason': 'A previous review may be charged. Its interrupted request was not repeated.'}
     from .execution_scope import confirmable_audit, current, require, same_family_admitted
-    if pinned and not current().allows(pinned[1], 'auditor')[0]:
+    from .model_signals import may_review
+    # The route of the review it retries is refused when it is now two categories below the implementer (boards
+    # change): a new one is chosen. The unit's types: every one its tasks name, else its ranking type (an older unit).
+    kinds = unit.get('kinds') or [unit.get('kind')]
+    kinds = kinds[0] if len(kinds) == 1 else kinds  # one type (or none) is passed as before
+    below = [(pinned[0], 'REVIEWER_BELOW_AUTHOR')] if pinned and not may_review(pinned[1], producer, kinds) else []
+    if pinned and (below or not current().allows(pinned[1], 'auditor')[0]):
         pinned = None  # this instance's --auditor pin or allowlist wins over the route of the review it retries
-    candidates = [pinned] if pinned else available(producer, owner, unit.get('kind'))
+    candidates = [pinned] if pinned else available(producer, owner, kinds)
     candidates = [(name, dep) for name, dep in candidates if name not in _unavailable]
     if not candidates:
         return {'verdict': 'INCONCLUSIVE', 'reason': NO_AUDITOR}
@@ -1088,8 +1094,8 @@ def _review(owner, task, tree, producer, unit, changed, checks, control, *, _una
     trace_mode = ('PINNED_RETRY' if pinned else 'EXACT_TEMPORARY_PIN' if auditor_pin else
                   'CONFIGURED' if rules.get('auditor_selection') == 'configured' else 'AUTOMATIC')
     known_gone = [str(gone) for gone in _unavailable]
-    row['executed_decision'] = executed_decision(trace_mode, name, [*known_gone, name],
-                                                 [(gone, 'UNAVAILABLE') for gone in known_gone])
+    row['executed_decision'] = executed_decision(trace_mode, name, [*(gone for gone, _ in below), *known_gone, name],
+                                                 [*below, *((gone, 'UNAVAILABLE') for gone in known_gone)])
     row['attempts'] = [executed_attempt(deployment, {'status': 'DISPATCHING'})]
     save_json(path, row, max_bytes=MAX_RECEIPT_BYTES)
     try:

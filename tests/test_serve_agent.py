@@ -137,6 +137,7 @@ def test_the_auditor_is_independent_and_another_vendor_goes_first(monkeypatch):
     monkeypatch.setattr('relay.work_audit.identity', lambda d, role: SimpleNamespace(
         **dict(zip(('model_id', 'vendor', 'bias_domain'), ids[d['id']]))))
     monkeypatch.setattr(turn_engine, 'available', lambda name: ({'id': name}, None))
+    monkeypatch.setattr('relay.model_signals.may_review', lambda *a, **k: True)  # stubs: no model to rank
     names = lambda implementer, routes: [name for name, _ in turn_engine.pick_auditors({'id': implementer}, routes)]
     assert names('qwen', ['sol', 'opus']) == ['sol', 'opus']
     assert names('sonnet', ['opus', 'sol']) == ['sol', 'opus']  # cross vendor preferred

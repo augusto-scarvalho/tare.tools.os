@@ -299,17 +299,17 @@ def test_with_no_other_reviewer_the_planners_own_local_model_reviews_only_where_
     assert receipt(parent)['critic']['own_model'] is True
 
 
-def test_a_planner_whose_model_never_audits_does_not_review_its_own_plan(conversation, monkeypatch):
-    from relay import environment, landing_policy
+def test_a_planner_every_other_reviewer_ranks_below_still_reviews_its_own_plan(conversation, monkeypatch):
+    # No model is barred from review: the planner's own model ties with itself (model_signals.may_review).
+    from relay import environment, model_signals
     tool, control, stub, parent, state = conversation
-    stub.pick = (None, {})
+    stub.pick = (None, {'selection': {'candidates': [
+        {'deployment': 'weaker', 'eligible': False, 'reason': 'REVIEWER_BELOW_AUTHOR'}]}})
     monkeypatch.setattr(environment, 'granted', lambda role, deployment, value=None: True)
-    def identity(deployment, role):
-        raise landing_policy.LandingPolicyRejected('IDENTITY_MODEL_DOES_NOT_AUDIT')
-    monkeypatch.setattr(work_audit, 'identity', identity)
     value = delegate(conversation)
-    assert value['review']['status'] == 'SKIPPED' and value['review']['reason'] == 'NO_INDEPENDENT_REVIEWER'
-    assert stub.roles() == ['planner'] and value['plan'] == PLAN
+    planner = stub.sessions[0][1]
+    assert value['review']['own_model'] is True and stub.sessions[1][1]['id'] == planner['id']
+    assert model_signals.may_review(planner, planner)
 
 
 def test_an_accepting_self_review_and_a_same_vendor_review_never_read_as_independent(conversation, monkeypatch):
