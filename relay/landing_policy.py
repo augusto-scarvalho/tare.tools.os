@@ -177,6 +177,10 @@ def attest_identity(
             model = roster["models"][model_id]
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise LandingPolicyRejected("IDENTITY_ROSTER_UNAVAILABLE") from exc
+    if role == "auditor" and isinstance(model, dict) and model.get("audits") is False:
+        # A record may say its model never reviews others' work (Qwen3.6 MoE, two generations behind Qwen3.8: owner,
+        # 2026-11-18); every auditor and plan reviewer is chosen through this identity.
+        raise LandingPolicyRejected("IDENTITY_MODEL_DOES_NOT_AUDIT")
     return _attested(model, roster_raw, derived, agent_id=agent_id.strip(), role=role, model_id=model_id,
                      runtime_key=runtime_key, runtime_model=runtime_model)
 

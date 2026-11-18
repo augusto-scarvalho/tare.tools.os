@@ -575,10 +575,29 @@
     "qwen36-moe": {
       "display_name": "Qwen3.6 MoE",
       "vendor": "Qwen",
-      "bias_domain": "qwen/qwen-family",
+      "bias_domain": "qwen/qwen-moe",
+      "audits": false,
       "runtime": {
         "native": "qwen36-moe",
         "native-http": "qwen36-moe"
+      }
+    },
+    "swift-next": {
+      "display_name": "Swift Next (Qwen3.8-Flash-Next MoE)",
+      "vendor": "Qwen",
+      "bias_domain": "qwen/qwen-next",
+      "runtime": {
+        "native": "swift-next",
+        "native-http": "swift-next"
+      }
+    },
+    "swift27b": {
+      "display_name": "Swift 27B (Qwen3.8 27B)",
+      "vendor": "Qwen",
+      "bias_domain": "qwen/qwen-family",
+      "runtime": {
+        "native": "swift27b",
+        "native-http": "swift27b"
       }
     },
     "gemini-3.8-flash-high": {

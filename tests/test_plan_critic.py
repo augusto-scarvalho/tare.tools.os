@@ -299,6 +299,19 @@ def test_with_no_other_reviewer_the_planners_own_local_model_reviews_only_where_
     assert receipt(parent)['critic']['own_model'] is True
 
 
+def test_a_planner_whose_model_never_audits_does_not_review_its_own_plan(conversation, monkeypatch):
+    from relay import environment, landing_policy
+    tool, control, stub, parent, state = conversation
+    stub.pick = (None, {})
+    monkeypatch.setattr(environment, 'granted', lambda role, deployment, value=None: True)
+    def identity(deployment, role):
+        raise landing_policy.LandingPolicyRejected('IDENTITY_MODEL_DOES_NOT_AUDIT')
+    monkeypatch.setattr(work_audit, 'identity', identity)
+    value = delegate(conversation)
+    assert value['review']['status'] == 'SKIPPED' and value['review']['reason'] == 'NO_INDEPENDENT_REVIEWER'
+    assert stub.roles() == ['planner'] and value['plan'] == PLAN
+
+
 def test_an_accepting_self_review_and_a_same_vendor_review_never_read_as_independent(conversation, monkeypatch):
     from relay import environment
     tool, control, stub, parent, state = conversation

@@ -263,6 +263,9 @@ def _select_route(choice, role, reason, producer=None, work_type=None):
         if role == 'planner':
             from .planner_policy import effective
             choice = effective(choice)
+        if role in ('auditor', 'plan-auditor'):
+            from .work_audit import identity
+            identity(choice, 'auditor')  # a pinned reviewer too: the roster may say its model never audits
         return choice, {**route(choice, reason),
             'executed_decision': executed_decision('CONFIGURED', choice.get('id'), [choice.get('id')])}
     from .native_routes import ranked, reviewers

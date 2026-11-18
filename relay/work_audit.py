@@ -22,6 +22,18 @@ def identity(deployment, role):
         endpoint=deployment['native_profile'].get('endpoint'))
 
 
+def never_audits(deployment):
+    """The roster says this model never reviews work ("audits": false; landing_policy.attest_identity)."""
+    from .landing_policy import LandingPolicyRejected
+    try:
+        identity(deployment, 'auditor')
+    except LandingPolicyRejected as exc:
+        return str(exc) == 'IDENTITY_MODEL_DOES_NOT_AUDIT'
+    except (ValueError, KeyError, TypeError, OSError):
+        return False
+    return False
+
+
 def independence(implementer, auditor):
     """landing_policy.independence of two deployments; None when either identity is unknown."""
     from .landing_policy import independence as rule

@@ -126,6 +126,15 @@ AGY_CLAUDE = {
 }
 
 
+# The local Swift models, given roster records later (2026-11-18): Swift Next is a MoE of another architecture, a bias
+# domain of its own within Qwen; Swift 27B is the dense 27B's line.
+SWIFT = {
+    'swift-next': [['Qwen', 'qwen/qwen-next', 'swift-next'], 'Qwen'],
+    'swift27b': [['Qwen', 'qwen/qwen-family', 'swift27b'], 'Qwen'],
+    'qwen36-moe': [['Qwen', 'qwen/qwen-moe', 'qwen36-moe'], 'Qwen'],  # a MoE: a domain of its own; never audits
+}
+
+
 def realized():
     from relay.cli_discovery import TEMPLATES, deployment
     from relay.vendor_models import expand
@@ -161,7 +170,28 @@ def route(endpoint, model, name='fixture'):
 
 def test_every_shipped_identity_is_unchanged_except_four_ids_with_no_record_that_gain_their_line():
     assert all(BEFORE[name] == [U, 'UNKNOWN'] for name in CHANGED)
-    assert shown(realized()) == {**BEFORE, **CHANGED, **AGY_CLAUDE}
+    assert shown(realized()) == {**BEFORE, **CHANGED, **AGY_CLAUDE, **SWIFT}
+
+
+def test_a_model_the_roster_says_never_audits_has_no_auditor_identity():
+    # Qwen3.6 MoE is two generations behind Qwen3.8 (owner, 2026-11-18): it may implement, never audit or review plans.
+    moe, gsq = native_catalog.select('qwen36-moe'), native_catalog.select('qwen38-gsq')
+    assert work_audit.identity(moe, 'implementer').bias_domain == 'qwen/qwen-moe'
+    with pytest.raises(LandingPolicyRejected, match='IDENTITY_MODEL_DOES_NOT_AUDIT'):
+        work_audit.identity(moe, 'auditor')
+    assert work_audit.independence(gsq, moe) is None  # so no auditor or plan reviewer selection takes it
+    assert work_audit.independence(moe, gsq) == 'SAME_VENDOR_NOT_INDEPENDENT'  # its own work is audited as usual
+    # It keeps its execution roles (admission asks a review role only for an auditor identity) and a pinned plan
+    # reviewer is attested too, not only an automatic one.
+    from relay import native_plan
+    row = {'id': 'qwen36-moe', 'native_catalog': 'qwen36-moe', 'model': moe['model'],
+           'roles': ['implementer', 'auditor', 'plan-auditor'],
+           'runner': 'native-http', 'kind': 'primary', 'cost_tier': 'free'}
+    assert native_routes.admission(row, 'implementer')[2] != 'PROFILE_OR_IDENTITY_INVALID'
+    assert native_routes.admission(row, 'auditor')[2] == 'PROFILE_OR_IDENTITY_INVALID'
+    assert native_routes.admission(row, 'plan-auditor')[2] == 'PROFILE_OR_IDENTITY_INVALID'
+    with pytest.raises(LandingPolicyRejected, match='IDENTITY_MODEL_DOES_NOT_AUDIT'):
+        native_plan.select_route(moe, 'plan-auditor', 'PINNED', gsq)
 
 
 def test_what_the_four_gain_is_audit_never_an_automatic_role(pool):
