@@ -131,3 +131,35 @@ def test_storing_the_benchlm_key_marks_no_api_provider(monkeypatch):
     monkeypatch.setattr(keyring, 'set_password', lambda service, name, secret: stored.update({name: secret}))
     assert environment.store_credential({}, 'BENCHLM_API_KEY', StringIO('fixture-benchlm-key\n')) == {}
     assert stored == {'BENCHLM_API_KEY': 'fixture-benchlm-key'}
+
+
+def test_tare_models_types_reports_benchlm_sources_by_consumer_models_on_the_local_scale(monkeypatch, capsys):
+    import json
+    from relay import model_choices
+    model_choices.main(['--types'])
+    unread_out = capsys.readouterr().out
+    assert ('BenchLM coding (open weights) (outcome): not read yet, 0 consumer models '
+            '(local scale only; fewer than 10: places no local model)') in unread_out
+    model_choices.main(['--types', '--json'])
+    unread_coding = next(s for t in json.loads(capsys.readouterr().out)['types'] if t['id'] == 'coding'
+                         for s in t['sources'] if s['reader'] == 'benchlm')
+    assert (unread_coding['scale'], unread_coding['consumer_models'], unread_coding['places']) == ('local', 0, False)
+
+    saved(monkeypatch)
+    model_choices.main(['--types'])
+    read_out = capsys.readouterr().out
+    assert 'BenchLM coding (open weights) (outcome): read 14 Nov, 12 consumer models (local scale only)' in read_out
+    assert 'BenchLM coding (open weights) (outcome): read 14 Nov, 0 of ' not in read_out
+    model_choices.main(['--types', '--json'])
+    read_coding = next(s for t in json.loads(capsys.readouterr().out)['types'] if t['id'] == 'coding'
+                       for s in t['sources'] if s['reader'] == 'benchlm')
+    assert (read_coding['scale'], read_coding['consumer_models'], read_coding['places']) == ('local', 12, True)
+
+    assert signals.describe_source({'name': 'BenchLM coding (open weights)', 'reader': 'benchlm', 'kind': 'outcome',
+                                    'read_at': NOW, 'scale': 'local', 'consumer_models': 4, 'places': False}) == (
+        'BenchLM coding (open weights) (outcome): read 14 Nov, 4 consumer models '
+        '(local scale only; fewer than 10: places no local model)')
+    assert signals.describe_source({'name': 'BenchLM coding (open weights)', 'reader': 'benchlm', 'kind': 'outcome',
+                                    'read_at': NOW, 'scale': 'local', 'consumer_models': 1, 'places': False}) == (
+        'BenchLM coding (open weights) (outcome): read 14 Nov, 1 consumer model '
+        '(local scale only; fewer than 10: places no local model)')
