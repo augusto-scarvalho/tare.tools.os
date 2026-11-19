@@ -642,17 +642,23 @@ def _dimension(kind, kept):
 MIN_CONSUMER = 10  # a board with fewer consumer models places none: with 3, two near-tied models fell two fifths apart
 
 
+def _consumer_scores(rows):
+    """{consumer model id: best score} on one board (CONSUMER, non-line rows with a numeric score)."""
+    best = {}
+    for r in rows:
+        if (isinstance(r, dict) and r.get('line') is None and isinstance(r.get('name'), str)
+                and (found := CONSUMER.get(r['name'].lower().replace(' ', '-')))
+                and (score := _number(r.get('intelligence'))) is not None):
+            best[found] = max(best.get(found, score), score)
+    return best
+
+
 def _band(rows, deployment):
     """The fifth (0, the lowest, to 4) a local model's base model (`measured_as`, else its own id) holds among the
     consumer open-weight models of one board (CONSUMER, any of their spellings) by score, or None when the board has no
     row of it or fewer than MIN_CONSUMER such models. A model with several rows counts once, at its best; equal scores
     share a band. The big labs' closed models on the board do not count."""
-    def model(r):
-        return CONSUMER.get(r['name'].lower().replace(' ', '-')) if r.get('line') is None and isinstance(r.get('name'), str) else None
-    best = {}
-    for r in rows:
-        if isinstance(r, dict) and (found := model(r)) and (score := _number(r.get('intelligence'))) is not None:
-            best[found] = max(best.get(found, score), score)
+    best = _consumer_scores(rows)
     base = str(measured_as(deployment)[0] or deployment['native_profile'].get('model') or '').lower()
     mine = CONSUMER.get(base) or CONSUMER.get(base.rpartition('/')[2])
     if mine not in best or len(best) < MIN_CONSUMER:
@@ -1043,22 +1049,34 @@ def describe_type(found):
 
 def types_report(kept):
     """The catalogue with what each source holds now: [{'id', 'label', 'description', 'sources': [{'name', 'reader',
-    'board', 'kind', 'citation', 'read_at', 'as_of', 'anchors', 'known_lines', 'places'}]}]. `anchors` counts the
-    known lines whose newest version the board holds; with fewer than MIN_LINES it places no model."""
+    'board', 'kind', 'citation', 'read_at', 'as_of', 'anchors', 'known_lines', 'places', ...}]}]. `anchors` counts the
+    known lines whose newest version the board holds (with fewer than MIN_LINES it places no model); a local-scale source
+    (`benchlm`) counts consumer open-weight models (`consumer_models`, `scale`: 'local') against `MIN_CONSUMER`."""
     report, current = [], _current(kept)
     for kind in TYPES:
         rows = []
         for s in kind['sources']:
             board = kept.get(source_key(s)) or {}
-            anchors = _anchors(board, current) if isinstance(board.get('rows'), list) else []
-            rows.append({**{k: s[k] for k in ('name', 'reader', 'board', 'kind', 'citation')},
-                         'read_at': board.get('read_at'), 'as_of': board.get('as_of'), 'anchors': len(anchors),
-                         'known_lines': len(LINES), 'places': len(anchors) >= MIN_LINES})
+            base = {**{k: s[k] for k in ('name', 'reader', 'board', 'kind', 'citation')},
+                    'read_at': board.get('read_at'), 'as_of': board.get('as_of')}
+            if s['reader'] == 'benchlm':
+                consumer = len(_consumer_scores(board['rows'])) if isinstance(board.get('rows'), list) else 0
+                rows.append({**base, 'scale': 'local', 'consumer_models': consumer, 'anchors': 0,
+                             'known_lines': len(LINES), 'places': consumer >= MIN_CONSUMER})
+            else:
+                anchors = _anchors(board, current) if isinstance(board.get('rows'), list) else []
+                rows.append({**base, 'anchors': len(anchors), 'known_lines': len(LINES),
+                             'places': len(anchors) >= MIN_LINES})
         report.append({'id': kind['id'], 'label': kind['label'], 'description': kind['description'], 'sources': rows})
     return report
 
 
 def describe_source(row):
     text = f"{row['name']} ({row['kind']}): " + (f"read {_day(row['read_at'])}, " if row['read_at'] else 'not read yet, ')
+    if row.get('scale') == 'local' or row.get('reader') == 'benchlm':
+        count = row.get('consumer_models', 0)
+        noun = 'consumer model' if count == 1 else 'consumer models'
+        return text + f"{count} {noun} (local scale only" + (
+            ')' if row['places'] else f'; fewer than {MIN_CONSUMER}: places no local model)')
     text += f"{row['anchors']} of {row['known_lines']} known lines"
     return text + ('' if row['places'] else f'; fewer than {MIN_LINES}: places no model')
