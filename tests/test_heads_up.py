@@ -687,6 +687,12 @@ def test_the_writer_prompt_carries_the_facts_between_the_notes_shown_and_the_rec
 def test_the_writer_is_told_to_trust_the_facts_and_not_to_predict():
     assert 'never contradict them, and say a change is in the project only when they say it was applied' in heads_up.SYSTEM
     assert 'Never predict what the host or the agent will do next' in heads_up.SYSTEM
+    assert 'NOT in the project files' in heads_up.SYSTEM
+    assert 'omits a requested part' in heads_up.SYSTEM
+    assert 'already refused in this turn' in heads_up.SYSTEM
+    assert 'existing saved state or data the change does not migrate' in heads_up.SYSTEM
+    assert 'skip if the reply already says it is unapplied or pending' in heads_up.SYSTEM
+    assert 'refusal or limit the host already recorded in this turn' in heads_up.SYSTEM
 
 
 def test_the_report_counts_each_reason_the_writer_ran(capsys):
