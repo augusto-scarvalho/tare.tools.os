@@ -356,9 +356,32 @@ def graph_merge_losses(cwd, before):
     return []
 
 
-def catch_up(repo_dir, branch):
+def _push_preflight():
+    """Load sibling push_preflight whether ci_watch is imported as a package or run as a detached script."""
+    if __package__:
+        from . import push_preflight
+        return push_preflight
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('push_preflight', Path(__file__).with_name('push_preflight.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class PushIdentityRefused(ValueError):
+    """A merge commit catch_up created would publish a non-noreply email; nothing was pushed."""
+
+    def __init__(self, refusals, fix=''):
+        self.refusals = list(refusals)
+        self.fix = fix
+        tail = f' {fix}' if fix else ''
+        super().__init__('Preflight refused: ' + '; '.join(self.refusals) + '.' + tail)
+
+
+def catch_up(repo_dir, branch, *, check_identity=True):
     """Merge main into the pushed `branch` in a throwaway worktree and push the merge (its CI runs again). Returns
-    [] when pushed, or the files that conflict (nothing is pushed)."""
+    [] when pushed, or the files that conflict (nothing is pushed). Raises PushIdentityRefused before pushing when
+    `check_identity` is true and the merge commit carries a non-noreply author or committer email."""
     import shutil
     import tempfile
     git_in(repo_dir, 'fetch', '--quiet', 'origin', 'main', branch)
@@ -390,6 +413,12 @@ def catch_up(repo_dir, branch):
             return [GRAPH]
         if subprocess.run([host_executable('git', required=True), '-C', str(tree), 'rev-parse', '--quiet', '--verify', 'MERGE_HEAD'], capture_output=True).returncode == 0:
             git_in(tree, '-c', 'core.hooksPath=', 'commit', '--no-edit', '--quiet')
+        if check_identity:
+            preflight = _push_preflight()
+            executable = host_executable('git', required=True)
+            refusals = preflight.identity_refusals(preflight.unpublished(tree, 'HEAD', 'origin', git=executable))
+            if refusals:
+                raise PushIdentityRefused(refusals, preflight.FIX)
         git_in(tree, '-c', 'core.hooksPath=', 'push', '--quiet', 'origin', f'HEAD:{branch}')
         return []
     finally:
@@ -538,10 +567,11 @@ def shepherd(repo_dir, number, *, session=None, every=60, limit=None, sleep=time
     name, view, failing = f'{repo_dir}#{number}', None, 0
     stored = read('shepherds.json').get(name, {})
     repo, branch = stored.get('repo'), stored.get('branch')  # a revive keeps the head branch it read
+    private = stored.get('private')
 
     def beat():  # written before it waits, so a restart answered not-found still knows the branch it read
         update(lambda beats: beats.__setitem__(name, {'repo_dir': str(repo_dir), 'number': number, 'repo': repo,
-                                                       'branch': branch, 'session': session,
+                                                       'branch': branch, 'private': private, 'session': session,
                                                        'at': time.time()}), 'shepherds.json')
 
     while limit is None or time.monotonic() - started < limit:
@@ -549,10 +579,11 @@ def shepherd(repo_dir, number, *, session=None, every=60, limit=None, sleep=time
         try:
             try:  # only the queries about the subject itself end it; a later failure of the round is a retry
                 if not repo:
-                    recorded = json.loads(gh(['repo', 'view', '--json', 'nameWithOwner,isArchived'], repo_dir))
+                    recorded = json.loads(gh(['repo', 'view', '--json', 'nameWithOwner,isArchived,isPrivate'], repo_dir))
                     repo = recorded['nameWithOwner']
                 else:  # archived after the first round, or revived from a beat: still ends, nothing merges there
-                    recorded = repository_view(repo)
+                    recorded = repository_view(repo, 'isArchived,isPrivate')
+                private = recorded.get('isPrivate')
                 if recorded.get('isArchived'):
                     read_branch = None
                     try:
@@ -589,8 +620,15 @@ def shepherd(repo_dir, number, *, session=None, every=60, limit=None, sleep=time
                 if alerted and alerted[:2] == ('conflicts with main', head):
                     problem = ('conflicts with main', alerted[2])  # main not merged in yet: no new attempt on this head
                 elif not queue_ahead(repo_dir, number, repo):  # the oldest waiting pull request goes first
-                    conflicts = catch_up(repo_dir, view['headRefName'])
-                    problem = ('conflicts with main', conflicts) if conflicts else None
+                    try:
+                        # Anything other than an observed private repository counts as public: fail closed (backlog #80).
+                        conflicts = (catch_up(repo_dir, view['headRefName'], check_identity=False)
+                                     if private is True else catch_up(repo_dir, view['headRefName']))
+                    except PushIdentityRefused as refused:
+                        errors = [*refused.refusals, *([refused.fix] if refused.fix else [])]
+                        problem = ('push identity refused', errors)
+                    else:
+                        problem = ('conflicts with main', conflicts) if conflicts else None
             elif view['mergeStateStatus'] in ('BLOCKED', 'UNSTABLE'):
                 failures = failed_runs(repo_dir, head, repo)
                 problem = ('CI failed', [f"{r['workflowName']}: {r['url']}" for r in failures]) if failures else None
@@ -818,8 +856,7 @@ def pull_request(repo_dir, body=None):
     absorb(repo_dir, branch)
     read = preflight(repo_dir)
     plan = merge_plan(read['settings'], read['branch'], read['protection'], read['rules'])
-    # This file also runs as a script (the detached shepherd), where a relative import at module level fails.
-    from . import push_preflight
+    push_preflight = _push_preflight()
     executable = host_executable('git', required=True)
     refusals = []
     if read['settings'].get('private') is not True:  # anything but a private repository counts as public: fail closed
@@ -904,10 +941,10 @@ def repo_name(value):
     return value if isinstance(value, str) and REPOSITORY_NAME.fullmatch(value) else None
 
 
-def repository_view(repo):
+def repository_view(repo, fields='isArchived'):
     """`gh repo view` takes the repository as its positional argument: `-R` is not one of its flags, so a check
     that named it that way failed every round and no archived repository was ever noticed (AC-05)."""
-    return json.loads(gh(['repo', 'view', repo, '--json', 'isArchived'], '.'))
+    return json.loads(gh(['repo', 'view', repo, '--json', fields], '.'))
 
 
 def pull_request_state(repo, number):
