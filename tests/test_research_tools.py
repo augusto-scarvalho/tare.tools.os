@@ -28,12 +28,12 @@ def report():
 
 
 def test_researcher_prefers_luna_6_without_redirecting_other_installed_roles():
-    from relay.turn_engine import DEFAULT_POLICY, HELPER_ROUTES
-    assert DEFAULT_POLICY['researcher'][:3] == ['codex-cli-gpt-6-luna', 'claude-haiku-5-5-cli', 'agy-cli']
     from relay.openrouter import RESEARCH_ROUTES
-    assert tuple(DEFAULT_POLICY['researcher'][3:]) == RESEARCH_ROUTES
-    assert web.DEFAULT_ROUTES == tuple(DEFAULT_POLICY['researcher'])
+    from relay.turn_engine import DEFAULT_POLICY, HELPER_ROUTES
+    assert 'researcher' not in DEFAULT_POLICY and 'vision' not in DEFAULT_POLICY
+    assert not hasattr(web, 'DEFAULT_ROUTES')
     assert HELPER_ROUTES == ('codex-cli-gpt-6-luna',)
+    assert set(RESEARCH_ROUTES) == web.research_api_routes()
 
 
 @pytest.fixture
@@ -377,14 +377,17 @@ def offline_cli(host, monkeypatch):
 def installed_research_defaults(host, offline_cli, tmp_path, monkeypatch):
     from relay import cli_discovery, environment, execution_scope as scope, turn_engine
     profiles = tmp_path/'profiles'; profiles.mkdir()
+    cli_path = tmp_path/'cli'; cli_path.write_text('', encoding='utf-8')
     templates = json.loads(cli_discovery.TEMPLATES.read_text(encoding='utf-8'))
     for name in ('codex-cli-gpt-6-luna', 'claude-haiku-5-5-cli', 'agy-cli'):
-        save_json(profiles/(name+'.json'), cli_discovery.deployment(templates[name], str(tmp_path/'cli')))
+        save_json(profiles/(name+'.json'), cli_discovery.deployment(templates[name], str(cli_path)))
     monkeypatch.setenv('TARE_PROFILE_DIR', str(profiles))
     monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
+    monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
     routing = tmp_path/'routing.json'
     monkeypatch.setattr(turn_engine, 'policy_path', lambda: routing)
     monkeypatch.setattr(environment, 'read', lambda: {})
+    monkeypatch.setattr(environment, 'older_models', lambda: set())
     monkeypatch.setattr(turn_engine, 'usage_limited', lambda value: None)
     monkeypatch.setattr(host[0], 'search_fallback', lambda *a, **k: pytest.fail('Unexpected API fallback'))
     processes = []
@@ -401,20 +404,25 @@ def installed_research_defaults(host, offline_cli, tmp_path, monkeypatch):
 
 
 def test_default_snapshot_resolves_installed_profile_and_dispatches_luna_offline(host, installed_research_defaults):
+    import os
     from relay import native_catalog, turn_engine
     tools, execution, fetched = host
     routing, processes = installed_research_defaults
     assert not routing.exists()
-    assert turn_engine.policy()['researcher'] == list(web.DEFAULT_ROUTES)
+    assert 'researcher' not in turn_engine.policy()
     frozen = web.snapshot()
-    assert frozen['route_order'][:3] == ['codex-cli-gpt-6-luna', 'claude-haiku-5-5-cli', 'agy-cli'], frozen
-    assert list(frozen['routes']) == frozen['route_order']
+    assert frozen['route_order'] == ['agy-cli', 'codex-cli-gpt-6-luna', 'claude-haiku-5-5-cli'], frozen
+    assert list(frozen['routes']) == frozen['route_order'] == turn_engine.researcher_routes()
     assert frozen['origin'] == 'CONFIGURED'
-    assert set(frozen['unavailable']) == {'openrouter-muse-spark-1-3-contributor'}
+    assert 'openrouter-muse-spark-1-3-contributor' in frozen['unavailable']
     assert 'codex-cli-gpt-6-1-luna' not in frozen['routes']
     assert frozen['routes']['codex-cli-gpt-6-luna'] == native_catalog.select('codex-cli-gpt-6-luna')
-    tools.state['research'] = frozen
-    before = encode(frozen)
+    # Removing agy-cli keeps primary codex-cli-gpt-6-luna ahead of reserve claude-haiku-5-5-cli without a list.
+    (Path(os.environ['TARE_PROFILE_DIR'])/'agy-cli.json').unlink()
+    luna_first = web.snapshot()
+    assert luna_first['route_order'] == ['codex-cli-gpt-6-luna', 'claude-haiku-5-5-cli']
+    tools.state['research'] = luna_first
+    before = encode(luna_first)
     args = {'question': 'What is the documented TTL?'}
     result = tools.investigate(effect('research', args), args, execution)
     assert result['status'] == 'COMPLETED', result

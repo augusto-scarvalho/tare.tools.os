@@ -28,8 +28,6 @@ import time
 from urllib.parse import urlsplit
 import uuid
 
-from .openrouter import RESEARCH_ROUTES
-
 DEFAULT_POLICY = {
     # No 'implementer' list: unless the owner saves one, tare auto's tiers are the role table's classes
     # (implementer_tiers), so a newly proven model version is used with no edit here.
@@ -41,11 +39,8 @@ DEFAULT_POLICY = {
                 'openai-api', 'claude-api-opus-5-5', 'gemini-api', 'openai-api-gpt-6-astra', 'claude-api-fable-5-1'],
     'auditor_selection': 'cross_vendor_frontier',
     'auditor_effort': 'high',
-    # Vendor CLIs that describe attached images for models that cannot see, cheapest first; the next one answers
-    # when one fails (quota, login). Measured 2026-09-30 on one image: Luna 18 s, Gemini 15 s, Sonnet 5 s.
-    'vision': ['codex-cli-gpt-6-luna', 'agy-cli', 'claude-sonnet-5-5-cli'],
-    'researcher': ['codex-cli-gpt-6-luna', 'claude-haiku-5-5-cli', 'agy-cli',
-                   *RESEARCH_ROUTES],
+    # No 'vision' or 'researcher' list: unless the owner saves one, each is chosen from the role table
+    # (vision_routes, researcher_routes).
     # Writes heads-up notes (relay/heads_up.py). Measured 2026-11-05 against 49 notes users accepted from a side agent
     # and 50 turns it left quiet (scripts/heads_up_calibration.py claude --writer): Sonnet wrote consequence notes on
     # 31% and 22% of them; Sol rarely speaks (6%, 2%) but is precise; Haiku, Luna and the local model mostly flag
@@ -101,16 +96,32 @@ def policy():
     return DEFAULT_POLICY
 
 
+def _ranked_routes(role, *, kinds=None):
+    if saved := policy().get(role):
+        return saved
+    from .native_routes import ranked
+    deployments, selection = ranked(role, work_type=kinds)
+    names = {row['selected_deployment']: row['catalog'] for row in selection['candidates'] if row.get('eligible')}
+    return [names[value['id']] for value in deployments]
+
+
 def planner_routes(kinds=None):
     """The planner's route names in order: the owner's saved list (/routes Order tab), else the role table's planner
     routes as native_routes.ranked ranks them (what the matrix shows), so no list of names is kept in the code.
     `kinds`, a demand's types of work, reach only that ranking (its `work_type`)."""
-    if saved := policy().get('planner'):
-        return saved
-    from .native_routes import ranked
-    deployments, selection = ranked('planner', work_type=kinds)
-    names = {row['selected_deployment']: row['catalog'] for row in selection['candidates'] if row.get('eligible')}
-    return [names[value['id']] for value in deployments]
+    return _ranked_routes('planner', kinds=kinds)
+
+
+def vision_routes():
+    """Vision route names in order: the owner's saved list (/routes Order tab), else the role table's supported
+    vision CLIs as native_routes.ranked ranks them."""
+    return _ranked_routes('vision')
+
+
+def researcher_routes():
+    """Researcher route names in order: the owner's saved list (/routes Order tab), else the role table's supported
+    researcher routes as native_routes.ranked ranks them."""
+    return _ranked_routes('researcher')
 
 
 def implementer_tiers(role='implementer'):
@@ -1267,14 +1278,21 @@ def describe_images(urls, emit):
 
 
 def describe_files(paths, emit):
-    """Text for a model that cannot see: the first policy vision route that describes the image files."""
+    """Text for a model that cannot see: the first vision route that describes the image files."""
     if not paths:
         return ''
     emit(f'\n> `image` {len(paths)} attached')
+    from . import native_catalog
     from .execution_scope import refusal
-    failures = []
-    for name in policy().get('vision', DEFAULT_POLICY['vision']):
-        deployment, why = available(name)
+    saved, selection, failures = policy().get('vision'), None, []
+    if saved:
+        candidates = [(name, *available(name)) for name in saved]
+    else:
+        from .native_routes import ranked
+        deployments, selection = ranked('vision')
+        names = {row['selected_deployment']: row['catalog'] for row in selection['candidates'] if row.get('eligible')}
+        candidates = [(names[value['id']], value, None) for value in deployments]
+    for name, deployment, why in candidates:
         if deployment is None or (why := refusal('vision', deployment, name)):
             failures.append(f'{name}: {why}')
             continue
@@ -1284,6 +1302,20 @@ def describe_files(paths, emit):
         except (RuntimeError, OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
             failures.append(f'{name}: {str(exc)[:120]}')
     else:
+        if not candidates and selection is not None:
+            for row in selection['candidates']:
+                reason = row.get('reason')
+                if reason in (None, 'ROLE_NOT_CONFIGURED', 'PROFILE_NOT_INSTALLED'):
+                    continue
+                route_name = row['deployment']
+                if reason == 'SWITCHED_OFF_FOR_ROLE':
+                    try:
+                        reason = refusal('vision', native_catalog.select(route_name), route_name) or reason
+                    except (ValueError, OSError, KeyError, TypeError):
+                        pass
+                failures.append(f'{route_name}: {reason}')
+        if not failures:
+            failures.append('no vision CLI configured')
         emit(' ✗\n')
         return f'\n\n[{len(paths)} image(s) attached; no description is available: {"; ".join(failures)}]'
     emit(f' ✓ {name}\n')

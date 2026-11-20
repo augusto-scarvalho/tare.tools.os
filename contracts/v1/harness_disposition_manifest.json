@@ -2481,8 +2481,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns the product turn coordination shared by its frontends; the agent loop stays in the runtime.",
-      "size_bytes": 106558,
-      "sha256": "8c55cad18a9645c1e301ce1d4f0419e3be94c39f0d827f1e81bd266d8c653913"
+      "size_bytes": 107929,
+      "sha256": "94ea753fe9d208fb3f75501d9a092b5ca14ceffa2d9698ba129a1b5c66c921c6"
     },
     {
       "name": "audit_report.py",
@@ -2981,8 +2981,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS selects configured eligible role routes and persists the rationale; existing native Work owner executes and recovers them.",
-      "size_bytes": 38775,
-      "sha256": "c9fd4fc6338b9838961a208df079b0342fce41dfdef712b33984bf445f8767ac"
+      "size_bytes": 40425,
+      "sha256": "ba0b79de4cccb872eb5be7a0b0ccac76fb37861f24f4eff26bfbcda249808ea9"
     },
     {
       "name": "native_serve.py",
@@ -3361,8 +3361,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator model selection; Runtime retains session execution.",
-      "size_bytes": 35949,
-      "sha256": "91c91ce884e5df392db11f052eeb61c6da2134acb3b54ed7571b4cafe41ef463"
+      "size_bytes": 36053,
+      "sha256": "cbdb779e80f56280a3d4bdb077a8209fc7bd146ef4d6900ece8bfed441520f69"
     },
     {
       "name": "model_picker.py",
@@ -3821,8 +3821,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 79976,
-      "sha256": "30c03877a1a4208604e7a6f5b50771b40b7bc597befe9aaa74d18594f3af9d39"
+      "size_bytes": 80042,
+      "sha256": "6f8428ffd69202e746bd5a22db9c43bf4ba02da6324bf918b4e6a1fb4c65c442"
     },
     {
       "name": "console_setup.py",
@@ -3861,8 +3861,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 10647,
-      "sha256": "b0998876822df2964a858c1864259275a87dc4c046828ca76d521a22bfda361d"
+      "size_bytes": 11040,
+      "sha256": "86f6a4db66f9c14778c05b76c8962debe0035ea13de45f68843785ed6819a206"
     },
     {
       "name": "fleet.py",
@@ -4151,8 +4151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 16438,
-      "sha256": "c810a6ba69cec6e01c8a52e934df74e4cd45ab2caac68c7b66d51081b125a532"
+      "size_bytes": 16937,
+      "sha256": "8dc7a7bfb3ec78c50ad3a30252c31a27ac01f4ff046bcd78fb9bb11b88a59546"
     },
     {
       "name": "research_tools.py",

@@ -149,7 +149,7 @@ def decides(name):
 PROFILE_ROLES = ('implementer', 'explorer', 'planner', 'plan-auditor', 'auditor', 'researcher', 'vision', 'heads_up',
                  'coordinator')
 # The roles relay/role_deployments.json ranks (native_routes.ranked); coordinator on the implementer rows.
-RANKED_ROLES = (*PROFILE_ROLES[:5], 'coordinator')
+RANKED_ROLES = (*PROFILE_ROLES[:7], 'coordinator')
 SOURCES = ('claude-code', 'codex', 'agy', 'opencode-sub', 'opencode-api', 'api', 'openrouter', 'bedrock', 'local',
            'other-api')
 AUTO_NAMES = ('auto', 'tare-auto', 'local-default')  # names of automatic routing, not routes
@@ -354,23 +354,23 @@ def auto_routes(role, grants=None):
     """[(name, route or None, now)] of the routes automatic `role` routing considers here, checked as each path that
     reaches a route checks it, under that role, without a live probe: `now` is 'usable' when one of those paths takes
     it, else the first path's reason (a rule). The routing profile does not change it. Every local model in use here
-    (native_routes.local_models) is a row of each ranked role: one its role table row does not give the role is
-    checked as if the user granted it, and its name goes into `grants` (a set), off until the user does. The paths:
-    coordinator and implementer (tare auto's tiers, turn_engine.implementer_tiers) and planner the list the owner saved (availability;
-    none: local-default for the first two, nothing for the planner) and the role table (native_routes.admission, what
-    ranks; a coordinator on the implementer rows; coordinator_policy.eligible judges only a --coordinator pin, not
-    this path); explorer its role table; auditor and
+    (native_routes.local_models) is a row of each ranked role except `researcher` and `vision`: one its role table
+    row does not give the role is checked as if the user granted it, and its name goes into `grants` (a set), off
+    until the user does. The paths: coordinator and implementer (tare auto's tiers, turn_engine.implementer_tiers),
+    planner and vision the list the owner saved (availability; none: local-default for the first two, nothing for
+    planner or vision) and the role table (native_routes.admission, what ranks; a coordinator on the implementer rows;
+    coordinator_policy.eligible judges only a --coordinator pin, not this path); explorer its role table; auditor and
     plan-auditor the owner's auditor list when "Use my auditor routes" is chosen, else their role
-    table, never both (native_routes._reviewers); researcher its list (availability and the research tool's own
-    admission), tare auto's tiers (the /research link summary) and the Codex web search helper; vision and heads_up
-    their list, read as their writer reads it."""
+    table, never both (native_routes._reviewers); researcher the list the owner saved (availability and the research
+    tool's own admission), tare auto's tiers (the /research link summary), the Codex web search helper and its role
+    table; heads_up its list, read as its writer reads it."""
     from copy import deepcopy
     from .cli_discovery import TEMPLATES
     from .execution_scope import current, for_role
     from .native_catalog import LOCAL, LOCAL_DEFAULT, select
-    from .native_routes import admission, configured, local_models, roles as table_roles
+    from .native_routes import admission, configured, local_models, role_admitted
     from .turn_engine import DEFAULT_POLICY, HELPER_ROUTES, available, implementer_tiers, policy
-    from .web_research import DEFAULT_ROUTES, admits, research_api_routes
+    from .web_research import admits, research_api_routes
     templates = json.loads(TEMPLATES.read_text(encoding='utf-8'))
     rules = policy()
     owner = role in ('auditor', 'plan-auditor') and not (
@@ -378,7 +378,7 @@ def auto_routes(role, grants=None):
     saved = rules.get('implementer') or [[LOCAL_DEFAULT]]
     lists = {'coordinator': saved, 'implementer': saved, 'planner': rules.get('planner', []),
              'researcher': [*(implementer_tiers('researcher') if role == 'researcher' else []), *HELPER_ROUTES],
-             'vision': rules.get('vision', DEFAULT_POLICY['vision']),
+             'vision': rules.get('vision', []),
              'heads_up': rules.get('heads_up') or DEFAULT_POLICY['heads_up']}
 
     def flat(items):
@@ -386,13 +386,14 @@ def auto_routes(role, grants=None):
     paths = {}  # name: how each path that reaches it judges it
     for name in flat(rules['auditor'] if owner else lists.get(role)):
         paths.setdefault(name, []).append('list')
-    for name in flat(rules.get('researcher', DEFAULT_ROUTES) if role == 'researcher' else []):
+    for name in flat(rules.get('researcher', []) if role == 'researcher' else []):
         paths.setdefault(name, []).append('research')
-    need, used = 'implementer' if role == 'coordinator' else role, set(local_models())
+    allow_local_grant = role not in {'researcher', 'vision'}
+    used = set(local_models()) if allow_local_grant else set()
     table = {row.get('native_catalog', row['id']): row for row in configured()['deployments']
-             if role in RANKED_ROLES and not owner and (need in table_roles(row, current()) or LOCAL.get(
+             if role in RANKED_ROLES and not owner and (role_admitted(row, role, current()) or LOCAL.get(
                  row.get('native_catalog'), row.get('native_catalog')) in used)}
-    grantable = {name for name, row in table.items() if need not in table_roles(row, current())}
+    grantable = {name for name, row in table.items() if allow_local_grant and not role_admitted(row, role, current())}
     for name in table:
         paths.setdefault(name, []).append('table')
         if grants is not None and name in grantable and paths[name] == ['table']:

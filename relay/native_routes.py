@@ -33,9 +33,14 @@ def wanted(role):
     return choice if role in WANTED and choice in ORDER else WANTED.get(role)
 
 
+INTERNAL_WANTED = {'researcher': 'cheap', 'vision': 'cheap'}
+CLI_ENDPOINTS = {'cli://codex', 'cli://claude', 'cli://agy'}
+CLI_DOMAINS = {'anthropic-cli', 'google-cli', 'openai-cli', 'codex-cli'}
+
+
 # The roles that want the cheapest sufficient route: among pay-per-token routes it is the best score per dollar of a
 # task (model_signals.task), the planner's frontier is bought for its strength. Owner, 2026-11-16.
-CHEAPEST = {'implementer', 'coordinator', 'auditor', 'plan-auditor'}
+CHEAPEST = {'implementer', 'coordinator', 'auditor', 'plan-auditor', 'researcher', 'vision'}
 
 
 _derived = (None, [])  # (the table's path and the installed route names, the rows derived for them)
@@ -172,6 +177,23 @@ def roles(row, scope):
     return [*row.get('roles', []), *(row.get('local_only_roles', []) if scope.only == 'local' else [])]
 
 
+def _cli_row(row):
+    """Whether `row` represents one of the vendor CLIs supported for web research and vision."""
+    if 'native_profile' in row:
+        profile = row['native_profile']
+        return profile.get('protocol') == 'vendor-cli' and profile.get('endpoint') in CLI_ENDPOINTS
+    return row.get('endpoint_domain') in CLI_DOMAINS
+
+
+def role_admitted(row, role, scope):
+    """Whether `row` belongs to `role` in the role table (before grants and live transport verification)."""
+    if role == 'coordinator':
+        return 'implementer' in roles(row, scope)
+    if role in {'vision', 'researcher'}:
+        return role in roles(row, scope) or _cli_row(row)
+    return role in roles(row, scope)
+
+
 def grant(row, role, assumed=None):
     """Whether the user granted `role` to this row's route (environment.granted: an "on" naming a local route itself).
     `assumed` True takes the grant as given (the /routes matrix shows what a tick would do); either way only a local
@@ -239,12 +261,14 @@ def mirror(row, deployment, role=None, cache=None):
     from .execution_scope import current
     from .vendor_models import same_model
     cache = {} if cache is None else cache
-    wanted = set(roles(row, current()))
-    if role is not None:
-        wanted &= {'implementer' if role == 'coordinator' else role}
+    if role is not None and not role_admitted(row, role, current()):
+        return None
+    wanted = set(roles(row, current())) if role is None else None
     for other in configured()['deployments']:
         name = other.get('native_catalog')
-        if (not name or name == row.get('native_catalog') or not wanted & set(roles(other, current()))
+        if (not name or name == row.get('native_catalog')
+                or (not role_admitted(other, role, current()) if role is not None
+                    else not (wanted & set(roles(other, current()))))
                 or other.get('qualified') is False and not proven(other, cache, mirrors=False)):
             continue
         try:
@@ -263,14 +287,16 @@ def admission(row, role, author=None, credentials=None, granted=None, producer=N
     two categories or more below it for `work_type` (`model_signals.may_review`; `kept`, the boards) is refused. The matrix of
     /routes reads it too (environment.auto_routes), so what it shows cannot drift from what ranks."""
     from .work_audit import identity
+    from .openrouter import is_route as is_openrouter_route
     from .execution_scope import constrained, current, same_family_admitted
     credentials = {} if credentials is None else credentials
     # A conversation's model is admitted as an implementer row; the routing profile then judges it as coordinator.
-    # A local route also holds a role the user granted it in /routes, in any scope.
-    if ('implementer' if role == 'coordinator' else role) not in roles(row, current()):
-        if not grant(row, role, granted):
+    # A local route also holds a role the user granted it in /routes, in any scope (except researcher and vision).
+    if not role_admitted(row, role, current()):
+        if role in {'researcher', 'vision'} or not grant(row, role, granted):
             return None, None, 'ROLE_NOT_CONFIGURED'
-    elif row.get('qualified') is False and not proven(row, credentials, role) and not grant(row, role, granted):
+    elif (row.get('qualified') is False and not proven(row, credentials, role)
+          and (role in {'researcher', 'vision'} or not grant(row, role, granted))):
         # Registered from a provider's metadata: an exact pin reaches it, automatic selection waits for a live
         # qualification through tare: one answer here (tare setup --prove NAME) for a vendor's own model, or for a
         # mirror of a model another row serves automatically in this role. The user's grant is consent enough.
@@ -294,6 +320,12 @@ def admission(row, role, author=None, credentials=None, granted=None, producer=N
     except (ValueError, KeyError, TypeError, OSError):
         return None, None, 'PROFILE_OR_IDENTITY_INVALID'
     deployment=constrained(deployment,role)
+    profile = deployment['native_profile']
+    is_cli = profile.get('protocol') == 'vendor-cli' and profile.get('endpoint') in CLI_ENDPOINTS
+    if role == 'vision' and not is_cli:
+        return deployment, auditor, 'ROLE_NOT_CONFIGURED'
+    if role == 'researcher' and not (is_cli or is_openrouter_route(deployment) and 'researcher' in roles(row, current())):
+        return deployment, auditor, 'ROLE_NOT_CONFIGURED'
     from .environment import allows, older
     if not allows(deployment)[0]:
         return deployment, auditor, 'NOT_USED_ON_THIS_MACHINE'
@@ -336,7 +368,7 @@ def _ranked(role, producer=None, *, check_resources=False, work_type=None):
     whose change is reviewed, or the types of a demand (a list: its planner and plan reviewer); it changes only
     whether a route falls short of the role's class (`model_signals.judged`), by its weakest type."""
     from .work_audit import identity
-    if role not in {'planner', 'plan-auditor', 'auditor', 'implementer', 'coordinator', 'explorer'} or (role in {'plan-auditor', 'auditor'} and producer is None):
+    if role not in {'planner', 'plan-auditor', 'auditor', 'implementer', 'coordinator', 'explorer', 'researcher', 'vision'} or (role in {'plan-auditor', 'auditor'} and producer is None):
         raise ValueError('ROLE_SELECTION_REQUIRES_SUPPORTED_ROLE_AND_AUTHOR')
     author = identity(producer, 'implementer') if producer is not None else None
     table = configured(); decisions = []; eligible = []; credentials = {}; seen = set()
@@ -348,7 +380,7 @@ def _ranked(role, producer=None, *, check_resources=False, work_type=None):
     from .turn_engine import cross_vendor_first
     first = bool(author) and cross_vendor_first()  # off: --any_vendor_auditor or /routes
     from .model_signals import ORDER, boards, judged, klass, task
-    need = wanted(role)
+    need = wanted(role) or INTERNAL_WANTED.get(role)
     kinds = [work_type] if isinstance(work_type, str) else list(work_type or ())
     kept = boards() if kinds else None  # read once for the whole ranking
     try:
@@ -432,9 +464,9 @@ def _ranked(role, producer=None, *, check_resources=False, work_type=None):
         # resort, so a machine with only unmeasured routes still runs; the node's own default model is not one.
         # In any role a local model the user granted it (its row does not give the role) and with no class goes after
         # every route with one, and among such routes in the order /routes shows them (`shown`: by label, then id).
-        by_grant = ('implementer' if role == 'coordinator' else role) not in roles(row, current()) and grant(row, role)
+        by_grant = not role_admitted(row, role, current()) and grant(row, role)
         unclassed = not found and (native_catalog.LOCAL.get(row.get('native_catalog', row['id']), row.get(
-            'native_catalog', row['id'])) != fleet if role in {'implementer', 'coordinator'} else by_grant)
+            'native_catalog', row['id'])) != fleet if role in {'implementer', 'coordinator', 'researcher', 'vision'} else by_grant)
         if unclassed and by_grant:
             from .model_choices import describe
             shown = (describe(deployment['id'], deployment)['label'] or deployment['id'], deployment['id'])
