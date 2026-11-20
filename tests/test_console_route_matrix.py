@@ -515,10 +515,10 @@ def test_the_matrix_rows_agree_with_the_paths_that_route(pool, monkeypatch):
     role table reaches, against native_routes.ranked (review roles: the union over a producer of each vendor, since
     the matrix checks no independence; the coordinator on the implementer rows). tare auto's list path (the owner's
     list, else local-default) for implementer and coordinator, and its tiers for the researcher's /research link
-    summary: against turn_engine.choose(probe=False), name by name. The researcher list: against
-    web_research.snapshot(). Not compared, because their loops live inline in their callers: the planner list
-    (planning_tools), vision (turn_engine.describe_files), heads_up (heads_up.write), the web search helper
-    (turn_engine.ask_cli) and the owner's auditor list (turn_engine.pick_auditors, which needs a producer)."""
+    summary: against turn_engine.choose(probe=False), name by name. Researcher: against web_research.snapshot(). Not
+    compared, because their loops live inline in their callers: the planner or vision list when the owner saves one,
+    heads_up (heads_up.write), the web search helper (turn_engine.ask_cli) and the owner's auditor list
+    (turn_engine.pick_auditors, which needs a producer)."""
     install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
     install(pool, 'claude-fable-5-2-cli', 'cli://claude', 'claude-fable-5-2')
     install(pool, 'codex-cli-gpt-5-6-sol', 'cli://codex', 'gpt-5.6-sol')
@@ -526,10 +526,13 @@ def test_the_matrix_rows_agree_with_the_paths_that_route(pool, monkeypatch):
     rules = turn_engine.policy()
     saved = rules.get('implementer') or [['local-default']]
     producers = [native_catalog.select(name) for name in ('claude-api-opus-5-5', 'openai-api', 'gemini-api')]
-    for role in ('implementer', 'coordinator', 'explorer', 'planner', 'plan-auditor', 'auditor'):
+    for role in ('implementer', 'coordinator', 'explorer', 'planner', 'plan-auditor', 'auditor',
+                 'researcher', 'vision'):
         rows = {name: now for name, _, now in environment.auto_routes(role)}
-        listed = set(flat(saved if role in ('implementer', 'coordinator') else rules.get(role) or [])) \
-            if role in ('implementer', 'coordinator', 'planner') else set()
+        listed = (set(flat(turn_engine.implementer_tiers('researcher'))) | set(turn_engine.HELPER_ROUTES)
+                  | set(flat(rules.get('researcher') or [])) if role == 'researcher'
+                  else set(flat(saved if role in ('implementer', 'coordinator') else rules.get(role) or []))
+                  if role in ('implementer', 'coordinator', 'planner', 'vision') else set())
         eligible = set()
         for producer in producers if 'auditor' in role else [None]:
             eligible |= {c['catalog'] for c in native_routes.ranked(role, producer)[1]['candidates'] if c['eligible']}
@@ -538,13 +541,15 @@ def test_the_matrix_rows_agree_with_the_paths_that_route(pool, monkeypatch):
     tiers = flat(turn_engine.implementer_tiers('researcher'))
     for role, names in (('implementer', flat(saved)), ('coordinator', flat(saved)), ('researcher', tiers)):
         rows = {name: now for name, _, now in environment.auto_routes(role)}
-        for name in set(names) - table - set(rules['researcher']):
+        for name in set(names) - table - set(rules.get('researcher') or []):
             taken = turn_engine.choose([[name]], probe=False, role=role)[2] is not None
             assert (rows[name] == 'usable') == taken, (role, name)
     rows, snapshot = {n: now for n, _, now in environment.auto_routes('researcher')}, web_research.snapshot()
-    for name in set(rules['researcher']) - set(tiers) - set(turn_engine.HELPER_ROUTES):
-        assert (rows[name] == 'ROLE_NOT_CONFIGURED') == ('admitted research' in snapshot['unavailable'].get(name, '')), name
-        assert rows[name] != 'usable' or name in snapshot['routes'], name
+    ranked_deployments, ranked_selection = native_routes.ranked('researcher')
+    ranked_names = {c['selected_deployment']: c['catalog'] for c in ranked_selection['candidates'] if c['eligible']}
+    assert snapshot['route_order'] == [ranked_names[d['id']] for d in ranked_deployments]
+    for name in set(snapshot['routes']) | (set(rows) & set(snapshot['unavailable'])):
+        assert (rows[name] == 'usable') == (name in snapshot['routes']), name
 
 
 def test_a_row_shows_its_models_class_and_a_cell_the_routes_own_record_as_implementer(pool, tmp_path):
