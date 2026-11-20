@@ -3,8 +3,8 @@
 A funnel, cheapest stage first:
 1. Collect, no model: the turn's recorded steps, what code counts in them, and the facts tare checks itself (a test
    whose last run failed, files changed after the last test ran, an edit refused and never redone).
-2. Pace, no model: the writer runs after a turn where work was delivered or attempted (a delegated implementation
-   finished, an agent edited files itself, or a check tare can read failed: events()). Otherwise a logistic score
+2. Pace, no model: the writer runs after a turn where an agent edited files itself, a check tare can read failed, or a
+   delegated implementation did not finish cleanly applied and verified (events()). Otherwise a logistic score
    over those counts (FILTER) sends a turn to it at FORWARD_AT or more, and failing that every EVERY-th turn since
    it last ran. The writer reads the whole window since it last ran (the skipped turns' steps with the earlier
    exchanges), so a pause loses little.
@@ -53,6 +53,8 @@ import uuid
 # what limits how many such notes are found.
 # 2026-11-11: events (events()) now come first. On 115 real TUI turns, all 21 notes judged useful followed a turn where
 # work was delivered or attempted, and the score skipped 34 of the 97 such turns; the score is only a fallback now.
+# 2026-11-19: narrowed 'delivery' to unclean deliveries (refused, failed, unapplied, verdict != VERIFIED, or a failed
+# post-check). On the same 115 turns: 102 -> 91 writer calls while keeping all 29 useful new notes and all 32 old notes.
 # ponytail: fitted on another agent's transcripts; refit on tare's own log (cadence turns, /heads-up) as it grows
 FILTER = {'facts': (.157, .405, .205), 'edits': (2.566, 5.373, .235), 'steps': (24.61, 42.822, .043),
           'tests': (3.426, 7.791, .181), 'failures': (.486, 1.155, .164), 'delegated': (.141, .411, .061),
@@ -403,11 +405,21 @@ def _checked(last):
             + (f"; before it, {said(before)}" if before else '') + '.']
 
 
+def _unclean_delivery(s):
+    """A delegated implementation that did not finish cleanly applied and verified."""
+    if s['tool'] != 'implement':
+        return False
+    if s['status'] in ('failed', 'refused') or s.get('files') != 'project' or s.get('verdict') != 'VERIFIED':
+        return True
+    return any(code != 0 for _, code in ((s.get('checks') or {}).get('after') or ()))
+
+
 def events(turn, found):
-    """The points where the writer runs: a delegated implementation finished (whatever its outcome), an agent edited
-    files itself, a check tare can read failed (`found`, facts(turn))."""
+    """The points where the writer runs: an unclean delegated implementation (refused, failed, unapplied, verdict other
+    than VERIFIED, or a failed post-check), an agent edited files itself, or a check tare can read failed (`found`,
+    facts(turn))."""
     steps = turn['steps']
-    return [kind for kind, here in (('delivery', any(s['tool'] == 'implement' for s in steps)),
+    return [kind for kind, here in (('delivery', any(_unclean_delivery(s) for s in steps)),
                                     ('edit', any(s['tool'] == 'edit' and s['status'] == 'succeeded' for s in steps)),
                                     ('check', bool(found))) if here]
 

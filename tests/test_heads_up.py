@@ -599,6 +599,55 @@ def test_events_name_the_points_where_the_writer_runs():
                  heads_up.step('delegate_plan', {}, 'succeeded', {'verdict': 'PASS'})) == []
 
 
+def test_clean_verified_delivery_skips_event_trigger_but_unclean_or_cadence_runs(monkeypatch, log):
+    def kinds(*steps):
+        turn = {'request': 'x', 'reply': 'y', 'steps': list(steps)}
+        return heads_up.events(turn, heads_up.facts(turn))
+
+    clean = heads_up.step('implement', {'note': 'Do it.'}, 'succeeded', {
+        'verdict': 'VERIFIED', 'files': ['a.py'], 'files_scope': 'project',
+        'checks_before': '$ tests (exit 1)\n', 'checks_after': '$ tests (exit 0)\n'})
+    clean_no_checks = implemented('project', 'VERIFIED')
+    assert kinds(clean) == [] and kinds(clean_no_checks) == []
+
+    # Clean VERIFIED delivery with a recorded post-check failure is unclean and triggers 'delivery'.
+    red_after = heads_up.step('implement', {'note': 'Do it.'}, 'succeeded', {
+        'verdict': 'VERIFIED', 'files': ['a.py'], 'files_scope': 'project',
+        'checks_after': '$ tests (exit 0)\n$ lint (exit 1)\n'})
+    assert kinds(red_after) == ['delivery']
+
+    # Unapplied, refused/failed, non-VERIFIED, or missing verdict all trigger 'delivery'.
+    assert kinds(implemented(UNAPPLIED, 'NOT_REVIEWED')) == ['delivery']
+    assert kinds(implemented(UNAPPLIED, 'VERIFIED')) == ['delivery']
+    assert kinds(implemented(status='refused', reason='budget')) == ['delivery']
+    assert kinds(implemented(status='failed', reason='crashed')) == ['delivery']
+    assert kinds(implemented('project', 'INCONCLUSIVE')) == ['delivery']
+    assert kinds(implemented('project', 'NOT_VERIFIED')) == ['delivery']
+    assert kinds(implemented('project')) == ['delivery']
+
+    # An earlier unclean attempt followed by a clean VERIFIED attempt still triggers 'delivery'.
+    assert kinds(implemented(UNAPPLIED, 'NOT_REVIEWED'), clean) == ['delivery']
+
+    # Quiet clean VERIFIED turns still reach the writer on cadence (EVERY) or elevated score.
+    seen_calls = []
+    monkeypatch.setattr(heads_up, 'write', lambda text, seen, known=(): seen_calls.append(json.loads(text)) or ([], []))
+    monkeypatch.setattr(heads_up, 'score', lambda turn, found: 0.0)
+    monkeypatch.setattr(turn_engine, 'judge_many', lambda *a, **kw: {})
+    turn = {'request': 'Apply it', 'reply': 'Done.', 'steps': [clean]}
+    pace = {}
+    for _ in range(heads_up.EVERY - 1):
+        assert heads_up.notes(turn, pace=pace) == []
+    assert len(seen_calls) == 0
+    heads_up.notes(turn, pace=pace)
+    assert len(seen_calls) == 1
+
+    monkeypatch.setattr(heads_up, 'score', lambda turn, found: heads_up.FORWARD_AT)
+    heads_up.notes(turn, pace={})
+    assert len(seen_calls) == 2
+    assert [(r['forwarded'], r['events']) for r in log()] == [
+        (None, []), (None, []), (None, []), ('cadence', []), ('score', [])]
+
+
 def test_an_event_runs_the_writer_below_the_score_and_the_cadence_and_tells_it_the_facts(tmp_path, monkeypatch, log):
     told = []  # heads_up.write is stubbed: this test is about what notes() hands it
     monkeypatch.setattr(heads_up, 'write', lambda text, seen, known=(): told.append((json.loads(text), list(known))) or (

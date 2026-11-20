@@ -4351,8 +4351,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 50426,
-      "sha256": "5b56f3728dffa71dddaa5f9bf1a19131e2f2ac8170c05a7623f6868565d425d3"
+      "size_bytes": 51114,
+      "sha256": "f2530e47b7d10368cdcab5a28411f623a79065401dff1629791c4ceaac93da44"
     },
     {
       "name": "cli_qualification.py",
