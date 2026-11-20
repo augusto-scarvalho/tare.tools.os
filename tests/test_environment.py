@@ -583,10 +583,10 @@ def test_pending_proofs_filters_unavailable_and_bulk_prove_requires_confirmation
     monkeypatch.setattr(environment, 'cost_line', lambda d: f"cost for {d['id']}")
     assert environment.pending_proofs() == ['route-one', 'route-two']
 
-    calls = []
+    calls, fail_two = [], True
     def fake_prove(name, confirm):
         calls.append(name)
-        if name == 'route-two':
+        if name == 'route-two' and fail_two:
             return {'ok': False, 'reason': 'credential_rejected'}
         proven.add(name)
         return {'ok': True, 'cost': f'cost for {name}'}
@@ -612,7 +612,7 @@ def test_pending_proofs_filters_unavailable_and_bulk_prove_requires_confirmation
 
     # Now only route-two remains; tare setup --prove all runs it; empty queue exits 0 cleanly.
     calls.clear()
-    proven.add('route-two')
+    fail_two = False
     assert environment.main(['--prove', 'all', '--yes']) == 0 and calls == ['route-two']
     assert 'route-two: proven' in capsys.readouterr().out
     assert environment.prove_main(['all']) == 0

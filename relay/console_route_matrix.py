@@ -674,6 +674,10 @@ class RouteMatrix(Vertical):
         if not from_all and cell and not cell[0].startswith('#') and cell[1] != 'model':
             self.show(self.describe(*cell))
             return
+        after_cell = self.cursor_cell()
+        if after_cell and not after_cell[0].startswith('#') and after_cell[1] != 'model':
+            # Keep build()/load()'s queued CellHighlighted event from overwriting the batch proof summary.
+            self._last_highlighted = after_cell
         passed = sum(1 for _, rec in said if rec.get('ok') is True)
         if len(said) == 1:
             name, _ = said[0]
