@@ -64,10 +64,27 @@ def kind(deployment):
 _older = {}
 
 
+_templates_cache = (None, None)
+
+
+def _templates():
+    """Cached shipped CLI templates JSON, keyed by path, mtime, and size."""
+    global _templates_cache
+    from .cli_discovery import TEMPLATES
+    try:
+        found = TEMPLATES.stat()
+        stamp = (str(TEMPLATES), found.st_mtime_ns, found.st_size)
+    except OSError:
+        return json.loads(TEMPLATES.read_text(encoding='utf-8'))
+    if _templates_cache[0] != stamp:
+        _templates_cache = (stamp, json.loads(TEMPLATES.read_text(encoding='utf-8')))
+    return _templates_cache[1]
+
+
 def older_models():
     """The Codex models its catalogue still lists that newer ones replace (vendor_models.older), read once per
     change of the catalogue; nothing without one."""
-    from .cli_discovery import TEMPLATES, codex_catalog
+    from .cli_discovery import codex_catalog
     from .vendor_models import older
     home = Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex')/'models_cache.json'
     try:
@@ -77,7 +94,7 @@ def older_models():
     if stamp not in _older:
         catalog = codex_catalog() if stamp[0] != 'shipped templates' else None
         slugs = [m['slug'] for m in catalog if m.get('visibility') == 'list'] if catalog else [
-            t['native_profile']['model'] for t in json.loads(TEMPLATES.read_text(encoding='utf-8')).values()
+            t['native_profile']['model'] for t in _templates().values()
             if t['native_profile']['endpoint'] == 'cli://codex']
         _older.clear()
         _older[stamp] = older([s for s in slugs if str(s).startswith('gpt-')])
@@ -226,12 +243,11 @@ def id_rule(text):
     as its version on its source (7, key). Any other id names exactly the route it resolves to here (8, its id:
     local-qwen and qwen38-gsq are one route), never another route of the same model; an id this machine cannot
     resolve names itself."""
-    from .cli_discovery import TEMPLATES
     from .native_catalog import select
     try:
         deployment = select(text)
     except (ValueError, OSError, KeyError, TypeError):  # not set up here: a shipped CLI template still names its model
-        deployment = json.loads(TEMPLATES.read_text(encoding='utf-8')).get(text)
+        deployment = _templates().get(text)
     key = route_key(deployment) if deployment else None
     return (7, key) if key and key[0] else (8, (deployment or {}).get('id') or text)
 
@@ -243,12 +259,13 @@ def rule_of(text):
     return parsed and (id_rule(text) if isinstance(parsed[1], str) else parsed)[1]
 
 
-def _profile(value, role):
+def _profile(value, role, resolve_id=None):
     saved = None if 'error' in value else value.get('routing_profile')
     if saved is None:
         return MappingProxyType({}), ()
     if not isinstance(saved, dict):
         return MappingProxyType({}), ('routing_profile is not an object; ignored',)
+    resolve_id = resolve_id or id_rule
     rules, problems = {}, [f'routing_profile.{key}: unknown; ignored' for key in sorted(set(saved) - {'off', 'on'})]
     for side in ('off', 'on'):
         roles = saved.get(side, {})
@@ -269,7 +286,7 @@ def _profile(value, role):
                         'not a route id or MODEL@SOURCE') + '; ignored')
                     continue
                 if isinstance(parsed[1], str):
-                    parsed = id_rule(text)
+                    parsed = resolve_id(text)
                     if parsed[0] == 7:
                         problems.append(f'routing_profile.{side}.{name}: {text} runs a model line; read as '
                                         f'{key_label(parsed[1])}')
@@ -282,14 +299,14 @@ def _profile(value, role):
 _profiles = {}
 
 
-def profile(value=None, role=None):
+def profile(value=None, role=None, *, resolve_id=None):
     """The saved routing_profile as ({role: {'off': ((text, specificity, rule), ...), 'on': (...)}}, problems), read
     only, for `role` only when one is named. What cannot be read is ignored and named in problems (tare setup shows
     them): it never stops routing, and ignoring it never makes more routes eligible than tare's default. The file is
     parsed once per version of it: save() empties the cache, and another process's save replaces the file (a new
     inode, also on Windows), so its size, time or inode differs and it is read again."""
     if value is not None:
-        return _profile(value, role)
+        return _profile(value, role) if resolve_id is None else _profile(value, role, resolve_id=resolve_id)
     path = store()
     try:
         found = path.stat()
@@ -301,16 +318,16 @@ def profile(value=None, role=None):
             _profiles.clear()
         # ponytail: a route id is resolved once per version of the file; a route set up later is seen after the next
         # save of the profile or a restart.
-        _profiles[stamp] = _profile(read(), role)
+        _profiles[stamp] = _profile(read(), role) if resolve_id is None else _profile(read(), role, resolve_id=resolve_id)
     return _profiles[stamp]
 
 
-def profile_state(role, deployment, value=None, key=None):
+def profile_state(role, deployment, value=None, key=None, *, parsed=None):
     """('off' or 'on', entry) of the most specific entry for this route and role (off wins a tie), or None: tare's
     default. A route is known by what it is, never by what it resembles: its line on its source when it has one, else
     its own id (an alias is checked as the route it realised). `key` asks for a (family, line, version, source) instead,
     which no version entry matches when its version is None (the /routes matrix asks for a line on a source)."""
-    rules = profile(value, role)[0].get(role)
+    rules = (profile(value, role)[0] if parsed is None else parsed).get(role)
     if not rules:
         return None
     key = key or route_key(deployment)
@@ -324,11 +341,11 @@ def profile_state(role, deployment, value=None, key=None):
     return found and ('off' if found[1] else 'on', found[2])
 
 
-def granted(role, deployment, value=None):
+def granted(role, deployment, value=None, *, parsed=None):
     """Whether the user granted `role` to this route: its most specific entry is an "on" naming the route itself (a
     tick in /routes, tare setup --auto ROLE:ID=on; an "off" of it wins a tie), and the route is a local model (source
     `local`: never a hosted route or a reseller). A broader "on" (`*@local`) grants nothing."""
-    state = profile_state(role, deployment, value=value)
+    state = profile_state(role, deployment, value=value, parsed=parsed)
     return bool(state) and state[0] == 'on' and '@' not in state[1] and source(deployment) == 'local'
 
 
@@ -350,7 +367,7 @@ def switched_off(role, deployment, *names, value=None):
     return None
 
 
-def auto_routes(role, grants=None):
+def auto_routes(role, grants=None, *, configured_table=None, credentials=None):
     """[(name, route or None, now)] of the routes automatic `role` routing considers here, checked as each path that
     reaches a route checks it, under that role, without a live probe: `now` is 'usable' when one of those paths takes
     it, else the first path's reason (a rule). The routing profile does not change it. Every local model in use here
@@ -365,13 +382,12 @@ def auto_routes(role, grants=None):
     tool's own admission), tare auto's tiers (the /research link summary), the Codex web search helper and its role
     table; heads_up the list the owner saved (availability) and its role table."""
     from copy import deepcopy
-    from .cli_discovery import TEMPLATES
     from .execution_scope import current, for_role
     from .native_catalog import LOCAL, LOCAL_DEFAULT, select
     from .native_routes import admission, configured, local_models, role_admitted
     from .turn_engine import HELPER_ROUTES, available, implementer_tiers, policy
     from .web_research import admits, research_api_routes
-    templates = json.loads(TEMPLATES.read_text(encoding='utf-8'))
+    templates = _templates()
     rules = policy()
     owner = role in ('auditor', 'plan-auditor') and not (
         current().changes(role) or rules.get('auditor_selection', 'cross_vendor_frontier') == 'cross_vendor_frontier')
@@ -390,7 +406,8 @@ def auto_routes(role, grants=None):
         paths.setdefault(name, []).append('research')
     allow_local_grant = role not in {'researcher', 'vision'}
     used = set(local_models()) if allow_local_grant else set()
-    table = {row.get('native_catalog', row['id']): row for row in configured()['deployments']
+    deployments = (configured_table if configured_table is not None else configured())['deployments']
+    table = {row.get('native_catalog', row['id']): row for row in deployments
              if role in RANKED_ROLES and not owner and (role_admitted(row, role, current()) or LOCAL.get(
                  row.get('native_catalog'), row.get('native_catalog')) in used)}
     grantable = {name for name, row in table.items() if allow_local_grant and not role_admitted(row, role, current())}
@@ -398,7 +415,8 @@ def auto_routes(role, grants=None):
         paths.setdefault(name, []).append('table')
         if grants is not None and name in grantable and paths[name] == ['table']:
             grants.add(name)
-    api_routes, credentials, found = research_api_routes() if role == 'researcher' else set(), {}, []
+    api_routes, credentials, found = (research_api_routes() if role == 'researcher' else set(),
+                                      {} if credentials is None else credentials, [])
     with for_role('auditor' if owner else role):  # pick_auditors checks as auditor; every other path as its role
         for name, ways in paths.items():
             known, reasons, row, own = None, [], table.get(name), None
@@ -1038,14 +1056,14 @@ def role_check(deployment):
 def route_for(name):
     """(deployment, why) for a route name, or for cli:NAME the CLI as discovery would offer it."""
     if name.startswith('cli:'):
-        from .cli_discovery import ACK_PROFILE, TEMPLATES, deployment, locate
+        from .cli_discovery import ACK_PROFILE, deployment, locate
         endpoint = 'cli://' + name[4:].lower()
         if endpoint not in ACK_PROFILE:
             return None, f'unknown CLI {name}: use cli:claude, cli:codex or cli:agy'
         executable = locate(endpoint)
         if not executable:
             return None, f'{endpoint} is not installed'
-        return deployment(json.loads(TEMPLATES.read_text(encoding='utf-8'))[ACK_PROFILE[endpoint]], executable), None
+        return deployment(_templates()[ACK_PROFILE[endpoint]], executable), None
     from .turn_engine import available
     return available(name)
 

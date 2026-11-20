@@ -709,3 +709,33 @@ def test_an_unsaved_tick_survives_a_proof_and_save_writes_the_tick_and_keeps_the
         assert stored() == environment.set_auto({}, 'auditor:claude/opus@claude-code=off')['routing_profile']
         assert environment.read()['proofs'][FABLE]['ok'] is True
     journey(tmp_path, steps)
+
+
+def test_paint_updates_only_changed_cells_and_build_uses_precomputed_classes(pool, tmp_path, monkeypatch):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+    install(pool, FABLE, 'cli://claude', 'claude-fable-5-2')
+
+    async def steps(app, pilot, panel, cell, status):
+        matrix = panel.query_one(RouteMatrix)
+        table = panel.query_one('#matrix-table')
+        updates = []
+        real_update = table.update_cell
+
+        def recording_update(row_key, col_key, value, *args, **kwargs):
+            updates.append((row_key.value, col_key.value if hasattr(col_key, 'value') else col_key))
+            return real_update(row_key, col_key, value, *args, **kwargs)
+
+        monkeypatch.setattr(table, 'update_cell', recording_update)
+        assert await cell('claude/opus', 'claude-code') == '[ ]'
+        assert updates == [('claude/opus', 'claude-code')]
+
+        updates.clear()
+        matrix.paint()
+        assert updates == []
+
+        from relay import model_signals
+        monkeypatch.setattr(model_signals, 'klass', lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError('build must use precomputed row classes instead of scanning model_signals.klass')))
+        matrix.role = 'implementer'
+        matrix.build()
+    journey(tmp_path, steps)

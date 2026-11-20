@@ -12,6 +12,7 @@ with more left than the share of its period still to run is marked "in surplus":
 catches up with the pace. Every reading names its source and the time it was observed.
 """
 import argparse
+import copy
 import json
 import os
 import re
@@ -471,13 +472,26 @@ def cache_path():
     return storage_root()/'serve'/'provider-quota.json'
 
 
+_quota_cache = (None, None)
+
+
 def cached():
     """The last answers `refresh()` kept, or None."""
+    global _quota_cache
+    path = cache_path()
     try:
-        report = json.loads(cache_path().read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+        found = path.stat()
+        stamp = (str(path), found.st_ino, found.st_mtime_ns, found.st_size)
+    except OSError:
         return None
-    return report if isinstance(report, dict) and report.get('schema') == SCHEMA else None
+    if _quota_cache[0] != stamp:
+        try:
+            report = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            report = None
+        valid = report if isinstance(report, dict) and report.get('schema') == SCHEMA else None
+        _quota_cache = (stamp, valid)
+    return copy.deepcopy(_quota_cache[1]) if _quota_cache[1] is not None else None
 
 
 def covers(account, bucket, model):

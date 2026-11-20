@@ -10,6 +10,9 @@ from .native_generation import load_deployment, MAX_DEPLOYMENT_BYTES
 from .native_limits import resolve
 
 
+_PROFILE_NAME = re.compile(r'[a-z0-9][a-z0-9_-]{0,63}')
+
+
 def directory():
     from .native_installation import storage_root
     root = Path(os.environ['TARE_PROFILE_DIR']) if 'TARE_PROFILE_DIR' in os.environ else storage_root()/'profiles'
@@ -21,7 +24,7 @@ def directory():
 
 def local_path(name):
     from .native_catalog import LOCAL
-    if not isinstance(name, str) or not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,63}', name):
+    if not isinstance(name, str) or not _PROFILE_NAME.fullmatch(name):
         raise ValueError('invalid_profile_name')
     if name in LOCAL or name == 'auto':
         raise ValueError('reserved_profile_name')
@@ -33,13 +36,16 @@ def names():
     root = directory()
     if not root.exists():
         return []
+    from .native_catalog import LOCAL
     result = []
     for path in root.glob('*.json'):
-        try:
-            local_path(path.stem)
-        except ValueError:
+        stem = path.stem
+        # directory() already verified the folder chain via regular(); check only stem rules and leaf links here.
+        if not _PROFILE_NAME.fullmatch(stem) or stem in LOCAL or stem == 'auto':
             continue
-        result.append(path.stem)
+        if path.is_symlink() or getattr(path, 'is_junction', lambda: False)():
+            continue
+        result.append(stem)
         if len(result) > 128:
             raise ValueError('too_many_local_profiles')
     return sorted(result)
