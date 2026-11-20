@@ -33,14 +33,14 @@ def wanted(role):
     return choice if role in WANTED and choice in ORDER else WANTED.get(role)
 
 
-INTERNAL_WANTED = {'researcher': 'cheap', 'vision': 'cheap'}
+INTERNAL_WANTED = {'researcher': 'cheap', 'vision': 'cheap', 'explorer': 'cheap', 'heads_up': 'middling'}
 CLI_ENDPOINTS = {'cli://codex', 'cli://claude', 'cli://agy'}
 CLI_DOMAINS = {'anthropic-cli', 'google-cli', 'openai-cli', 'codex-cli'}
 
 
 # The roles that want the cheapest sufficient route: among pay-per-token routes it is the best score per dollar of a
 # task (model_signals.task), the planner's frontier is bought for its strength. Owner, 2026-11-16.
-CHEAPEST = {'implementer', 'coordinator', 'auditor', 'plan-auditor', 'researcher', 'vision'}
+CHEAPEST = {'implementer', 'coordinator', 'auditor', 'plan-auditor', 'researcher', 'vision', 'explorer', 'heads_up'}
 
 
 _derived = (None, [])  # (the table's path and the installed route names, the rows derived for them)
@@ -177,6 +177,32 @@ def roles(row, scope):
     return [*row.get('roles', []), *(row.get('local_only_roles', []) if scope.only == 'local' else [])]
 
 
+_roster_cache = (None, {})
+
+
+def _roster():
+    """Read the round-table roster once per change of its path or mtime."""
+    global _roster_cache
+    path = native_catalog.roster_path()
+    try:
+        stamp = (str(path), path.stat().st_mtime_ns)
+    except OSError:
+        return {'models': {}}
+    if _roster_cache[0] != stamp:
+        _roster_cache = (stamp, read_json(path, 4 * 1024 * 1024))
+    return _roster_cache[1]
+
+
+def _heads_up_row(row):
+    """Whether `row` represents a hosted middling or frontier model suitable for heads-up notes."""
+    if row.get('cost_tier') == 'free' or str(row.get('endpoint_domain') or '').startswith('local-'):
+        return False
+    from .vendor_models import line
+    model = row.get('model') or ''
+    wire = (((_roster().get('models') or {}).get(model) or {}).get('runtime') or {}).get('native-http') or model
+    return (line(wire) or line(model) or {}).get('class') in {'middling', 'frontier'}
+
+
 def _cli_row(row):
     """Whether `row` represents one of the vendor CLIs supported for web research and vision."""
     if 'native_profile' in row:
@@ -191,6 +217,8 @@ def role_admitted(row, role, scope):
         return 'implementer' in roles(row, scope)
     if role in {'vision', 'researcher'}:
         return role in roles(row, scope) or _cli_row(row)
+    if role == 'heads_up':
+        return 'heads_up' in roles(row, scope) or 'implementer' in roles(row, scope) and _heads_up_row(row)
     return role in roles(row, scope)
 
 
@@ -326,6 +354,10 @@ def admission(row, role, author=None, credentials=None, granted=None, producer=N
         return deployment, auditor, 'ROLE_NOT_CONFIGURED'
     if role == 'researcher' and not (is_cli or is_openrouter_route(deployment) and 'researcher' in roles(row, current())):
         return deployment, auditor, 'ROLE_NOT_CONFIGURED'
+    if role == 'heads_up' and role_admitted(row, 'heads_up', current()):
+        from .model_signals import klass
+        if (klass(deployment) or {}).get('class') not in {'middling', 'frontier'}:
+            return deployment, auditor, 'ROLE_NOT_CONFIGURED'
     from .environment import allows, older
     if not allows(deployment)[0]:
         return deployment, auditor, 'NOT_USED_ON_THIS_MACHINE'
@@ -368,7 +400,7 @@ def _ranked(role, producer=None, *, check_resources=False, work_type=None):
     whose change is reviewed, or the types of a demand (a list: its planner and plan reviewer); it changes only
     whether a route falls short of the role's class (`model_signals.judged`), by its weakest type."""
     from .work_audit import identity
-    if role not in {'planner', 'plan-auditor', 'auditor', 'implementer', 'coordinator', 'explorer', 'researcher', 'vision'} or (role in {'plan-auditor', 'auditor'} and producer is None):
+    if role not in {'planner', 'plan-auditor', 'auditor', 'implementer', 'coordinator', 'explorer', 'researcher', 'vision', 'heads_up'} or (role in {'plan-auditor', 'auditor'} and producer is None):
         raise ValueError('ROLE_SELECTION_REQUIRES_SUPPORTED_ROLE_AND_AUTHOR')
     author = identity(producer, 'implementer') if producer is not None else None
     table = configured(); decisions = []; eligible = []; credentials = {}; seen = set()
@@ -466,7 +498,7 @@ def _ranked(role, producer=None, *, check_resources=False, work_type=None):
         # every route with one, and among such routes in the order /routes shows them (`shown`: by label, then id).
         by_grant = not role_admitted(row, role, current()) and grant(row, role)
         unclassed = not found and (native_catalog.LOCAL.get(row.get('native_catalog', row['id']), row.get(
-            'native_catalog', row['id'])) != fleet if role in {'implementer', 'coordinator', 'researcher', 'vision'} else by_grant)
+            'native_catalog', row['id'])) != fleet if role in {'implementer', 'coordinator', 'explorer', 'researcher', 'vision'} else by_grant)
         if unclassed and by_grant:
             from .model_choices import describe
             shown = (describe(deployment['id'], deployment)['label'] or deployment['id'], deployment['id'])

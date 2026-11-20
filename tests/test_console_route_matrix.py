@@ -499,11 +499,15 @@ def test_a_researcher_list_route_needs_the_research_tools_own_admission(pool, mo
         'ROLE_NOT_CONFIGURED'
 
 
-def test_an_empty_saved_heads_up_list_reads_as_its_writer_reads_it():
+def test_an_empty_saved_heads_up_list_reads_as_its_writer_reads_it(pool, monkeypatch):
+    install(pool, 'claude-sonnet-5-5-cli', 'cli://claude', 'claude-sonnet-5-5')
+    install(pool, 'claude-haiku-5-5-cli', 'cli://claude', 'claude-haiku-5-5')
+    keys(monkeypatch)
     turn_engine.policy_path().parent.mkdir(parents=True, exist_ok=True)
     turn_engine.policy_path().write_text(json.dumps({'heads_up': []}), encoding='utf-8')
-    assert [n for n, _, _ in environment.auto_routes('heads_up')] == list(dict.fromkeys(
-        turn_engine.DEFAULT_POLICY['heads_up']))
+    usable = {n for n, _, now in environment.auto_routes('heads_up') if now == 'usable'}
+    eligible = {c['catalog'] for c in native_routes.ranked('heads_up')[1]['candidates'] if c['eligible']}
+    assert usable == eligible and 'claude-sonnet-5-5-cli' in usable and 'claude-haiku-5-5-cli' not in usable
 
 
 def flat(items):
@@ -516,9 +520,9 @@ def test_the_matrix_rows_agree_with_the_paths_that_route(pool, monkeypatch):
     the matrix checks no independence; the coordinator on the implementer rows). tare auto's list path (the owner's
     list, else local-default) for implementer and coordinator, and its tiers for the researcher's /research link
     summary: against turn_engine.choose(probe=False), name by name. Researcher: against web_research.snapshot(). Not
-    compared, because their loops live inline in their callers: the planner or vision list when the owner saves one,
-    heads_up (heads_up.write), the web search helper (turn_engine.ask_cli) and the owner's auditor list
-    (turn_engine.pick_auditors, which needs a producer)."""
+    compared, because their loops live inline in their callers: the planner, vision, or heads_up list when the owner
+    saves one, the web search helper (turn_engine.ask_cli) and the owner's auditor list (turn_engine.pick_auditors,
+    which needs a producer)."""
     install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
     install(pool, 'claude-fable-5-2-cli', 'cli://claude', 'claude-fable-5-2')
     install(pool, 'codex-cli-gpt-5-6-sol', 'cli://codex', 'gpt-5.6-sol')
@@ -527,12 +531,12 @@ def test_the_matrix_rows_agree_with_the_paths_that_route(pool, monkeypatch):
     saved = rules.get('implementer') or [['local-default']]
     producers = [native_catalog.select(name) for name in ('claude-api-opus-5-5', 'openai-api', 'gemini-api')]
     for role in ('implementer', 'coordinator', 'explorer', 'planner', 'plan-auditor', 'auditor',
-                 'researcher', 'vision'):
+                 'researcher', 'vision', 'heads_up'):
         rows = {name: now for name, _, now in environment.auto_routes(role)}
         listed = (set(flat(turn_engine.implementer_tiers('researcher'))) | set(turn_engine.HELPER_ROUTES)
                   | set(flat(rules.get('researcher') or [])) if role == 'researcher'
                   else set(flat(saved if role in ('implementer', 'coordinator') else rules.get(role) or []))
-                  if role in ('implementer', 'coordinator', 'planner', 'vision') else set())
+                  if role in ('implementer', 'coordinator', 'planner', 'vision', 'heads_up') else set())
         eligible = set()
         for producer in producers if 'auditor' in role else [None]:
             eligible |= {c['catalog'] for c in native_routes.ranked(role, producer)[1]['candidates'] if c['eligible']}

@@ -149,7 +149,7 @@ def decides(name):
 PROFILE_ROLES = ('implementer', 'explorer', 'planner', 'plan-auditor', 'auditor', 'researcher', 'vision', 'heads_up',
                  'coordinator')
 # The roles relay/role_deployments.json ranks (native_routes.ranked); coordinator on the implementer rows.
-RANKED_ROLES = (*PROFILE_ROLES[:7], 'coordinator')
+RANKED_ROLES = PROFILE_ROLES
 SOURCES = ('claude-code', 'codex', 'agy', 'opencode-sub', 'opencode-api', 'api', 'openrouter', 'bedrock', 'local',
            'other-api')
 AUTO_NAMES = ('auto', 'tare-auto', 'local-default')  # names of automatic routing, not routes
@@ -363,13 +363,13 @@ def auto_routes(role, grants=None):
     plan-auditor the owner's auditor list when "Use my auditor routes" is chosen, else their role
     table, never both (native_routes._reviewers); researcher the list the owner saved (availability and the research
     tool's own admission), tare auto's tiers (the /research link summary), the Codex web search helper and its role
-    table; heads_up its list, read as its writer reads it."""
+    table; heads_up the list the owner saved (availability) and its role table."""
     from copy import deepcopy
     from .cli_discovery import TEMPLATES
     from .execution_scope import current, for_role
     from .native_catalog import LOCAL, LOCAL_DEFAULT, select
     from .native_routes import admission, configured, local_models, role_admitted
-    from .turn_engine import DEFAULT_POLICY, HELPER_ROUTES, available, implementer_tiers, policy
+    from .turn_engine import HELPER_ROUTES, available, implementer_tiers, policy
     from .web_research import admits, research_api_routes
     templates = json.loads(TEMPLATES.read_text(encoding='utf-8'))
     rules = policy()
@@ -379,7 +379,7 @@ def auto_routes(role, grants=None):
     lists = {'coordinator': saved, 'implementer': saved, 'planner': rules.get('planner', []),
              'researcher': [*(implementer_tiers('researcher') if role == 'researcher' else []), *HELPER_ROUTES],
              'vision': rules.get('vision', []),
-             'heads_up': rules.get('heads_up') or DEFAULT_POLICY['heads_up']}
+             'heads_up': rules.get('heads_up', [])}
 
     def flat(items):
         return [n for item in items or [] for n in (item if isinstance(item, list) else [item])]
@@ -656,7 +656,7 @@ def configured_routes():
         for key in ('profile', 'overflow', 'challenger'):
             name = settings.get(key)
             name = name.get('profile') if isinstance(name, dict) else name
-            if isinstance(name, str):
+            if isinstance(name, str) and not (key == 'profile' and name == 'auto'):
                 routes.append((f'/delegation {key}', name))
     except (ValueError, OSError):
         pass

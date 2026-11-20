@@ -706,11 +706,27 @@ def test_the_report_counts_each_reason_the_writer_ran(capsys):
         '(0 useful, 0 not useful); cadence 1 forwarded, 1 with a note (1 useful, 0 not useful).')
 
 
-def test_the_default_writer_is_a_mid_to_high_model_at_high_effort_and_no_small_model_stands_in():
+def test_the_default_writer_is_a_mid_to_high_model_at_high_effort_and_no_small_model_stands_in(monkeypatch):
+    import json
+    from relay import cli_discovery, environment, native_routes
     default = turn_engine.DEFAULT_POLICY
-    assert default['heads_up'] == ['claude-sonnet-5-5-cli', 'codex-cli-gpt-6-1-sol']
+    assert 'heads_up' not in default
     assert default['heads_up_effort'] == 'high'
-    assert not any('haiku' in name or 'luna' in name or 'local' in name for name in default['heads_up'])
+    templates = json.loads(cli_discovery.TEMPLATES.read_text(encoding='utf-8'))
+    with_profiles = {name: cli_discovery.deployment(templates[name], __file__)
+                     for name in ('claude-sonnet-5-5-cli', 'codex-cli-gpt-6-1-sol', 'claude-haiku-5-5-cli',
+                                  'codex-cli-gpt-6-luna', 'agy-cli')}
+    from relay import native_catalog
+    real_select = native_catalog.select
+    monkeypatch.setattr(native_catalog, 'select',
+                        lambda name: with_profiles[name] if name in with_profiles else real_select(name))
+    from relay import native_profiles
+    monkeypatch.setattr(native_profiles, 'local_path', lambda name: cli_discovery.TEMPLATES if name in with_profiles
+                        else native_profiles.directory() / (name + '.json'))
+    monkeypatch.setattr(environment, 'older_models', lambda: set())
+    names = turn_engine.heads_up_routes()
+    assert {'claude-sonnet-5-5-cli', 'codex-cli-gpt-6-1-sol'} <= set(names)
+    assert not any('haiku' in name or 'luna' in name or 'agy-cli' in name or 'local' in name for name in names)
 
 
 CONTRACT = {'layout': 'chat-inclusive', 'source': 'test'}

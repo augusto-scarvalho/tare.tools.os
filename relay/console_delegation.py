@@ -77,7 +77,7 @@ class DelegationPanel(SupportPanel):
                 yield Static('Assisted exploration', classes='delegation-label')
                 yield Static('Allow new native conversations and Work reviews to delegate read-only investigation.', classes='delegation-label')
                 yield Switch(self.value['enabled'], id='delegation-enabled')
-                yield Static('Explorer profile · name or variant JSON', classes='delegation-label')
+                yield Static('Explorer profile · auto (ranked from Models per role), route name, or variant JSON', classes='delegation-label')
                 yield TextArea(self.value['profile'] if isinstance(self.value['profile'], str) else json.dumps(self.value['profile'], indent=2), id='delegation-profile')
                 yield Static('Hosted explorer beyond the local slot, or when the local GPU is unavailable · name, variant JSON or null', classes='delegation-label')
                 yield TextArea(self.value['overflow'] if isinstance(self.value['overflow'], str) else json.dumps(self.value['overflow'], indent=2), id='delegation-overflow')

@@ -41,16 +41,8 @@ DEFAULT_POLICY = {
     'auditor_effort': 'high',
     # No 'vision' or 'researcher' list: unless the owner saves one, each is chosen from the role table
     # (vision_routes, researcher_routes).
-    # Writes heads-up notes (relay/heads_up.py). Measured 2026-11-05 against 49 notes users accepted from a side agent
-    # and 50 turns it left quiet (scripts/heads_up_calibration.py claude --writer): Sonnet wrote consequence notes on
-    # 31% and 22% of them; Sol rarely speaks (6%, 2%) but is precise; Haiku, Luna and the local model mostly flag
-    # process details, as often on quiet turns as on noted ones.
-    # The side agent needs the whole picture, so it is a mid-to-high model at medium-to-high effort (operator, 2026-11-11):
-    # Sonnet at high is the entry level, Sol is the alternative, and no small model stands in (a note from Haiku is
-    # worse than no note). AGY's Gemini 3.8 (agy-cli) was to be the third and is out: as the writer at high effort it
-    # took a median of 76 s a call (38 to 121; Sonnet 9 s) and 2 of 8 calls failed (2026-11-11, the same 8 TUI turns),
-    # and a note that late arrives after the user has acted.
-    'heads_up': ['claude-sonnet-5-5-cli', 'codex-cli-gpt-6-1-sol'],
+    # No 'heads_up' list: unless the owner saves one, heads_up chooses middling or frontier routes from the role table
+    # (heads_up_routes; measured 2026-11-05/11: Sonnet/Sol quality floor, no small model stands in).
     'heads_up_effort': 'high',
 }
 
@@ -122,6 +114,12 @@ def researcher_routes():
     """Researcher route names in order: the owner's saved list (/routes Order tab), else the role table's supported
     researcher routes as native_routes.ranked ranks them."""
     return _ranked_routes('researcher')
+
+
+def heads_up_routes():
+    """Heads-up route names in order: the owner's saved list (/routes Order tab), else the role table's middling and
+    frontier routes as native_routes.ranked ranks them."""
+    return _ranked_routes('heads_up')
 
 
 def implementer_tiers(role='implementer'):
