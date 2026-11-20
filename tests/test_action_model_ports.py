@@ -211,3 +211,44 @@ def test_broker_denial_and_missing_native_backend(deterministic):
     assert not result.allowed and result.authority == 'NONE'
     if not deterministic: assert not h.calls and not reserved
     else: assert len(h.calls) <= 2 and all(call[1] == 'gpt-6.1-sol' for call in h.calls)
+
+
+@pytest.mark.parametrize('stage', ['classifier', 'reviewer'])
+@pytest.mark.parametrize('name,endpoint,extra_deploy,params,max_tokens,expected', [
+    # qwen38-gsq shape: high thinking_budget + native_reasoning_budgets -> capped to output_tokens // 4
+    ('qwen38-cap-256', 'http://127.0.0.1:9', {'native_reasoning_budgets': {'xhigh': {'thinking_budget': 4096}}},
+     {'chat_template_kwargs': {'enable_thinking': True}, 'thinking_budget': 4096}, 256,
+     {'chat_template_kwargs': {'enable_thinking': True}, 'thinking_budget': 64}),
+    ('qwen38-cap-128', 'http://127.0.0.1:9', {'native_reasoning_budgets': {'xhigh': {'thinking_budget': 4096}}},
+     {'chat_template_kwargs': {'enable_thinking': True}, 'thinking_budget': 4096}, 128,
+     {'chat_template_kwargs': {'enable_thinking': True}, 'thinking_budget': 32}),
+    ('qwen38-keeps-smaller', 'http://127.0.0.1:9', {'native_reasoning_budgets': {'xhigh': {'thinking_budget': 4096}}},
+     {'chat_template_kwargs': {'enable_thinking': True}, 'thinking_budget': 16}, 256,
+     {'chat_template_kwargs': {'enable_thinking': True}, 'thinking_budget': 16}),
+    # swift27b shape: local enable_thinking without native_reasoning_budgets or prior budget -> sets thinking_budget
+    ('swift27b-sets-budget', 'http://127.0.0.1:9', {},
+     {'chat_template_kwargs': {'enable_thinking': True, 'reasoning_effort': 'xhigh'}}, 256,
+     {'chat_template_kwargs': {'enable_thinking': True, 'reasoning_effort': 'xhigh'}, 'thinking_budget': 64}),
+    # swift-next (Strata) shape: caps reasoning_budget_tokens without adding thinking_budget
+    ('swift-next-strata', 'http://127.0.0.1:9', {'native_reasoning_levels': ['low', 'medium', 'xhigh']},
+     {'chat_template_kwargs': {'enable_thinking': True}, 'reasoning_budget_tokens': 2048}, 256,
+     {'chat_template_kwargs': {'enable_thinking': True}, 'reasoning_budget_tokens': 64}),
+    # Non-thinking local profile (qwen36-moe shape) and hosted profile stay untouched
+    ('local-non-thinking', 'http://127.0.0.1:9', {},
+     {'chat_template_kwargs': {'enable_thinking': False}}, 256,
+     {'chat_template_kwargs': {'enable_thinking': False}}),
+    ('hosted-untouched', 'https://api.openai.com/v1', {},
+     {'chat_template_kwargs': {'enable_thinking': True}, 'thinking_budget': 4096}, 256,
+     {'chat_template_kwargs': {'enable_thinking': True}, 'thinking_budget': 4096}),
+])
+def test_local_thinking_budget_is_capped_inside_assessment_output_limit(
+        stage, name, endpoint, extra_deploy, params, max_tokens, expected):
+    h = Rig(stage)
+    h.deploy.update(extra_deploy)
+    h.deploy['native_profile']['endpoint'] = endpoint
+    h.deploy['native_profile']['parameters_json'] = json.dumps(params, sort_keys=True)
+    result = h.port().assess(replace(h.assessment, max_output_tokens=max_tokens), h.control)
+    assert result.status == 'OBSERVED' and len(h.calls) == 1
+    sent_deploy = h.calls[0][0]
+    assert sent_deploy['native_profile']['output_tokens'] == max_tokens
+    assert json.loads(sent_deploy['native_profile']['parameters_json']) == expected
