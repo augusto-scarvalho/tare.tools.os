@@ -282,3 +282,21 @@ def test_a_failure_raises_an_error_that_does_not_carry_the_key(monkeypatch):
     with pytest.raises(OSError) as error:
         REAL_LISTING(native_catalog.bundled('openai-api'), KEY)
     assert KEY not in str(error.value)
+
+
+def test_known_unbundled_line_whitelisted_by_agy_mirrors_and_orchestrators_are_ignored(world):
+    world.agy = ['gemini-4-neon-low', 'gemini-4-neon-medium', 'gemini-4-neon-high', 'gemini-4-neon-xhigh',
+                 'gemini-pro-orchestrator-neon', 'gemini-4-orchestrator-high']
+    world.listing.ids[HOSTS['GEMINI_API_KEY']] = ['gemini-4-neon', 'gemini-4-orchestrator', 'gemini-pro-orchestrator-neon']
+    assert mirror()['added'] == ['gemini-api-4-neon']
+    value, old = profile('gemini-api-4-neon'), native_catalog.bundled('gemini-api-4-carbon')
+    assert value['id'] == 'gemini-api-4-neon' and value['model'] == value['native_profile']['model'] == 'gemini-4-neon'
+    assert 'copied from gemini-api-4-carbon' in value['native_profile']['source']
+    assert 'native_usage_tariff' not in value
+    strip = lambda v: {**v, 'id': 0, 'model': 0, 'native_profile': {**v['native_profile'], 'model': 0, 'source': 0}}  # noqa: E731
+    assert strip(value) == strip(old)
+    assert not any('orchestrator' in n for n in native_profiles.names())
+
+    row = {r['id']: r for r in native_routes.configured()['deployments']}['gemini-api-4-neon']
+    assert row['qualified'] is False and row['cost_tier'] == 'metered'
+    assert row['roles'] == ['planner', 'plan-auditor', 'auditor', 'implementer', 'explorer']

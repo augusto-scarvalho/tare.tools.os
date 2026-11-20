@@ -108,17 +108,19 @@ def local_models():
 
 
 def derived(rows, roster):
-    """Rows for routes installed here that no row names, so that a newer version of a known line is selectable and
-    pinnable at once (owner, 2026-11-13). A route gets one when its model has a line and its endpoint is that vendor's
-    own (vendor_models.origin_line: never a reseller or a local model), rows exist for that line on the same source
-    (endpoint origin and protocol: codex-cli-gpt-6-1-sol for codex-cli-gpt-6-2-sol), all of older versions, and its
-    identity is established. It copies the newest such row's policy under its own name and
-    model, pin only (qualified false) until it answers once here (proven). Built at each load and never saved: a written
-    row always wins, and with no such route installed the table is exactly the shipped one."""
+    """Rows for routes installed here that no row names, so that a newer version of a known line (or a newly unlocked
+    known line on that vendor's own route) is selectable and pinnable at once (owner, 2026-11-13). A route gets one
+    when its model has a line and its endpoint is that vendor's own (vendor_models.origin_line: never a reseller or a
+    local model), its identity is established, and rows exist on the same source (endpoint origin and protocol): either
+    rows for that same line (all of older versions: codex-cli-gpt-6-1-sol for codex-cli-gpt-6-2-sol), or else peer rows
+    for the same vendor whose class does not exceed the route's line. It copies the newest such row's policy under its
+    own name and model, pin only (qualified false) until it answers once here (proven). Built at each load and never
+    saved: a written row always wins, and with no such route installed the table is exactly the shipped one."""
     from .cli_discovery import TEMPLATES
     from .environment import origin
+    from .model_signals import ORDER
     from .native_profiles import names
-    from .vendor_models import AGY_EFFORT, line, origin_line, parse
+    from .vendor_models import AGY_EFFORT, LINES, line, origin_line, parse
     from .work_audit import identity
 
     def source(value):  # (line, version, (endpoint origin, protocol)) of a vendor's own model, else None
@@ -151,23 +153,44 @@ def derived(rows, roster):
             mine = source(value)
             if not mine:
                 continue
-            same = []
+            same, peer = [], []
+            mine_meta = LINES.get(mine[0])
+            mine_rank = ORDER.index(mine_meta['class']) if mine_meta and mine_meta.get('class') in ORDER else None
             for row in rows:
                 wire = ((roster['models'].get(row['model']) or {}).get('runtime') or {}).get('native-http')
-                if row.get('native_catalog') and wire and (line(wire) or {}).get('line') == mine[0]:
+                wire_line = wire and line(wire)
+                if not (row.get('native_catalog') and wire_line):
+                    continue
+                if wire_line['line'] == mine[0]:
                     theirs = shipped(row['native_catalog'])  # resolved only for the rows of this line
-                    if theirs and (theirs[0], theirs[2]) == (mine[0], mine[2]):
+                    if theirs and theirs[2] == mine[2]:
                         same.append((theirs[1], row))
-            if not same or max(version for version, _ in same) >= mine[1]:
-                continue  # only a version newer than every written one: an older model gains nothing here
-            sibling = max(same, key=lambda item: item[0])[1]  # the newest version; a tie keeps table order
+                elif (mine_meta and mine_rank is not None
+                      and wire_line['vendor'] == mine_meta['vendor']
+                      and wire_line.get('class') in ORDER
+                      and ORDER.index(wire_line['class']) <= mine_rank):
+                    theirs = shipped(row['native_catalog'])
+                    if theirs and theirs[2] == mine[2]:
+                        theirs_rank = ORDER.index(wire_line['class'])
+                        peer.append(((theirs_rank, len(row.get('roles') or []), theirs[1]), row))
+            if same:
+                if max(version for version, _ in same) >= mine[1]:
+                    continue  # only a version newer than every written one: an older model gains nothing here
+                sibling = max(same, key=lambda item: item[0])[1]  # the newest version; a tie keeps table order
+                note = (f"Derived at load from {sibling['id']}, the version before it on the same source; "
+                        f"pin only until it answers once here (tare setup --prove {name}).")
+            elif peer:
+                sibling = max(peer, key=lambda item: item[0])[1]
+                note = (f"Derived at load from {sibling['id']} for known line {mine[0]} on the same source; "
+                        f"pin only until it answers once here (tare setup --prove {name}).")
+            else:
+                continue
             identity(value, 'auditor')
         except (ValueError, KeyError, TypeError, OSError):
             continue
         found.append({**copy.deepcopy(sibling), 'id': name, 'native_catalog': name, 'model': value['model'],
                       'qualified': False,
-                      'note': f"Derived at load from {sibling['id']}, the version before it on the same source; "
-                              f"pin only until it answers once here (tare setup --prove {name})."})
+                      'note': note})
     return found
 
 

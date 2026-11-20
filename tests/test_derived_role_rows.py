@@ -104,3 +104,16 @@ def test_the_matrix_offers_to_prove_a_derived_route(pool, tmp_path):
         assert re.search(FABLE + r' [^;]*, NOT_QUALIFIED_PIN_ONLY \(press p to prove it once\)', status()), status()
         assert FABLE in [name for name, _ in panel.query_one(RouteMatrix).provable()]
     journey(tmp_path, steps)
+
+
+def test_known_line_without_same_line_row_copies_peer_within_class_ceiling(pool):
+    install(pool, 'agy-gemini-4-carbon-cli', 'cli://agy', 'gemini-4-carbon-high')
+    install(pool, 'agy-gemini-4-neon-cli', 'cli://agy', 'gemini-4-neon-high')
+    install(pool, 'agy-claude-haiku-5-5-cli', 'cli://agy', 'claude-haiku-5-5-high')
+    table = rows()
+    argon = table['agy-gemini-4-argon-cli']
+    for name in ('agy-gemini-4-carbon-cli', 'agy-gemini-4-neon-cli'):
+        row = table[name]
+        assert row['qualified'] is False and row['roles'] == argon['roles']
+        assert 'agy-gemini-4-argon-cli' in row['note'] and 'for known line gemini-' in row['note']
+    assert 'agy-claude-haiku-5-5-cli' not in table  # cheap cannot inherit middling opus/sonnet roles

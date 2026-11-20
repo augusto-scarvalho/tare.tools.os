@@ -342,18 +342,18 @@ def test_tare_models_types_shows_the_catalogue_with_each_sources_read_date_and_a
     model_choices.main(['--types'])
     out = capsys.readouterr().out
     assert 'math: mathematics - ' in out and 'cad: CAD - ' in out and 'no source yet: the general class' in out
-    assert 'Epoch CritPt (outcome): read 14 Nov, 8 of 12 known lines' in out and 'LMArena webdev (preference): read 14 Nov' in out
+    assert 'Epoch CritPt (outcome): read 14 Nov, 8 of 13 known lines' in out and 'LMArena webdev (preference): read 14 Nov' in out
     assert 'CritPt, as collected by Epoch AI (epoch.ai/benchmarks)' in out
     model_choices.main(['--types', '--json'])
     catalogue = {t['id']: t for t in json.loads(capsys.readouterr().out)['types']}
     assert catalogue['3d']['sources'] == [] and len(catalogue) == len(signals.TYPES)
     gpqa = next(s for s in catalogue['science']['sources'] if s['board'] == 'critpt_external.csv')
-    assert (gpqa['anchors'], gpqa['known_lines'], gpqa['places'], gpqa['read_at']) == (8, 12, True, NOW)
+    assert (gpqa['anchors'], gpqa['known_lines'], gpqa['places'], gpqa['read_at']) == (8, 13, True, NOW)
 
 
 def test_an_unread_or_aged_source_is_said_to_place_no_model(capsys):
     model_choices.main(['--types'])
-    assert 'Epoch CritPt (outcome): not read yet, 0 of 12 known lines; fewer than 8: places no model' in capsys.readouterr().out
+    assert 'Epoch CritPt (outcome): not read yet, 0 of 13 known lines; fewer than 8: places no model' in capsys.readouterr().out
     assert signals.describe_source({'name': 'B', 'kind': 'outcome', 'read_at': NOW, 'anchors': 2, 'known_lines': 12, 'places': False})         == 'B (outcome): read 14 Nov, 2 of 12 known lines; fewer than 8: places no model'
 
 
