@@ -197,17 +197,27 @@ def test_a_subscription_limit_parks_the_whole_plan(tmp_path, monkeypatch):
 
 
 def test_qualified_rows_are_chosen_in_order_and_an_unqualified_one_only_by_pin(monkeypatch):
-    from relay import native_routes
+    from relay import model_signals, native_routes
     monkeypatch.setattr(native_routes, 'credential_available', lambda name: True)
     chosen, selection = native_routes.ranked('explorer')
     ours = [c for c in selection['candidates'] if c['deployment'].startswith('opencode-')]
     assert all(c['eligible'] for c in ours), ours
-    assert [d['id'] for d in chosen if d['id'].startswith('opencode-')] == ['opencode-sub-' + n for n in PREFERENCE]
-    # A reserve of the subscription tier: after every primary subscription route, before anything paid per token.
-    tiers = [(c['cost_tier'], c['deployment'].startswith('opencode-')) for c in
-             sorted((c for c in selection['candidates'] if c['eligible']), key=lambda c: c['position'])]
-    assert tiers.index(('flat', True)) > max(i for i, t in enumerate(tiers) if t == ('flat', False) or t[0] == 'free')
-    assert all(t[0] in {'free-credit', 'metered'} for t in tiers[tiers.index(('flat', True)) + len(ours):])
+    classed = [d['id'] for d in chosen if d['id'].startswith('opencode-') and model_signals.klass(d)]
+    unclassed = [d['id'] for d in chosen if d['id'].startswith('opencode-') and not model_signals.klass(d)]
+    assert classed == ['opencode-sub-gpt-6-luna', 'opencode-sub-claude-haiku-5-5', 'opencode-sub-gemini-4-argon']
+    assert unclassed == ['opencode-sub-' + n for n in PREFERENCE if 'opencode-sub-' + n not in classed]
+    assert [d['id'] for d in chosen if d['id'].startswith('opencode-')] == classed + unclassed
+    # A reserve of the subscription tier: within both classed and unclassed routes, after free / primary
+    # subscription routes and before anything paid per token.
+    by_id = {d['id']: d for d in chosen}
+    ranked_rows = sorted((c for c in selection['candidates'] if c['eligible']), key=lambda c: c['position'])
+    for is_classed, expected in ((True, classed), (False, unclassed)):
+        band = [(c['cost_tier'], c['deployment'].startswith('opencode-')) for c in ranked_rows
+                if (bool(model_signals.klass(by_id[c['selected_deployment']])) or c['cost_tier'] == 'free') is is_classed]
+        start = band.index(('flat', True))
+        assert start >= max((i + 1 for i, t in enumerate(band) if t == ('flat', False) or t[0] == 'free'), default=0)
+        assert band[start:start + len(expected)] == [('flat', True)] * len(expected)
+        assert all(t[0] in {'free-credit', 'metered'} for t in band[start + len(expected):])
     table = native_routes.configured()
     table['deployments'] = [{**r, 'qualified': False} if r['id'] == 'opencode-sub-kimi-k3' else r
                             for r in table['deployments']]

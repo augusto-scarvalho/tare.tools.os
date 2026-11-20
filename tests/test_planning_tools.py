@@ -473,8 +473,9 @@ def test_picker_profile_is_immutable_and_keeps_other_role_routes(tmp_path):
     assert planning_tools.configure_model(profile) == selected
     assert load_deployment(local_path(selected)) == candidate
     assert turn_engine.policy()['planner'] == [selected]
-    assert all(turn_engine.policy()[role] == before[role] for role in ('auditor', 'heads_up'))
-    assert all(role not in turn_engine.policy() for role in ('implementer', 'researcher', 'vision'))  # still automatic
+    assert turn_engine.policy()['auditor'] == before['auditor']
+    assert all(role not in turn_engine.policy()
+               for role in ('implementer', 'researcher', 'vision', 'heads_up'))  # still automatic
 
 
 @pytest.mark.parametrize('settled', [False, True])

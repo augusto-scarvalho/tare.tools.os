@@ -584,23 +584,41 @@ def usage(session):
 def write(text, seen, known=()):
     """(notes, attempts): the first available `heads_up` route that answers writes them; one handover on failure.
     `known`: sentences the host is certain of (certain()), which the note must not contradict."""
-    from .native_generation import generate_text, vault_secret
-    from .turn_engine import DEFAULT_POLICY, available, policy, with_effort
+    from .challenger import local as is_local
     from .execution_scope import admit, refusal
+    from .model_choices import declared_effort
+    from .native_generation import generate_text, vault_secret
+    from .turn_engine import available, avoid_local_gpu, local_gpu_busy, policy, with_effort
     prompt = ('Notes already shown to the user (never repeat these):\n' + ('\n'.join('- ' + s for s in seen) or 'none')
               + ('\n\nFacts the host is certain of (never contradict them):\n' + '\n'.join('- ' + s for s in known)
                  if known else '')
               + '\n\nTurn record (JSON):\n' + text)
     attempts, effort = [], policy().get('heads_up_effort')  # high unless the owner chose another level
     token = _cancellation()
-    for name in policy().get('heads_up') or DEFAULT_POLICY['heads_up']:
+    if saved := policy().get('heads_up'):
+        candidates = ((name, None) for name in saved)
+    else:
+        from .native_routes import ranked
+        deployments, selection = ranked('heads_up')
+        names = {row['selected_deployment']: row['catalog'] for row in selection['candidates'] if row.get('eligible')}
+        candidates = ((names[value['id']], value) for value in deployments)
+    for name, deployment in candidates:
         if token.is_cancelled():
             break
-        deployment, _ = available(name)
+        if deployment is None:
+            deployment, _ = available(name)
+        elif is_local(deployment) and (avoid_local_gpu() or local_gpu_busy(deployment)):
+            continue
         if deployment is None or refusal('heads_up', deployment, name):
             continue
         if effort:
-            deployment = with_effort(deployment, effort)
+            try:
+                deployment = with_effort(deployment, effort)
+            except ValueError:
+                try:
+                    deployment = with_effort(deployment, declared_effort(deployment, effort))
+                except ValueError:
+                    continue
         started = time.monotonic()
         try:
             admit(deployment, 'heads_up')  # the routing profile's backstop: this call starts no session
