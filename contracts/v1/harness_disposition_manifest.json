@@ -3921,8 +3921,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 23785,
-      "sha256": "91a466529f6905fe40efa1472d212ee327ea9152b4f2529735d4a6f419446487"
+      "size_bytes": 25010,
+      "sha256": "bc1556e6c05fa65eb4a9cc8b8cb8d63546c8d7ec2daa86df330961dd7fc892c7"
     },
     {
       "name": "windows_isolation.py",

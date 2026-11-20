@@ -215,6 +215,24 @@ class TareModelAssessmentPort:
             deployment = deepcopy(self._deployment)
             profile = deployment["native_profile"]
             profile["output_tokens"] = min(profile["output_tokens"], request.max_output_tokens)
+            from .challenger import local as is_local
+            if is_local(deployment):
+                params = json.loads(profile.get("parameters_json") or "{}")
+                if isinstance(params, dict):
+                    thinking = (isinstance(params.get("chat_template_kwargs"), dict)
+                                and params["chat_template_kwargs"].get("enable_thinking") is True)
+                    budget = max(1, profile["output_tokens"] // 4)
+                    changed = False
+                    if "reasoning_budget_tokens" in params:
+                        current = params["reasoning_budget_tokens"]
+                        params["reasoning_budget_tokens"] = min(current, budget) if type(current) is int else budget
+                        changed = True
+                    elif "thinking_budget" in params or "native_reasoning_budgets" in deployment or thinking:
+                        current = params.get("thinking_budget")
+                        params["thinking_budget"] = min(current, budget) if type(current) is int else budget
+                        changed = True
+                    if changed:
+                        profile["parameters_json"] = json.dumps(params, sort_keys=True)
             deployment.setdefault("native_execution_limits", {})["max_model_retries"] = 0
         except Exception:
             return observation("ABSTAINED", "PREFLIGHT_FAILED")
