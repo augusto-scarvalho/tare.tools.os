@@ -774,8 +774,10 @@ def test_prove_all_proves_available_pending_routes_across_roles_and_fits_compact
         table.move_cursor(row=0, column=0)  # vendor header row
         await pilot.pause()
         await pilot.press('P')
-        await app.workers.wait_for_complete()
-        await pilot.pause()
+        for _ in range(100):
+            await pilot.pause(0.05)
+            if isinstance(app.screen, ProveDialog):
+                break
         dialog = app.screen
         assert isinstance(dialog, ProveDialog)
         shown = ' '.join(dialog.lines)
@@ -787,11 +789,13 @@ def test_prove_all_proves_available_pending_routes_across_roles_and_fits_compact
         # Confirm via button: unsaved tick stays, all available pin-only routes across roles are proven once.
         assert await cell('claude/opus', 'claude-code') == '[ ]'
         panel.query_one('#matrix-prove-all', Button).press()
-        await app.workers.wait_for_complete()
-        await pilot.pause()
+        for _ in range(100):
+            await pilot.pause(0.05)
+            if isinstance(app.screen, ProveDialog):
+                break
         assert isinstance(app.screen, ProveDialog)
         app.screen.query_one('#prove-go', Button).press()
-        await app.workers.wait_for_complete()
+        await pilot.pause()
         await proved(pilot, panel, status, 'Proved 2 of 2 route(s).')
         assert sorted(calls) == sorted(available_targets)
         assert str(table.get_cell('claude/opus', 'claude-code')) == '[ ]' and matrix.dirty()

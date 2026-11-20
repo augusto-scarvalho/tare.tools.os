@@ -256,14 +256,23 @@ def test_research_result_takes_a_job_id_not_a_path_and_forwards_the_ref_range(tm
 
 
 def test_prove_cli_dispatches_to_environment_and_works_without_work_graph(tmp_path, monkeypatch):
-    from relay import cli_discovery, environment, native_installation, provider_prices
+    from relay import cli_discovery, environment, native_installation, provider_prices, relay_mesh
     empty_os = tmp_path / "empty-os-root"
     empty_os.mkdir()
+    previous_root = relay_mesh.RELAY_ROOT
+    previous_module = sys.modules.get("relay_mesh")
     monkeypatch.setenv("TARE_OS_ROOT", str(empty_os))
     monkeypatch.setattr(cli_discovery, "discover", lambda: [])
     monkeypatch.setattr(provider_prices, "refresh_reading", lambda: None)
     monkeypatch.setattr(environment, "pending_proofs", lambda: [])
-    assert native_installation.main(["prove", "all", "--dry-run"]) == 0
+    try:
+        assert native_installation.main(["prove", "all", "--dry-run"]) == 0
+    finally:
+        relay_mesh.rebind_root(previous_root)
+        if previous_module is None:
+            sys.modules.pop("relay_mesh", None)
+        else:
+            sys.modules["relay_mesh"] = previous_module
     seen = []
     monkeypatch.setattr(environment, "prove_main", lambda argv: seen.append(argv) or 3)
     assert tare_ops.main(["prove", "all", "--dry-run"]) == 3
