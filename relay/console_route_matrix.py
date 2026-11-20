@@ -630,22 +630,36 @@ class RouteMatrix(Vertical):
         self.run_worker(self.confirm_prove(names, from_all=True), group='route-matrix-prove')
 
     async def confirm_prove(self, names, *, from_all=False):
-        def lines():  # the line `environment.prove` will ask about, said before anything is spent
+        def inspect():  # the line `environment.prove` will ask about, said before anything is spent
+            lines, bound, unavailable = [], [], []
             for name in names:
                 deployment, why = env.route_for(name)
-                yield f'{name}: ' + (env.cost_line(deployment) if deployment else f'cannot be proven: {why}')
-        text = await asyncio.to_thread(lambda: list(lines()))
+                if deployment is None:
+                    lines.append(f'{name}: cannot be proven: {why}')
+                    unavailable.append((name, why))
+                else:
+                    cost = env.cost_line(deployment)
+                    lines.append(f'{name}: {cost}')
+                    bound.append((name, env.prove_binding(deployment, cost)))
+            return lines, bound, unavailable
+        text, bound, unavailable = await asyncio.to_thread(inspect)
+        if not self.is_mounted:
+            return
+        if not bound:
+            reason = '; '.join(f'{name}: {why}' for name, why in unavailable)
+            return self.show(f'Nothing to prove: {reason}' if reason else
+                             'Nothing to prove: no pending pin-only routes are available here.')
         self.app.push_screen(ProveDialog(text), lambda yes: yes and self.run_worker(
-            self.prove(names, from_all=from_all), group='route-matrix-prove'))
+            self.prove(bound, skipped=unavailable, from_all=from_all), group='route-matrix-prove'))
 
-    async def prove(self, names, *, from_all=False):
+    async def prove(self, items, *, skipped=(), from_all=False):
         role, cell, self.proving, said = self.role, self.cursor_cell(), True, []
         try:
-            for i, name in enumerate(names, 1):
-                self.show(f'Proving {name} ({i} of {len(names)}): one minimal call, then a short task…')
-                # the user just confirmed that line; prove() keeps the result in the setup file, never the reply
+            for i, (name, binding) in enumerate(items, 1):
+                self.show(f'Proving {name} ({i} of {len(items)}): one minimal call, then a short task…')
+                # prove_bound checks that model, account, and cost still match what ProveDialog showed
                 try:
-                    record = await asyncio.to_thread(env.prove, name, lambda line: True)
+                    record = await asyncio.to_thread(env.prove_bound, name, binding)
                 except (ValueError, OSError, KeyError, TypeError) as exc:
                     record = {'ok': False, 'reason': str(exc)}
                 said.append((name, record))
@@ -658,7 +672,12 @@ class RouteMatrix(Vertical):
         for rows in self.routes.values():
             for n, _, status, _ in rows:
                 statuses.setdefault(n, set()).add(status)
+        for name, why in skipped:
+            self.proved[name] = f'not proven: {why}'
         for name, record in said:  # kept for describe(): the reload moves the cursor, which rewrites the status line
+            if record.get('ok') is None:
+                self.proved[name] = f"skipped: {record.get('reason') or 'not confirmed'}"
+                continue
             failed_task = (record.get('role_check') or {}).get('ok') is False
             lifted = any(s != 'NOT_QUALIFIED_PIN_ONLY' for s in statuses.get(name, ()))
             mirror_target = next((self.mirrors[r, name] for r in self.routes if (r, name) in self.mirrors), None)
@@ -671,7 +690,7 @@ class RouteMatrix(Vertical):
                 if lifted else
                 'answered and did the task, but it stays pin only (a local model, or a reseller\'s that no other route '
                 'serves automatically, is not proven by this)')
-        if not from_all and cell and not cell[0].startswith('#') and cell[1] != 'model':
+        if not from_all and not skipped and cell and not cell[0].startswith('#') and cell[1] != 'model':
             self.show(self.describe(*cell))
             return
         after_cell = self.cursor_cell()
@@ -679,15 +698,23 @@ class RouteMatrix(Vertical):
             # Keep build()/load()'s queued CellHighlighted event from overwriting the batch proof summary.
             self._last_highlighted = after_cell
         passed = sum(1 for _, rec in said if rec.get('ok') is True)
-        if len(said) == 1:
+        changed = [n for n, rec in said if rec.get('ok') is None]
+        failed = [n for n, rec in said if rec.get('ok') is False]
+        if len(said) == 1 and not skipped:
             name, _ = said[0]
             self.show(f'{name}: {self.proved[name]}.')
-        elif passed == len(said):
+        elif passed == len(said) and not skipped:
             self.show(f'Proved {passed} of {len(said)} route(s).')
         else:
-            failed = [n for n, rec in said if rec.get('ok') is not True]
-            self.show(f"Proved {passed} of {len(said)} route(s); failed: {', '.join(failed[:3])}"
-                      + ('…' if len(failed) > 3 else '') + '.')
+            parts = [f'Proved {passed} of {len(said)} route(s)']
+            if changed:
+                parts.append(f"skipped (changed after confirmation): {', '.join(changed[:3])}"
+                             + ('…' if len(changed) > 3 else ''))
+            if failed:
+                parts.append(f"failed: {', '.join(failed[:3])}" + ('…' if len(failed) > 3 else ''))
+            if skipped:
+                parts.append(f'{len(skipped)} unavailable before confirmation')
+            self.show('; '.join(parts) + '.')
 
     def targets(self, rule):
         """The role's cells `rule` covers (a line on a source, a vendor's lines, a source, a route id), for make()."""

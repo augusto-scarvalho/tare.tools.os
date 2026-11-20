@@ -802,3 +802,71 @@ def test_prove_all_proves_available_pending_routes_across_roles_and_fits_compact
         assert str(table.get_cell('claude/fable', 'claude-code')) == '[x]'
         assert matrix.provable_all() == [] and panel.query_one('#matrix-prove-all', Button).disabled
     journey(tmp_path, steps, size=(80, 24))
+
+
+def test_matrix_prove_skips_unpreviewed_and_changed_routes_after_confirmation(pool, tmp_path, monkeypatch):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+    install(pool, FABLE, 'cli://claude', 'claude-fable-5-2')
+    monkeypatch.setenv('OPENAI_API_KEY', 'fixture-key')
+    terra = 'openai-api-gpt-6-1-terra'
+    live = {
+        FABLE: {'id': FABLE, 'native_profile': {'model': 'claude-fable-5-2', 'protocol': 'vendor-cli', 'endpoint': 'cli://claude'}},
+        terra: {'id': terra, 'native_credential_env': 'OPENAI_API_KEY',
+                'native_profile': {'model': 'gpt-6-1-terra', 'protocol': 'openai-responses', 'endpoint': 'https://api.openai.com/v1/responses'}},
+    }
+    costs = {FABLE: 'cost for fable', terra: 'cost for terra'}
+    calls = []
+    monkeypatch.setattr(environment, 'route_for', lambda name: (live[name], None) if live.get(name) else (None, 'unavailable'))
+    monkeypatch.setattr(environment, 'cost_line', lambda deployment: costs[deployment['id']])
+
+    def prove(name, confirm):
+        assert confirm(f'{name}: {costs[name]}.')
+        calls.append(name)
+        record = {'ok': True, 'cost': costs[name]}
+        value = environment.read()
+        value.setdefault('proofs', {})[name] = record
+        environment.save(value)
+        return record
+    monkeypatch.setattr(environment, 'prove', prove)
+
+    async def steps(app, pilot, panel, cell, status):
+        async def wait_prove_dialog():
+            for _ in range(200):
+                await pilot.pause(0.05)
+                if (isinstance(app.screen, ProveDialog) and app.screen.is_mounted
+                        and app.screen.query('#prove-go') and app.screen.query('#prove-cancel')):
+                    await pilot.pause()
+                    return app.screen
+            raise AssertionError(f'ProveDialog did not mount in 10 s: {app.screen!r}')
+
+        # 1. Preview has terra unavailable; terra reappears before user clicks Prove -> must NOT be proved.
+        saved_terra = live[terra]
+        live[terra] = None
+        panel.query_one('#matrix-prove-all', Button).press()
+        dialog = await wait_prove_dialog()
+        shown = ' '.join(dialog.lines)
+        assert f'{FABLE}: cost for fable' in shown and f'{terra}: cannot be proven: unavailable' in shown
+        live[terra] = saved_terra  # reappears after dialog opened without cost
+        dialog.query_one('#prove-go', Button).press()
+        await pilot.pause()
+        await proved(pilot, panel, status, 'Proved 1 of 1 route(s); 1 unavailable before confirmation.')
+        assert calls == [FABLE]
+
+        # 2. Now only terra remains pending; its cost/model changes before Prove -> skipped with zero calls.
+        calls.clear()
+        panel.query_one('#matrix-prove-all', Button).press()
+        dialog = await wait_prove_dialog()
+        assert f'{terra}: cost for terra' in ' '.join(dialog.lines)
+        costs[terra] = 'cost spiked after dialog opened'
+        dialog.query_one('#prove-go', Button).press()
+        await pilot.pause()
+        await proved(pilot, panel, status, 'changed after confirmation')
+        assert calls == []
+
+        # 3. If no pending route is available when confirm_prove runs, ProveDialog must not open.
+        live[terra] = None
+        panel.query_one('#matrix-prove-all', Button).press()
+        await proved(pilot, panel, status, 'Nothing to prove:')
+        assert app.screen is panel and calls == []
+
+    journey(tmp_path, steps, size=(100, 32))
