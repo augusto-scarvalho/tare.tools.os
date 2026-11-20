@@ -254,3 +254,18 @@ def test_research_result_takes_a_job_id_not_a_path_and_forwards_the_ref_range(tm
                           "--custody", str(tmp_path)]) == 0
     assert seen == {"jobs": tmp_path / "research", "job_id": job, "ref": "W-1", "start": 201, "end": 260}
 
+
+def test_prove_cli_dispatches_to_environment_and_works_without_work_graph(tmp_path, monkeypatch):
+    from relay import cli_discovery, environment, native_installation, provider_prices
+    empty_os = tmp_path / "empty-os-root"
+    empty_os.mkdir()
+    monkeypatch.setenv("TARE_OS_ROOT", str(empty_os))
+    monkeypatch.setattr(cli_discovery, "discover", lambda: [])
+    monkeypatch.setattr(provider_prices, "refresh_reading", lambda: None)
+    monkeypatch.setattr(environment, "pending_proofs", lambda: [])
+    assert native_installation.main(["prove", "all", "--dry-run"]) == 0
+    seen = []
+    monkeypatch.setattr(environment, "prove_main", lambda argv: seen.append(argv) or 3)
+    assert tare_ops.main(["prove", "all", "--dry-run"]) == 3
+    assert seen == [["all", "--dry-run"]]
+

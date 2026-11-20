@@ -1128,6 +1128,131 @@ def prove(name, confirm):
                            **({'role_check': check} if check else {})})
 
 
+def pending_proofs(roles=PROFILE_ROLES):
+    """Sorted list of unique liftable NOT_QUALIFIED_PIN_ONLY route names that are currently available here."""
+    from .native_catalog import select_cache
+    from .native_routes import configured, mirror
+    candidates = set()
+    with select_cache():
+        table = configured()
+        pin_only = {row.get('native_catalog'): row for row in table['deployments'] if row.get('qualified') is False}
+        credentials = {}
+        for role in roles:
+            for name, route, now in auto_routes(role, configured_table=table, credentials=credentials):
+                if route is None or now != 'NOT_QUALIFIED_PIN_ONLY':
+                    continue
+                key = route_key(route)
+                if key[0] or (name in pin_only and mirror(pin_only[name], route, role)):
+                    candidates.add(name)
+        return [name for name in sorted(candidates) if route_for(name)[0] is not None]
+
+
+def _prepare_prove(names, *, discover_all=False):
+    # What the TUI and tare serve do at start, and a proof right after an update needs: without the first a new
+    # CLI model has no route yet (native_deployment_unknown), without the second the cost line has no price.
+    if discover_all or any(not name.startswith('cli:') and route_for(name)[0] is None for name in names):
+        try:  # the installed CLIs' models as routes: no model call
+            from .cli_discovery import discover
+            discover()
+        except Exception:  # optional, as at start: the name then stays unknown and the proof says so
+            pass
+    try:  # the reference prices, at most once a day; no model call, no key sent
+        from .provider_prices import refresh_reading
+        refresh_reading()
+    except Exception:  # optional: the cost line then says the price is unknown, as before
+        pass
+
+
+def _run_prove(targets, *, yes=False, dry_run=False, as_json=False):
+    import sys
+    wants_all = any(t.lower() == 'all' for t in targets)
+    _prepare_prove(targets, discover_all=wants_all)
+    resolved = []
+    for target in targets:
+        if target.lower() == 'all':
+            resolved.extend(pending_proofs())
+        else:
+            resolved.append(target)
+    resolved = list(dict.fromkeys(resolved))
+    if not resolved:
+        print('{}' if as_json else 'Nothing to prove: no pending pin-only routes.')
+        return 0
+    if dry_run:
+        preview, lines = {}, []
+        for name in resolved:
+            deployment, why = route_for(name)
+            if deployment is None:
+                preview[name] = {'ok': False, 'reason': why}
+                lines.append(f'{name}: cannot be proven: {why}')
+            else:
+                cost = cost_line(deployment)
+                preview[name] = {'ok': None, 'reason': 'dry_run', 'cost': cost}
+                lines.append(f'{name}: {cost}.')
+        print(json.dumps(preview, indent=1) if as_json else '\n'.join(lines))
+        return 0
+    if not wants_all and len(resolved) == 1:
+        def confirm(line):
+            print(line, file=sys.stderr if as_json else sys.stdout)
+            if yes:
+                return True
+            try:
+                return sys.stdin.isatty() and input('Spend it? [y/N] ').strip().lower() == 'y'
+            except EOFError:
+                return False
+        results = {name: prove(name, confirm) for name in resolved}
+    else:
+        cost_stream = sys.stderr if as_json else sys.stdout
+        preview = {}
+        for name in resolved:
+            deployment, why = route_for(name)
+            if deployment is None:
+                preview[name] = {'ok': False, 'reason': why}
+                print(f'{name}: cannot be proven: {why}', file=cost_stream)
+            else:
+                cost = cost_line(deployment)
+                preview[name] = {'ok': None, 'reason': 'not confirmed', 'cost': cost}
+                print(f'{name}: {cost}.', file=cost_stream)
+        if yes:
+            confirmed = True
+        else:
+            try:
+                confirmed = (
+                    sys.stdin.isatty()
+                    and input(f'Prove all {len(resolved)} route(s)? [y/N] ').strip().lower() == 'y'
+                )
+            except EOFError:
+                confirmed = False
+        if not confirmed:
+            results = preview
+        else:
+            results = {}
+            for index, name in enumerate(resolved, 1):
+                if not as_json:
+                    print(f'[{index}/{len(resolved)}] Proving {name}...')
+                try:
+                    results[name] = prove(name, lambda _: True)
+                except (ValueError, OSError, KeyError, TypeError) as exc:
+                    results[name] = {'ok': False, 'reason': str(exc)}
+    print(json.dumps(results, indent=1) if as_json else '\n'.join(
+        f"{name}: {'proven' if r.get('ok') else 'not proven: ' + str(r.get('reason') or '')}"
+        for name, r in results.items()))
+    return 0 if all(r.get('ok') is True for r in results.values()) else 1
+
+
+def prove_main(argv=None):
+    """Prove pending pin-only routes or named routes after showing their costs."""
+    import argparse
+    parser = argparse.ArgumentParser(prog='tare prove', description=prove_main.__doc__, allow_abbrev=False)
+    parser.add_argument('routes', nargs='+', metavar='ROUTE',
+                        help="Route name(s), cli:NAME, or 'all' for every pending pin-only route")
+    parser.add_argument('--yes', action='store_true', help='Prove without asking (scripts); the cost is still printed')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='List resolved routes and their costs with zero model calls')
+    parser.add_argument('--json', action='store_true')
+    args = parser.parse_args(argv)
+    return _run_prove(args.routes, yes=args.yes, dry_run=args.dry_run, as_json=args.json)
+
+
 def remember(name, record):
     """Keep a proof's record, with its time, under `proofs[name]` in the setup; returns it."""
     from datetime import datetime, timezone
@@ -1275,8 +1400,9 @@ def main(argv=None):
     parser.add_argument('--meta-contributor', choices=('on', 'off'),
                         help='Allow Meta to use prompts, code and responses sent to Muse Spark Contributor')
     parser.add_argument('--prove', action='append', default=[], metavar='ROUTE',
-                        help='One minimal real call on a route (a profile name, or cli:codex), then one short task '
-                        'in the implementer role on a throwaway file, after showing its cost')
+                        help="One minimal real call on a route (a profile name, cli:codex, or 'all' for every "
+                        'pending pin-only route), then one short task in the implementer role on a throwaway file, '
+                        'after showing its cost')
     parser.add_argument('--yes', action='store_true', help='Prove without asking (scripts); the cost is still printed')
     parser.add_argument('--replace-older', action='store_true', help='Move routes you named to the newer models')
     parser.add_argument('--keep-older', action='store_true', help='Keep the older models routes you named run')
@@ -1295,32 +1421,7 @@ def main(argv=None):
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args(argv)
     if args.prove:
-        # What the TUI and tare serve do at start, and a proof right after an update needs: without the first a new
-        # CLI model has no route yet (native_deployment_unknown), without the second the cost line has no price.
-        if any(not name.startswith('cli:') and route_for(name)[0] is None for name in args.prove):
-            try:  # the installed CLIs' models as routes: no model call
-                from .cli_discovery import discover
-                discover()
-            except Exception:  # optional, as at start: the name then stays unknown and the proof says so
-                pass
-        try:  # the reference prices, at most once a day; no model call, no key sent
-            from .provider_prices import refresh_reading
-            refresh_reading()
-        except Exception:  # optional: the cost line then says the price is unknown, as before
-            pass
-
-        def confirm(line):
-            print(line)
-            if args.yes:
-                return True
-            try:
-                return sys.stdin.isatty() and input('Spend it? [y/N] ').strip().lower() == 'y'
-            except EOFError:
-                return False
-        results = {name: prove(name, confirm) for name in args.prove}
-        print(json.dumps(results, indent=1) if args.json else '\n'.join(
-            f"{name}: {'proven' if r['ok'] else 'not proven: ' + r['reason']}" for name, r in results.items()))
-        return 0 if all(r['ok'] for r in results.values()) else 1
+        return _run_prove(args.prove, yes=args.yes, as_json=args.json)
     try:
         if args.reset:
             store().unlink(missing_ok=True)

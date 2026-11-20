@@ -2241,8 +2241,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 5847,
-      "sha256": "310172c2bfb04435b6b57a8463fcd40f23f9fa32444f382c857286ff64e38e02"
+      "size_bytes": 5858,
+      "sha256": "f42ff1dbdb1d19a7d8880f968c7d1d24e20bb5a4ab1339485945397a7825755c"
     },
     {
       "name": "native_settlement.py",
@@ -3821,8 +3821,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 80854,
-      "sha256": "693b77a3020f9299dc42f6ff7f5d25ce01714bc2b1d117ce1a03f7e0a9b9713b"
+      "size_bytes": 85382,
+      "sha256": "59c4d8f7e776ff57313cf9c7bc84a2aa3ced768c9b636adaeac508b6bbba2000"
     },
     {
       "name": "console_setup.py",
@@ -4451,8 +4451,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 42462,
-      "sha256": "1a5b7e07e2585270617fda94c81a1e45ecbd64feadf8193b08a1690bae72cb6d"
+      "size_bytes": 44786,
+      "sha256": "6e131b18a9f857558cd6d132da257c6214a661cf4cc2e400fb1774e531f4c785"
     },
     {
       "name": "console_credit.py",
