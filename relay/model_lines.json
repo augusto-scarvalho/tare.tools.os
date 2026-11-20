@@ -86,5 +86,12 @@
     "label": "Gemini {version} Hydrogen",
     "class": "middling",
     "efforts": ["low", "medium", "high"]
+  },
+  "gemini-neon": {
+    "vendor": "Google",
+    "bias_domain": "google/gemini",
+    "label": "Gemini {version} Neon",
+    "class": "frontier",
+    "efforts": ["low", "medium", "high"]
   }
 }

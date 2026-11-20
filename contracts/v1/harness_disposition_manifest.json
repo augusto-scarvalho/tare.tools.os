@@ -2981,8 +2981,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS selects configured eligible role routes and persists the rationale; existing native Work owner executes and recovers them.",
-      "size_bytes": 41857,
-      "sha256": "d8c1904464840a822618aca58ca84f6c6ec8c32cc3bbab0aed8ff7b6039b0853"
+      "size_bytes": 43224,
+      "sha256": "3b8a91ad37c68b32e0107d2c860a65ac894832afc8be160309ab195d3cc0d8de"
     },
     {
       "name": "native_serve.py",
@@ -3151,8 +3151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns console model choices and local profiles; the Kernel still owns CLI preflight and inference.",
-      "size_bytes": 26391,
-      "sha256": "8ecba273fe200f01d8fe907342dd285b48be7704f386169c609cd5c67bb13a9f"
+      "size_bytes": 28901,
+      "sha256": "a5adc14c2ac5db4d430532e0f396b1fdb01c6c46d1341fca1af6a4756635b15f"
     },
     {
       "name": "native_activity.py",
