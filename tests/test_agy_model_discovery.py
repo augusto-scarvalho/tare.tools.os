@@ -258,4 +258,3 @@ def test_orchestrator_only_listing_clears_cached_neon_and_retires_profile_while_
     assert retired['removed'] == [neon] and not native_profiles.local_path(neon).exists()
     cache = json.loads(cli_discovery.cache_file().read_text(encoding='utf-8'))
     assert cache['agy_models']['ids'] == []
-
