@@ -504,3 +504,54 @@ def test_decision_models_left_out_are_never_asked(machine, monkeypatch):
     assert turn_engine.judges({'state': 's', 'options': {'a': 'A'}, 'question': 'q'}) == {}
     assert turn_engine.judge_many('s', {'a': 'q'}) == {} and turn_engine.local_judge() is None
     assert work_forms.judge_form('Fix the typo.')() is None
+
+
+def test_native_profiles_names_skips_symlinks_and_caches_match_uncached(machine, tmp_path, monkeypatch):
+    from relay import native_catalog, native_profiles
+    prof_dir = tmp_path / 'profiles'
+    prof_dir.mkdir()
+    monkeypatch.setenv('TARE_PROFILE_DIR', str(prof_dir))
+    (prof_dir / 'custom-route.json').write_text('{}', encoding='utf-8')
+    (prof_dir / 'ignored upper.json').write_text('{}', encoding='utf-8')
+    (prof_dir / 'auto.json').write_text('{}', encoding='utf-8')
+    target = tmp_path / 'outside.json'
+    target.write_text('{}', encoding='utf-8')
+    link = prof_dir / 'symlinked-route.json'
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError):
+        pass
+    assert native_profiles.names() == ['custom-route']
+
+    value = environment.set_auto(environment.set_auto({}, 'auditor:claude/opus@api=off'), 'auditor:local-qwen=on')
+    seen_ids = []
+
+    def tracking_id_rule(text):
+        seen_ids.append(text)
+        return environment.id_rule(text)
+
+    parsed, problems = environment.profile(value, 'auditor', resolve_id=tracking_id_rule)
+    assert seen_ids == ['local-qwen'] and not problems
+    deployment = {'id': 'local-qwen', 'native_profile': {'endpoint': 'http://127.0.0.1:8080/v1', 'model': 'qwen3.8'}}
+    assert environment.profile_state('auditor', deployment, value) == environment.profile_state(
+        'auditor', deployment, value, parsed=parsed)
+    assert environment.granted('auditor', deployment, value) == environment.granted(
+        'auditor', deployment, value, parsed=parsed)
+
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path / 'storage'))
+    calls = 0
+    real_bundled = native_catalog.bundled
+
+    def counted_bundled(name):
+        nonlocal calls
+        calls += 1
+        return real_bundled(name)
+
+    monkeypatch.setattr(native_catalog, 'bundled', counted_bundled)
+    with native_catalog.select_cache():
+        first = native_catalog.select('openai-api')
+        first['mutated_by_caller'] = True
+        second = native_catalog.select('openai-api')
+    assert calls == 1 and 'mutated_by_caller' not in second
+    native_catalog.select('openai-api')
+    assert calls == 2

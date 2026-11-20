@@ -440,15 +440,33 @@ def note_usage_limit(deployment, resets_at=None, now=None, kind=None):
     return until
 
 
+_usage_limits_cache = (None, {})
+
+
+def _read_usage_limits():
+    """Cached parsed usage-limits JSON keyed by path, inode, mtime, and size."""
+    global _usage_limits_cache
+    path = usage_limits_path()
+    try:
+        found = path.stat()
+        stamp = (str(path), found.st_ino, found.st_mtime_ns, found.st_size)
+    except OSError:
+        return {}
+    if _usage_limits_cache[0] != stamp:
+        try:
+            parsed = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            parsed = {}
+        _usage_limits_cache = (stamp, parsed if isinstance(parsed, dict) else {})
+    return _usage_limits_cache[1]
+
+
 def usage_limited(deployment, now=None):
     """Until when this deployment's account, or its own model, has no usage left, else None: a failed call said so
     (note_usage_limit), or the provider's own quota reading shows a window of this model at zero (tare quota); for an
     API route, its account's known balance is spent (provider_quota.balance_spent)."""
     keys = usage_keys(deployment)
-    try:
-        limits = json.loads(usage_limits_path().read_text(encoding='utf-8')) if keys else {}
-    except (OSError, ValueError):
-        limits = {}
+    limits = _read_usage_limits() if keys else {}
     now = datetime.now(timezone.utc).timestamp() if now is None else now
     # Match the writer's seven-day bound. Invalid cached metadata is unknown, like an
     # unreadable record; synthesizing now + grace here would renew its block forever.
