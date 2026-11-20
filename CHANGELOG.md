@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- The shepherd identity test additions at the end of `tests/test_ci_watch.py` remove an extra trailing blank line at EOF (found by CI whitespace check).
 - The CI shepherd now checks push identity before pushing a merge commit created in `catch_up`: unless GitHub confirms `isPrivate: true`, a non-noreply author or committer email refuses the push before anything leaves the machine and raises an immediate `push identity refused` alert instead of failing silently with git hooks disabled.
 - `tare models --types` (and `--types --json`) now reports BenchLM boards on the local scale by how many consumer open-weight models they place (`consumer_models`, `scale: 'local'`, threshold `MIN_CONSUMER` 10), instead of reporting `0 of N known lines` and `places no model`.
 - Added `hy4-flash` (`tencent/Hy4-flash`, 220.25B total / 11.3B active, MoE with 63.36B Engram table on SSD = 38.41 GB at Q4_K_M, leaving 106.39 GB resident at 64K 8-bit KV) to `relay/consumer_models.json` as the first entry using the documented SSD table discount.

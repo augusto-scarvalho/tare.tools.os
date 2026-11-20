@@ -1643,4 +1643,3 @@ def test_push_preflight_loads_without_package_context(monkeypatch):
     refusals = ci_watch._push_preflight().identity_refusals(
         [{'sha': 'abc12345', 'author': 'personal@example.org', 'committer': NOREPLY_EMAIL}])
     assert refusals == ['commit abc12345: author email personal@example.org is not a GitHub noreply address']
-
