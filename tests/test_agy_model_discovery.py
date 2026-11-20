@@ -210,3 +210,51 @@ def test_template_less_anthropic_lines_stay_ignored_and_multiple_google_versions
     assert not native_profiles.local_path('agy-gemini-3-carbon-cli').exists()
     assert not native_profiles.local_path('agy-claude-haiku-5-5-cli').exists()
     assert not native_profiles.local_path('agy-claude-fable-5-2-cli').exists()
+
+
+def test_orchestrator_only_listing_clears_cached_neon_and_retires_profile_while_failures_keep_cache(agy, monkeypatch):
+    import subprocess
+    neon = 'agy-gemini-4-neon-cli'
+    initial = '\n'.join([
+        'gemini-4-neon-low\tGemini 4 Neon (Low)',
+        'gemini-4-neon-medium\tGemini 4 Neon (Medium)',
+        'gemini-4-neon-high\tGemini 4 Neon (High)',
+    ])
+    state = {'result': subprocess.CompletedProcess([], 0, initial, ''), 'error': None}
+
+    def fake_run(*args, **kwargs):
+        if state['error'] is not None:
+            raise state['error']
+        return state['result']
+
+    monkeypatch.setattr(subprocess, 'run', fake_run)
+    monkeypatch.setattr(cli_discovery, 'agy_listing', REAL_AGY_LISTING)
+
+    first = next(r for r in cli_discovery.discover() if r['endpoint'] == 'cli://agy')
+    assert neon in first['added'] and native_profiles.local_path(neon).is_file()
+
+    # Genuine read failures or blank/unparseable output preserve the cached Neon listing and profile.
+    for result, error in (
+        (subprocess.CompletedProcess([], 1, '', 'boom'), None),
+        (None, OSError('offline')),
+        (subprocess.CompletedProcess([], 0, '', ''), None),
+        (subprocess.CompletedProcess([], 0, 'warning: failed without tabs\n', ''), None),
+    ):
+        age(25)
+        state.update(result=result, error=error)
+        failed = next(r for r in cli_discovery.discover() if r['endpoint'] == 'cli://agy')
+        assert failed['removed'] == [] and native_profiles.local_path(neon).is_file()
+        cache = json.loads(cli_discovery.cache_file().read_text(encoding='utf-8'))
+        assert 'gemini-4-neon-high' in cache['agy_models']['ids']
+
+    # A successful `agy models` call returning only Orchestrators clears the cache and retires Neon.
+    age(25)
+    orch_only = '\n'.join([
+        'gemini-pro-orchestrator-neon\tOrchestrator (Neon)',
+        'gemini-4-neon-high\tOrchestrator (Neon)',
+    ])
+    state.update(result=subprocess.CompletedProcess([], 0, orch_only, ''), error=None)
+    retired = next(r for r in cli_discovery.discover() if r['endpoint'] == 'cli://agy')
+    assert retired['removed'] == [neon] and not native_profiles.local_path(neon).exists()
+    cache = json.loads(cli_discovery.cache_file().read_text(encoding='utf-8'))
+    assert cache['agy_models']['ids'] == []

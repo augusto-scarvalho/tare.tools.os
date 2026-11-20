@@ -121,31 +121,43 @@ def _agy_orchestrator(model_id, display=''):
             or (display or '').strip().casefold().startswith('orchestrator'))
 
 
+class _AgyListing(list):
+    """Filtered AGY model IDs, remembering whether `agy models` emitted any model rows before Orchestrator filtering."""
+
+    def __init__(self, items=(), *, saw_rows=False):
+        super().__init__(items)
+        self.saw_rows = saw_rows
+
+
 def agy_listing(executable):
     """The model ids `agy models` prints for the signed-in account (no model call): one 'id<TAB>Display' per line."""
     done = subprocess.run([executable, 'models'], capture_output=True, text=True, timeout=60,
                           stdin=subprocess.DEVNULL, cwd=str(Path(executable).absolute().parent))
     if done.returncode:
         raise OSError(f'agy models exited {done.returncode}')
-    ids = []
+    ids, saw_rows = [], False
     for line_text in done.stdout.splitlines():
         if '\t' not in line_text:
             continue
         model_id, _, display = line_text.partition('\t')
         model_id = model_id.strip()
         if _agy_orchestrator(model_id, display):
+            if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', model_id):
+                saw_rows = True
             continue
         # The id becomes a profile name: lowercase letters, digits, dots and hyphens only.
         if re.fullmatch(r'[a-z0-9][a-z0-9.-]*', model_id):
+            saw_rows = True
             ids.append(model_id)
-    return ids
+    return _AgyListing(ids, saw_rows=saw_rows)
 
 
 def agy_models(cache, executable):
     """The `agy models` reading, kept in the cache and taken again when the executable file changes or the last
-    attempt is a day old (the list depends on the account too). An attempt that fails, or lists no id, keeps the
-    last ids; it counts as the attempt, so a CLI that cannot list is not started on every discovery.
-    `read_at` moves only when the ids change, so a profile's source does not change every day."""
+    attempt is a day old (the list depends on the account too). An attempt that fails, or produces no recognizable
+    rows, keeps the last ids while counting as the attempt; a valid reading whose rows were all excluded (for example,
+    Orchestrator-only output) clears the cached ids so retired profiles are removed. `read_at` moves only when the
+    ids change, so a profile's source does not change every day."""
     held = cache.get('agy_models')
     held = held if isinstance(held, dict) else {}
     now = datetime.now(timezone.utc)
@@ -160,10 +172,11 @@ def agy_models(cache, executable):
             ids = None
         held = {'ids': held.get('ids') or [], 'read_at': held.get('read_at', ''), 'fingerprint': fingerprint(executable),
                 'checked_at': now.isoformat()}
-        if ids:
-            if sorted(ids) != sorted(held['ids']):
+        if ids is not None and (ids or getattr(ids, 'saw_rows', False)):
+            cleaned = list(ids)
+            if sorted(cleaned) != sorted(held['ids']):
                 held['read_at'] = now.isoformat()
-            held['ids'] = ids
+            held['ids'] = cleaned
         cache['agy_models'] = held
     return held
 
