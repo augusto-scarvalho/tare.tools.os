@@ -4,6 +4,7 @@ Notable changes to `tare.tools.os` are recorded here, newest first.
 
 ## Unreleased
 
+- Narrowed the heads-up writer's `'delivery'` event trigger (`relay/heads_up.py:events`) so it skips clean `VERIFIED` delegated implementations applied to project files with all recorded post-checks passing (`checks_after`), while still running on refused, failed, unapplied, non-`VERIFIED`, or post-check-failing deliveries (preserving `29/29` useful new notes and `32/32` old notes across 115 measured TUI turns while dropping calls from `102` to `91`, with `edit`, `check`, logistic score, and `EVERY=4` cadence unchanged).
 - The shepherd identity test additions at the end of `tests/test_ci_watch.py` remove an extra trailing blank line at EOF (found by CI whitespace check).
 - The CI shepherd now checks push identity before pushing a merge commit created in `catch_up`: unless GitHub confirms `isPrivate: true`, a non-noreply author or committer email refuses the push before anything leaves the machine and raises an immediate `push identity refused` alert instead of failing silently with git hooks disabled.
 - `tare models --types` (and `--types --json`) now reports BenchLM boards on the local scale by how many consumer open-weight models they place (`consumer_models`, `scale: 'local'`, threshold `MIN_CONSUMER` 10), instead of reporting `0 of N known lines` and `places no model`.
