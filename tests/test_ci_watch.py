@@ -383,7 +383,7 @@ def test_two_pull_requests_that_each_add_a_changelog_entry_both_reach_main(tmp_p
     subprocess.run(['git', 'clone', '-q', str(remote), str(work)], check=True, capture_output=True)
     def git(*args):
         return subprocess.run(['git', '-C', str(work), *args], capture_output=True, text=True, check=True).stdout
-    git('config', 'user.email', 't@localhost'); git('config', 'user.name', 'T'); git('config', 'core.hooksPath', '/dev/null')
+    git('config', 'user.email', NOREPLY_EMAIL); git('config', 'user.name', 'T'); git('config', 'core.hooksPath', '/dev/null')
     (work/'CHANGELOG.md').write_text('## Unreleased\n\n- old\n')  # a branch from before .gitattributes said union
     git('add', '.'); git('commit', '-qm', 'base'); git('push', '-q', 'origin', 'HEAD:main')
     for branch, entry in (('one', 'first'), ('two', 'second')):
@@ -535,7 +535,7 @@ def test_a_manifest_conflict_is_resolved_by_regenerating_it_from_the_merged_tree
     subprocess.run(['git', 'clone', '-q', str(remote), str(work)], check=True, capture_output=True)
     def git(*args):
         return subprocess.run(['git', '-C', str(work), *args], capture_output=True, text=True, check=True).stdout
-    git('config', 'user.email', 't@localhost'); git('config', 'user.name', 'T'); git('config', 'core.hooksPath', '/dev/null')
+    git('config', 'user.email', NOREPLY_EMAIL); git('config', 'user.name', 'T'); git('config', 'core.hooksPath', '/dev/null')
     (work/'relay').mkdir(); (work/'scripts').mkdir(); (work/'contracts'/'v1').mkdir(parents=True)
     shutil.copy(P(ci_watch.__file__).resolve().parents[1]/'scripts'/'sync_disposition_manifest.py', work/'scripts')
     def manifest(*extra):
@@ -623,7 +623,7 @@ def test_a_shepherd_sees_its_pull_request_merge_after_its_worktree_is_gone(tmp_p
         if '-R' not in args and not os.path.isdir(cwd):
             raise subprocess.CalledProcessError(1, ['gh', *args], stderr='no git remotes found\n')
         if args[:2] == ['repo', 'view']:
-            if 'isArchived' in args:  # the repository check names it positionally
+            if 'isArchived,isPrivate' in args:  # the repository check names it positionally
                 return json.dumps({'isArchived': False})
             return lookups.append(cwd) or json.dumps({'nameWithOwner': 'me/os'})
         if args[:2] == ['run', 'list']:
@@ -751,7 +751,7 @@ def test_real_git_writer_preserves_delivery_context(tmp_path, monkeypatch, previ
     ci_watch.git_in(root, 'init', '-q', '-b', 'main')
     def git(*args):
         return ci_watch.git_in(root, *args)
-    git('config', 'user.email', 't@localhost')
+    git('config', 'user.email', NOREPLY_EMAIL)
     git('config', 'user.name', 'T')
     git('config', 'core.hooksPath', '')
     git('remote', 'add', 'origin', str(remote))
@@ -836,7 +836,7 @@ def test_catch_up_never_overwrites_conflict_or_concurrent_advance(tmp_path, monk
     real_git(root, 'init', '-q', '-b', 'main')
     def git(*args):
         return real_git(root, *args)
-    git('config', 'user.email', 't@localhost')
+    git('config', 'user.email', NOREPLY_EMAIL)
     git('config', 'user.name', 'T')
     git('config', 'core.hooksPath', '')
     git('remote', 'add', 'origin', str(remote))
@@ -1547,3 +1547,99 @@ def test_a_failed_probe_on_a_push_to_an_open_pull_request_turns_auto_merge_off_u
     scripted_github(monkeypatch, lambda endpoint: api_answer(endpoint, settings={'full_name': 'me/os'}))
     probe_outcome(monkeypatch, 0, '{"ok": true, "failed": [], "not_run": [], "seconds": 20.0}\n')
     assert ci_watch.pull_request(work)['sandbox_probe'] == 'passed' and ci_watch.open_alerts() == []
+
+
+def _behind_checkout(tmp_path, commit_email, merge_email=None):
+    remote, work = tmp_path/'remote.git', tmp_path/'work'
+    ci_watch.git_in(tmp_path, 'init', '-q', '--bare', '-b', 'main', str(remote))
+    ci_watch.git_in(tmp_path, 'clone', '-q', str(remote), str(work))
+    git = lambda *args: ci_watch.git_in(work, *args)
+    git('config', 'user.email', commit_email); git('config', 'user.name', 'T'); git('config', 'core.hooksPath', '')
+    (work/'base.txt').write_text('base\n')
+    git('add', '.'); git('commit', '-qm', 'base'); git('push', '-q', 'origin', 'HEAD:main')
+    git('checkout', '-qb', 'feature', 'origin/main')
+    (work/'feature.txt').write_text('feature\n')
+    git('add', '.'); git('commit', '-qm', 'feature'); git('push', '-q', 'origin', 'feature')
+    git('checkout', '-q', 'main')
+    (work/'main.txt').write_text('main\n')
+    git('add', '.'); git('commit', '-qm', 'main advance'); git('push', '-q', 'origin', 'main')
+    git('checkout', '-q', 'feature')
+    if merge_email is not None:
+        git('config', 'user.email', merge_email)
+    return remote, work, git
+
+
+def test_catch_up_refuses_to_push_a_personal_email_unless_skipped(tmp_path):
+    remote, work, git = _behind_checkout(tmp_path, NOREPLY_EMAIL, merge_email='personal@example.org')
+    before = ci_watch.git_in(remote, 'rev-parse', 'feature').strip()
+    with pytest.raises(ci_watch.PushIdentityRefused, match='personal@example.org'):
+        ci_watch.catch_up(work, 'feature')
+    assert ci_watch.git_in(remote, 'rev-parse', 'feature').strip() == before
+    assert len(git('worktree', 'list', '--porcelain').split('worktree ')) == 2
+    assert ci_watch.catch_up(work, 'feature', check_identity=False) == []
+    assert ci_watch.git_in(remote, 'rev-parse', 'feature').strip() != before
+
+
+@pytest.mark.parametrize('visibility', [{'isPrivate': False}, {}])
+def test_shepherd_alerts_immediately_on_public_identity_refusal_and_pushes_after_fix(tmp_path, monkeypatch, visibility):
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    remote, work, git = _behind_checkout(tmp_path, NOREPLY_EMAIL, merge_email='personal@example.org')
+    before = ci_watch.git_in(remote, 'rev-parse', 'feature').strip()
+    notified, round_no = [], [0]
+    monkeypatch.setattr(ci_watch, 'notify', notified.append)
+    views = iter([{'mergeStateStatus': 'BEHIND'}, {'mergeStateStatus': 'BEHIND'}, {'mergeStateStatus': 'BEHIND'},
+                  {'state': 'MERGED'}])
+
+    def gh(args, cwd):
+        if args[:2] == ['repo', 'view']:
+            return json.dumps({'nameWithOwner': 'me/os', 'isArchived': False, **visibility})
+        if args[:2] in (['run', 'list'], ['pr', 'list']):
+            return '[]'
+        return json.dumps({'state': 'OPEN', 'autoMergeRequest': {'mergeMethod': 'MERGE'}, 'headRefName': 'feature',
+                           'headRefOid': 'h1', 'url': 'u', 'title': 'Fix', **next(views)})
+
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+
+    def after_round(_):
+        round_no[0] += 1
+        if round_no[0] == 1:
+            assert len(notified) == 1
+            alerts = ci_watch.open_alerts()
+            assert len(alerts) == 1 and 'push identity refused' in alerts[0]['commit']
+            assert 'personal@example.org' in alerts[0]['errors'][0]
+            assert 'git config user.email' in alerts[0]['errors'][-1]
+            assert ci_watch.git_in(remote, 'rev-parse', 'feature').strip() == before
+        elif round_no[0] == 2:
+            assert len(notified) == 1  # no duplicate alert while email is still wrong
+            git('config', 'user.email', NOREPLY_EMAIL)
+
+    assert ci_watch.shepherd(work, 6, sleep=after_round) == 'MERGED'
+    assert ci_watch.git_in(remote, 'rev-parse', 'feature').strip() != before
+    assert ci_watch.open_alerts() == [] and len(notified) == 1
+
+
+def test_shepherd_allows_personal_email_merge_on_confirmed_private_repository(tmp_path, monkeypatch):
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    monkeypatch.setattr(ci_watch, 'notify', lambda alert: pytest.fail(f'unexpected alert: {alert}'))
+    remote, work, _ = _behind_checkout(tmp_path, NOREPLY_EMAIL, merge_email='personal@example.org')
+    before = ci_watch.git_in(remote, 'rev-parse', 'feature').strip()
+    views = iter([{'mergeStateStatus': 'BEHIND'}, {'state': 'MERGED'}])
+
+    def gh(args, cwd):
+        if args[:2] == ['repo', 'view']:
+            return json.dumps({'nameWithOwner': 'me/private-os', 'isArchived': False, 'isPrivate': True})
+        if args[:2] in (['run', 'list'], ['pr', 'list']):
+            return '[]'
+        return json.dumps({'state': 'OPEN', 'autoMergeRequest': {'mergeMethod': 'MERGE'}, 'headRefName': 'feature',
+                           'headRefOid': 'h1', 'url': 'u', 'title': 'Priv', **next(views)})
+
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+    assert ci_watch.shepherd(work, 7, sleep=lambda s: None) == 'MERGED'
+    assert ci_watch.git_in(remote, 'rev-parse', 'feature').strip() != before and ci_watch.open_alerts() == []
+
+
+def test_push_preflight_loads_without_package_context(monkeypatch):
+    monkeypatch.setattr(ci_watch, '__package__', '')
+    refusals = ci_watch._push_preflight().identity_refusals(
+        [{'sha': 'abc12345', 'author': 'personal@example.org', 'committer': NOREPLY_EMAIL}])
+    assert refusals == ['commit abc12345: author email personal@example.org is not a GitHub noreply address']
