@@ -135,7 +135,7 @@ The TUI proves such a route itself, so a new version does not wait for you to fi
 in a terminal, right after discovery and the price reading, it looks for **arrivals**: routes with a derived role row
 (a newer version of a known line on its vendor's own CLI or API) that have no proof record at all, that can run now
 and that the routing profile leaves on for at least one of the row's roles. A route proven, failed or declined
-before is never tried or asked again by itself; `p` in `/routes` > "Models per role" and `tare setup --prove` still
+before is never tried or asked again by itself; `p` (or `P` / Prove all) in `/routes` > "Models per role" and `tare prove all` / `tare setup --prove` still
 prove it again.
 
 - **On a subscription** (a route that counts against a plan, such as Claude Code, Codex or AGY) the proof runs with

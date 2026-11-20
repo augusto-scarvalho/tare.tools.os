@@ -555,3 +555,65 @@ def test_native_profiles_names_skips_symlinks_and_caches_match_uncached(machine,
     assert calls == 1 and 'mutated_by_caller' not in second
     native_catalog.select('openai-api')
     assert calls == 2
+
+
+def test_pending_proofs_filters_unavailable_and_bulk_prove_requires_confirmation_or_yes(machine, monkeypatch, capsys):
+    import io
+    r1 = {**OPENROUTER, 'native_profile': {**OPENROUTER['native_profile'], 'model': 'claude-fable-5.2'},
+          'id': 'route-one'}
+    r2 = {**OPENROUTER, 'native_profile': {**OPENROUTER['native_profile'], 'model': 'gemini-4-carbon'},
+          'id': 'route-two'}
+    unavail = {**OPENROUTER, 'native_profile': {**OPENROUTER['native_profile'], 'model': 'glm-5.3'},
+               'id': 'route-unavail'}
+    from relay import cli_discovery, native_routes, provider_prices
+    monkeypatch.setattr(cli_discovery, 'discover', lambda: [])
+    monkeypatch.setattr(provider_prices, 'refresh_reading', lambda: None)
+    monkeypatch.setattr(native_routes, 'configured', lambda: {'deployments': [
+        {'id': 'route-unavail', 'native_catalog': 'route-unavail', 'model': 'glm-5.3', 'qualified': False, 'roles': ['implementer']},
+    ]})
+    monkeypatch.setattr(environment, 'route_key', lambda d: ('claude', 'fable', (5, 2), 'openrouter') if d['id'] != 'route-two' else ('gemini', 'carbon', (4,), 'openrouter'))
+    proven = set()
+    monkeypatch.setattr(environment, 'auto_routes', lambda role, *a, **kw: [
+        ('route-two', r2, 'usable' if 'route-two' in proven else 'NOT_QUALIFIED_PIN_ONLY'),
+        ('route-one', r1, 'usable' if 'route-one' in proven else 'NOT_QUALIFIED_PIN_ONLY'),
+        ('route-unavail', unavail, 'NOT_QUALIFIED_PIN_ONLY'),
+    ] if role == 'implementer' else [])
+    monkeypatch.setattr(environment, 'route_for', lambda name: (
+        None, 'missing_credential') if name == 'route-unavail' else ({'route-one': r1, 'route-two': r2}.get(name), 'unknown'))
+    monkeypatch.setattr(environment, 'cost_line', lambda d: f"cost for {d['id']}")
+    assert environment.pending_proofs() == ['route-one', 'route-two']
+
+    calls, fail_two = [], True
+    def fake_prove(name, confirm):
+        calls.append(name)
+        if name == 'route-two' and fail_two:
+            return {'ok': False, 'reason': 'credential_rejected'}
+        proven.add(name)
+        return {'ok': True, 'cost': f'cost for {name}'}
+    monkeypatch.setattr(environment, 'prove', fake_prove)
+
+    # Dry-run shows all resolved costs without confirming or calling models.
+    assert environment.prove_main(['all', '--dry-run']) == 0 and calls == []
+    dry = capsys.readouterr().out
+    assert 'route-one: cost for route-one.' in dry and 'route-two: cost for route-two.' in dry
+    assert 'route-unavail' not in dry
+
+    # Without --yes or TTY, bulk prove prints all costs upfront, refuses, and spends nothing.
+    monkeypatch.setattr('sys.stdin', io.StringIO(''))
+    assert environment.prove_main(['all']) == 1 and calls == []
+    refused = capsys.readouterr().out
+    assert 'route-one: cost for route-one.' in refused and 'not proven: not confirmed' in refused
+
+    # With --yes, sequential prove runs every pending route even if one fails and exits 1.
+    assert environment.prove_main(['all', '--yes', '--json']) == 1
+    assert calls == ['route-one', 'route-two']
+    summary = json.loads(capsys.readouterr().out)
+    assert summary['route-one']['ok'] is True and summary['route-two']['ok'] is False
+
+    # Now only route-two remains; tare setup --prove all runs it; empty queue exits 0 cleanly.
+    calls.clear()
+    fail_two = False
+    assert environment.main(['--prove', 'all', '--yes']) == 0 and calls == ['route-two']
+    assert 'route-two: proven' in capsys.readouterr().out
+    assert environment.prove_main(['all']) == 0
+    assert 'Nothing to prove' in capsys.readouterr().out

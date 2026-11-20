@@ -213,7 +213,8 @@ class ProveDialog(ModalScreen):
 
 
 class RouteMatrix(Vertical):
-    BINDINGS = [Binding('p', 'prove', 'Prove the selected cell')]
+    BINDINGS = [Binding('p', 'prove', 'Prove the selected cell'),
+                Binding('P', 'prove_all', 'Prove all pending')]
     DEFAULT_CSS = '''
     RouteMatrix { height: 1fr; }
     RouteMatrix .matrix-bar { height: 1; margin-bottom: 1; }
@@ -223,14 +224,14 @@ class RouteMatrix(Vertical):
     RouteMatrix .matrix-note { height: auto; color: $text-muted; }
     RouteMatrix OptionList { height: auto; max-height: 5; }
     RouteMatrix #matrix-status { height: 4; overflow-y: auto; }
-    RouteMatrix #matrix-bulk { width: 1fr; }
+    RouteMatrix #matrix-bulk { width: 1fr; min-width: 12; }
     RouteMatrix #matrix-reload { display: none; }
     '''
 
     def compose(self):
         self.value = self.routes = self.saved = None
         self.role, self.warned, self.labels, self.proving, self.proved = 'coordinator', False, {}, False, {}  # what a user meets first
-        self.mirrors, self.grants = {}, {}
+        self.mirrors, self.grants, self.all_provable = {}, {}, []
         self.message, self.extra, self.identities, self.warnings = 'Reading the routes…', [], {}, []
         self._id_rule_cache, self._rule_cache, self._profile_cache = {}, {}, {}
         self._row_classes, self._task_cache, self._drawn_glyphs, self._last_highlighted = {}, {}, {}, None
@@ -247,6 +248,7 @@ class RouteMatrix(Vertical):
             yield Select([], prompt='Bulk action…', id='matrix-bulk')
             yield Button('Reload', id='matrix-reload')
             yield Button('Prove · p', id='matrix-prove')
+            yield Button('Prove all · P', id='matrix-prove-all')
             yield Button('Save', id='matrix-save', classes='panel-primary')
 
     def open(self):
@@ -269,6 +271,11 @@ class RouteMatrix(Vertical):
                     for name, route, now, key in rows:
                         cells[role].setdefault((row_of(route, key), key[3]), []).append((name, route, now, key))
                 row_classes = _compute_row_classes(cells)
+                provable_candidates = sorted({
+                    n for r, items in routes.items() for n, _, now, k in items
+                    if now == 'NOT_QUALIFIED_PIN_ONLY' and (k[0] or (r, n) in found_mirrors)
+                })
+                all_provable = [n for n in provable_candidates if env.route_for(n)[0] is not None]
                 id_rules = {}
                 active = value if existing is None else existing
                 for role in env.PROFILE_ROLES:
@@ -277,10 +284,10 @@ class RouteMatrix(Vertical):
                             parsed_entry = env.entry(text)
                             if parsed_entry and isinstance(parsed_entry[1], str) and text not in id_rules:
                                 id_rules[text] = env.id_rule(text)
-            return value, routes, labels, grants, record, found_mirrors, cells, row_classes, id_rules
+            return value, routes, labels, grants, record, found_mirrors, cells, row_classes, all_provable, id_rules
 
-        value, routes, labels, self.grants, self.record, self.mirrors, self.cells, self._row_classes, id_rules = (
-            await asyncio.to_thread(load_bundle))
+        (value, routes, labels, self.grants, self.record, self.mirrors,
+         self.cells, self._row_classes, self.all_provable, id_rules) = await asyncio.to_thread(load_bundle)
         if self.value is None:
             self.value, self.saved = value, copy.deepcopy(value.get('routing_profile'))
             self.message = ('This machine\'s setup cannot be read: ' + value['error'] + ' (tare setup --reset starts '
@@ -539,6 +546,7 @@ class RouteMatrix(Vertical):
             ['Unsaved changes: Save writes them; Esc asks before discarding them.'] if self.dirty() else [])]
         self.query_one('#matrix-status', Static).update('\n'.join(line for line in lines if line))
         self.query_one('#matrix-prove', Button).disabled = self.proving or not self.provable()
+        self.query_one('#matrix-prove-all', Button).disabled = self.proving or not self.provable_all()
 
     def edit(self, change, message, name=None, *, show=True):
         before = copy.deepcopy(self.value)
@@ -588,14 +596,19 @@ class RouteMatrix(Vertical):
         found = table.coordinate_to_cell_key(table.cursor_coordinate)
         return found.row_key.value, found.column_key.value
 
-    def liftable(self, name, now, key):
+    def liftable(self, name, now, key, role=None):
         """Whether a proof would lift a route: pin only, of a known model line or a mirror (mirrors())."""
-        return now == 'NOT_QUALIFIED_PIN_ONLY' and bool(key[0] or (self.role, name) in self.mirrors)
+        role = self.role if role is None else role
+        return now == 'NOT_QUALIFIED_PIN_ONLY' and bool(key[0] or (role, name) in self.mirrors)
 
     def provable(self):
         """(route, key) of the selected cell's routes a proof would lift (liftable)."""
         cell = self.cursor_cell()
         return cell and [(n, k) for n, _, now, k in self.cells[self.role].get(cell, []) if self.liftable(n, now, k)]
+
+    def provable_all(self):
+        """Sorted list of unique liftable, available pin-only route names across all roles."""
+        return list(self.all_provable)
 
     def action_prove(self):
         """Confirm, then one real call per provable route of the selected cell. Starts only here, from the user."""
@@ -607,16 +620,25 @@ class RouteMatrix(Vertical):
                              'another route already serves automatically, can be.')
         self.run_worker(self.confirm_prove([n for n, _ in found]), group='route-matrix-prove')
 
-    async def confirm_prove(self, names):
+    def action_prove_all(self):
+        """Confirm, then prove every pending pin-only route currently available across all roles."""
+        if self.proving:
+            return self.show('A proof is already running.')
+        names = self.provable_all()
+        if not names:
+            return self.show('Nothing to prove: no pending pin-only routes are available here.')
+        self.run_worker(self.confirm_prove(names, from_all=True), group='route-matrix-prove')
+
+    async def confirm_prove(self, names, *, from_all=False):
         def lines():  # the line `environment.prove` will ask about, said before anything is spent
             for name in names:
                 deployment, why = env.route_for(name)
                 yield f'{name}: ' + (env.cost_line(deployment) if deployment else f'cannot be proven: {why}')
         text = await asyncio.to_thread(lambda: list(lines()))
         self.app.push_screen(ProveDialog(text), lambda yes: yes and self.run_worker(
-            self.prove(names), group='route-matrix-prove'))
+            self.prove(names, from_all=from_all), group='route-matrix-prove'))
 
-    async def prove(self, names):
+    async def prove(self, names, *, from_all=False):
         role, cell, self.proving, said = self.role, self.cursor_cell(), True, []
         try:
             for i, name in enumerate(names, 1):
@@ -632,19 +654,40 @@ class RouteMatrix(Vertical):
             self.proving = False
         if not self.is_mounted:
             return
-        now = {n: now for n, _, now, _ in (r for rows in self.cells[role].values() for r in rows)}
+        statuses = {}
+        for rows in self.routes.values():
+            for n, _, status, _ in rows:
+                statuses.setdefault(n, set()).add(status)
         for name, record in said:  # kept for describe(): the reload moves the cursor, which rewrites the status line
             failed_task = (record.get('role_check') or {}).get('ok') is False
+            lifted = any(s != 'NOT_QUALIFIED_PIN_ONLY' for s in statuses.get(name, ()))
+            mirror_target = next((self.mirrors[r, name] for r in self.routes if (r, name) in self.mirrors), None)
             self.proved[name] = 'proved here: ' + (
                 f"answered, but failed the role check: {record['role_check'].get('reason')}; it stays pin only"
                 if failed_task else
                 f"failed: {record.get('reason') or 'no reason given'}" if record.get('ok') is not True else
                 'answered and did the task; used automatically where it is ticked on' + (
-                    f', as a reserve after {self.mirrors[role, name]}' if (role, name) in self.mirrors else '')
-                if now.get(name) != 'NOT_QUALIFIED_PIN_ONLY' else
+                    f', as a reserve after {mirror_target}' if mirror_target else '')
+                if lifted else
                 'answered and did the task, but it stays pin only (a local model, or a reseller\'s that no other route '
                 'serves automatically, is not proven by this)')
-        self.show(self.describe(*cell))
+        if not from_all and cell and not cell[0].startswith('#') and cell[1] != 'model':
+            self.show(self.describe(*cell))
+            return
+        after_cell = self.cursor_cell()
+        if after_cell and not after_cell[0].startswith('#') and after_cell[1] != 'model':
+            # Keep build()/load()'s queued CellHighlighted event from overwriting the batch proof summary.
+            self._last_highlighted = after_cell
+        passed = sum(1 for _, rec in said if rec.get('ok') is True)
+        if len(said) == 1:
+            name, _ = said[0]
+            self.show(f'{name}: {self.proved[name]}.')
+        elif passed == len(said):
+            self.show(f'Proved {passed} of {len(said)} route(s).')
+        else:
+            failed = [n for n, rec in said if rec.get('ok') is not True]
+            self.show(f"Proved {passed} of {len(said)} route(s); failed: {', '.join(failed[:3])}"
+                      + ('…' if len(failed) > 3 else '') + '.')
 
     def targets(self, rule):
         """The role's cells `rule` covers (a line on a source, a vendor's lines, a source, a route id), for make()."""
@@ -745,6 +788,8 @@ class RouteMatrix(Vertical):
             return
         if event.button.id == 'matrix-prove':
             return self.action_prove()
+        if event.button.id == 'matrix-prove-all':
+            return self.action_prove_all()
         if event.button.id == 'matrix-reload':
             value = await asyncio.to_thread(env.read)
             if self.is_mounted:

@@ -739,3 +739,66 @@ def test_paint_updates_only_changed_cells_and_build_uses_precomputed_classes(poo
         matrix.role = 'implementer'
         matrix.build()
     journey(tmp_path, steps)
+
+
+def test_prove_all_proves_available_pending_routes_across_roles_and_fits_compact_screen(pool, tmp_path, monkeypatch):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+    install(pool, FABLE, 'cli://claude', 'claude-fable-5-2')
+    monkeypatch.setenv('OPENAI_API_KEY', 'fixture-key')
+    available_targets = {FABLE, 'openai-api-gpt-6-1-terra'}
+    calls = []
+    monkeypatch.setattr(environment, 'route_for',
+                        lambda name: ({'id': name}, None) if name in available_targets else (None, 'unavailable'))
+    monkeypatch.setattr(environment, 'cost_line', lambda deployment: 'one minimal call: fixture cost')
+
+    def prove(name, confirm):
+        assert confirm(f'{name}: one minimal call: fixture cost.')
+        calls.append(name)
+        record = {'ok': True, 'cost': 'fixture'}
+        value = environment.read()
+        value.setdefault('proofs', {})[name] = record
+        environment.save(value)
+        return record
+    monkeypatch.setattr(environment, 'prove', prove)
+
+    async def steps(app, pilot, panel, cell, status):
+        async def wait_prove_dialog():
+            for _ in range(200):
+                await pilot.pause(0.05)
+                if (isinstance(app.screen, ProveDialog) and app.screen.is_mounted
+                        and app.screen.query('#prove-go') and app.screen.query('#prove-cancel')):
+                    await pilot.pause()
+                    return app.screen
+            raise AssertionError(f'ProveDialog did not mount in 10 s: {app.screen!r}')
+
+        matrix = panel.query_one(RouteMatrix)
+        assert sorted(matrix.provable_all()) == sorted(available_targets)
+        assert panel.query_one('#matrix-save', Button).region and panel.region.contains_region(
+            panel.query_one('#matrix-save', Button).region)
+        assert panel.region.contains_region(panel.query_one('#matrix-prove-all', Button).region)
+
+        # Even while an auditor cell with no proof and a vendor header row are active, P / Prove all finds both routes.
+        table = panel.query_one('#matrix-table')
+        table.focus()
+        table.move_cursor(row=0, column=0)  # vendor header row
+        await pilot.pause()
+        await pilot.press('P')
+        dialog = await wait_prove_dialog()
+        shown = ' '.join(dialog.lines)
+        assert FABLE in shown and 'openai-api-gpt-6-1-terra' in shown and calls == []
+        await pilot.press('escape')
+        await pilot.pause()
+        assert app.screen is panel and calls == []
+
+        # Confirm via button: unsaved tick stays, all available pin-only routes across roles are proven once.
+        assert await cell('claude/opus', 'claude-code') == '[ ]'
+        panel.query_one('#matrix-prove-all', Button).press()
+        dialog = await wait_prove_dialog()
+        dialog.query_one('#prove-go', Button).press()
+        await pilot.pause()
+        await proved(pilot, panel, status, 'Proved 2 of 2 route(s).')
+        assert sorted(calls) == sorted(available_targets)
+        assert str(table.get_cell('claude/opus', 'claude-code')) == '[ ]' and matrix.dirty()
+        assert str(table.get_cell('claude/fable', 'claude-code')) == '[x]'
+        assert matrix.provable_all() == [] and panel.query_one('#matrix-prove-all', Button).disabled
+    journey(tmp_path, steps, size=(80, 24))
