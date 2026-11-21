@@ -12,7 +12,7 @@ OPERATIONS = {'read': 'Read', 'list': 'List', 'search': 'Search', 'context': 'Fi
               'conversation_history': 'Read previous conversation',
               'request_folder_access': 'Ask to read a folder', 'folder_list': 'List granted folder',
               'folder_read': 'Read granted folder', 'folder_search': 'Search granted folder',
-              'edit': 'Edit', 'verify': 'Check', 'command': 'Protected command', 'terminal_start': 'Unsandboxed command',
+              'edit': 'Edit', 'rename': 'Rename', 'verify': 'Check', 'command': 'Protected command', 'terminal_start': 'Unsandboxed command',
               'terminal_read': 'Read process output', 'terminal_input': 'Send process input',
               'terminal_stop': 'Stop process', 'terminal_list': 'List processes',
               'terminal_resize': 'Resize terminal', 'terminal_eof': 'Close process input'}
@@ -46,7 +46,7 @@ CONVERSATION_WORK = '#conversation'  # graph Work ids never start with '#'
 
 ALIASES = {'backlog_read': 'read', 'backlog_record': 'edit', 'explore': 'search', 'plan': 'edit', 'implement': 'edit',
            'delegate_plan': 'edit', 'agent_run': 'read', 'request_folder_access': 'read',
-           'folder_list': 'list', 'folder_read': 'read', 'folder_search': 'search'}
+           'folder_list': 'list', 'folder_read': 'read', 'folder_search': 'search', 'rename': 'edit'}
 
 
 def restored(value):
@@ -312,6 +312,9 @@ class ActivityJournal:
                 target = (f'{len(asked)} in parallel: ' if len(asked) > 1 else '') + ' | '.join(asked)
             if call['name'] in {'folder_list', 'folder_read', 'folder_search'}:  # outside the project: say where
                 target = str(args.get('folder', '')) + ': ' + str(args.get('path', args.get('query', '')))
+            if call['name'] == 'rename':
+                src, dst = str(args.get('path', '')), str(args.get('target', ''))
+                target = f'{src} -> {dst}' if src and dst else (dst or src)
             deleting = call['name'] == 'edit' and deletion_requested(args)
             if deleting:
                 self.deletions.add(event['effect_id'])

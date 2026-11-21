@@ -109,3 +109,33 @@ def test_flow_layout_keeps_setup_drafts_and_review_actions_accessible(tmp_path, 
             app.controls(False)
             assert not app.backend.launches
     asyncio.run(scenario())
+
+
+def test_f2_preserves_workspace_path_on_focus_and_f6_reaches_next_step_from_prompt(tmp_path):
+    from textual.widgets import Input, TextArea
+    from test_native_console import FakeBackend
+
+    async def scenario():
+        app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='conversation')
+        continued = []
+        app.continue_demand = lambda: continued.append('next')
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(); await app.workers.wait_for_complete()
+            await pilot.press('f2'); await pilot.pause()
+            root_input = app.query_one('#root', Input)
+            assert app.focused is root_input
+            assert not root_input.select_on_focus
+            before = root_input.value
+            await pilot.press('x'); await pilot.pause()
+            assert root_input.value.startswith(before) and root_input.value != 'x'
+            root_input.value = before
+            await pilot.press('f2'); await pilot.pause()
+
+            prompt = app.query_one('#prompt', TextArea)
+            prompt.load_text('first line\nsecond line')
+            prompt.focus(); await pilot.pause()
+            assert app.focused is prompt
+            await pilot.press('f6'); await pilot.pause()
+            assert continued == ['next']
+            assert prompt.selected_text == ''
+    asyncio.run(scenario())

@@ -171,6 +171,7 @@ class ChangesPanel(SupportPanel):
         Binding('escape', 'close', 'Close', priority=True),
         Binding('f3', 'close', 'Close', priority=True),
         Binding('ctrl+r', 'reload', 'Refresh', priority=True),
+        Binding('u', 'undo', 'Undo edit', priority=False),
     ]
     DEFAULT_CSS = '''
     #changes-selectors { height: 1; margin-bottom: 1; }
@@ -261,7 +262,7 @@ class ChangesPanel(SupportPanel):
                              id='changes-scope', markup=False)
             with Grid(id='changes-actions', classes='panel-actions'):
                 yield Button('Open file', id='changes-open', disabled=True)
-                yield Button('Undo edit', id='changes-undo', classes='panel-danger', disabled=True)
+                yield Button('Undo · u', id='changes-undo', classes='panel-danger', disabled=True)
                 yield Button('Review turn', id='changes-review-turn', disabled=True)
                 yield Button('Checks', id='changes-checks')
                 yield Button('Refresh', id='changes-refresh')
@@ -284,6 +285,9 @@ class ChangesPanel(SupportPanel):
             return
         self.dismiss_active_confirmation()
         self.dismiss()
+
+    def action_undo(self):
+        self.request_undo()
 
     def dismiss_active_confirmation(self):
         if self.active_confirmation is not None:
