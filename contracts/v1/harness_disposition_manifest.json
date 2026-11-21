@@ -2407,8 +2407,8 @@
     {
       "name": "round_table_engine.py",
       "path": "tare.tools.os/relay/round_table_engine.py",
-      "size_bytes": 171480,
-      "sha256": "ff24edc2c27d298768544338ba80a9b25dac15496beae2f443dd4218eeb40146",
+      "size_bytes": 171701,
+      "sha256": "267de900cafa0f7a7875f1de41a857248d5c26ee4e942864e26767e8a6f951d0",
       "summary": "relay/round_table_engine.py — Multi-Chair Architectural Round Table & Consensus Engine",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
@@ -2481,8 +2481,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns the product turn coordination shared by its frontends; the agent loop stays in the runtime.",
-      "size_bytes": 107914,
-      "sha256": "76348bbdac8fef024c84939bcbf73f783b3d24feff6e8a9290fed79d7445ecbd"
+      "size_bytes": 109342,
+      "sha256": "70dca6d0053a31b8e3987009d171edd349f26e4a81fe84f62f11c625cfb1894e"
     },
     {
       "name": "audit_report.py",
@@ -2861,8 +2861,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns experience and flow selection; native text inference and execution owners are reused.",
-      "size_bytes": 19185,
-      "sha256": "81c1fb430cabb345aa2da91506d38bb43eced67b7c89fa9ceb4a424da1ef768a"
+      "size_bytes": 19288,
+      "sha256": "a8b32b90d8857260c811ee5c2c94c7ff5ca29a43ccd667e57db7232879dbf3e7"
     },
     {
       "name": "work_intake.py",
@@ -3151,8 +3151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns console model choices and local profiles; the Kernel still owns CLI preflight and inference.",
-      "size_bytes": 29549,
-      "sha256": "f8265e6b291ee32e8cba7cd879ad3d766baa36f17f181a0e2a06dc1dc5e94a35"
+      "size_bytes": 29640,
+      "sha256": "d5b33b3713f6db9e0e58957ead34d8ec91d86a6b8e1b352df5b2c4af0754d896"
     },
     {
       "name": "native_activity.py",
@@ -3501,8 +3501,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator interaction, workflow composition and evidence inspection; execution ports remain in Kernel and Runtime.",
-      "size_bytes": 4839,
-      "sha256": "25cc3e2f442f7fb345ddd81a8048efb30154eaaed30980a20a0d176dbc227aaf"
+      "size_bytes": 4934,
+      "sha256": "115224a1845095d2f404f8cdee79ffe79829bcc2b9a61f767ae3576ad594917d"
     },
     {
       "name": "flow_usage.py",
@@ -3921,8 +3921,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 25010,
-      "sha256": "bc1556e6c05fa65eb4a9cc8b8cb8d63546c8d7ec2daa86df330961dd7fc892c7"
+      "size_bytes": 25137,
+      "sha256": "f2939f1c6162d04f71ab135d8c1bc89e2640f5ea516181430d3d313003b4956b"
     },
     {
       "name": "windows_isolation.py",
@@ -4321,8 +4321,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 9675,
-      "sha256": "cd924c494f6503b4d272d8f7349bf5a5020f88dcb534c0d3506ba7a2a06c03f9"
+      "size_bytes": 9891,
+      "sha256": "ff47f9c0443a35be09c63b07a33d00ff814f0573f9dcb9db7e03a815fe96b77a"
     },
     {
       "name": "workflow_compiler.py",
@@ -4391,8 +4391,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 45701,
-      "sha256": "b6c63897ded8f99cf05da90ab565a4cf4be48c038f9a5e920ea0c524b6b20530"
+      "size_bytes": 49154,
+      "sha256": "cf51d0da7139ea8f6b8cba58beb5948fe346592e5d462f593f63f3ad8f77198b"
     },
     {
       "name": "provider_spend.py",
@@ -4401,8 +4401,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 25312,
-      "sha256": "1854a27903fb7ac2d9992fc130fe2a2e93873c7446c5cdfac5b09554d81988c7"
+      "size_bytes": 25603,
+      "sha256": "182af4595846363a5a05a2603089c9a1ef12f89b14f04ad45d13390e4aa70514"
     },
     {
       "name": "push_preflight.py",

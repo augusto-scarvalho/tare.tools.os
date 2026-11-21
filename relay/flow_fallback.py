@@ -69,6 +69,8 @@ def choose(request, config, cancellation, directory, *, generate=None):
                    'Return only a JSON object with exactly one field, "choice", containing an exact options key. '
                    'Do not rewrite or perform the task. Choose insufficient when no supported preference exists.',
             control=control, attempt_dir=directory, credential_resolver=vault_secret)
+        from .provider_spend import record_receipt
+        record_receipt(deployment, receipt)
         value.update(generation_calls=receipt['generation_calls'], receipt=receipt,
                      tokens=token_totals([receipt], deployment.get('native_usage_contract')))
         if cancellation.is_cancelled():

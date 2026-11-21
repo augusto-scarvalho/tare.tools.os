@@ -458,6 +458,8 @@ def acknowledge(value):
         loaded = load_deployment(path)
         ok, content, receipt = generate_text(loaded, loaded['native_profile']['model'],
                                              'Reply with exactly: OK', 120, attempt_label='cli-discovery')
+        from .provider_spend import record_receipt
+        record_receipt(loaded, receipt)
     if ok and content.strip():
         return True, ''
     return False, str(receipt.get('failure_class') or 'empty reply')[:200]

@@ -432,6 +432,14 @@ def refresh(now=None):
         if reading['kind'] == 'credit' and (use := provider_spend.own_use(reading['account'], now)):
             reading['own_use'] = use
             reading.setdefault('notes', []).append(own_use_line(use))
+    # A fresh provider reading showing headroom clears an earlier failure-recorded block (e.g. after a free reset).
+    from .turn_engine import clear_usage_limits
+    by_account = {r['account']: r for r in accounts if isinstance(r.get('account'), str)}
+    clear_usage_limits(
+        lambda key, entry: (r := by_account.get(key.split(':', 1)[0])) is not None
+        and reading_has_headroom(r, key, entry, strict=False),
+        now=now,
+    )
     for reading in accounts:  # a limit a refused call recorded (a spent plan, an API account with no credit), which no reading shows
         if until := parked(reading['account'], now):
             reading['parked_until'] = until
@@ -465,6 +473,68 @@ def parked(account, now):
     except (OSError, ValueError, AttributeError):
         return None
     return until if type(until) in (int, float) and now < until <= now + 7 * 86400 else None
+
+
+def reading_has_headroom(reading, key, entry, *, strict=False):
+    """Whether `reading` observes remaining allowance that supersedes failure-recorded `entry` for `key`
+    (`account` or `account:model`). With `strict=True` (passive cache lookup), the observation timestamp must be
+    strictly newer than `recorded_at`; during `refresh()` (`strict=False`), equal timestamps also qualify."""
+    if not isinstance(reading, dict) or not isinstance(entry, dict):
+        return False
+    acct = reading.get('account')
+    if not isinstance(acct, str) or (key != acct and not key.startswith(acct + ':')):
+        return False
+    recorded = entry.get('recorded_at')
+    has_recorded = type(recorded) in (int, float)
+
+    def newer(timestamp):
+        if type(timestamp) not in (int, float):
+            return False
+        if not has_recorded:
+            return True
+        return timestamp > recorded if strict else timestamp >= recorded
+
+    kind, status = reading.get('kind'), reading.get('status')
+    if kind == 'subscription' and status == 'OBSERVED':
+        if not newer(reading.get('observed_at')):
+            return False
+        buckets = [b for b in (reading.get('buckets') or [])
+                   if isinstance(b, dict) and type(b.get('remaining')) in (int, float)]
+        if not buckets:
+            return False
+        if key == acct:
+            general = [b for b in buckets if b.get('scope') is None]
+            return all(b['remaining'] > 0 for b in general) if general else any(b['remaining'] > 0 for b in buckets)
+        model = key[len(acct) + 1:].lower()
+        matching = [b for b in buckets if covers(acct, b, model)]
+        return bool(matching) and all(b['remaining'] > 0 for b in matching)
+    if kind == 'credit' and key == acct:
+        credit = reading.get('credit')
+        if not isinstance(credit, dict) or type(credit.get('remaining')) not in (int, float) or credit['remaining'] <= 0:
+            return False
+        if status == 'OBSERVED':
+            return newer(reading.get('observed_at'))
+        if status == 'DECLARED':
+            return newer(credit.get('declared_at'))
+    return False
+
+
+def headroom_clears(key, entry, now=None):
+    """Whether the cached provider quota reading was observed strictly after this failure limit and shows headroom."""
+    report = cached()
+    if not report or not isinstance(entry, dict):
+        return False
+    acct = key.split(':', 1)[0]
+    reading = next((a for a in report.get('accounts') or [] if a.get('account') == acct), None)
+    if reading is None:
+        return False
+    # Legacy entries without recorded_at require a fresh reading so stale caches never lift an older failure block.
+    if type(entry.get('recorded_at')) not in (int, float):
+        now = time.time() if now is None else now
+        obs = reading.get('observed_at')
+        if type(obs) not in (int, float) or not now - FRESH <= obs <= now:
+            return False
+    return reading_has_headroom(reading, key, entry, strict=True)
 
 
 def cache_path():

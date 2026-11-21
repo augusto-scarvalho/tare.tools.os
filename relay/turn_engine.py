@@ -432,12 +432,41 @@ def note_usage_limit(deployment, resets_at=None, now=None, kind=None):
         limits = {}
     limits = {k: v for k, v in limits.items() if isinstance(v, dict) and type(v.get('until')) in (int, float)
               and v['until'] > now} if isinstance(limits, dict) else {}
-    limits[account] = {'until': until, 'route': deployment.get('id')}
+    limits[account] = {'until': until, 'route': deployment.get('id'), 'recorded_at': now}
     path.parent.mkdir(parents=True, exist_ok=True)
     staged = path.with_suffix('.tmp')
     staged.write_text(json.dumps(limits), encoding='utf-8')
     os.replace(staged, path)
     return until
+
+
+def clear_usage_limits(match, now=None):
+    """Remove stored failure limits for which `match(key, entry)` is true (e.g., a fresh quota reading shows
+    headroom). Also drops expired entries. Returns the list of keys removed by `match`."""
+    global _usage_limits_cache
+    path = usage_limits_path()
+    try:
+        limits = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(limits, dict) or not limits:
+        return []
+    now = datetime.now(timezone.utc).timestamp() if now is None else now
+    kept, removed = {}, []
+    for key, entry in limits.items():
+        if not isinstance(entry, dict) or type(entry.get('until')) not in (int, float) or entry['until'] <= now:
+            continue
+        if match(key, entry):
+            removed.append(key)
+        else:
+            kept[key] = entry
+    if removed or len(kept) != len(limits):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        staged = path.with_suffix('.tmp')
+        staged.write_text(json.dumps(kept), encoding='utf-8')
+        os.replace(staged, path)
+        _usage_limits_cache = (None, {})
+    return removed
 
 
 _usage_limits_cache = (None, {})
@@ -464,18 +493,22 @@ def _read_usage_limits():
 def usage_limited(deployment, now=None):
     """Until when this deployment's account, or its own model, has no usage left, else None: a failed call said so
     (note_usage_limit), or the provider's own quota reading shows a window of this model at zero (tare quota); for an
-    API route, its account's known balance is spent (provider_quota.balance_spent)."""
+    API route, its account's known balance is spent (provider_quota.balance_spent). A newer provider reading showing
+    headroom supersedes a prior failure-recorded limit."""
     keys = usage_keys(deployment)
     limits = _read_usage_limits() if keys else {}
     now = datetime.now(timezone.utc).timestamp() if now is None else now
-    # Match the writer's seven-day bound. Invalid cached metadata is unknown, like an
-    # unreadable record; synthesizing now + grace here would renew its block forever.
-    found = [entry['until'] for key in keys
-             if isinstance(limits, dict) and isinstance(entry := limits.get(key), dict)
-             and type(entry.get('until')) in (int, float) and math.isfinite(entry['until'])
-             and now < entry['until'] <= now + 7*86400]
+    found = []
     if keys:
-        from .provider_quota import balance_spent, spent_until
+        from .provider_quota import balance_spent, headroom_clears, spent_until
+        # Match the writer's seven-day bound. Invalid cached metadata is unknown, like an
+        # unreadable record; synthesizing now + grace here would renew its block forever.
+        for key in keys:
+            entry = limits.get(key) if isinstance(limits, dict) else None
+            if (isinstance(entry, dict) and type(entry.get('until')) in (int, float)
+                    and math.isfinite(entry['until']) and now < entry['until'] <= now + 7*86400
+                    and not headroom_clears(key, entry, now)):
+                found.append(entry['until'])
         # a subscription's window read at zero, or an API account's known balance, spent: each answers only its kind
         found += [read for read in (spent_until(deployment, now), balance_spent(deployment, now)) if read]
     return max(found) if found else None

@@ -261,6 +261,8 @@ class TareModelAssessmentPort:
                         ok, content, receipt = self._generate(
                             deployment, self._model, prompt, control.remaining_seconds(),
                             control=control, system=system, spend_journal=journal)
+                        from .provider_spend import record_receipt
+                        record_receipt(deployment, receipt)
                     except TimeoutError:
                         result = observation("TIMEOUT", "GENERATION_TIMEOUT")
                     except Exception:
