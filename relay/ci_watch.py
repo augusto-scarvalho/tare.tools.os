@@ -815,10 +815,13 @@ def preflight(repo_dir, *, repo=None):
     """What GitHub says about the repository and its default branch. The repository settings are required (a failure
     propagates, so nothing is pushed blind); the protection readings fall back to "unknown" or "none".
     When `repo` or `origin`'s GitHub remote names `owner/name`, every `gh api` call targets it explicitly, and all
-    branch queries target `settings["default_branch"]` rather than a hard-coded `main` (SPEC-OS-SHIP-001 AC-01)."""
+    branch queries target `settings["default_branch"]` rather than a hard-coded `main` (SPEC-OS-SHIP-001 AC-01).
+    Refuses before any GitHub or git push call when `-R`/`repo` disagrees with `origin` (fetch or push URL), or when
+    `origin`'s fetch and push URLs point to different repositories."""
     if repo is not None and not repo_name(repo):
         raise ValueError(f'Invalid repository name: {repo}')
     explicit = repo_name(repo) if repo is not None else None
+    verify_origin_repo(repo_dir, explicit)
     target = explicit or remote_repo(repo_dir)
     base_api = f'repos/{target}' if target else 'repos/{owner}/{repo}'
 
@@ -1101,8 +1104,11 @@ def forget_pushing_worktree():
 
 REPOSITORY_NAME = re.compile(r'[^/\s:\\]+/[^/\s:\\]+')
 GITHUB_REMOTE = re.compile(
-    r'^(?:https?://github\.com/|ssh://git@github\.com/|git@github\.com:)([^/\s]+/[^/\s]+?)(?:\.git)?/?$'
+    r'^(?:https?://(?:[^/\s@]+@)?github\.com/|ssh://(?:[^/\s@]+@)?github\.com(?::\d+)?/|git@github\.com:)'
+    r'([^/\s]+/[^/\s]+?)(?:\.git)?/?$',
+    re.IGNORECASE,
 )
+REMOTE_URL = re.compile(r'^(?:[a-z][a-z0-9+.-]*://|[^/\\:@\s]+@[^/\\:\s]+:|[^/\\:@\s]{2,}:[^/\\])', re.IGNORECASE)
 
 
 def repo_name(value):
@@ -1110,16 +1116,56 @@ def repo_name(value):
     return value if isinstance(value, str) and REPOSITORY_NAME.fullmatch(value) else None
 
 
-def remote_repo(repo_dir):
-    """`owner/name` parsed from the checkout's `origin` GitHub remote, or None for local/non-GitHub remotes."""
+def _origin_url(repo_dir, *, push=False):
     if not repo_dir or not Path(repo_dir).is_dir():
         return None
+    args = ('remote', 'get-url', '--push', 'origin') if push else ('remote', 'get-url', 'origin')
     try:
-        url = git_in(repo_dir, 'remote', 'get-url', 'origin')
+        return git_in(repo_dir, *args).strip() or None
     except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _parse_github_remote(url):
+    if not url:
         return None
     found = GITHUB_REMOTE.fullmatch(url.strip())
     return repo_name(found.group(1)) if found else None
+
+
+def remote_repo(repo_dir, *, push=False):
+    """`owner/name` parsed from the checkout's `origin` GitHub remote, or None for local/non-GitHub remotes."""
+    return _parse_github_remote(_origin_url(repo_dir, push=push))
+
+
+def verify_origin_repo(repo_dir, explicit=None):
+    """Refuse when `-R`/`explicit` disagrees with `origin` (fetch or push URL), or `origin`'s fetch and push URLs
+    target different repositories, so preflight settings and `git push origin` always apply to the same repository."""
+    fetch_url = _origin_url(repo_dir, push=False)
+    push_url = _origin_url(repo_dir, push=True) or fetch_url
+    fetch_repo = _parse_github_remote(fetch_url)
+    push_repo = _parse_github_remote(push_url)
+    if explicit is not None:
+        for label, url, parsed in (('push', push_url, push_repo), ('fetch', fetch_url, fetch_repo)):
+            if not url:
+                continue
+            if parsed is not None:
+                if parsed.casefold() != explicit.casefold():
+                    raise ValueError(
+                        f'Preflight refused: -R {explicit} does not match origin {label} repository {parsed}; '
+                        f'run from a checkout whose origin points to {explicit}.'
+                    )
+            elif REMOTE_URL.match(url):
+                raise ValueError(
+                    f'Preflight refused: -R {explicit} does not match non-GitHub origin {label} remote {url}; '
+                    f'run from a checkout whose origin points to {explicit}.'
+                )
+    if fetch_repo and push_url and push_url != fetch_url:
+        if push_repo is None or push_repo.casefold() != fetch_repo.casefold():
+            raise ValueError(
+                f'Preflight refused: origin push URL ({push_repo or push_url}) does not match origin fetch '
+                f'repository {fetch_repo}.'
+            )
 
 
 def repository_view(repo, fields='isArchived'):
