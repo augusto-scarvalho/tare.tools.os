@@ -142,7 +142,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 Binding('f4','processes','Processes',priority=True),
                 Binding('f5','projects','Projects',priority=True),
                 Binding('f8', 'files', 'Files', priority=True),
-                ('f6', 'next_step', 'Next step'), Binding('ctrl+end', 'latest', 'Latest', priority=True),
+                Binding('f6', 'next_step', 'Next step', priority=True), Binding('ctrl+end', 'latest', 'Latest', priority=True),
                 ('ctrl+enter', 'start', 'Send / Start')]
     CSS = '''
     #execution-scope { height: auto; max-height: 3; color: $warning; }
@@ -462,7 +462,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 from .native_installation import version_label
                 yield Static(version_label(), id='product-version', classes='settings-note', markup=False)
                 yield Label('Workspace folder')
-                yield Input(self.root, id='root')
+                yield Input(self.root, id='root', select_on_focus=False)
                 yield Button('Browse projects · F5', id='settings-projects')
                 yield Button('Apply workspace', id='reload')
                 yield Button('New conversation', id='new-demand')
@@ -971,8 +971,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 and action == 'start'):
             return False
         from textual.screen import ModalScreen
-        if self.is_running and action == 'files' and isinstance(self.screen, ModalScreen):
-            return False  # F8 toggles the pane of the main screen only
+        if self.is_running and action in {'files', 'next_step'} and isinstance(self.screen, ModalScreen):
+            return False  # F6 and F8 act on the main screen only
         if action == 'cancel':
             # A busy composer must not consume Cancel as TextArea's cut. Idle
             # and direct terminal/modal bindings retain their normal handling.

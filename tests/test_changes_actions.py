@@ -608,3 +608,37 @@ def test_old_row_schema_compatibility(tmp_path):
             assert not open_btn.disabled
 
     asyncio.run(scenario())
+
+
+def test_undo_shortcut_u_opens_confirm_only_when_enabled(tmp_path):
+    session = tmp_path / 'session'
+    project = tmp_path / 'project'
+    undo_calls = []
+
+    def fake_undoer(sess, *, project, effect_id, invocation_id=None):
+        undo_calls.append(effect_id)
+        return {'status': 'UNDONE', 'effect_id': effect_id, 'path': 'src/app.py'}
+
+    async def scenario():
+        app = App()
+        async with app.run_test(size=(100, 30)) as pilot:
+            panel = ChangesPanel(session, project, reader=lambda s, **kw: sample_report(), undoer=fake_undoer)
+            app.push_screen(panel)
+            await wait_for(pilot, lambda: '+new_val = 2' in content(panel.query_one('#changes-diff', Static)))
+            assert str(panel.query_one('#changes-undo', Button).label) == 'Undo · u'
+
+            await pilot.press('u')
+            assert await wait_for(pilot, lambda: isinstance(app.screen, UndoConfirmDialog)
+                                  and bool(app.screen.query('#undo-cancel')))
+            app.screen.query_one('#undo-cancel', Button).press()
+            await wait_for(pilot, lambda: app.screen is panel)
+            assert undo_calls == []
+
+            panel.rows['eff-001']['undo_status'] = 'UNDONE'
+            panel._update_action_buttons()
+            assert panel.query_one('#changes-undo', Button).disabled
+            await pilot.press('u')
+            await pilot.pause(0.1)
+            assert app.screen is panel and undo_calls == []
+
+    asyncio.run(scenario())

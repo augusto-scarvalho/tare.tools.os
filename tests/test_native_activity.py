@@ -192,3 +192,21 @@ def test_the_session_that_owns_the_callback_is_not_prefixed(setup, tmp_path):
         run_session(config, deployment(), custody, 'Change and verify.', client=client, local_counter=client,
                     on_activity=events.append)
     assert events and all('source' not in event['activity'] for event in events)
+
+
+def test_rename_tool_activity_is_projected_and_roundtrips_saved_history():
+    from relay.native_activity import saved_history
+    events, journal = [], Journal()
+    observer = ActivityJournal(journal, events.append)
+    observer.append(request(identity='tool/ren1', name='rename', repository='repo', path='old.py', target='new.py'))
+    observer.append({'kind': 'effect_returned', 'result': {'effect_id': 'tool/ren1', 'status': 'succeeded',
+                     'output_json': json.dumps({'path': 'old.py', 'target': 'new.py', 'sha256': 'b'*64})}})
+    row = observer.presentation()['items'][0]
+    assert row['operation'] == 'rename'
+    assert row['target'] == 'old.py -> new.py'
+    assert row['state'] == 'succeeded'
+    assert [e['activity']['state'] for e in events] == ['running', 'succeeded']
+    saved = saved_history([row])
+    assert saved[0]['operation'] == 'edit' and saved[0]['target'] == 'rename: old.py -> new.py'
+    restored_row = activity_view(saved[0])
+    assert restored_row['operation'] == 'rename' and restored_row['target'] == 'old.py -> new.py'
