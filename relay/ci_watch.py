@@ -137,17 +137,26 @@ def runs_for(repo_dir, sha, repo):
     return json.loads(gh(['run', 'list', '-R', repo, '--commit', sha, '--json', FIELDS], repo_dir) or '[]')
 
 
-def excerpt(repo_dir, run_id, repo, limit=12):
-    """The error lines of the failed jobs, without GitHub's job/step/timestamp columns; failed tests sharing
-    one error message collapse into the first with a count."""
+def raw_failed_log(repo_dir, run_id, repo):
+    """Capture the raw failed job log for `run_id` when a failure is first seen, or '' on gh failure."""
     try:
-        log = gh(['run', 'view', '-R', repo, str(run_id), '--log-failed'], repo_dir)
+        return gh(['run', 'view', '-R', repo, str(run_id), '--log-failed'], repo_dir) or ''
     except (OSError, subprocess.SubprocessError):
+        return ''
+
+
+def excerpt(repo_dir, run_id, repo, limit=12, *, log=None):
+    """The error lines of the failed jobs, without GitHub's job/step/timestamp columns; failed tests sharing
+    one error message collapse into the first with a count, with token-like strings redacted."""
+    if log is None:
+        log = raw_failed_log(repo_dir, run_id, repo)
+    if not log:
         return []
+    triage = _ship_triage()
     seen = {}
     for raw in log.splitlines():
         job, _, rest = raw.partition('\t')
-        text = re.sub(r'^[^\t]*\t\S+Z ', '', rest).rstrip()
+        text = triage.redact_tokens(re.sub(r'^[^\t]*\t\S+Z ', '', rest).rstrip())
         if not ERROR_LINE.search(text):
             continue
         message = text.split(' - ', 1)[1] if text.startswith('FAILED ') and ' - ' in text else text
@@ -157,7 +166,20 @@ def excerpt(repo_dir, run_id, repo, limit=12):
     return lines[-limit:]
 
 
-def settle(repo, repo_dir, run, session=None):
+def record_failure_receipt(repo, repo_dir, run, *, pr=None, head_sha=None, log=None, transition='RED', **extra):
+    """Capture a failed run's log excerpt when seen, classify it, and persist an untrusted triage receipt (AC-08/09)."""
+    triage_mod = _ship_triage()
+    run_id, run_attempt = attempt(run)
+    target = triage_mod.receipt_path(store(), run_id, run_attempt)
+    captured = raw_failed_log(repo_dir, run_id, repo) if log is None else log
+    if not target.exists():
+        classification = triage_mod.classify(log=captured, run=run, **extra)
+        triage_mod.write_receipt(store(), repo=repo, pr=pr, run_id=run_id, attempt=run_attempt,
+                                 head_sha=head_sha or run.get('headSha'), triage=classification, transition=transition)
+    return captured, target
+
+
+def settle(repo, repo_dir, run, session=None, *, pr=None, head_sha=None):
     """Record one completed run: a failure opens (or replaces) its alert, owned by the Claude Code `session`
     that pushed (if any); a success resolves older ones. Returns the alert only when it is new, so settling
     a run again never notifies twice. A pull request's failed run is its shepherd's: the first failure alerts,
@@ -166,11 +188,15 @@ def settle(repo, repo_dir, run, session=None):
     key = f"{repo}|{run['workflowName']}|{run['headBranch']}"
     full = run.get('event') in FULL_EVENTS
     if run['conclusion'] in FAILED:
-        if run.get('event') == 'pull_request' or read().get(key+'|full' if full else key, {}).get('created_at') == run['createdAt']:
+        if run.get('event') == 'pull_request':
             return None
+        if read().get(key+'|full' if full else key, {}).get('created_at') == run['createdAt']:
+            return None
+        log, _ = record_failure_receipt(repo, repo_dir, run, pr=pr, head_sha=head_sha)
         alert = {'repo': repo, 'workflow': run['workflowName'] + (' (full suite)' if full else ''),
                  'branch': run['headBranch'], 'commit': run['displayTitle'], 'url': run['url'],
-                 'created_at': run['createdAt'], 'errors': excerpt(repo_dir, run['databaseId'], repo), 'session': session}
+                 'created_at': run['createdAt'], 'errors': excerpt(repo_dir, run['databaseId'], repo, log=log),
+                 'session': session}
         update(lambda alerts: alerts.__setitem__(key+'|full' if full else key, alert))
         return alert
     if run['conclusion'] == 'success':
@@ -358,6 +384,18 @@ def graph_merge_losses(cwd, before):
             if old_completion.get(field) is not None and completion.get(field) != old_completion[field]:
                 return [GRAPH]
     return []
+
+
+def _ship_triage():
+    """Load sibling ship_triage whether ci_watch is imported as a package or run as a detached script."""
+    if __package__:
+        from . import ship_triage
+        return ship_triage
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('ship_triage', Path(__file__).with_name('ship_triage.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _workflow_trust():
@@ -700,7 +738,11 @@ def shepherd(repo_dir, number, *, session=None, every=60, limit=None, sleep=time
                 problem = ('CI failed', [f"{r['workflowName']}: {r['url']}" for r in failures]) if failures else None
             if problem and (not alerted or alerted[:2] != (problem[0], head)):
                 # The failing tests themselves, as a push's alert has them: the only alert this pull request's CI gets.
-                errors = problem[1] + [line for r in failures for line in excerpt(repo_dir, r['databaseId'], repo)]
+                failed_lines = []
+                for r in failures:
+                    log, _ = record_failure_receipt(repo, repo_dir, r, pr=number, head_sha=head)
+                    failed_lines.extend(excerpt(repo_dir, r['databaseId'], repo, log=log))
+                errors = problem[1] + failed_lines
                 pr_alert(repo, number, view, problem[0], errors, session)
                 alerted = (problem[0], head, problem[1])
             elif not problem and (alerted or key in read()):  # read(): one an earlier shepherd raised, too
