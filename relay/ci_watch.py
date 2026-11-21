@@ -360,6 +360,18 @@ def graph_merge_losses(cwd, before):
     return []
 
 
+def _workflow_trust():
+    """Load sibling workflow_trust whether ci_watch is imported as a package or run as a detached script."""
+    if __package__:
+        from . import workflow_trust
+        return workflow_trust
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('workflow_trust', Path(__file__).with_name('workflow_trust.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _push_preflight():
     """Load sibling push_preflight whether ci_watch is imported as a package or run as a detached script."""
     if __package__:
@@ -947,8 +959,16 @@ def pull_request(repo_dir, body=None, *, repo=None):
     if plan['signed_commits']:
         refusals += [f'commit {sha[:8]} is not signed and {base} requires signed commits'
                      for sha in push_preflight.unsigned(repo_dir, 'HEAD', git=executable)]
+    trust_mod = _workflow_trust()
+    trust = trust_mod.inspect_repo(repo_dir, base=base, git=executable)
+    if trust['refused']:
+        refusals += [item['reason'] for item in trust['refused']]
     if refusals:
         raise ValueError('Preflight refused: ' + '; '.join(refusals) + '.' + fix)
+    if trust['existing']:
+        head_sha = git('rev-parse', 'HEAD')
+        trust = {**trust, 'receipt': str(trust_mod.write_receipt(store(), repo=resolved_repo, base=base,
+                                                                 head_sha=head_sha, report=trust))}
     probe = sandbox_probe(repo_dir) if base == 'main' else sandbox_probe(repo_dir, base=base)
     git('push', '--quiet', '--set-upstream', 'origin', branch)
     repo_flag = ['-R', resolved_repo] if resolved_repo else []
@@ -980,18 +1000,18 @@ def pull_request(repo_dir, body=None, *, repo=None):
     # Keep the reviewable PR open rather than assuming another repo's CI gate.
     if plan['protected'] is not True:
         return {'number': number, 'url': url, 'preflight': plan, 'sandbox_probe': probe, 'repo': resolved_repo,
-                'base': base,
+                'base': base, 'workflow_trust': trust,
                 'state': 'UNPROTECTED_AWAITING_INTEGRATION' if plan['protected'] is False else 'PROTECTION_UNCONFIRMED'}
     if plan['auto_merge'] is False:
         return {'number': number, 'url': url, 'state': 'AUTO_MERGE_DISABLED_AWAITING_INTEGRATION', 'preflight': plan,
-                'sandbox_probe': probe, 'repo': resolved_repo, 'base': base}
+                'sandbox_probe': probe, 'repo': resolved_repo, 'base': base, 'workflow_trust': trust}
     try:
         gh(['pr', 'merge', str(number), *repo_flag, '--auto', '--' + plan['method']], repo_dir)
     except subprocess.CalledProcessError as exc:
         if 'Auto merge is not allowed for this repository' not in str(exc.stderr or ''):
             raise
         return {'number': number, 'url': url, 'state': 'AUTO_MERGE_DISABLED_AWAITING_INTEGRATION', 'preflight': plan,
-                'sandbox_probe': probe, 'repo': resolved_repo, 'base': base}
+                'sandbox_probe': probe, 'repo': resolved_repo, 'base': base, 'workflow_trust': trust}
     # The probe passed and auto-merge is on again: the alert of an earlier push's failed probe is past.
     update(lambda alerts: alerts.pop(f"{resolved_repo or read_data['settings'].get('full_name')}|sandbox probe|{branch}", None))
     state = json.loads(gh(['pr', 'view', str(number), *repo_flag, '--json', 'mergeStateStatus'], repo_dir))['mergeStateStatus']
@@ -1018,7 +1038,8 @@ def pull_request(repo_dir, body=None, *, repo=None):
             update(lambda beats: beats.pop(name, None), 'shepherds.json')
             raise
     return {'number': number, 'url': url, 'state': state, 'preflight': plan, 'sandbox_probe': probe,
-            'repo': resolved_repo, 'base': base, 'shepherd': 'started' if need_shepherd[0] else 'attached'}
+            'repo': resolved_repo, 'base': base, 'workflow_trust': trust,
+            'shepherd': 'started' if need_shepherd[0] else 'attached'}
 
 
 def forget_pushing_worktree():
