@@ -2,6 +2,7 @@
 decision models (D15). One file per machine, beside local-gpu.json, so every frontend and storage root sees the
 same choices. No file, or a category left undecided, keeps today's behaviour: every route tare finds."""
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -1094,14 +1095,58 @@ def cost_line(deployment):
         if price.get('basis') == 'reference' else '') + f', then {TASK} at the same rates, its tokens unknown before it runs'
 
 
-def prove(name, confirm):
+def prove_binding(deployment, cost):
+    """Snapshot of the model, account/endpoint/credential, billing class, and cost text confirmed by the user."""
+    profile = deployment.get('native_profile') or {}
+    cli = deployment.get('native_cli') or {}
+    cred_env = deployment.get('native_credential_env')
+    env_val = os.environ.get(cred_env) if isinstance(cred_env, str) and cred_env else None
+    env_digest = hashlib.sha256(env_val.encode('utf-8')).hexdigest() if env_val is not None else None
+    from .challenger_variants import accounting
+    from .provider_spend import account as api_account
+    from .turn_engine import usage_account
+    try:
+        billing = accounting(deployment)
+    except (KeyError, TypeError, ValueError):
+        billing = deployment.get('native_challenger_accounting')
+    try:
+        sub_account = usage_account(deployment)
+    except (KeyError, TypeError, ValueError):
+        sub_account = None
+    try:
+        usd_account = api_account(deployment)
+    except (KeyError, TypeError, ValueError):
+        usd_account = None
+    return {
+        'id': deployment.get('id'),
+        'model': profile.get('model'),
+        'protocol': profile.get('protocol'),
+        'endpoint': profile.get('endpoint'),
+        'parameters_json': profile.get('parameters_json'),
+        'auth_env': profile.get('auth_env'),
+        'credential_env': cred_env,
+        'credential_env_sha256': env_digest,
+        'billing': billing,
+        'usage_account': sub_account,
+        'api_account': usd_account,
+        'cli_executable': cli.get('executable') if isinstance(cli, dict) else None,
+        'cost': cost,
+    }
+
+
+def prove(name, confirm, *, expected=None):
     """One minimal real call on a route, then, when it answered, the role check's short task, only after
     `confirm(cost line)` agrees; the result (never the reply) is kept in the setup, ok only when both passed. A proven
-    CLI is recorded for discovery, which then calls it ready."""
+    CLI is recorded for discovery, which then calls it ready.
+
+    When `expected` (from `prove_binding()`) is provided, the proof skips without calling any model if the resolved
+    route's model, account, endpoint/credential, or cost changed since confirmation."""
     deployment, why = route_for(name)
     if deployment is None:
         return {'ok': False, 'reason': why}
     line = cost_line(deployment)
+    if expected is not None and prove_binding(deployment, line) != expected:
+        return {'ok': None, 'reason': 'route, account, or cost changed after confirmation; skipped', 'cost': line}
     if not confirm(f'{name}: {line}.'):
         return {'ok': None, 'reason': 'not confirmed', 'cost': line}
     cli = deployment['native_profile']['protocol'] == 'vendor-cli'
@@ -1126,6 +1171,26 @@ def prove(name, confirm):
         proven(deployment['native_profile']['endpoint'], deployment['native_cli']['executable'])
     return remember(name, {'ok': ok, 'cost': line, **({} if ok else {'reason': reason}),
                            **({'role_check': check} if check else {})})
+
+
+_REAL_PROVE = prove
+
+
+def prove_bound(name, expected):
+    """Run `prove()` only for a route whose cost was shown and whose live model, account, and cost still match
+    `expected` (from `prove_binding()`)."""
+    if expected is None:
+        return {'ok': False, 'reason': 'no cost was shown before confirmation'}
+    expected_line = f"{name}: {expected['cost']}."
+    if prove is _REAL_PROVE:
+        return prove(name, lambda line: line == expected_line, expected=expected)
+    deployment, why = route_for(name)
+    if deployment is None:
+        return {'ok': False, 'reason': why}
+    line = cost_line(deployment)
+    if prove_binding(deployment, line) != expected:
+        return {'ok': None, 'reason': 'route, account, or cost changed after confirmation; skipped', 'cost': line}
+    return prove(name, lambda shown: shown == expected_line)
 
 
 def pending_proofs(roles=PROFILE_ROLES):
@@ -1202,7 +1267,7 @@ def _run_prove(targets, *, yes=False, dry_run=False, as_json=False):
         results = {name: prove(name, confirm) for name in resolved}
     else:
         cost_stream = sys.stderr if as_json else sys.stdout
-        preview = {}
+        preview, bindings = {}, {}
         for name in resolved:
             deployment, why = route_for(name)
             if deployment is None:
@@ -1210,29 +1275,34 @@ def _run_prove(targets, *, yes=False, dry_run=False, as_json=False):
                 print(f'{name}: cannot be proven: {why}', file=cost_stream)
             else:
                 cost = cost_line(deployment)
+                bindings[name] = prove_binding(deployment, cost)
                 preview[name] = {'ok': None, 'reason': 'not confirmed', 'cost': cost}
                 print(f'{name}: {cost}.', file=cost_stream)
-        if yes:
-            confirmed = True
-        else:
-            try:
-                confirmed = (
-                    sys.stdin.isatty()
-                    and input(f'Prove all {len(resolved)} route(s)? [y/N] ').strip().lower() == 'y'
-                )
-            except EOFError:
-                confirmed = False
-        if not confirmed:
+        confirmable = [name for name in resolved if name in bindings]
+        if not confirmable:
             results = preview
         else:
-            results = {}
-            for index, name in enumerate(resolved, 1):
-                if not as_json:
-                    print(f'[{index}/{len(resolved)}] Proving {name}...')
+            if yes:
+                confirmed = True
+            else:
                 try:
-                    results[name] = prove(name, lambda _: True)
-                except (ValueError, OSError, KeyError, TypeError) as exc:
-                    results[name] = {'ok': False, 'reason': str(exc)}
+                    confirmed = (
+                        sys.stdin.isatty()
+                        and input(f'Prove {len(confirmable)} route(s)? [y/N] ').strip().lower() == 'y'
+                    )
+                except EOFError:
+                    confirmed = False
+            if not confirmed:
+                results = preview
+            else:
+                results = dict(preview)
+                for index, name in enumerate(confirmable, 1):
+                    if not as_json:
+                        print(f'[{index}/{len(confirmable)}] Proving {name}...')
+                    try:
+                        results[name] = prove_bound(name, bindings[name])
+                    except (ValueError, OSError, KeyError, TypeError) as exc:
+                        results[name] = {'ok': False, 'reason': str(exc)}
     print(json.dumps(results, indent=1) if as_json else '\n'.join(
         f"{name}: {'proven' if r.get('ok') else 'not proven: ' + str(r.get('reason') or '')}"
         for name, r in results.items()))

@@ -617,3 +617,93 @@ def test_pending_proofs_filters_unavailable_and_bulk_prove_requires_confirmation
     assert 'route-two: proven' in capsys.readouterr().out
     assert environment.prove_main(['all']) == 0
     assert 'Nothing to prove' in capsys.readouterr().out
+
+
+def test_bulk_prove_skips_unpreviewed_routes_and_post_confirmation_drift(machine, monkeypatch, capsys):
+    from relay import cli_discovery, native_generation, provider_prices, provider_spend
+
+    monkeypatch.setattr(cli_discovery, 'discover', lambda: [])
+    monkeypatch.setattr(provider_prices, 'refresh_reading', lambda: None)
+    monkeypatch.setattr(provider_spend, 'record_receipt', lambda *a, **kw: None)
+    monkeypatch.setattr(environment, 'role_check', lambda d: {'ok': True})
+
+    generated = []
+    def fake_generate(deployment, model, *a, **kw):
+        generated.append((deployment['id'], model))
+        return True, 'OK', {'ok': True}
+    monkeypatch.setattr(native_generation, 'generate_text', fake_generate)
+
+    def dep(route_id, model, *, cred_env='OPENROUTER_API_KEY'):
+        return {
+            **OPENROUTER,
+            'id': route_id,
+            'native_credential_env': cred_env,
+            'native_profile': {**OPENROUTER['native_profile'], 'model': model},
+        }
+
+    class FakeTTY:
+        def isatty(self):
+            return True
+
+    # 1. All routes unavailable in preview -> never prompts, never calls any model.
+    monkeypatch.setattr(environment, 'route_for', lambda name: (None, 'missing_credential'))
+    monkeypatch.setattr('sys.stdin', FakeTTY())
+    monkeypatch.setattr('builtins.input', lambda prompt: (_ for _ in ()).throw(AssertionError('must not prompt')))
+    assert environment.prove_main(['unavail-a', 'unavail-b', '--json']) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out['unavail-a']['ok'] is False and out['unavail-b']['ok'] is False
+    assert generated == []
+
+    # 2. A route unavailable in preview that appears AFTER "y" confirmation must NEVER be proved.
+    monkeypatch.setenv('OPENROUTER_API_KEY', 'key-a')
+    state = {'r-good': dep('r-good', 'model-good'), 'r-late': None}
+    monkeypatch.setattr(environment, 'route_for', lambda name: (state[name], None) if state.get(name) else (None, 'missing_credential'))
+    monkeypatch.setattr(environment, 'cost_line', lambda d: f"cost for {d['native_profile']['model']}")
+
+    def confirm_and_appear(prompt):
+        assert 'Prove 1 route(s)?' in prompt
+        state['r-late'] = dep('r-late', 'model-late')
+        return 'y'
+
+    monkeypatch.setattr('builtins.input', confirm_and_appear)
+    assert environment.prove_main(['r-good', 'r-late', '--json']) == 1
+    summary = json.loads(capsys.readouterr().out)
+    assert generated == [('r-good', 'model-good')]
+    assert summary['r-good']['ok'] is True
+    assert summary['r-late'] == {'ok': False, 'reason': 'missing_credential'}
+
+    # 3. Post-confirmation drift in model, account/credential, env key value, or cost skips the drifted route.
+    for kind in ('model', 'account', 'env_value', 'cost'):
+        generated.clear()
+        monkeypatch.setenv('OPENROUTER_API_KEY', 'key-a')
+        monkeypatch.setenv('OPENAI_API_KEY', 'key-openai')
+        routes = {
+            'r-steady': dep('r-steady', 'model-steady'),
+            'r-drift': dep('r-drift', 'model-cheap'),
+        }
+        costs = {'r-steady': 'cheap steady', 'r-drift': 'cheap initial'}
+        monkeypatch.setattr(environment, 'route_for', lambda name: (routes[name], None))
+        monkeypatch.setattr(environment, 'cost_line', lambda d: costs[d['id']])
+
+        def confirm_and_mutate(prompt, kind=kind):
+            if kind == 'model':
+                routes['r-drift'] = dep('r-drift', 'model-expensive')
+            elif kind == 'account':
+                routes['r-drift'] = dep('r-drift', 'model-cheap', cred_env='OPENAI_API_KEY')
+            elif kind == 'env_value':
+                monkeypatch.setenv('OPENROUTER_API_KEY', 'key-b-other-account')
+                routes['r-steady'] = dep('r-steady', 'model-steady', cred_env='OPENAI_API_KEY')
+            elif kind == 'cost':
+                costs['r-drift'] = 'expensive after confirmation'
+            return 'y'
+
+        if kind == 'env_value':
+            routes['r-steady'] = dep('r-steady', 'model-steady', cred_env='OPENAI_API_KEY')
+
+        monkeypatch.setattr('builtins.input', confirm_and_mutate)
+        assert environment.prove_main(['r-steady', 'r-drift', '--json']) == 1
+        summary = json.loads(capsys.readouterr().out)
+        assert generated == [('r-steady', 'model-steady')], f'drifted route was called on {kind}'
+        assert summary['r-steady']['ok'] is True
+        assert summary['r-drift']['ok'] is None
+        assert 'changed after confirmation' in summary['r-drift']['reason']
