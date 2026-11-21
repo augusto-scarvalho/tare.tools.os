@@ -271,6 +271,29 @@ def test_a_denied_file_outside_every_scope_is_the_sandboxs_and_one_inside_is_the
     assert protection.sandbox_blocked(value) is None  # no scopes known: no claim
 
 
+def test_a_denied_windows_extended_length_path_outside_every_scope_is_the_sandboxs():
+    scopes = ('C:\\Windows', 'C:\\Users\\augus\\AppData\\Local\\Temp\\tare-dp\\repo')
+    repr_line = ("E           PermissionError: [WinError 5] Access is denied: "
+                 "'\\\\\\\\?\\\\C:\\\\Users\\\\augus\\\\AppData\\\\Local\\\\Temp\\\\tare-dp\\\\wt\\\\.681d744b-pytest'")
+    value = lambda text: {'returncode': 1, 'output': 'ERRORS\n' + text + '\n',
+                          'process': {'confinement': {'backend': 'windows-mxc'}}}
+    what, shown = protection.sandbox_blocked(value(repr_line), scopes)
+    assert what.startswith('a file outside the folders checks may read (C:\\Users\\augus') and shown == repr_line
+    for raw_line in (
+        "PermissionError: [WinError 5] Access is denied: '\\\\?\\C:\\Users\\augus\\outside\\file.txt'",
+        "PermissionError: [WinError 5] Access is denied: '//?/C:/Users/augus/outside/file.txt'",
+    ):
+        found = protection.sandbox_blocked(value(raw_line), scopes)
+        assert found is not None and found[0].startswith('a file outside the folders checks may read (C:')
+    inside = repr_line.replace('wt\\\\.681d744b-pytest', 'repo\\\\work.tmp')
+    assert protection.sandbox_blocked(value(inside), scopes) is None
+    assert protection.sandbox_blocked(value(inside), ('C:\\Windows', '\\\\?\\C:\\Users\\augus\\AppData\\Local\\Temp\\tare-dp\\repo')) is None
+    secret_line = "PermissionError: [WinError 5] Access is denied: '\\\\\\\\?\\\\C:\\\\Users\\\\augus\\\\AppData\\\\Local\\\\Temp\\\\tare-dp\\\\repo\\\\.env'"
+    assert protection.sandbox_blocked(value(secret_line), scopes) == ('a secret file (.env)', secret_line)
+    unc_line = "PermissionError: [WinError 5] Access is denied: '\\\\\\\\?\\\\UNC\\\\server\\\\share\\\\file.txt'"
+    assert protection.sandbox_blocked(value(unc_line), scopes) is None
+
+
 @pytest.mark.parametrize('output,what', [
     (UNITTEST_NETWORK, 'a network connection'), (UNITTEST_SECRET, 'a secret file (.env)'),
     (UNITTEST_DNS, 'a network name lookup'), (NODE_ROOT, "the drive's root folder, which Node reads to load any script"),

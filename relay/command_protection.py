@@ -1033,7 +1033,7 @@ def sandbox_blocked(value, readable=()):
     if linux:
         scopes = [posixpath.normpath(str(p)) for p in readable]
     else:
-        scopes = [ntpath.normcase(str(p)).rstrip('\\') for p in readable]
+        scopes = [re.sub(r'^\\{1,2}\?\\', '', ntpath.normcase(str(p))).rstrip('\\') for p in readable]
 
     def outside(path):
         if linux:
@@ -1051,6 +1051,8 @@ def sandbox_blocked(value, readable=()):
         found = DENIED_PATH.search(line)
         if found:
             path = found[2].replace('\\\\', '\\')
+            if not linux:
+                path = re.sub(r'^(?:\\{1,2}|//)\?[\\/]', '', path)
             if sandbox_secrets.secret(ntpath.basename(path), ntpath.basename(ntpath.dirname(path))):
                 return 'a secret file ('+ntpath.basename(path)+')', line[:200]
             if outside(path):
