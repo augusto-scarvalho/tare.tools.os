@@ -185,3 +185,100 @@ def test_a_setup_proof_posts_its_call(storage, monkeypatch):
                         lambda *a, **kw: (True, 'ok', {'attempt_id': 'p1', 'usage': usage, 'cost': {'known_amount': None}}))
     assert environment.prove('or', lambda line: True)['ok'] is True
     assert [(r['account'], r['usd'], r['call']) for r in rows()] == [('openrouter', 0.0002, 'p1')]
+
+
+def test_one_shot_api_calls_deduct_from_declared_balance(storage, tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from dataclasses import MISSING, fields
+    from typing import get_type_hints
+    import hashlib
+    import time
+    from compute_plane.action_assessment import AssessmentRequest
+    from tare_tools_agent_runtime import BindingRef, CancellationToken, ConversationLog, ExecutionControl
+    from relay import action_model_assessment, console_entry
+    from test_action_model_assessment import answer
+
+    project = tmp_path / 'project'
+    project.mkdir()
+    provider_spend.declare('openai-api', 10.0, now=0)
+    api = {
+        'id': 'openai-one-shot',
+        'runner': 'native-http',
+        'native_credential_env': 'OPENAI_API_KEY',
+        'native_profile': {
+            'endpoint': 'https://api.openai.com/v1',
+            'model': 'gpt-6',
+            'protocol': 'openai-responses',
+            'context_window': 32768,
+            'output_tokens': 2048,
+            'parameters_json': '{}',
+            'source': 'fixture',
+        },
+    }
+
+    def receipt(attempt_id, usd):
+        return {
+            'attempt_id': attempt_id,
+            'runtime_model': 'gpt-6',
+            'served_model': 'gpt-6',
+            'model_attestation': 'runtime_reported_match',
+            'generation_calls': 1,
+            'usage': {'input_tokens': 100, 'output_tokens': 20, 'total_tokens': 120},
+            'cost': {'currency': 'USD', 'known_amount': str(usd)},
+        }
+
+    # 1. console_entry.propose
+    from relay.console_backend import Selection
+    monkeypatch.setattr(console_entry, 'select', lambda name, profile=None: api)
+    monkeypatch.setattr('relay.flow_assessment.entry', lambda *a, **kw: None)
+    monkeypatch.setattr('relay.turn_engine.available', lambda name, probe=False: (api, None))
+    selection = Selection(root=str(project), mode='conversation', prompt='Investigate the bug',
+                          deployment='openai-one-shot', profile='', unlimited=False)
+    proposal = console_entry.propose(
+        selection, CancellationToken(), directory=tmp_path / 'entry',
+        generate=lambda *a, **kw: (True, json.dumps({'flow': 'session', 'reason': 'Direct edit', 'question': ''}),
+                                   receipt('entry-1', '0.25')))
+    assert proposal['status'] == 'PROPOSED'
+
+    # 2. cli_discovery.acknowledge
+    from relay import cli_discovery
+    monkeypatch.setattr('relay.native_generation.generate_text',
+                        lambda *a, **kw: (True, 'OK', receipt('ack-1', '0.15')))
+    assert cli_discovery.acknowledge(api) == (True, '')
+
+    # 3. action_model_assessment.TareActionClassifier
+    context = '{"scope":"local"}'
+    deadline = time.monotonic() + 60
+    snapshot_type = get_type_hints(AssessmentRequest)['action']
+    hints = get_type_hints(snapshot_type)
+    values = {}
+    for field in fields(snapshot_type):
+        if field.default is not MISSING:
+            values[field.name] = field.default
+        elif field.default_factory is not MISSING:
+            values[field.name] = field.default_factory()
+        else:
+            values[field.name] = 1 if hints.get(field.name) is int else 'fixture'
+        if field.name.endswith('sha256'):
+            values[field.name] = 'a' * 64
+    values.update({k: v for k, v in {
+        'operation': 'process.exec', 'repository': 'fixture', 'cwd': str(project),
+        'execution_profile': 'local', 'deadline': deadline, 'argv': ('pytest', '-q'),
+        'script': None, 'stdin': b'', 'payload_json': None,
+        'context_sha256': hashlib.sha256(context.encode('utf-8')).hexdigest(),
+    }.items() if k in values})
+    req = AssessmentRequest(action=snapshot_type(**values), stage='classifier', backend='tare',
+                            public_context=context, max_output_tokens=512, deadline=deadline)
+    journal = ConversationLog()
+    classifier = action_model_assessment.TareActionClassifier(
+        api, journal_factory=lambda: journal, custody_factory=nullcontext, disclosure_check=lambda r: True,
+        generate=lambda *a, **kw: (True, answer(req), receipt('assess-1', '0.10')),
+    )
+    ctrl = ExecutionControl(BindingRef(req.action.work_id, req.action.binding_id, 'classifier',
+                                       req.action.fence_seq, 'call-1'), CancellationToken(), deadline)
+    obs = classifier.assess(req, ctrl)
+    assert obs.status == 'OBSERVED'
+
+    assert provider_spend.spent('openai-api', 0) == 0.5
+    assert provider_spend.remaining('openai-api')['remaining'] == 9.5
+    assert [r['call'] for r in rows()] == ['entry-1', 'ack-1', 'assess-1']

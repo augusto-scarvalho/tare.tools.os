@@ -8,7 +8,7 @@ from pathlib import Path
 
 from compute_plane.native_journal import regular, save_json
 
-DEFAULT = dict(enabled=False, profile='local-qwen', overflow=None, calls=4, requests=2,
+DEFAULT = dict(enabled=False, profile='auto', overflow=None, calls=4, requests=2,
                seconds=90, max_usd='0', challenger=None, sample_percent=0)
 
 
@@ -44,7 +44,7 @@ def validate(value):
         return value
     from .challenger_variants import realize
     for key in ('profile', 'challenger', 'overflow'):
-        if value[key] is None and key != 'profile':
+        if key == 'profile' and value[key] == 'auto' or value[key] is None and key != 'profile':
             continue
         variant = realize(value[key])
         if isinstance(value[key], dict) and 'task_types' in value[key] and 'exploration' not in variant['task_types']:
@@ -219,31 +219,74 @@ def scoped(frozen,parent=None):
 
 
 def snapshot(session_id, role, parent=None):
-    """Freeze the explorer for a new session: always the configured one, with its own model, effort and
-    parameters, never the session's. A local explorer has one slot; the investigations beyond it go to the
-    configured hosted `overflow` explorer at once. When the local explorer cannot run (this conversation leaves
-    the local GPU, or it would swap the local session's model), the overflow explorer takes all of them;
-    without one the session does not delegate.
+    """Freeze the explorer for a new session: always the configured one (or `native_routes.ranked('explorer')` when
+    `profile == 'auto'`), with its own model, effort and parameters, never the session's. A local explorer has one
+    slot; the investigations beyond it go to the hosted `overflow` explorer at once. When the local explorer cannot run
+    (this conversation leaves the local GPU, or it would swap the local session's model), the overflow explorer takes
+    all of them; without one the session does not delegate.
     """
     if role == 'explorer':
         return None  # Leaf sessions never recursively delegate.
     value = policy()
-    from .execution_scope import current
+    from .execution_scope import current, for_role
     if not value['enabled'] and not current().pin('explorer'):
         return None
     validate(value)
     if not value['enabled']:  # an explorer pinned for this launch delegates while the configured one is off
         return scoped(dict(settings=value, qualification='UNQUALIFIED', task_type='exploration'), parent)
-    from .challenger_variants import realize
+    from .challenger_variants import realize, realize_deployment
+    from .environment import allows
     from .turn_engine import avoid_local_gpu
     sampled = int(hashlib.sha256(session_id.encode()).hexdigest()[:8], 16) % 100 < value['sample_percent']
+    if not sampled and value['profile'] == 'auto':
+        if current().pin('explorer'):
+            return scoped(dict(settings=value, qualification='UNQUALIFIED', task_type='exploration'), parent)
+        from .native_routes import ranked
+
+        def auto_eligible(candidate):
+            return (allows(candidate['deployment'])[0]
+                    and not (candidate['accounting'] == 'usd' and Decimal(value['max_usd']) <= 0)
+                    and not (candidate['accounting'] == 'local' and (
+                        avoid_local_gpu() or parent is not None and 'native_profile' in parent
+                        and swaps(candidate, parent))))
+
+        candidates = []
+        with for_role('explorer'):
+            deployments, selection_data = ranked('explorer')
+            by_id = {row['selected_deployment']: row for row in selection_data['candidates'] if row.get('eligible')}
+            for deployment in deployments:
+                name = by_id[deployment['id']].get('catalog', deployment['id'])
+                try:
+                    built = realize_deployment(deployment, name, task_types=['exploration'])
+                except (ValueError, OSError, KeyError, TypeError):
+                    continue
+                if auto_eligible(built):
+                    candidates.append(built)
+        configured_overflow = realize(value['overflow']) if value['overflow'] is not None else None
+        if configured_overflow is not None and (
+                not allows(configured_overflow['deployment'])[0]
+                or configured_overflow['accounting'] == 'usd' and Decimal(value['max_usd']) <= 0):
+            configured_overflow = None
+        if not candidates:
+            if configured_overflow is None:
+                return None
+            return dict(settings=value, variant=configured_overflow, experimental=False,
+                        selection='OVERFLOW_EXPLORER', qualification='UNQUALIFIED', task_type='exploration')
+        variant = candidates[0]
+        overflow = (configured_overflow if configured_overflow is not None
+                    else next((c for c in candidates[1:] if c['accounting'] != 'local'), None)
+                    if variant['accounting'] == 'local' else None)
+        frozen = dict(settings=value, variant=variant, experimental=False, selection='AUTO_EXPLORER',
+                      qualification='UNQUALIFIED', task_type='exploration')
+        if variant['accounting'] == 'local' and overflow is not None:
+            frozen['overflow'] = overflow
+        return frozen
     variant = realize(value['challenger'] if sampled else value['profile'])
     overflow = realize(value['overflow']) if value['overflow'] is not None else None
     selection = 'CONFIGURED_EXPLORER'
     if current().changes('explorer'):
         return scoped(dict(settings=value,variant=variant,overflow=overflow,experimental=sampled,
             selection=selection,qualification='UNQUALIFIED',task_type='exploration'),parent)
-    from .environment import allows
     if overflow is not None and not allows(overflow['deployment'])[0]:
         overflow = None  # this machine's setup declines it
     if not allows(variant['deployment'])[0] or variant['accounting'] == 'local' and (

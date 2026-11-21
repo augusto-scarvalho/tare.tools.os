@@ -15,9 +15,14 @@ ROLE_LABELS = {'implementer': 'Implementer · conversations, sessions and the un
                'planner': 'Planner · empty: automatic, the routes switched on for it in Models per role, the class asked for above first; '
                          'write routes to fix the order yourself',
                'auditor': 'Your auditor routes · used when you choose your list',
-               'researcher': 'Researcher · searches the internet; explorers investigate project files',
-               'vision': 'Vision · describes attached images for models that cannot see',
-               'heads_up': 'Heads-up · writes a note after a reply that follows delivered or attempted work, and by the counts tare keeps or every few turns otherwise'}
+               'researcher': 'Researcher · searches the internet; explorers investigate project files · empty: automatic, '
+                             'the routes switched on for it in Models per role, cheapest sufficient route first; write '
+                             'routes to fix the order yourself',
+               'vision': 'Vision · describes attached images for models that cannot see · empty: automatic, the CLI '
+                         'routes switched on for it in Models per role, cheapest first; write routes to fix the '
+                         'order yourself',
+               'heads_up': 'Heads-up · writes a note after a reply that follows delivered or attempted work, and by the counts tare keeps or every few turns otherwise · '
+                           'empty: automatic, middling and frontier routes switched on for it in Models per role, cheapest first; write routes to fix the order yourself'}
 AUDITOR_SELECTIONS = [('Automatic · another provider, frontier models', 'cross_vendor_frontier'),
                       ('Use my auditor routes', 'configured')]
 # The five roles of native_routes.WANTED, in the order the screen lists them, with what a person calls them.

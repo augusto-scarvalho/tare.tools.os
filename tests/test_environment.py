@@ -504,3 +504,206 @@ def test_decision_models_left_out_are_never_asked(machine, monkeypatch):
     assert turn_engine.judges({'state': 's', 'options': {'a': 'A'}, 'question': 'q'}) == {}
     assert turn_engine.judge_many('s', {'a': 'q'}) == {} and turn_engine.local_judge() is None
     assert work_forms.judge_form('Fix the typo.')() is None
+
+
+def test_native_profiles_names_skips_symlinks_and_caches_match_uncached(machine, tmp_path, monkeypatch):
+    from relay import native_catalog, native_profiles
+    prof_dir = tmp_path / 'profiles'
+    prof_dir.mkdir()
+    monkeypatch.setenv('TARE_PROFILE_DIR', str(prof_dir))
+    (prof_dir / 'custom-route.json').write_text('{}', encoding='utf-8')
+    (prof_dir / 'ignored upper.json').write_text('{}', encoding='utf-8')
+    (prof_dir / 'auto.json').write_text('{}', encoding='utf-8')
+    target = tmp_path / 'outside.json'
+    target.write_text('{}', encoding='utf-8')
+    link = prof_dir / 'symlinked-route.json'
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError):
+        pass
+    assert native_profiles.names() == ['custom-route']
+
+    value = environment.set_auto(environment.set_auto({}, 'auditor:claude/opus@api=off'), 'auditor:local-qwen=on')
+    seen_ids = []
+
+    def tracking_id_rule(text):
+        seen_ids.append(text)
+        return environment.id_rule(text)
+
+    parsed, problems = environment.profile(value, 'auditor', resolve_id=tracking_id_rule)
+    assert seen_ids == ['local-qwen'] and not problems
+    deployment = {'id': 'local-qwen', 'native_profile': {'endpoint': 'http://127.0.0.1:8080/v1', 'model': 'qwen3.8'}}
+    assert environment.profile_state('auditor', deployment, value) == environment.profile_state(
+        'auditor', deployment, value, parsed=parsed)
+    assert environment.granted('auditor', deployment, value) == environment.granted(
+        'auditor', deployment, value, parsed=parsed)
+
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path / 'storage'))
+    calls = 0
+    real_bundled = native_catalog.bundled
+
+    def counted_bundled(name):
+        nonlocal calls
+        calls += 1
+        return real_bundled(name)
+
+    monkeypatch.setattr(native_catalog, 'bundled', counted_bundled)
+    with native_catalog.select_cache():
+        first = native_catalog.select('openai-api')
+        first['mutated_by_caller'] = True
+        second = native_catalog.select('openai-api')
+    assert calls == 1 and 'mutated_by_caller' not in second
+    native_catalog.select('openai-api')
+    assert calls == 2
+
+
+def test_pending_proofs_filters_unavailable_and_bulk_prove_requires_confirmation_or_yes(machine, monkeypatch, capsys):
+    import io
+    r1 = {**OPENROUTER, 'native_profile': {**OPENROUTER['native_profile'], 'model': 'claude-fable-5.2'},
+          'id': 'route-one'}
+    r2 = {**OPENROUTER, 'native_profile': {**OPENROUTER['native_profile'], 'model': 'gemini-4-carbon'},
+          'id': 'route-two'}
+    unavail = {**OPENROUTER, 'native_profile': {**OPENROUTER['native_profile'], 'model': 'glm-5.3'},
+               'id': 'route-unavail'}
+    from relay import cli_discovery, native_routes, provider_prices
+    monkeypatch.setattr(cli_discovery, 'discover', lambda: [])
+    monkeypatch.setattr(provider_prices, 'refresh_reading', lambda: None)
+    monkeypatch.setattr(native_routes, 'configured', lambda: {'deployments': [
+        {'id': 'route-unavail', 'native_catalog': 'route-unavail', 'model': 'glm-5.3', 'qualified': False, 'roles': ['implementer']},
+    ]})
+    monkeypatch.setattr(environment, 'route_key', lambda d: ('claude', 'fable', (5, 2), 'api') if d['id'] != 'route-two' else ('gemini', 'carbon', (4,), 'api'))
+    proven = set()
+    monkeypatch.setattr(environment, 'auto_routes', lambda role, *a, **kw: [
+        ('route-two', r2, 'usable' if 'route-two' in proven else 'NOT_QUALIFIED_PIN_ONLY'),
+        ('route-one', r1, 'usable' if 'route-one' in proven else 'NOT_QUALIFIED_PIN_ONLY'),
+        ('route-unavail', unavail, 'NOT_QUALIFIED_PIN_ONLY'),
+    ] if role == 'implementer' else [])
+    monkeypatch.setattr(environment, 'route_for', lambda name: (
+        None, 'missing_credential') if name == 'route-unavail' else ({'route-one': r1, 'route-two': r2}.get(name), 'unknown'))
+    monkeypatch.setattr(environment, 'cost_line', lambda d: f"cost for {d['id']}")
+    assert environment.pending_proofs() == ['route-one', 'route-two']
+
+    calls, fail_two = [], True
+    def fake_prove(name, confirm):
+        calls.append(name)
+        if name == 'route-two' and fail_two:
+            return {'ok': False, 'reason': 'credential_rejected'}
+        proven.add(name)
+        return {'ok': True, 'cost': f'cost for {name}'}
+    monkeypatch.setattr(environment, 'prove', fake_prove)
+
+    # Dry-run shows all resolved costs without confirming or calling models.
+    assert environment.prove_main(['all', '--dry-run']) == 0 and calls == []
+    dry = capsys.readouterr().out
+    assert 'route-one: cost for route-one.' in dry and 'route-two: cost for route-two.' in dry
+    assert 'route-unavail' not in dry
+
+    # Without --yes or TTY, bulk prove prints all costs upfront, refuses, and spends nothing.
+    monkeypatch.setattr('sys.stdin', io.StringIO(''))
+    assert environment.prove_main(['all']) == 1 and calls == []
+    refused = capsys.readouterr().out
+    assert 'route-one: cost for route-one.' in refused and 'not proven: not confirmed' in refused
+
+    # With --yes, sequential prove runs every pending route even if one fails and exits 1.
+    assert environment.prove_main(['all', '--yes', '--json']) == 1
+    assert calls == ['route-one', 'route-two']
+    summary = json.loads(capsys.readouterr().out)
+    assert summary['route-one']['ok'] is True and summary['route-two']['ok'] is False
+
+    # Now only route-two remains; tare setup --prove all runs it; empty queue exits 0 cleanly.
+    calls.clear()
+    fail_two = False
+    assert environment.main(['--prove', 'all', '--yes']) == 0 and calls == ['route-two']
+    assert 'route-two: proven' in capsys.readouterr().out
+    assert environment.prove_main(['all']) == 0
+    assert 'Nothing to prove' in capsys.readouterr().out
+
+
+def test_bulk_prove_skips_unpreviewed_routes_and_post_confirmation_drift(machine, monkeypatch, capsys):
+    from relay import cli_discovery, native_generation, provider_prices, provider_spend
+
+    monkeypatch.setattr(cli_discovery, 'discover', lambda: [])
+    monkeypatch.setattr(provider_prices, 'refresh_reading', lambda: None)
+    monkeypatch.setattr(provider_spend, 'record_receipt', lambda *a, **kw: None)
+    monkeypatch.setattr(environment, 'role_check', lambda d: {'ok': True})
+
+    generated = []
+    def fake_generate(deployment, model, *a, **kw):
+        generated.append((deployment['id'], model))
+        return True, 'OK', {'ok': True}
+    monkeypatch.setattr(native_generation, 'generate_text', fake_generate)
+
+    def dep(route_id, model, *, cred_env='OPENROUTER_API_KEY'):
+        return {
+            **OPENROUTER,
+            'id': route_id,
+            'native_credential_env': cred_env,
+            'native_profile': {**OPENROUTER['native_profile'], 'model': model},
+        }
+
+    class FakeTTY:
+        def isatty(self):
+            return True
+
+    # 1. All routes unavailable in preview -> never prompts, never calls any model.
+    monkeypatch.setattr(environment, 'route_for', lambda name: (None, 'missing_credential'))
+    monkeypatch.setattr('sys.stdin', FakeTTY())
+    monkeypatch.setattr('builtins.input', lambda prompt: (_ for _ in ()).throw(AssertionError('must not prompt')))
+    assert environment.prove_main(['unavail-a', 'unavail-b', '--json']) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out['unavail-a']['ok'] is False and out['unavail-b']['ok'] is False
+    assert generated == []
+
+    # 2. A route unavailable in preview that appears AFTER "y" confirmation must NEVER be proved.
+    monkeypatch.setenv('OPENROUTER_API_KEY', 'key-a')
+    state = {'r-good': dep('r-good', 'model-good'), 'r-late': None}
+    monkeypatch.setattr(environment, 'route_for', lambda name: (state[name], None) if state.get(name) else (None, 'missing_credential'))
+    monkeypatch.setattr(environment, 'cost_line', lambda d: f"cost for {d['native_profile']['model']}")
+
+    def confirm_and_appear(prompt):
+        assert 'Prove 1 route(s)?' in prompt
+        state['r-late'] = dep('r-late', 'model-late')
+        return 'y'
+
+    monkeypatch.setattr('builtins.input', confirm_and_appear)
+    assert environment.prove_main(['r-good', 'r-late', '--json']) == 1
+    summary = json.loads(capsys.readouterr().out)
+    assert generated == [('r-good', 'model-good')]
+    assert summary['r-good']['ok'] is True
+    assert summary['r-late'] == {'ok': False, 'reason': 'missing_credential'}
+
+    # 3. Post-confirmation drift in model, account/credential, env key value, or cost skips the drifted route.
+    for kind in ('model', 'account', 'env_value', 'cost'):
+        generated.clear()
+        monkeypatch.setenv('OPENROUTER_API_KEY', 'key-a')
+        monkeypatch.setenv('OPENAI_API_KEY', 'key-openai')
+        routes = {
+            'r-steady': dep('r-steady', 'model-steady'),
+            'r-drift': dep('r-drift', 'model-cheap'),
+        }
+        costs = {'r-steady': 'cheap steady', 'r-drift': 'cheap initial'}
+        monkeypatch.setattr(environment, 'route_for', lambda name: (routes[name], None))
+        monkeypatch.setattr(environment, 'cost_line', lambda d: costs[d['id']])
+
+        def confirm_and_mutate(prompt, kind=kind):
+            if kind == 'model':
+                routes['r-drift'] = dep('r-drift', 'model-expensive')
+            elif kind == 'account':
+                routes['r-drift'] = dep('r-drift', 'model-cheap', cred_env='OPENAI_API_KEY')
+            elif kind == 'env_value':
+                monkeypatch.setenv('OPENROUTER_API_KEY', 'key-b-other-account')
+                routes['r-steady'] = dep('r-steady', 'model-steady', cred_env='OPENAI_API_KEY')
+            elif kind == 'cost':
+                costs['r-drift'] = 'expensive after confirmation'
+            return 'y'
+
+        if kind == 'env_value':
+            routes['r-steady'] = dep('r-steady', 'model-steady', cred_env='OPENAI_API_KEY')
+
+        monkeypatch.setattr('builtins.input', confirm_and_mutate)
+        assert environment.prove_main(['r-steady', 'r-drift', '--json']) == 1
+        summary = json.loads(capsys.readouterr().out)
+        assert generated == [('r-steady', 'model-steady')], f'drifted route was called on {kind}'
+        assert summary['r-steady']['ok'] is True
+        assert summary['r-drift']['ok'] is None
+        assert 'changed after confirmation' in summary['r-drift']['reason']

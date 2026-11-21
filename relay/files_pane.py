@@ -22,7 +22,7 @@ from textual.widgets.option_list import Option
 
 SCHEMA = 'tare.tools/console-files-pane/1'
 FILE = 'files-pane.json'
-FILE_OPERATIONS = {'read', 'edit', 'folder_read'}
+FILE_OPERATIONS = {'read', 'edit', 'rename', 'folder_read'}
 FAILED = {'failed', 'refused', 'unknown', 'unconfirmed', 'not_started'}
 LIST_LIMIT = 100_000
 STATUS_LIMIT = 5000
@@ -98,16 +98,25 @@ def touches(history, *, turn_only):
         path = ' '.join(str(row.get('target', '')).split())
         if not path:
             continue
-        edit = row['operation'] == 'edit'
-        before = found.get(path, Touch(path))
-        found[path] = Touch(
-            path, edited=before.edited or edit,
-            proposed=(edit and bool(row.get('source'))) or (before.proposed and not edit),
-            deleted=edit and 'Deleted file.' in str(row.get('detail', '')) or (before.deleted and not edit),
-            running=row.get('state') == 'running', failed=row.get('state') in FAILED,
-            reason=str(row.get('reason') or ''),
-            role=before.role if before.edited and not edit else role_label(row),  # who edited it, else who read it
-            outside=row['operation'] == 'folder_read')
+        if row['operation'] == 'rename' and ' -> ' in path:
+            src, dst = (part.strip() for part in path.split(' -> ', 1))
+            entries = [(p, is_src) for p, is_src in ((src, True), (dst, False)) if p]
+        else:
+            entries = [(path, False)]
+        edit = row['operation'] in {'edit', 'rename'}
+        for item, moved_from in entries:
+            before = found.get(item, Touch(item))
+            deleted = ((row.get('state') == 'succeeded' if moved_from else False)
+                       if row['operation'] == 'rename'
+                       else (edit and 'Deleted file.' in str(row.get('detail', '')) or (before.deleted and not edit)))
+            found[item] = Touch(
+                item, edited=before.edited or edit,
+                proposed=(edit and bool(row.get('source'))) or (before.proposed and not edit),
+                deleted=deleted,
+                running=row.get('state') == 'running', failed=row.get('state') in FAILED,
+                reason=str(row.get('reason') or ''),
+                role=before.role if before.edited and not edit else role_label(row),  # who edited it, else who read it
+                outside=row['operation'] == 'folder_read')
     return list(found.values())
 
 

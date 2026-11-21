@@ -224,6 +224,9 @@ def main(argv=None):
     if argv[:1] == ['models']:
         from relay.model_choices import main as models
         return models(argv[1:])
+    if argv[:1] == ['prove']:
+        from relay.environment import prove_main
+        return prove_main(argv[1:])
     if argv and argv[0] in {'explore', 'evidence', 'research'} and not any(x in argv for x in ('--help', '-h')):
         from relay.native_installation import storage_root
         CUSTODY = storage_root()
@@ -248,7 +251,7 @@ def main(argv=None):
     from relay.model_choices import PIN_HELP, help_summary
     parser = argparse.ArgumentParser(prog="tare-ops", description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Terminal UI: tare opens the current folder; tare PATH opens another folder (quote paths with spaces). Explicit form: console [--root PATH]. Owner CLIs: profiles ..., quota, mcp ..., serve ..., sessions ..., review ..., telemetry ..., agent ..., audit ..., hook <vendor> ..., backlog ..., specgraph ... "
+        epilog="Terminal UI: tare opens the current folder; tare PATH opens another folder (quote paths with spaces). Explicit form: console [--root PATH]. Owner CLIs: profiles ..., prove ..., quota, mcp ..., serve ..., sessions ..., review ..., telemetry ..., agent ..., audit ..., hook <vendor> ..., backlog ..., specgraph ... "
                "Local delegation: explore, evidence, research (see docs/guides/DELEGATION_POLICY.md)\n"+
                (help_summary() if any(v in ('--help', '-h') for v in argv) else PIN_HELP))
     sub = parser.add_subparsers(dest="action", required=True)

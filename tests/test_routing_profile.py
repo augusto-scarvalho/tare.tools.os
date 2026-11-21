@@ -972,3 +972,50 @@ def test_auto_show_coordinator_lists_tare_autos_tiers_as_a_conversation_reads_th
     assert capsys.readouterr().out.startswith('coordinator: the routes automatic routing considers')
     assert environment.main(['--auto-reset', 'coordinator']) == 0
     assert 'routing_profile' not in json.loads(environment.store().read_text(encoding='utf-8'))
+
+
+def test_mirror_routes_of_known_lines_match_origin_line_rules_only_when_author_verified(pool, monkeypatch):
+    from relay import work_audit
+    argon = native_catalog.select('opencode-sub-gemini-4-argon')
+    opus_br = native_catalog.select('bedrock-opus')
+    assert environment.route_label(argon) == 'gemini/argon-4@opencode-sub'
+    assert environment.route_label(opus_br) == 'claude/opus-4.6@bedrock'
+    assert environment.route_label(native_catalog.select('openrouter-muse-wonder')) == '@openrouter'
+    assert environment.route_label(native_catalog.select('bedrock-glm-5-3')) == '@bedrock'
+
+    # A vendor wildcard off covers both origin routes and verified mirrors.
+    saved(off={'auditor': ['gemini/*@*']})
+    assert state('auditor', 'opencode-sub-gemini-4-argon') == ('off', 'gemini/*@*')
+    assert state('auditor', 'gemini-api') == ('off', 'gemini/*@*')
+
+    # A legacy saved route-ID entry for a mirror continues to match via id_rule().
+    saved(off={'auditor': ['opencode-sub-gemini-4-argon']})
+    assert state('auditor', 'opencode-sub-gemini-4-argon') == ('off', 'opencode-sub-gemini-4-argon')
+
+    # An unattested OpenRouter route stays unlined; once roster-attested, it aligns while `:free` variants and
+    # mismatched authors still stay unlined.
+    or_base = {'id': 'or-argon', 'model': 'gemini-4-argon', 'native_credential_env': 'OPENROUTER_API_KEY',
+               'native_profile': {'endpoint': 'https://openrouter.ai/api/v1', 'model': 'google/gemini-4-argon',
+                                  'protocol': 'openai-chat'}}
+    or_free = {**or_base, 'native_profile': {**or_base['native_profile'], 'model': 'google/gemini-4-argon:free'}}
+    assert environment.route_label(or_base) == '@openrouter'
+
+    from types import SimpleNamespace
+    real_identity = work_audit.identity
+
+    def attested(dep, role):
+        if dep.get('id') == 'or-argon':
+            return SimpleNamespace(vendor='Google', bias_domain='google/gemini')
+        return real_identity(dep, role)
+
+    monkeypatch.setattr(work_audit, 'identity', attested)
+    assert environment.route_label(or_base) == 'gemini/argon-4@openrouter'
+    assert environment.route_label(or_free) == '@openrouter'
+
+    def spoofed(dep, role):
+        if dep.get('id') == 'or-argon':
+            return SimpleNamespace(vendor='Acme', bias_domain='acme/gemini')
+        return real_identity(dep, role)
+
+    monkeypatch.setattr(work_audit, 'identity', spoofed)
+    assert environment.route_label(or_base) == '@openrouter'

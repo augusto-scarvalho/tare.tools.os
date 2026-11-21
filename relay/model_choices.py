@@ -185,9 +185,8 @@ def projection(*, role=None, via=None, vendor=None, provider=None, include_uncon
     from .coordinator_policy import APPROVED
     from .inference_allowlist import identities
     from .environment import PROFILE_ROLES, listed, profile_state, read
-    from .native_routes import configured, roles as table_roles
+    from .native_routes import CLI_ENDPOINTS, configured, roles as table_roles
     from .turn_engine import policy
-    from .web_research import DEFAULT_ROUTES
     from . import model_signals as signals
     if role is not None and role not in ROLES:
         raise ValueError('Unknown role; consult tare models --help.')
@@ -203,7 +202,7 @@ def projection(*, role=None, via=None, vendor=None, provider=None, include_uncon
     if via is not None and via not in ('cli', 'api', 'local'):
         raise ValueError('Unknown access; consult tare models --help (--via cli|api|local).')
     table = configured()['deployments']
-    researchers = policy().get('researcher', DEFAULT_ROUTES)
+    researchers = {n for item in (policy().get('researcher') or ()) for n in (item if isinstance(item, list) else [item])}
     setup = read()
     # Work dispatch also admits the owner's saved implementation ladder (none: tare auto's tiers are the table's
     # implementer rows, plus the fleet default, turn_engine.implementer_tiers).
@@ -230,7 +229,8 @@ def projection(*, role=None, via=None, vendor=None, provider=None, include_uncon
         # Live credentials/resource admission remains the responsibility of select().
         if item['key'] in APPROVED and not is_pro(value):
             roles.append('coordinator')
-        if name in researchers and value['native_profile']['protocol'] == 'vendor-cli':
+        profile = value['native_profile']
+        if profile['protocol'] == 'vendor-cli' and (name in researchers or profile.get('endpoint') in CLI_ENDPOINTS):
             roles.append('researcher')
         access = ('cli' if value['native_profile']['protocol'] == 'vendor-cli'
                   else {'subscription': 'api', 'subscription_direct': 'api'}.get(kind(value), kind(value)))

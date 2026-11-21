@@ -599,6 +599,55 @@ def test_events_name_the_points_where_the_writer_runs():
                  heads_up.step('delegate_plan', {}, 'succeeded', {'verdict': 'PASS'})) == []
 
 
+def test_clean_verified_delivery_skips_event_trigger_but_unclean_or_cadence_runs(monkeypatch, log):
+    def kinds(*steps):
+        turn = {'request': 'x', 'reply': 'y', 'steps': list(steps)}
+        return heads_up.events(turn, heads_up.facts(turn))
+
+    clean = heads_up.step('implement', {'note': 'Do it.'}, 'succeeded', {
+        'verdict': 'VERIFIED', 'files': ['a.py'], 'files_scope': 'project',
+        'checks_before': '$ tests (exit 1)\n', 'checks_after': '$ tests (exit 0)\n'})
+    clean_no_checks = implemented('project', 'VERIFIED')
+    assert kinds(clean) == [] and kinds(clean_no_checks) == []
+
+    # Clean VERIFIED delivery with a recorded post-check failure is unclean and triggers 'delivery'.
+    red_after = heads_up.step('implement', {'note': 'Do it.'}, 'succeeded', {
+        'verdict': 'VERIFIED', 'files': ['a.py'], 'files_scope': 'project',
+        'checks_after': '$ tests (exit 0)\n$ lint (exit 1)\n'})
+    assert kinds(red_after) == ['delivery']
+
+    # Unapplied, refused/failed, non-VERIFIED, or missing verdict all trigger 'delivery'.
+    assert kinds(implemented(UNAPPLIED, 'NOT_REVIEWED')) == ['delivery']
+    assert kinds(implemented(UNAPPLIED, 'VERIFIED')) == ['delivery']
+    assert kinds(implemented(status='refused', reason='budget')) == ['delivery']
+    assert kinds(implemented(status='failed', reason='crashed')) == ['delivery']
+    assert kinds(implemented('project', 'INCONCLUSIVE')) == ['delivery']
+    assert kinds(implemented('project', 'NOT_VERIFIED')) == ['delivery']
+    assert kinds(implemented('project')) == ['delivery']
+
+    # An earlier unclean attempt followed by a clean VERIFIED attempt still triggers 'delivery'.
+    assert kinds(implemented(UNAPPLIED, 'NOT_REVIEWED'), clean) == ['delivery']
+
+    # Quiet clean VERIFIED turns still reach the writer on cadence (EVERY) or elevated score.
+    seen_calls = []
+    monkeypatch.setattr(heads_up, 'write', lambda text, seen, known=(): seen_calls.append(json.loads(text)) or ([], []))
+    monkeypatch.setattr(heads_up, 'score', lambda turn, found: 0.0)
+    monkeypatch.setattr(turn_engine, 'judge_many', lambda *a, **kw: {})
+    turn = {'request': 'Apply it', 'reply': 'Done.', 'steps': [clean]}
+    pace = {}
+    for _ in range(heads_up.EVERY - 1):
+        assert heads_up.notes(turn, pace=pace) == []
+    assert len(seen_calls) == 0
+    heads_up.notes(turn, pace=pace)
+    assert len(seen_calls) == 1
+
+    monkeypatch.setattr(heads_up, 'score', lambda turn, found: heads_up.FORWARD_AT)
+    heads_up.notes(turn, pace={})
+    assert len(seen_calls) == 2
+    assert [(r['forwarded'], r['events']) for r in log()] == [
+        (None, []), (None, []), (None, []), ('cadence', []), ('score', [])]
+
+
 def test_an_event_runs_the_writer_below_the_score_and_the_cadence_and_tells_it_the_facts(tmp_path, monkeypatch, log):
     told = []  # heads_up.write is stubbed: this test is about what notes() hands it
     monkeypatch.setattr(heads_up, 'write', lambda text, seen, known=(): told.append((json.loads(text), list(known))) or (
@@ -638,6 +687,12 @@ def test_the_writer_prompt_carries_the_facts_between_the_notes_shown_and_the_rec
 def test_the_writer_is_told_to_trust_the_facts_and_not_to_predict():
     assert 'never contradict them, and say a change is in the project only when they say it was applied' in heads_up.SYSTEM
     assert 'Never predict what the host or the agent will do next' in heads_up.SYSTEM
+    assert 'NOT in the project files' in heads_up.SYSTEM
+    assert 'omits a requested part' in heads_up.SYSTEM
+    assert 'already refused in this turn' in heads_up.SYSTEM
+    assert 'existing saved state or data the change does not migrate' in heads_up.SYSTEM
+    assert 'skip if the reply already says it is unapplied or pending' in heads_up.SYSTEM
+    assert 'refusal or limit the host already recorded in this turn' in heads_up.SYSTEM
 
 
 def test_the_report_counts_each_reason_the_writer_ran(capsys):
@@ -657,11 +712,27 @@ def test_the_report_counts_each_reason_the_writer_ran(capsys):
         '(0 useful, 0 not useful); cadence 1 forwarded, 1 with a note (1 useful, 0 not useful).')
 
 
-def test_the_default_writer_is_a_mid_to_high_model_at_high_effort_and_no_small_model_stands_in():
+def test_the_default_writer_is_a_mid_to_high_model_at_high_effort_and_no_small_model_stands_in(monkeypatch):
+    import json
+    from relay import cli_discovery, environment, native_routes
     default = turn_engine.DEFAULT_POLICY
-    assert default['heads_up'] == ['claude-sonnet-5-5-cli', 'codex-cli-gpt-6-1-sol']
+    assert 'heads_up' not in default
     assert default['heads_up_effort'] == 'high'
-    assert not any('haiku' in name or 'luna' in name or 'local' in name for name in default['heads_up'])
+    templates = json.loads(cli_discovery.TEMPLATES.read_text(encoding='utf-8'))
+    with_profiles = {name: cli_discovery.deployment(templates[name], __file__)
+                     for name in ('claude-sonnet-5-5-cli', 'codex-cli-gpt-6-1-sol', 'claude-haiku-5-5-cli',
+                                  'codex-cli-gpt-6-luna', 'agy-cli')}
+    from relay import native_catalog
+    real_select = native_catalog.select
+    monkeypatch.setattr(native_catalog, 'select',
+                        lambda name: with_profiles[name] if name in with_profiles else real_select(name))
+    from relay import native_profiles
+    monkeypatch.setattr(native_profiles, 'local_path', lambda name: cli_discovery.TEMPLATES if name in with_profiles
+                        else native_profiles.directory() / (name + '.json'))
+    monkeypatch.setattr(environment, 'older_models', lambda: set())
+    names = turn_engine.heads_up_routes()
+    assert {'claude-sonnet-5-5-cli', 'codex-cli-gpt-6-1-sol'} <= set(names)
+    assert not any('haiku' in name or 'luna' in name or 'agy-cli' in name or 'local' in name for name in names)
 
 
 CONTRACT = {'layout': 'chat-inclusive', 'source': 'test'}

@@ -1,7 +1,10 @@
 """Project-bound conversation navigation over existing saved checkpoints."""
 import asyncio
+import hashlib
+import json
 from pathlib import Path
 
+from compute_plane.native_journal import custody_lock, regular, save_json
 from rich.text import Text
 from textual import work
 from textual.binding import Binding
@@ -11,6 +14,73 @@ from textual.widgets import Button, Input, OptionList, Select, Static, TextArea
 
 from . import console_demand, relay_mesh
 from .console_output import plain
+
+INPUT_HISTORY_SCHEMA = 'tare.tools/console-input-history/1'
+INPUT_HISTORY_MAX_ENTRIES = 200
+INPUT_HISTORY_MAX_ENTRY_BYTES = 16384
+INPUT_HISTORY_MAX_FILE_BYTES = 512 * 1024
+
+
+def input_history_path(root, workspace=None):
+    """External console path for composer prompt history, isolated per workspace when given."""
+    base = regular(Path(root))
+    if workspace is None:
+        return regular(base / 'input-history.json')
+    key = hashlib.sha256(str(Path(workspace).resolve()).encode('utf-8')).hexdigest()[:16]
+    return regular(base / 'input-history' / (key + '.json'))
+
+
+def _normalize_history_entries(raw_entries):
+    entries = []
+    for item in raw_entries:
+        entry = item.strip()
+        if not entry or len(entry.encode('utf-8')) > INPUT_HISTORY_MAX_ENTRY_BYTES:
+            continue
+        if not entries or entries[-1] != entry:
+            entries.append(entry)
+    return entries[-INPUT_HISTORY_MAX_ENTRIES:]
+
+
+def read_input_history(root, workspace=None):
+    """Read validated composer history entries without modifying unreadable or newer files."""
+    file = input_history_path(root, workspace)
+    try:
+        with file.open('rb') as stream:
+            raw = stream.read(INPUT_HISTORY_MAX_FILE_BYTES + 1)
+    except FileNotFoundError:
+        return []
+    if len(raw) > INPUT_HISTORY_MAX_FILE_BYTES:
+        raise ValueError('Input history exceeds its size limit.')
+    value = json.loads(raw)
+    if (not isinstance(value, dict)
+            or value.get('schema') != INPUT_HISTORY_SCHEMA
+            or not isinstance(value.get('entries'), list)
+            or any(not isinstance(item, str) for item in value['entries'])):
+        raise ValueError('Input history uses an unsupported format.')
+    return _normalize_history_entries(value['entries'])
+
+
+def append_input_history(root, text, workspace=None):
+    """Append one non-empty prompt entry under custody lock; preserve unreadable files."""
+    entry = text.strip() if isinstance(text, str) else ''
+    if not entry or len(entry.encode('utf-8')) > INPUT_HISTORY_MAX_ENTRY_BYTES:
+        return None
+    lock_dir = regular(Path(root))
+    file = input_history_path(lock_dir, workspace)
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    file.parent.mkdir(parents=True, exist_ok=True)
+    with custody_lock(lock_dir):
+        entries = read_input_history(lock_dir, workspace)
+        if not entries or entries[-1] != entry:
+            entries.append(entry)
+        entries = entries[-INPUT_HISTORY_MAX_ENTRIES:]
+        payload = {'schema': INPUT_HISTORY_SCHEMA, 'entries': entries}
+        while len(entries) > 1 and max(
+                len(json.dumps(payload, ensure_ascii=True, indent=2).encode('utf-8')),
+                len(json.dumps(payload, ensure_ascii=False, indent=2).encode('utf-8'))) > INPUT_HISTORY_MAX_FILE_BYTES:
+            entries.pop(0)
+        save_json(file, payload)
+        return list(entries)
 
 
 class RenameDialog(ModalScreen):
@@ -243,6 +313,84 @@ class RenameDialog(ModalScreen):
 
 
 class ConversationNavigation:
+    def input_history_root(self):
+        return self.appearance_root()
+
+    def reset_input_history_browse(self):
+        self.input_history_index = None
+        self.input_history_draft = ''
+        self._history_applied_text = None
+
+    def load_input_history(self):
+        self.reset_input_history_browse()
+        if (root := self.input_history_root()) is None:
+            self.input_history = []
+            return
+        try:
+            self.input_history = read_input_history(root, workspace=self.workspace_root)
+        except (OSError, ValueError):
+            self.input_history = []
+
+    def record_input_history(self, text):
+        self.reset_input_history_browse()
+        entry = (text or '').strip()
+        if not entry or len(entry.encode('utf-8')) > INPUT_HISTORY_MAX_ENTRY_BYTES:
+            return
+        if not self.input_history or self.input_history[-1] != entry:
+            self.input_history = [*self.input_history, entry][-INPUT_HISTORY_MAX_ENTRIES:]
+        if (root := self.input_history_root()) is not None:
+            try:
+                saved = append_input_history(root, entry, workspace=self.workspace_root)
+            except (OSError, ValueError):
+                return
+            if saved is not None:
+                self.input_history = list(saved)
+
+    def _apply_history_text(self, text, cursor, *, browsing):
+        prompt = self.query_one('#prompt', TextArea)
+        self._history_applied_text = text if browsing else None
+        # Suppress / and @ completion popups while stepping through recalled entries.
+        self.slash_dismissed = text if text else None
+        resolved = str(Path(self.workspace_root).resolve())
+        self.context_dismissed = (resolved, text) if text else None
+        prompt.load_text(text)
+        prompt.move_cursor(cursor)
+        self.sync_slash()
+
+    def history_key(self, key):
+        """Step through submitted composer entries on Up/Down; False leaves normal TextArea movement."""
+        if key not in {'up', 'down'} or not self.query_one_optional('#prompt'):
+            return False
+        prompt = self.query_one('#prompt', TextArea)
+        if prompt.disabled or self.focused is not prompt or prompt.selection.start != prompt.selection.end:
+            return False
+        row = prompt.cursor_location[0]
+        last_row = prompt.text.count('\n')
+        if key == 'up':
+            if row != 0 or not self.input_history:
+                return False
+            if self.input_history_index is None:
+                self.input_history_draft = prompt.text
+                self.input_history_index = len(self.input_history) - 1
+            elif self.input_history_index > 0:
+                self.input_history_index -= 1
+            else:
+                return True
+            entry = self.input_history[self.input_history_index]
+            self._apply_history_text(entry, (0, len(entry.partition('\n')[0])), browsing=True)
+            return True
+        if self.input_history_index is None or row != last_row:
+            return False
+        if self.input_history_index < len(self.input_history) - 1:
+            self.input_history_index += 1
+            entry = self.input_history[self.input_history_index]
+            self._apply_history_text(entry, (entry.count('\n'), len(entry.rpartition('\n')[2])), browsing=True)
+            return True
+        draft = self.input_history_draft
+        self.reset_input_history_browse()
+        self._apply_history_text(draft, (draft.count('\n'), len(draft.rpartition('\n')[2])), browsing=False)
+        return True
+
     def dispatch_conversation_command(self, name, arguments):
         """Handle UI commands without passing them to the model or flow router."""
         workbench = {'/artifacts', '/tasks', '/team', '/usage', '/tools', '/skills'}
@@ -258,6 +406,8 @@ class ConversationNavigation:
             self.set_status('Apply the workspace change before using '+name+'.')
             return True
         prompt = self.query_one('#prompt', TextArea)
+        submitted = prompt.text.strip()
+        recorded = True
         if name in {'/recheck','/retry_delivery','/repair_plan'}:
             if not self.assistant_session:
                 self.set_status('Open the saved conversation that produced the candidate first.')
@@ -290,6 +440,7 @@ class ConversationNavigation:
                 self.set_status('Recorded: the last reply needed a heads-up note. It is kept on this machine.')
             else:
                 self.set_status('There is no finished reply in this conversation to flag. Your draft has been kept.')
+                recorded = False
         elif name == '/files':  # read-only: it opens the pane, never closes it
             prompt.clear()
             if not self.files_open:
@@ -326,11 +477,13 @@ class ConversationNavigation:
             prompt.clear()
             if not self.open_workbench(name[1:]):
                 prompt.load_text(draft)
+                recorded = False
         elif name == '/new':
             draft = prompt.text
             prompt.clear()
             if not self.new_conversation():
                 prompt.load_text(draft)
+                recorded = False
         elif name == '/project':
             prompt.clear()
             self.action_projects()
@@ -357,6 +510,10 @@ class ConversationNavigation:
                 self.action_processes()
             if self.screen is not screen:
                 prompt.clear()
+            else:
+                recorded = False
+        if recorded:
+            self.record_input_history(submitted)
         return True
 
     def close_navigation(self):

@@ -235,6 +235,8 @@ def propose(selection, cancellation, *, history=(), questions=(), directory=None
             ok, content, receipt = generate(deployment, deployment['native_profile']['model'],
                 json.dumps({'messages': messages, 'clarification_questions': list(questions)}, ensure_ascii=False), limits['max_seconds'],
                 system=SYSTEM, control=control, attempt_dir=directory, credential_resolver=vault_secret)
+            from .provider_spend import record_receipt
+            record_receipt(deployment, receipt)
             from .native_generation import token_totals
             result.update(generation_calls=receipt['generation_calls'],
                           tokens=token_totals([receipt], deployment.get('native_usage_contract')),

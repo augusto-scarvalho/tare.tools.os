@@ -12,6 +12,7 @@ with more left than the share of its period still to run is marked "in surplus":
 catches up with the pace. Every reading names its source and the time it was observed.
 """
 import argparse
+import copy
 import json
 import os
 import re
@@ -431,6 +432,14 @@ def refresh(now=None):
         if reading['kind'] == 'credit' and (use := provider_spend.own_use(reading['account'], now)):
             reading['own_use'] = use
             reading.setdefault('notes', []).append(own_use_line(use))
+    # A fresh provider reading showing headroom clears an earlier failure-recorded block (e.g. after a free reset).
+    from .turn_engine import clear_usage_limits
+    by_account = {r['account']: r for r in accounts if isinstance(r.get('account'), str)}
+    clear_usage_limits(
+        lambda key, entry: (r := by_account.get(key.split(':', 1)[0])) is not None
+        and reading_has_headroom(r, key, entry, strict=False),
+        now=now,
+    )
     for reading in accounts:  # a limit a refused call recorded (a spent plan, an API account with no credit), which no reading shows
         if until := parked(reading['account'], now):
             reading['parked_until'] = until
@@ -466,18 +475,93 @@ def parked(account, now):
     return until if type(until) in (int, float) and now < until <= now + 7 * 86400 else None
 
 
+def reading_has_headroom(reading, key, entry, *, strict=False):
+    """Whether `reading` observes remaining allowance that supersedes failure-recorded `entry` for `key`
+    (`account` or `account:model`). With `strict=True` (passive cache lookup), the observation timestamp must be
+    strictly newer than `recorded_at`; during `refresh()` (`strict=False`), equal timestamps also qualify."""
+    if not isinstance(reading, dict) or not isinstance(entry, dict):
+        return False
+    acct = reading.get('account')
+    if not isinstance(acct, str) or (key != acct and not key.startswith(acct + ':')):
+        return False
+    recorded = entry.get('recorded_at')
+    has_recorded = type(recorded) in (int, float)
+
+    def newer(timestamp):
+        if type(timestamp) not in (int, float):
+            return False
+        if not has_recorded:
+            return True
+        return timestamp > recorded if strict else timestamp >= recorded
+
+    kind, status = reading.get('kind'), reading.get('status')
+    if kind == 'subscription' and status == 'OBSERVED':
+        if not newer(reading.get('observed_at')):
+            return False
+        buckets = [b for b in (reading.get('buckets') or [])
+                   if isinstance(b, dict) and type(b.get('remaining')) in (int, float)]
+        if not buckets:
+            return False
+        if key == acct:
+            general = [b for b in buckets if b.get('scope') is None]
+            return all(b['remaining'] > 0 for b in general) if general else any(b['remaining'] > 0 for b in buckets)
+        model = key[len(acct) + 1:].lower()
+        matching = [b for b in buckets if covers(acct, b, model)]
+        return bool(matching) and all(b['remaining'] > 0 for b in matching)
+    if kind == 'credit' and key == acct:
+        credit = reading.get('credit')
+        if not isinstance(credit, dict) or type(credit.get('remaining')) not in (int, float) or credit['remaining'] <= 0:
+            return False
+        if status == 'OBSERVED':
+            return newer(reading.get('observed_at'))
+        if status == 'DECLARED':
+            return newer(credit.get('declared_at'))
+    return False
+
+
+def headroom_clears(key, entry, now=None):
+    """Whether the cached provider quota reading was observed strictly after this failure limit and shows headroom."""
+    report = cached()
+    if not report or not isinstance(entry, dict):
+        return False
+    acct = key.split(':', 1)[0]
+    reading = next((a for a in report.get('accounts') or [] if a.get('account') == acct), None)
+    if reading is None:
+        return False
+    # Legacy entries without recorded_at require a fresh reading so stale caches never lift an older failure block.
+    if type(entry.get('recorded_at')) not in (int, float):
+        now = time.time() if now is None else now
+        obs = reading.get('observed_at')
+        if type(obs) not in (int, float) or not now - FRESH <= obs <= now:
+            return False
+    return reading_has_headroom(reading, key, entry, strict=True)
+
+
 def cache_path():
     from .native_installation import storage_root
     return storage_root()/'serve'/'provider-quota.json'
 
 
+_quota_cache = (None, None)
+
+
 def cached():
     """The last answers `refresh()` kept, or None."""
+    global _quota_cache
+    path = cache_path()
     try:
-        report = json.loads(cache_path().read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+        found = path.stat()
+        stamp = (str(path), found.st_ino, found.st_mtime_ns, found.st_size)
+    except OSError:
         return None
-    return report if isinstance(report, dict) and report.get('schema') == SCHEMA else None
+    if _quota_cache[0] != stamp:
+        try:
+            report = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            report = None
+        valid = report if isinstance(report, dict) and report.get('schema') == SCHEMA else None
+        _quota_cache = (stamp, valid)
+    return copy.deepcopy(_quota_cache[1]) if _quota_cache[1] is not None else None
 
 
 def covers(account, bucket, model):

@@ -499,11 +499,15 @@ def test_a_researcher_list_route_needs_the_research_tools_own_admission(pool, mo
         'ROLE_NOT_CONFIGURED'
 
 
-def test_an_empty_saved_heads_up_list_reads_as_its_writer_reads_it():
+def test_an_empty_saved_heads_up_list_reads_as_its_writer_reads_it(pool, monkeypatch):
+    install(pool, 'claude-sonnet-5-5-cli', 'cli://claude', 'claude-sonnet-5-5')
+    install(pool, 'claude-haiku-5-5-cli', 'cli://claude', 'claude-haiku-5-5')
+    keys(monkeypatch)
     turn_engine.policy_path().parent.mkdir(parents=True, exist_ok=True)
     turn_engine.policy_path().write_text(json.dumps({'heads_up': []}), encoding='utf-8')
-    assert [n for n, _, _ in environment.auto_routes('heads_up')] == list(dict.fromkeys(
-        turn_engine.DEFAULT_POLICY['heads_up']))
+    usable = {n for n, _, now in environment.auto_routes('heads_up') if now == 'usable'}
+    eligible = {c['catalog'] for c in native_routes.ranked('heads_up')[1]['candidates'] if c['eligible']}
+    assert usable == eligible and 'claude-sonnet-5-5-cli' in usable and 'claude-haiku-5-5-cli' not in usable
 
 
 def flat(items):
@@ -515,10 +519,10 @@ def test_the_matrix_rows_agree_with_the_paths_that_route(pool, monkeypatch):
     role table reaches, against native_routes.ranked (review roles: the union over a producer of each vendor, since
     the matrix checks no independence; the coordinator on the implementer rows). tare auto's list path (the owner's
     list, else local-default) for implementer and coordinator, and its tiers for the researcher's /research link
-    summary: against turn_engine.choose(probe=False), name by name. The researcher list: against
-    web_research.snapshot(). Not compared, because their loops live inline in their callers: the planner list
-    (planning_tools), vision (turn_engine.describe_files), heads_up (heads_up.write), the web search helper
-    (turn_engine.ask_cli) and the owner's auditor list (turn_engine.pick_auditors, which needs a producer)."""
+    summary: against turn_engine.choose(probe=False), name by name. Researcher: against web_research.snapshot(). Not
+    compared, because their loops live inline in their callers: the planner, vision, or heads_up list when the owner
+    saves one, the web search helper (turn_engine.ask_cli) and the owner's auditor list (turn_engine.pick_auditors,
+    which needs a producer)."""
     install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
     install(pool, 'claude-fable-5-2-cli', 'cli://claude', 'claude-fable-5-2')
     install(pool, 'codex-cli-gpt-5-6-sol', 'cli://codex', 'gpt-5.6-sol')
@@ -526,10 +530,13 @@ def test_the_matrix_rows_agree_with_the_paths_that_route(pool, monkeypatch):
     rules = turn_engine.policy()
     saved = rules.get('implementer') or [['local-default']]
     producers = [native_catalog.select(name) for name in ('claude-api-opus-5-5', 'openai-api', 'gemini-api')]
-    for role in ('implementer', 'coordinator', 'explorer', 'planner', 'plan-auditor', 'auditor'):
+    for role in ('implementer', 'coordinator', 'explorer', 'planner', 'plan-auditor', 'auditor',
+                 'researcher', 'vision', 'heads_up'):
         rows = {name: now for name, _, now in environment.auto_routes(role)}
-        listed = set(flat(saved if role in ('implementer', 'coordinator') else rules.get(role) or [])) \
-            if role in ('implementer', 'coordinator', 'planner') else set()
+        listed = (set(flat(turn_engine.implementer_tiers('researcher'))) | set(turn_engine.HELPER_ROUTES)
+                  | set(flat(rules.get('researcher') or [])) if role == 'researcher'
+                  else set(flat(saved if role in ('implementer', 'coordinator') else rules.get(role) or []))
+                  if role in ('implementer', 'coordinator', 'planner', 'vision', 'heads_up') else set())
         eligible = set()
         for producer in producers if 'auditor' in role else [None]:
             eligible |= {c['catalog'] for c in native_routes.ranked(role, producer)[1]['candidates'] if c['eligible']}
@@ -538,13 +545,15 @@ def test_the_matrix_rows_agree_with_the_paths_that_route(pool, monkeypatch):
     tiers = flat(turn_engine.implementer_tiers('researcher'))
     for role, names in (('implementer', flat(saved)), ('coordinator', flat(saved)), ('researcher', tiers)):
         rows = {name: now for name, _, now in environment.auto_routes(role)}
-        for name in set(names) - table - set(rules['researcher']):
+        for name in set(names) - table - set(rules.get('researcher') or []):
             taken = turn_engine.choose([[name]], probe=False, role=role)[2] is not None
             assert (rows[name] == 'usable') == taken, (role, name)
     rows, snapshot = {n: now for n, _, now in environment.auto_routes('researcher')}, web_research.snapshot()
-    for name in set(rules['researcher']) - set(tiers) - set(turn_engine.HELPER_ROUTES):
-        assert (rows[name] == 'ROLE_NOT_CONFIGURED') == ('admitted research' in snapshot['unavailable'].get(name, '')), name
-        assert rows[name] != 'usable' or name in snapshot['routes'], name
+    ranked_deployments, ranked_selection = native_routes.ranked('researcher')
+    ranked_names = {c['selected_deployment']: c['catalog'] for c in ranked_selection['candidates'] if c['eligible']}
+    assert snapshot['route_order'] == [ranked_names[d['id']] for d in ranked_deployments]
+    for name in set(snapshot['routes']) | (set(rows) & set(snapshot['unavailable'])):
+        assert (rows[name] == 'usable') == (name in snapshot['routes']), name
 
 
 def test_a_row_shows_its_models_class_and_a_cell_the_routes_own_record_as_implementer(pool, tmp_path):
@@ -699,4 +708,204 @@ def test_an_unsaved_tick_survives_a_proof_and_save_writes_the_tick_and_keeps_the
         assert 'Saved.' in status() and 'Not saved' not in status()
         assert stored() == environment.set_auto({}, 'auditor:claude/opus@claude-code=off')['routing_profile']
         assert environment.read()['proofs'][FABLE]['ok'] is True
+    journey(tmp_path, steps)
+
+
+def test_paint_updates_only_changed_cells_and_build_uses_precomputed_classes(pool, tmp_path, monkeypatch):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+    install(pool, FABLE, 'cli://claude', 'claude-fable-5-2')
+
+    async def steps(app, pilot, panel, cell, status):
+        matrix = panel.query_one(RouteMatrix)
+        table = panel.query_one('#matrix-table')
+        updates = []
+        real_update = table.update_cell
+
+        def recording_update(row_key, col_key, value, *args, **kwargs):
+            updates.append((row_key.value, col_key.value if hasattr(col_key, 'value') else col_key))
+            return real_update(row_key, col_key, value, *args, **kwargs)
+
+        monkeypatch.setattr(table, 'update_cell', recording_update)
+        assert await cell('claude/opus', 'claude-code') == '[ ]'
+        assert updates == [('claude/opus', 'claude-code')]
+
+        updates.clear()
+        matrix.paint()
+        assert updates == []
+
+        from relay import model_signals
+        monkeypatch.setattr(model_signals, 'klass', lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError('build must use precomputed row classes instead of scanning model_signals.klass')))
+        matrix.role = 'implementer'
+        matrix.build()
+    journey(tmp_path, steps)
+
+
+def test_prove_all_proves_available_pending_routes_across_roles_and_fits_compact_screen(pool, tmp_path, monkeypatch):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+    install(pool, FABLE, 'cli://claude', 'claude-fable-5-2')
+    monkeypatch.setenv('OPENAI_API_KEY', 'fixture-key')
+    available_targets = {FABLE, 'openai-api-gpt-6-1-terra'}
+    calls = []
+    monkeypatch.setattr(environment, 'route_for',
+                        lambda name: ({'id': name}, None) if name in available_targets else (None, 'unavailable'))
+    monkeypatch.setattr(environment, 'cost_line', lambda deployment: 'one minimal call: fixture cost')
+
+    def prove(name, confirm):
+        assert confirm(f'{name}: one minimal call: fixture cost.')
+        calls.append(name)
+        record = {'ok': True, 'cost': 'fixture'}
+        value = environment.read()
+        value.setdefault('proofs', {})[name] = record
+        environment.save(value)
+        return record
+    monkeypatch.setattr(environment, 'prove', prove)
+
+    async def steps(app, pilot, panel, cell, status):
+        async def wait_prove_dialog():
+            for _ in range(200):
+                await pilot.pause(0.05)
+                if (isinstance(app.screen, ProveDialog) and app.screen.is_mounted
+                        and app.screen.query('#prove-go') and app.screen.query('#prove-cancel')):
+                    await pilot.pause()
+                    return app.screen
+            raise AssertionError(f'ProveDialog did not mount in 10 s: {app.screen!r}')
+
+        matrix = panel.query_one(RouteMatrix)
+        assert sorted(matrix.provable_all()) == sorted(available_targets)
+        assert panel.query_one('#matrix-save', Button).region and panel.region.contains_region(
+            panel.query_one('#matrix-save', Button).region)
+        assert panel.region.contains_region(panel.query_one('#matrix-prove-all', Button).region)
+
+        # Even while an auditor cell with no proof and a vendor header row are active, P / Prove all finds both routes.
+        table = panel.query_one('#matrix-table')
+        table.focus()
+        table.move_cursor(row=0, column=0)  # vendor header row
+        await pilot.pause()
+        await pilot.press('P')
+        dialog = await wait_prove_dialog()
+        shown = ' '.join(dialog.lines)
+        assert FABLE in shown and 'openai-api-gpt-6-1-terra' in shown and calls == []
+        await pilot.press('escape')
+        await pilot.pause()
+        assert app.screen is panel and calls == []
+
+        # Confirm via button: unsaved tick stays, all available pin-only routes across roles are proven once.
+        assert await cell('claude/opus', 'claude-code') == '[ ]'
+        panel.query_one('#matrix-prove-all', Button).press()
+        dialog = await wait_prove_dialog()
+        dialog.query_one('#prove-go', Button).press()
+        await pilot.pause()
+        await proved(pilot, panel, status, 'Proved 2 of 2 route(s).')
+        assert sorted(calls) == sorted(available_targets)
+        assert str(table.get_cell('claude/opus', 'claude-code')) == '[ ]' and matrix.dirty()
+        assert str(table.get_cell('claude/fable', 'claude-code')) == '[x]'
+        assert matrix.provable_all() == [] and panel.query_one('#matrix-prove-all', Button).disabled
+    journey(tmp_path, steps, size=(80, 24))
+
+
+def test_matrix_prove_skips_unpreviewed_and_changed_routes_after_confirmation(pool, tmp_path, monkeypatch):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+    install(pool, FABLE, 'cli://claude', 'claude-fable-5-2')
+    monkeypatch.setenv('OPENAI_API_KEY', 'fixture-key')
+    terra = 'openai-api-gpt-6-1-terra'
+    live = {
+        FABLE: {'id': FABLE, 'native_profile': {'model': 'claude-fable-5-2', 'protocol': 'vendor-cli', 'endpoint': 'cli://claude'}},
+        terra: {'id': terra, 'native_credential_env': 'OPENAI_API_KEY',
+                'native_profile': {'model': 'gpt-6-1-terra', 'protocol': 'openai-responses', 'endpoint': 'https://api.openai.com/v1/responses'}},
+    }
+    costs = {FABLE: 'cost for fable', terra: 'cost for terra'}
+    calls = []
+    monkeypatch.setattr(environment, 'route_for', lambda name: (live[name], None) if live.get(name) else (None, 'unavailable'))
+    monkeypatch.setattr(environment, 'cost_line', lambda deployment: costs[deployment['id']])
+
+    def prove(name, confirm):
+        assert confirm(f'{name}: {costs[name]}.')
+        calls.append(name)
+        record = {'ok': True, 'cost': costs[name]}
+        value = environment.read()
+        value.setdefault('proofs', {})[name] = record
+        environment.save(value)
+        return record
+    monkeypatch.setattr(environment, 'prove', prove)
+
+    async def steps(app, pilot, panel, cell, status):
+        async def wait_prove_dialog():
+            for _ in range(200):
+                await pilot.pause(0.05)
+                if (isinstance(app.screen, ProveDialog) and app.screen.is_mounted
+                        and app.screen.query('#prove-go') and app.screen.query('#prove-cancel')):
+                    await pilot.pause()
+                    return app.screen
+            raise AssertionError(f'ProveDialog did not mount in 10 s: {app.screen!r}')
+
+        # 1. Preview has terra unavailable; terra reappears before user clicks Prove -> must NOT be proved.
+        saved_terra = live[terra]
+        live[terra] = None
+        panel.query_one('#matrix-prove-all', Button).press()
+        dialog = await wait_prove_dialog()
+        shown = ' '.join(dialog.lines)
+        assert f'{FABLE}: cost for fable' in shown and f'{terra}: cannot be proven: unavailable' in shown
+        live[terra] = saved_terra  # reappears after dialog opened without cost
+        dialog.query_one('#prove-go', Button).press()
+        await pilot.pause()
+        await proved(pilot, panel, status, 'Proved 1 of 1 route(s); 1 unavailable before confirmation.')
+        assert calls == [FABLE]
+
+        # 2. Now only terra remains pending; its cost/model changes before Prove -> skipped with zero calls.
+        calls.clear()
+        panel.query_one('#matrix-prove-all', Button).press()
+        dialog = await wait_prove_dialog()
+        assert f'{terra}: cost for terra' in ' '.join(dialog.lines)
+        costs[terra] = 'cost spiked after dialog opened'
+        dialog.query_one('#prove-go', Button).press()
+        await pilot.pause()
+        await proved(pilot, panel, status, 'changed after confirmation')
+        assert calls == []
+
+        # 3. If no pending route is available when confirm_prove runs, ProveDialog must not open.
+        live[terra] = None
+        panel.query_one('#matrix-prove-all', Button).press()
+        await proved(pilot, panel, status, 'Nothing to prove:')
+        assert app.screen is panel and calls == []
+
+    journey(tmp_path, steps, size=(100, 32))
+
+
+def test_mirror_routes_of_known_lines_align_under_their_origin_line_and_source(pool, tmp_path, monkeypatch):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+
+    async def steps(app, pilot, panel, cell, status):
+        matrix = panel.query_one(RouteMatrix)
+        found = cells(panel)
+        assert ('gemini/argon', 'opencode-sub') in found
+        assert [r['id'] for r in found['gemini/argon', 'opencode-sub']] == ['opencode-sub-gemini-4-argon']
+        assert 'opencode-sub-gemini-4-argon' not in {row for row, _ in found}
+
+        # Verify vendor grouping places Gemini Argon under Google, not Other.
+        grouped = dict(matrix.groups())
+        assert 'gemini/argon' in grouped['Google'] and 'gemini/argon' not in grouped.get('Other', ())
+
+        # Ticking the mirror cell stores the exact line@source rule matching tare setup --auto.
+        assert await cell('gemini/argon', 'opencode-sub') == '[ ]'
+        await saved(pilot, panel)
+        assert stored() == environment.set_auto({}, 'auditor:gemini/argon@opencode-sub=off')['routing_profile']
+        assert environment.profile_state('auditor', native_catalog.select('opencode-sub-gemini-4-argon')) == (
+            'off', 'gemini/argon@opencode-sub')
+
+        # Also check implementer mirrors (Haiku and GPT Luna on OpenCode sub) and coordinator Bedrock mirrors.
+        panel.query_one('#matrix-role', Select).value = 'implementer'
+        await pilot.pause()
+        impl_cells = cells(panel)
+        assert [r['id'] for r in impl_cells['claude/haiku', 'opencode-sub']] == ['opencode-sub-claude-haiku-5-5']
+        assert [r['id'] for r in impl_cells['gpt/luna', 'opencode-sub']] == ['opencode-sub-gpt-6-luna']
+
+        panel.query_one('#matrix-role', Select).value = 'coordinator'
+        await pilot.pause()
+        coord_cells = cells(panel)
+        assert [r['id'] for r in coord_cells['claude/opus', 'bedrock']] == ['bedrock-opus']
+        assert 'bedrock-opus' not in {row for row, _ in coord_cells}
+        coord_grouped = dict(matrix.groups())
+        assert 'claude/opus' in coord_grouped['Anthropic'] and 'claude/opus' not in coord_grouped.get('Other', ())
+
     journey(tmp_path, steps)

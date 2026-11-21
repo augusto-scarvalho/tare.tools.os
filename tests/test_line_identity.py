@@ -222,13 +222,15 @@ NEW = {  # endpoint, wire id: vendor, bias domain, line
     ('https://api.openai.com/v1', 'gpt-6.2-terra'): ('OpenAI', 'openai/gpt', 'gpt-terra'),
     ('https://chatgpt.com/backend-api/codex', 'gpt-6.2-terra'): ('OpenAI', 'openai/gpt', 'gpt-terra'),
     ('https://generativelanguage.googleapis.com/v1beta/openai', 'gemini-4.1-argon'): ('Google', 'google/gemini', 'gemini-argon'),
+    ('https://generativelanguage.googleapis.com/v1beta/openai', 'gemini-4-neon'): ('Google', 'google/gemini', 'gemini-neon'),
     ('cli://agy', 'gemini-4.1-argon-high'): ('Google', 'google/gemini', 'gemini-argon'),
+    ('cli://agy', 'gemini-4-neon-high'): ('Google', 'google/gemini', 'gemini-neon'),
     ('cli://agy', 'claude-opus-5-5-medium'): ('Anthropic', 'anthropic/opus', 'claude-opus'),  # -high has a record
 }
 REFUSED = [
     # No line: an unknown line or family, a non-chat model, a dated snapshot, an alias with no version.
     ('https://api.openai.com/v1', 'gpt-7-nova'), ('cli://claude', 'claude-mythos-1'),
-    ('https://generativelanguage.googleapis.com/v1beta', 'gemini-5-neon'),
+    ('https://generativelanguage.googleapis.com/v1beta', 'gemini-5-xenon'),
     ('https://api.openai.com/v1', 'gpt-realtime-2.1'), ('https://api.openai.com/v1', 'gpt-image-2.5-flare'),
     ('https://generativelanguage.googleapis.com/v1beta', 'gemini-3.8-flash-tts'),
     ('cli://agy', 'gpt-oss-120b-medium'), ('cli://agy', 'gemini-pro-orchestrator-g1-pro'),

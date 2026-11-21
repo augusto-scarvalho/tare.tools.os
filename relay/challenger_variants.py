@@ -21,10 +21,54 @@ def accounting(deployment):
     return 'usd'
 
 
+def realize_deployment(selected, label, *, task_types=None, accounting_override=None,
+                       parameters=None, context_projection=None, identity=None, resource_pool=None):
+    """Build an experimental or exploration arm directly from a resolved deployment dict."""
+    from .native_generation import deployment_profile
+    selected = deepcopy(selected)
+    if accounting_override is not None:
+        if accounting_override not in {'local', 'quota', 'usd'}:
+            raise ValueError('Accounting must be local, quota or usd.')
+        selected['native_challenger_accounting'] = accounting_override
+    if parameters is not None:
+        if not isinstance(parameters, dict):
+            raise ValueError('Variant parameters must be a JSON object.')
+        selected['native_profile']['parameters_json'] = json.dumps({
+            **json.loads(selected['native_profile'].get('parameters_json', '{}')), **parameters}, sort_keys=True)
+    if context_projection is not None:
+        selected['native_context_projection'] = context_projection
+    deployment_profile(selected, selected['native_profile']['model'])
+    tasks = list(task_types or ['implementation'])
+    if not tasks or any(not isinstance(t, str) or not t.strip() for t in tasks):
+        raise ValueError('Variant task_types must name the task groups it should sample.')
+    identity = {} if identity is None else identity
+    if not isinstance(identity, dict) or any(not isinstance(k, str) or not isinstance(v, str) or not v
+                                           for k, v in identity.items()):
+        raise ValueError('Expected serving identity must map field names to exact observed values.')
+    kind = accounting(selected)
+    if identity and (kind != 'local' or selected.get('native_counter_protocol') != 'slop-fleet-v1'):
+        raise ValueError('Expected serving identity requires a local fleet profile with observed bindings.')
+    applied_parameters = json.loads(selected['native_profile'].get('parameters_json', '{}'))
+    if any(k in applied_parameters for k in ('lora', 'lora_adapter', 'lora_adapters', 'adapter')) and not any(
+            k in identity for k in ('adapter_sha256', 'adapter_configuration_sha256')):
+        raise ValueError('Adapter experiments need an expected serving identity for the adapter; a label cannot prove activation.')
+    if 'chat_template' in applied_parameters and 'template_sha256' not in identity:
+        raise ValueError('Template experiments need an expected serving identity for the template.')
+    if 'template_sha256' in identity:
+        selected['native_profile']['template_sha256'] = identity['template_sha256']
+        deployment_profile(selected, selected['native_profile']['model'])
+    if resource_pool is not None and (not isinstance(resource_pool, str) or not resource_pool.strip()):
+        raise ValueError('Resource pool must be a nonempty label.')
+    account = selected.get('native_codex_auth', {}).get('account_id', '')
+    scope = resource_pool or selected['native_profile']['endpoint'] + '|' + account
+    return {'deployment': selected, 'accounting': kind, 'task_types': tasks, 'identity': identity,
+            'label': label, 'key': digest([selected, tasks, identity]),
+            'resource_pool': hashlib.sha256(scope.encode()).hexdigest()[:24]}
+
+
 def realize(value):
     from .native_catalog import select
     from .adaptive_routes import proposed_route
-    from .native_generation import deployment_profile
     if isinstance(value, str):
         value = {'profile': value}
     if (not isinstance(value, dict) or set(value) - {'profile', 'reasoning', 'parameters', 'task_types',
@@ -35,48 +79,19 @@ def realize(value):
     selected = select(value['profile'])
     route = {'deployment': value['profile'], 'effort': value.get('reasoning', 'default')}
     selected = proposed_route(route, [selected])
-    if 'accounting' in value:
-        if value['accounting'] not in {'local', 'quota', 'usd'}:
-            raise ValueError('Accounting must be local, quota or usd.')
-        selected['native_challenger_accounting'] = value['accounting']
-    if 'parameters' in value:
-        parameters = value['parameters']
-        if not isinstance(parameters, dict):
-            raise ValueError('Variant parameters must be a JSON object.')
-        selected['native_profile']['parameters_json'] = json.dumps({
-            **json.loads(selected['native_profile'].get('parameters_json', '{}')), **parameters}, sort_keys=True)
-    if 'context_projection' in value:
-        # Same model, different context policy: e.g. {"elide_edited_reads": true}.
-        selected['native_context_projection'] = value['context_projection']
-    deployment_profile(selected, selected['native_profile']['model'])
     tasks = value.get('task_types', ['implementation'])
     if not isinstance(tasks, list) or not tasks or any(not isinstance(t, str) or not t.strip() for t in tasks):
         raise ValueError('Variant task_types must name the task groups it should sample.')
-    identity = value.get('identity', {})
-    if not isinstance(identity, dict) or any(not isinstance(k, str) or not isinstance(v, str) or not v
-                                           for k, v in identity.items()):
-        raise ValueError('Expected serving identity must map field names to exact observed values.')
-    kind = accounting(selected)
-    if identity and (kind != 'local' or selected.get('native_counter_protocol') != 'slop-fleet-v1'):
-        raise ValueError('Expected serving identity requires a local fleet profile with observed bindings.')
-    parameters = json.loads(selected['native_profile'].get('parameters_json', '{}'))
-    if any(k in parameters for k in ('lora', 'lora_adapter', 'lora_adapters', 'adapter')) and not any(
-            k in identity for k in ('adapter_sha256', 'adapter_configuration_sha256')):
-        raise ValueError('Adapter experiments need an expected serving identity for the adapter; a label cannot prove activation.')
-    if 'chat_template' in parameters and 'template_sha256' not in identity:
-        raise ValueError('Template experiments need an expected serving identity for the template.')
-    if 'template_sha256' in identity:
-        selected['native_profile']['template_sha256'] = identity['template_sha256']
-        deployment_profile(selected, selected['native_profile']['model'])
-    pool = value.get('resource_pool')
-    if pool is not None and (not isinstance(pool, str) or not pool.strip()):
-        raise ValueError('Resource pool must be a nonempty label.')
-    # Endpoint/CLI account is shared across models and efforts; never infer a fresh quota per model.
-    account = selected.get('native_codex_auth', {}).get('account_id', '')
-    scope = pool or selected['native_profile']['endpoint']+'|'+account
-    return {'deployment': selected, 'accounting': kind, 'task_types': tasks, 'identity': identity,
-            'label': value.get('label') or value['profile'], 'key': digest([selected, tasks, identity]),
-            'resource_pool': hashlib.sha256(scope.encode()).hexdigest()[:24]}
+    return realize_deployment(
+        selected,
+        value.get('label') or value['profile'],
+        task_types=tasks,
+        accounting_override=value.get('accounting'),
+        parameters=value.get('parameters'),
+        context_projection=value.get('context_projection') if 'context_projection' in value else None,
+        identity=value.get('identity', {}),
+        resource_pool=value.get('resource_pool'),
+    )
 
 
 def preflight(variant, *, allow_unknown_quota=False, quota_floor=25):

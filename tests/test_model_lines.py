@@ -88,8 +88,11 @@ NEW = {
     ('codex-cli', 'gpt-6.2-terra'): ['gpt-6.2-terra', 'GPT-6.2 Terra', 'OpenAI', 'Codex CLI', ALL],
     ('openai-api', 'gpt-6.2-terra'): ['gpt-6.2-terra', 'GPT-6.2 Terra', 'OpenAI', 'OpenAI API', ALL],
     ('gemini-api', 'gemini-4.1-argon'): ['gemini-4.1-argon', 'Gemini 4.1 Argon', 'Google', 'Gemini API', LMH],
+    ('gemini-api', 'gemini-4-neon'): ['gemini-4-neon', 'Gemini 4 Neon', 'Google', 'Gemini API', LMH],
     ('agy-cli', 'gemini-4.1-argon-low', 'gemini-4.1-argon-medium', 'gemini-4.1-argon-high'):
         ['gemini-4.1-argon', 'Gemini 4.1 Argon', 'Google', 'AGY CLI', LMH],
+    ('agy-cli', 'gemini-4-neon-low', 'gemini-4-neon-medium', 'gemini-4-neon-high'):
+        ['gemini-4-neon', 'Gemini 4 Neon', 'Google', 'AGY CLI', LMH],
     ('agy-cli', 'claude-opus-5-5-low', 'claude-opus-5-5-medium', 'claude-opus-5-5-high'):
         ['claude-opus-5-5', 'Claude Opus 5.5', 'Anthropic', 'AGY CLI', LMH],
     ('agy-cli', 'claude-sonnet-5-5-low', 'claude-sonnet-5-5-medium', 'claude-sonnet-5-5-high'):
@@ -106,10 +109,10 @@ UNKNOWN = {
     ('openai-api', 'gpt-7-nova'): ['gpt-7-nova', 'GPT-7-nova', 'OpenAI', 'OpenAI API', ALL],
     ('openai-api', 'gpt-realtime-2.1'): ['gpt-realtime-2.1', 'GPT-realtime-2.1', 'OpenAI', 'OpenAI API', ALL],
     ('openai-api', 'gpt-image-2.5-flare'): ['gpt-image-2.5-flare', 'GPT-image-2.5-flare', 'OpenAI', 'OpenAI API', ALL],
-    ('gemini-api', 'gemini-5-neon'): ['gemini-5-neon', 'gemini-5-neon', 'Google', 'Gemini API', LMH],
+    ('gemini-api', 'gemini-5-xenon'): ['gemini-5-xenon', 'gemini-5-xenon', 'Google', 'Gemini API', LMH],
     ('gemini-api', 'gemini-3.8-flash-tts'): ['gemini-3.8-flash-tts', 'gemini-3.8-flash-tts', 'Google', 'Gemini API', LMH],
-    ('agy-cli', 'gemini-5-neon-low', 'gemini-5-neon-medium', 'gemini-5-neon-high'):
-        ['gemini-5-neon', 'Gemini 5-neon', 'Google', 'AGY CLI', LMH],
+    ('agy-cli', 'gemini-5-xenon-low', 'gemini-5-xenon-medium', 'gemini-5-xenon-high'):
+        ['gemini-5-xenon', 'Gemini 5-xenon', 'Google', 'AGY CLI', LMH],
     ('agy-cli', 'gpt-oss-120b-medium'): ['gpt-oss-120b', 'gpt-oss-120b', 'Google', 'AGY CLI', ['medium']],
     ('agy-cli', 'gemini-pro-orchestrator-g1-pro'):
         ['gemini-pro-orchestrator-g1-pro', 'Gemini pro-orchestrator-g1 Pro', 'Google', 'AGY CLI', ['high']],
@@ -163,7 +166,7 @@ def test_the_line_comes_from_the_model_never_the_cli():
     assert (argon['vendor'], argon['bias_domain'], argon['label']) == ('Google', 'google/gemini', 'Gemini 4.1 Argon')
     assert (opus['vendor'], opus['bias_domain'], opus['label']) == ('Anthropic', 'anthropic/opus', 'Claude Opus 5.5')
     assert 'claude_code_alias' not in terra
-    for model in ('gpt-7-nova', 'claude-mythos-1', 'gemini-5-neon', 'gpt-realtime-2.1', 'gemini-3.8-flash-tts',
+    for model in ('gpt-7-nova', 'claude-mythos-1', 'gemini-5-xenon', 'gpt-realtime-2.1', 'gemini-3.8-flash-tts',
                   'gpt-image-2.5-flare', 'gpt-oss-120b-medium', 'gemini-pro-orchestrator-g1-pro',
                   'claude-haiku-4-5-20251001', 'claude-opus', 'gpt-5.5'):
         assert line(model) is None and model_choices.model_label(model) is None

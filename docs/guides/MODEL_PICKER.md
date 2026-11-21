@@ -89,27 +89,32 @@ managed like any discovered profile: retired when a later reading no longer reso
 edit it. Its role row is then derived as for any newer version (see
 [shared GPU](SHARED_GPU.md)): pin only until proven, which the TUI does when it arrives (below).
 
-### AGY: a new version without a template
+### AGY: a new version or unlocked line without a template
 
 AGY lists its models for the signed-in account (`agy models`, no model call). Discovery runs it through the located
 executable and keeps the ids in the same cache (`cli-discovery.json`, key `agy_models`). It reads again when the
 executable file changes or the last attempt is a day old, since the list depends on the account too; a read that fails,
-times out or lists no id keeps the last ids (and counts as the attempt, so it is not repeated for a day). Ids are grouped
-by base (the id without its effort suffix). A base that is a newer version of a line than every AGY template of that
-line (`gemini-4.1-argon` beside `agy-gemini-4-argon-cli`, `claude-opus-5-6` beside `agy-claude-opus-5-5-cli`) gets
-the profile `agy-<base>-cli` (dots become hyphens), copied from that line's newest template: `model` is the listed id
-at the template's effort (the nearest listed one when AGY does not list it, and the `source` says which), and
-`native_reasoning_models` is rebuilt from the listed ids for the efforts the template maps only (never an effort it
-lacked). It is retired only when a later successful read no longer lists the base, and never touched once you edit it.
-An older or equal version, an id with no known line (`gpt-oss-120b-medium`) and a line with no AGY template change
-nothing. Its role row is derived as for any newer version: pin only until proven.
+times out or lists no id keeps the last ids (and counts as the attempt, so it is not repeated for a day). AGY
+`Orchestrator` meta-agents (`Orchestrator (...)`, or ids containing `orchestrator`) are explicitly excluded so they never
+compete with tare's coordinator or workflow. Remaining ids are grouped by base (the id without its effort suffix). A
+base that is either a newer version of a line than every AGY template of that line (`gemini-4.1-argon` beside
+`agy-gemini-4-argon-cli`, `claude-opus-5-6` beside `agy-claude-opus-5-5-cli`) or the newest listed version of a known
+Google line from `relay/model_lines.json` without a prior AGY template (`gemini-4-carbon`, `gemini-4-neon`) gets the
+profile `agy-<base>-cli` (dots become hyphens), copied from that line's newest template (or the newest Google AGY
+template): `model` is the listed id at the template's effort (the nearest listed one when AGY does not list it, and the
+`source` says which), and `native_reasoning_models` is rebuilt from the listed ids for the efforts the template maps
+only (never an effort it lacked). It is retired only when a later successful read no longer lists the base, and never
+touched once you edit it. An older or equal version, an id with no known line (`gpt-oss-120b-medium`) and an Anthropic
+line with no AGY template change nothing. Its role row is derived as for any newer version or unlocked known line: pin
+only until proven.
 
 ### API: the same version on the vendor's API
 
 A vendor's own CLI is the whitelist for its API. After the CLIs are read, discovery takes the ids they list in the
 same run (Codex's catalogue slugs, the ids Claude Code's aliases resolve to, AGY's Gemini bases without the effort
-suffix) and keeps those that are a newer version of a line than every bundled API profile of it (`openai-api`,
-`claude-api*`, `gemini-api*`, Pro variants included in the comparison). Only for a vendor with such an id, whose key
+suffix) and keeps those that are either a newer version of a line than every bundled API profile of it (`openai-api`,
+`claude-api*`, `gemini-api*`, Pro variants included in the comparison) or the newest listed version of a known
+unbundled line (`gemini-4-neon`). Only for a vendor with such an id, whose key
 is stored (environment or vault) and whose provider `tare setup` leaves in, discovery sends one `GET <endpoint>/models`
 (Anthropic: `x-api-key` and `anthropic-version`, `limit=1000`; OpenAI and the Gemini OpenAI-compatible endpoint:
 `Authorization: Bearer`) to the host of the bundled profile's endpoint, over https, 15 seconds, no redirect. The key
@@ -117,7 +122,8 @@ is never in a URL, a log, an error text or the cache; discovery's cache (key `ap
 date and the last attempt, and reads again only when the attempt is a day old (a read that fails or lists no id keeps
 the last ids and counts as the attempt). The API's list never decides which models exist, it only confirms an id the
 CLI listed. A confirmed id gets `claude-api-<id without claude->`, `openai-api-<id>` or `gemini-api-<id without
-gemini->` (dots become hyphens), copied from the line's newest bundled API profile that is not Pro, with the id and
+gemini->` (dots become hyphens), copied from the line's newest bundled API profile that is not Pro (or a
+same-vendor/same-class non-Pro profile when unbundled), with the id and
 both model fields replaced and a `source` that says it mirrors the id the CLI lists, confirmed on the API's list on
 that date; limits and parameters are the sibling's and no price is added. It is retired when the CLI no longer lists
 the id or a successful read no longer has it, and never touched once you edit it. Its role row is derived as for any
@@ -129,7 +135,7 @@ The TUI proves such a route itself, so a new version does not wait for you to fi
 in a terminal, right after discovery and the price reading, it looks for **arrivals**: routes with a derived role row
 (a newer version of a known line on its vendor's own CLI or API) that have no proof record at all, that can run now
 and that the routing profile leaves on for at least one of the row's roles. A route proven, failed or declined
-before is never tried or asked again by itself; `p` in `/routes` > "Models per role" and `tare setup --prove` still
+before is never tried or asked again by itself; `p` (or `P` / Prove all) in `/routes` > "Models per role" and `tare prove all` / `tare setup --prove` still
 prove it again.
 
 - **On a subscription** (a route that counts against a plan, such as Claude Code, Codex or AGY) the proof runs with

@@ -3,8 +3,8 @@
 A funnel, cheapest stage first:
 1. Collect, no model: the turn's recorded steps, what code counts in them, and the facts tare checks itself (a test
    whose last run failed, files changed after the last test ran, an edit refused and never redone).
-2. Pace, no model: the writer runs after a turn where work was delivered or attempted (a delegated implementation
-   finished, an agent edited files itself, or a check tare can read failed: events()). Otherwise a logistic score
+2. Pace, no model: the writer runs after a turn where an agent edited files itself, a check tare can read failed, or a
+   delegated implementation did not finish cleanly applied and verified (events()). Otherwise a logistic score
    over those counts (FILTER) sends a turn to it at FORWARD_AT or more, and failing that every EVERY-th turn since
    it last ran. The writer reads the whole window since it last ran (the skipped turns' steps with the earlier
    exchanges), so a pause loses little.
@@ -53,6 +53,8 @@ import uuid
 # what limits how many such notes are found.
 # 2026-11-11: events (events()) now come first. On 115 real TUI turns, all 21 notes judged useful followed a turn where
 # work was delivered or attempted, and the score skipped 34 of the 97 such turns; the score is only a fallback now.
+# 2026-11-19: narrowed 'delivery' to unclean deliveries (refused, failed, unapplied, verdict != VERIFIED, or a failed
+# post-check). On the same 115 turns: 102 -> 91 writer calls while keeping all 29 useful new notes and all 32 old notes.
 # ponytail: fitted on another agent's transcripts; refit on tare's own log (cadence turns, /heads-up) as it grows
 FILTER = {'facts': (.157, .405, .205), 'edits': (2.566, 5.373, .235), 'steps': (24.61, 42.822, .043),
           'tests': (3.426, 7.791, .181), 'failures': (.486, 1.155, .164), 'delegated': (.141, .411, .061),
@@ -91,26 +93,33 @@ SYSTEM = ("You watch a coding agent's conversation from the side, for its user, 
           "whether there is one thing the user should know before relying on what was just done or said, which the "
           "reply does not make clear. Read what the work actually changes and what the conversation decided, then "
           "ask what follows from it, using what you know about the tools, platforms, licenses and costs involved. "
-          "Look for: a claim in the reply that the record contradicts (an audit that refused, a test that failed, "
-          "numbers that do not add up); a choice the reply offers whose consequence it hides; a measurement, "
-          "comparison or test whose setup differs from what will really run (another model or configuration, a "
-          "stand-in, a single run, numbers from different rounds, data the agent made itself), so its conclusion "
-          "may not hold; a cost the user will pay later (quota, tokens, money, disk, time, history that cannot be "
-          "removed, files that will be deleted); behavior that changes for the user or others (a new default, a "
-          "removed check, a rule that now applies more widely, a promise in docs or UI that the code does not "
-          "keep); a rule, pattern, filter or cleanup that can catch or delete more than intended; a failure that "
-          "would stay silent, with nothing to alert anyone; a license, platform or version rule the work runs "
-          "into. Never write about the process alone: that something was not run, not tested, not committed, is "
-          "still running, or does not appear in the recorded steps, since the agent may have seen more than the "
-          "steps show. The one exception is a check the reply claims: when it says something was tested, verified "
-          "or passes and the steps show that check failed, never ran, or ran before later edits to what it checks, "
-          "say so, unless earlier steps were left out of the record. Never give advice, suggestions or style "
-          "opinions, and never repeat a note already shown. The message may list facts the host is certain of: "
-          "never contradict them, and say a change is in the project only when they say it was applied. Never "
-          "predict what the host or the agent will do next (whether another confirmation, a retry or a new plan "
-          "will work): say what holds now. Most turns need nothing: then answer exactly NONE. "
-          "Otherwise answer one line starting with '- ': one or two plain sentences in the language of the user's "
-          "messages, saying what holds and why it matters, without the transcript's jargon.")
+          "Look for: a claim in the reply that the record or the host's certain facts contradict (an audit that "
+          "refused for defects, a test that failed, changes presented as done when the host says they are NOT in "
+          "the project files, a requested part omitted from the kept candidate or change, numbers that do not add "
+          "up); a choice or next step the reply offers whose consequence it hides or that the host already refused "
+          "in this turn (such as a limit already reached); a measurement, comparison or test whose setup differs "
+          "from what will really run (another model or configuration, a stand-in, a single run, numbers from "
+          "different rounds, data the agent made itself), so its conclusion may not hold; a cost the user will pay "
+          "later (quota, tokens, money, disk, time, history that cannot be removed, files that will be deleted); "
+          "behavior that changes for the user or others (a new default, a removed check, a rule that now applies "
+          "more widely, existing saved state or data the change does not migrate, a promise in docs or UI that the "
+          "code does not keep); a rule, pattern, filter or cleanup that can catch or delete more than intended; a "
+          "failure that would stay silent, with nothing to alert anyone; a license, platform or version rule the "
+          "work runs into. Never write about the process alone: that something was not run, not tested, not "
+          "committed, is still running, or does not appear in the recorded steps, since the agent may have seen "
+          "more than the steps show. The exceptions are claims or impressions the record or the host's certain facts "
+          "contradict: when the reply says something was tested, verified or passes and the steps show that check "
+          "failed, never ran, or ran before later edits to what it checks (unless earlier steps were left out of the "
+          "record), or when the reply presents work as applied, complete or defect-free while the record or certain "
+          "facts show it was refused, is NOT in the project files, or omits a requested part. Never give advice, "
+          "suggestions or style opinions, and never repeat a note already shown. The message may list facts the "
+          "host is certain of: never contradict them, and say a change is in the project only when they say it was "
+          "applied (flag when the reply presents work as applied or defect-free while they say it was refused or "
+          "NOT in the project files, but skip if the reply already says it is unapplied or pending). Never predict "
+          "what the host or the agent will do next: say what holds now, including a refusal or limit the host "
+          "already recorded in this turn when the reply offers that step again. Most turns need nothing: then answer "
+          "exactly NONE. Otherwise answer one line starting with '- ': one or two plain sentences in the language "
+          "of the user's messages, saying what holds and why it matters, without the transcript's jargon.")
 
 
 def funnel():
@@ -403,11 +412,21 @@ def _checked(last):
             + (f"; before it, {said(before)}" if before else '') + '.']
 
 
+def _unclean_delivery(s):
+    """A delegated implementation that did not finish cleanly applied and verified."""
+    if s['tool'] != 'implement':
+        return False
+    if s['status'] in ('failed', 'refused') or s.get('files') != 'project' or s.get('verdict') != 'VERIFIED':
+        return True
+    return any(code != 0 for _, code in ((s.get('checks') or {}).get('after') or ()))
+
+
 def events(turn, found):
-    """The points where the writer runs: a delegated implementation finished (whatever its outcome), an agent edited
-    files itself, a check tare can read failed (`found`, facts(turn))."""
+    """The points where the writer runs: an unclean delegated implementation (refused, failed, unapplied, verdict other
+    than VERIFIED, or a failed post-check), an agent edited files itself, or a check tare can read failed (`found`,
+    facts(turn))."""
     steps = turn['steps']
-    return [kind for kind, here in (('delivery', any(s['tool'] == 'implement' for s in steps)),
+    return [kind for kind, here in (('delivery', any(_unclean_delivery(s) for s in steps)),
                                     ('edit', any(s['tool'] == 'edit' and s['status'] == 'succeeded' for s in steps)),
                                     ('check', bool(found))) if here]
 
@@ -572,23 +591,41 @@ def usage(session):
 def write(text, seen, known=()):
     """(notes, attempts): the first available `heads_up` route that answers writes them; one handover on failure.
     `known`: sentences the host is certain of (certain()), which the note must not contradict."""
-    from .native_generation import generate_text, vault_secret
-    from .turn_engine import DEFAULT_POLICY, available, policy, with_effort
+    from .challenger import local as is_local
     from .execution_scope import admit, refusal
+    from .model_choices import declared_effort
+    from .native_generation import generate_text, vault_secret
+    from .turn_engine import available, avoid_local_gpu, local_gpu_busy, policy, with_effort
     prompt = ('Notes already shown to the user (never repeat these):\n' + ('\n'.join('- ' + s for s in seen) or 'none')
               + ('\n\nFacts the host is certain of (never contradict them):\n' + '\n'.join('- ' + s for s in known)
                  if known else '')
               + '\n\nTurn record (JSON):\n' + text)
     attempts, effort = [], policy().get('heads_up_effort')  # high unless the owner chose another level
     token = _cancellation()
-    for name in policy().get('heads_up') or DEFAULT_POLICY['heads_up']:
+    if saved := policy().get('heads_up'):
+        candidates = ((name, None) for name in saved)
+    else:
+        from .native_routes import ranked
+        deployments, selection = ranked('heads_up')
+        names = {row['selected_deployment']: row['catalog'] for row in selection['candidates'] if row.get('eligible')}
+        candidates = ((names[value['id']], value) for value in deployments)
+    for name, deployment in candidates:
         if token.is_cancelled():
             break
-        deployment, _ = available(name)
+        if deployment is None:
+            deployment, _ = available(name)
+        elif is_local(deployment) and (avoid_local_gpu() or local_gpu_busy(deployment)):
+            continue
         if deployment is None or refusal('heads_up', deployment, name):
             continue
         if effort:
-            deployment = with_effort(deployment, effort)
+            try:
+                deployment = with_effort(deployment, effort)
+            except ValueError:
+                try:
+                    deployment = with_effort(deployment, declared_effort(deployment, effort))
+                except ValueError:
+                    continue
         started = time.monotonic()
         try:
             admit(deployment, 'heads_up')  # the routing profile's backstop: this call starts no session

@@ -445,3 +445,20 @@ def test_history_resists_crafted_subjects_and_works_from_a_folder_inside_the_rep
     (repo/'big.txt').write_text('x'*(VIEW_BYTES+1)); git(repo, 'add', 'big.txt'); git(repo, 'commit', '-m', 'big')
     big = file_history(repo, 'big.txt')
     assert commit_text(repo, big[0][0], big[0][2]) == 'Commit exceeds the interactive preview limit.'
+
+
+def test_touches_records_rename_source_and_destination_live_and_saved():
+    from relay.native_activity import saved_history
+    live = ['You: rename a file',
+            row('rename', 'old.py -> new.py', state='succeeded', identity='r/1'),
+            row('rename', 'pending.py -> moved.py', state='running', identity='r/2'),
+            row('rename', 'stay.py -> nope.py', state='refused', identity='r/3', reason='PATH_EXISTS')]
+    for history in (live, saved_history(live)):
+        by_path = {touch.path: touch for touch in touches(history, turn_only=True)}
+        assert list(by_path) == ['old.py', 'new.py', 'pending.py', 'moved.py', 'stay.py', 'nope.py']
+        assert by_path['old.py'].edited and by_path['old.py'].deleted
+        assert by_path['new.py'].edited and not by_path['new.py'].deleted
+        assert by_path['pending.py'].running and not by_path['pending.py'].deleted
+        assert by_path['moved.py'].running and not by_path['moved.py'].deleted
+        assert by_path['stay.py'].failed and not by_path['stay.py'].deleted and by_path['stay.py'].reason == 'PATH_EXISTS'
+        assert by_path['nope.py'].failed and not by_path['nope.py'].deleted

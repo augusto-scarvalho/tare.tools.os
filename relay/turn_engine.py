@@ -28,8 +28,6 @@ import time
 from urllib.parse import urlsplit
 import uuid
 
-from .openrouter import RESEARCH_ROUTES
-
 DEFAULT_POLICY = {
     # No 'implementer' list: unless the owner saves one, tare auto's tiers are the role table's classes
     # (implementer_tiers), so a newly proven model version is used with no edit here.
@@ -41,21 +39,10 @@ DEFAULT_POLICY = {
                 'openai-api', 'claude-api-opus-5-5', 'gemini-api', 'openai-api-gpt-6-astra', 'claude-api-fable-5-1'],
     'auditor_selection': 'cross_vendor_frontier',
     'auditor_effort': 'high',
-    # Vendor CLIs that describe attached images for models that cannot see, cheapest first; the next one answers
-    # when one fails (quota, login). Measured 2026-09-30 on one image: Luna 18 s, Gemini 15 s, Sonnet 5 s.
-    'vision': ['codex-cli-gpt-6-luna', 'agy-cli', 'claude-sonnet-5-5-cli'],
-    'researcher': ['codex-cli-gpt-6-luna', 'claude-haiku-5-5-cli', 'agy-cli',
-                   *RESEARCH_ROUTES],
-    # Writes heads-up notes (relay/heads_up.py). Measured 2026-11-05 against 49 notes users accepted from a side agent
-    # and 50 turns it left quiet (scripts/heads_up_calibration.py claude --writer): Sonnet wrote consequence notes on
-    # 31% and 22% of them; Sol rarely speaks (6%, 2%) but is precise; Haiku, Luna and the local model mostly flag
-    # process details, as often on quiet turns as on noted ones.
-    # The side agent needs the whole picture, so it is a mid-to-high model at medium-to-high effort (operator, 2026-11-11):
-    # Sonnet at high is the entry level, Sol is the alternative, and no small model stands in (a note from Haiku is
-    # worse than no note). AGY's Gemini 3.8 (agy-cli) was to be the third and is out: as the writer at high effort it
-    # took a median of 76 s a call (38 to 121; Sonnet 9 s) and 2 of 8 calls failed (2026-11-11, the same 8 TUI turns),
-    # and a note that late arrives after the user has acted.
-    'heads_up': ['claude-sonnet-5-5-cli', 'codex-cli-gpt-6-1-sol'],
+    # No 'vision' or 'researcher' list: unless the owner saves one, each is chosen from the role table
+    # (vision_routes, researcher_routes).
+    # No 'heads_up' list: unless the owner saves one, heads_up chooses middling or frontier routes from the role table
+    # (heads_up_routes; measured 2026-11-05/11: Sonnet/Sol quality floor, no small model stands in).
     'heads_up_effort': 'high',
 }
 
@@ -101,16 +88,38 @@ def policy():
     return DEFAULT_POLICY
 
 
+def _ranked_routes(role, *, kinds=None):
+    if saved := policy().get(role):
+        return saved
+    from .native_routes import ranked
+    deployments, selection = ranked(role, work_type=kinds)
+    names = {row['selected_deployment']: row['catalog'] for row in selection['candidates'] if row.get('eligible')}
+    return [names[value['id']] for value in deployments]
+
+
 def planner_routes(kinds=None):
     """The planner's route names in order: the owner's saved list (/routes Order tab), else the role table's planner
     routes as native_routes.ranked ranks them (what the matrix shows), so no list of names is kept in the code.
     `kinds`, a demand's types of work, reach only that ranking (its `work_type`)."""
-    if saved := policy().get('planner'):
-        return saved
-    from .native_routes import ranked
-    deployments, selection = ranked('planner', work_type=kinds)
-    names = {row['selected_deployment']: row['catalog'] for row in selection['candidates'] if row.get('eligible')}
-    return [names[value['id']] for value in deployments]
+    return _ranked_routes('planner', kinds=kinds)
+
+
+def vision_routes():
+    """Vision route names in order: the owner's saved list (/routes Order tab), else the role table's supported
+    vision CLIs as native_routes.ranked ranks them."""
+    return _ranked_routes('vision')
+
+
+def researcher_routes():
+    """Researcher route names in order: the owner's saved list (/routes Order tab), else the role table's supported
+    researcher routes as native_routes.ranked ranks them."""
+    return _ranked_routes('researcher')
+
+
+def heads_up_routes():
+    """Heads-up route names in order: the owner's saved list (/routes Order tab), else the role table's middling and
+    frontier routes as native_routes.ranked ranks them."""
+    return _ranked_routes('heads_up')
 
 
 def implementer_tiers(role='implementer'):
@@ -423,7 +432,7 @@ def note_usage_limit(deployment, resets_at=None, now=None, kind=None):
         limits = {}
     limits = {k: v for k, v in limits.items() if isinstance(v, dict) and type(v.get('until')) in (int, float)
               and v['until'] > now} if isinstance(limits, dict) else {}
-    limits[account] = {'until': until, 'route': deployment.get('id')}
+    limits[account] = {'until': until, 'route': deployment.get('id'), 'recorded_at': now}
     path.parent.mkdir(parents=True, exist_ok=True)
     staged = path.with_suffix('.tmp')
     staged.write_text(json.dumps(limits), encoding='utf-8')
@@ -431,24 +440,75 @@ def note_usage_limit(deployment, resets_at=None, now=None, kind=None):
     return until
 
 
+def clear_usage_limits(match, now=None):
+    """Remove stored failure limits for which `match(key, entry)` is true (e.g., a fresh quota reading shows
+    headroom). Also drops expired entries. Returns the list of keys removed by `match`."""
+    global _usage_limits_cache
+    path = usage_limits_path()
+    try:
+        limits = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(limits, dict) or not limits:
+        return []
+    now = datetime.now(timezone.utc).timestamp() if now is None else now
+    kept, removed = {}, []
+    for key, entry in limits.items():
+        if not isinstance(entry, dict) or type(entry.get('until')) not in (int, float) or entry['until'] <= now:
+            continue
+        if match(key, entry):
+            removed.append(key)
+        else:
+            kept[key] = entry
+    if removed or len(kept) != len(limits):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        staged = path.with_suffix('.tmp')
+        staged.write_text(json.dumps(kept), encoding='utf-8')
+        os.replace(staged, path)
+        _usage_limits_cache = (None, {})
+    return removed
+
+
+_usage_limits_cache = (None, {})
+
+
+def _read_usage_limits():
+    """Cached parsed usage-limits JSON keyed by path, inode, mtime, and size."""
+    global _usage_limits_cache
+    path = usage_limits_path()
+    try:
+        found = path.stat()
+        stamp = (str(path), found.st_ino, found.st_mtime_ns, found.st_size)
+    except OSError:
+        return {}
+    if _usage_limits_cache[0] != stamp:
+        try:
+            parsed = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            parsed = {}
+        _usage_limits_cache = (stamp, parsed if isinstance(parsed, dict) else {})
+    return _usage_limits_cache[1]
+
+
 def usage_limited(deployment, now=None):
     """Until when this deployment's account, or its own model, has no usage left, else None: a failed call said so
     (note_usage_limit), or the provider's own quota reading shows a window of this model at zero (tare quota); for an
-    API route, its account's known balance is spent (provider_quota.balance_spent)."""
+    API route, its account's known balance is spent (provider_quota.balance_spent). A newer provider reading showing
+    headroom supersedes a prior failure-recorded limit."""
     keys = usage_keys(deployment)
-    try:
-        limits = json.loads(usage_limits_path().read_text(encoding='utf-8')) if keys else {}
-    except (OSError, ValueError):
-        limits = {}
+    limits = _read_usage_limits() if keys else {}
     now = datetime.now(timezone.utc).timestamp() if now is None else now
-    # Match the writer's seven-day bound. Invalid cached metadata is unknown, like an
-    # unreadable record; synthesizing now + grace here would renew its block forever.
-    found = [entry['until'] for key in keys
-             if isinstance(limits, dict) and isinstance(entry := limits.get(key), dict)
-             and type(entry.get('until')) in (int, float) and math.isfinite(entry['until'])
-             and now < entry['until'] <= now + 7*86400]
+    found = []
     if keys:
-        from .provider_quota import balance_spent, spent_until
+        from .provider_quota import balance_spent, headroom_clears, spent_until
+        # Match the writer's seven-day bound. Invalid cached metadata is unknown, like an
+        # unreadable record; synthesizing now + grace here would renew its block forever.
+        for key in keys:
+            entry = limits.get(key) if isinstance(limits, dict) else None
+            if (isinstance(entry, dict) and type(entry.get('until')) in (int, float)
+                    and math.isfinite(entry['until']) and now < entry['until'] <= now + 7*86400
+                    and not headroom_clears(key, entry, now)):
+                found.append(entry['until'])
         # a subscription's window read at zero, or an API account's known balance, spent: each answers only its kind
         found += [read for read in (spent_until(deployment, now), balance_spent(deployment, now)) if read]
     return max(found) if found else None
@@ -1267,14 +1327,21 @@ def describe_images(urls, emit):
 
 
 def describe_files(paths, emit):
-    """Text for a model that cannot see: the first policy vision route that describes the image files."""
+    """Text for a model that cannot see: the first vision route that describes the image files."""
     if not paths:
         return ''
     emit(f'\n> `image` {len(paths)} attached')
+    from . import native_catalog
     from .execution_scope import refusal
-    failures = []
-    for name in policy().get('vision', DEFAULT_POLICY['vision']):
-        deployment, why = available(name)
+    saved, selection, failures = policy().get('vision'), None, []
+    if saved:
+        candidates = [(name, *available(name)) for name in saved]
+    else:
+        from .native_routes import ranked
+        deployments, selection = ranked('vision')
+        names = {row['selected_deployment']: row['catalog'] for row in selection['candidates'] if row.get('eligible')}
+        candidates = [(names[value['id']], value, None) for value in deployments]
+    for name, deployment, why in candidates:
         if deployment is None or (why := refusal('vision', deployment, name)):
             failures.append(f'{name}: {why}')
             continue
@@ -1284,6 +1351,20 @@ def describe_files(paths, emit):
         except (RuntimeError, OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
             failures.append(f'{name}: {str(exc)[:120]}')
     else:
+        if not candidates and selection is not None:
+            for row in selection['candidates']:
+                reason = row.get('reason')
+                if reason in (None, 'ROLE_NOT_CONFIGURED', 'PROFILE_NOT_INSTALLED'):
+                    continue
+                route_name = row['deployment']
+                if reason == 'SWITCHED_OFF_FOR_ROLE':
+                    try:
+                        reason = refusal('vision', native_catalog.select(route_name), route_name) or reason
+                    except (ValueError, OSError, KeyError, TypeError):
+                        pass
+                failures.append(f'{route_name}: {reason}')
+        if not failures:
+            failures.append('no vision CLI configured')
         emit(' ✗\n')
         return f'\n\n[{len(paths)} image(s) attached; no description is available: {"; ".join(failures)}]'
     emit(f' ✓ {name}\n')

@@ -106,6 +106,9 @@ class PromptArea(TextArea):
         if event.key in {'up', 'down', 'tab', 'enter', 'escape'} and (self.app.context_key(event.key) or self.app.slash_key(event.key)):
             event.stop()
             event.prevent_default()  # Skips TextArea insertion; stop() skips cursor/focus bindings.
+        elif event.key in {'up', 'down'} and self.app.history_key(event.key):
+            event.stop()
+            event.prevent_default()
         elif event.key in {'enter', 'ctrl+enter'}:
             event.stop()
             event.prevent_default()
@@ -139,7 +142,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 Binding('f4','processes','Processes',priority=True),
                 Binding('f5','projects','Projects',priority=True),
                 Binding('f8', 'files', 'Files', priority=True),
-                ('f6', 'next_step', 'Next step'), Binding('ctrl+end', 'latest', 'Latest', priority=True),
+                Binding('f6', 'next_step', 'Next step', priority=True), Binding('ctrl+end', 'latest', 'Latest', priority=True),
                 ('ctrl+enter', 'start', 'Send / Start')]
     CSS = '''
     #execution-scope { height: auto; max-height: 3; color: $warning; }
@@ -398,6 +401,10 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         self.reviewed_order = self.order_loaded = None
         self.slash_shown = ()
         self.slash_dismissed = None
+        self.input_history = []
+        self.input_history_index = None
+        self.input_history_draft = ''
+        self._history_applied_text = None
         self.context_root = ''
         self.context_paths = []
         self.context_query = self.context_dismissed = None
@@ -455,7 +462,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 from .native_installation import version_label
                 yield Static(version_label(), id='product-version', classes='settings-note', markup=False)
                 yield Label('Workspace folder')
-                yield Input(self.root, id='root')
+                yield Input(self.root, id='root', select_on_focus=False)
                 yield Button('Browse projects · F5', id='settings-projects')
                 yield Button('Apply workspace', id='reload')
                 yield Button('New conversation', id='new-demand')
@@ -762,6 +769,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         # is still queued or suppressed while restoring a selection.
         self.watch(self.query_one('#session-role', Select), 'value', self.sync_terminal_permissions, init=False)
         self.load_model_preferences()
+        self.load_input_history()
         self.query_one('#intake-options').display = False
         self.query_one('#outcome-options').display = False
         self.update_mode()
@@ -963,8 +971,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 and action == 'start'):
             return False
         from textual.screen import ModalScreen
-        if self.is_running and action == 'files' and isinstance(self.screen, ModalScreen):
-            return False  # F8 toggles the pane of the main screen only
+        if self.is_running and action in {'files', 'next_step'} and isinstance(self.screen, ModalScreen):
+            return False  # F6 and F8 act on the main screen only
         if action == 'cancel':
             # A busy composer must not consume Cancel as TextArea's cut. Idle
             # and direct terminal/modal bindings retain their normal handling.
@@ -1278,6 +1286,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
 
     def on_text_area_changed(self, event):
         if event.text_area.id == 'prompt' and self.is_mounted and self.query_one_optional('#mode'):
+            if self.input_history_index is not None and event.text_area.text != self._history_applied_text:
+                self.reset_input_history_browse()
             self.resize_composer()
             self.sync_slash()
             self.update_composer_hint()
@@ -1755,6 +1765,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 self.query_one('#'+composer, TextArea).clear()
                 if composer=='prompt': self.clear_context()
             if composer == 'prompt':
+                if draft_text.strip():
+                    self.record_input_history(draft_text.strip())
                 paths=draft_context[1] if draft_context else ()
                 self.assistant_say('You: '+draft_text+('\nContext: '+', '.join(paths) if paths else '')+
                     ('\nAttachments: '+', '.join(row['name'] for row in selection.attachments) if selection.attachments else ''))
@@ -1956,6 +1968,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 self.set_status('/resume takes no arguments. It continues the saved session and queued messages.'); return
             self.action_resume_conversation(); return
         if selected.mode in {'assistant','session'} and head.lower()=='/attach' and not resume_only:
+            self.record_input_history(selected.prompt.strip())
             self.query_one('#prompt',TextArea).clear()
             self.action_attach(path.strip().strip('"') or None)
             return
@@ -2050,7 +2063,10 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             if assistant and not resume_only:
                 self.say(user_message)
             if resume_only and selected.prompt.strip().lower() == '/resume':
+                self.record_input_history(selected.prompt.strip())
                 self.query_one('#prompt', TextArea).clear()
+            if not resume_only and not continuation and self.active.prompt.strip():
+                self.record_input_history(self.active.prompt.strip())
             if self.active.mode == 'session' and not resume_only:
                 self.query_one('#prompt', TextArea).clear()
                 self.clear_context()
@@ -2124,9 +2140,11 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         text = selected.prompt.strip()
         from .console_entry import help_text
         if text == '/help':
+            self.record_input_history(text)
             self.say(help_text())
             return
         if text == '/status':
+            self.record_input_history(text)
             if self.active and Path(self.active.root).resolve() == Path(selected.root).resolve():
                 self.say(json.dumps(self.last_result, ensure_ascii=False) if self.last_result else 'Execution has no final result yet.')
             else:
@@ -2144,6 +2162,15 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             self.checkpoint('interpretation_requested', {'operator': text})
         except Exception as exc:
             self.set_status('Demand could not be saved: '+str(exc)); return
+        if text.startswith('/'):
+            from .console_entry import explicit
+            try:
+                explicit(text)
+                self.record_input_history(text)
+            except ValueError:
+                pass
+        else:
+            self.record_input_history(text)
         from tare_tools_agent_runtime import CancellationToken
         self.entry_cancel = CancellationToken()
         self.controls(True)

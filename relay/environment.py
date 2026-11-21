@@ -2,6 +2,7 @@
 decision models (D15). One file per machine, beside local-gpu.json, so every frontend and storage root sees the
 same choices. No file, or a category left undecided, keeps today's behaviour: every route tare finds."""
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -64,10 +65,27 @@ def kind(deployment):
 _older = {}
 
 
+_templates_cache = (None, None)
+
+
+def _templates():
+    """Cached shipped CLI templates JSON, keyed by path, mtime, and size."""
+    global _templates_cache
+    from .cli_discovery import TEMPLATES
+    try:
+        found = TEMPLATES.stat()
+        stamp = (str(TEMPLATES), found.st_mtime_ns, found.st_size)
+    except OSError:
+        return json.loads(TEMPLATES.read_text(encoding='utf-8'))
+    if _templates_cache[0] != stamp:
+        _templates_cache = (stamp, json.loads(TEMPLATES.read_text(encoding='utf-8')))
+    return _templates_cache[1]
+
+
 def older_models():
     """The Codex models its catalogue still lists that newer ones replace (vendor_models.older), read once per
     change of the catalogue; nothing without one."""
-    from .cli_discovery import TEMPLATES, codex_catalog
+    from .cli_discovery import codex_catalog
     from .vendor_models import older
     home = Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex')/'models_cache.json'
     try:
@@ -77,7 +95,7 @@ def older_models():
     if stamp not in _older:
         catalog = codex_catalog() if stamp[0] != 'shipped templates' else None
         slugs = [m['slug'] for m in catalog if m.get('visibility') == 'list'] if catalog else [
-            t['native_profile']['model'] for t in json.loads(TEMPLATES.read_text(encoding='utf-8')).values()
+            t['native_profile']['model'] for t in _templates().values()
             if t['native_profile']['endpoint'] == 'cli://codex']
         _older.clear()
         _older[stamp] = older([s for s in slugs if str(s).startswith('gpt-')])
@@ -149,7 +167,7 @@ def decides(name):
 PROFILE_ROLES = ('implementer', 'explorer', 'planner', 'plan-auditor', 'auditor', 'researcher', 'vision', 'heads_up',
                  'coordinator')
 # The roles relay/role_deployments.json ranks (native_routes.ranked); coordinator on the implementer rows.
-RANKED_ROLES = (*PROFILE_ROLES[:5], 'coordinator')
+RANKED_ROLES = PROFILE_ROLES
 SOURCES = ('claude-code', 'codex', 'agy', 'opencode-sub', 'opencode-api', 'api', 'openrouter', 'bedrock', 'local',
            'other-api')
 AUTO_NAMES = ('auto', 'tare-auto', 'local-default')  # names of automatic routing, not routes
@@ -200,15 +218,15 @@ def source(deployment):
 
 
 def route_key(deployment):
-    """(family, line, version, source) of a route: claude-api-fable-5-2 is ('claude', 'fable', (5, 2), 'api'). A route
-    has a line only where vendor_models.origin_line says its endpoint serves that vendor's own model (the vendor's
-    CLI or API, or AGY); any other route (a reseller, a custom endpoint, a local model) has none, whatever its wire
-    name says."""
-    from .vendor_models import AGY_EFFORT, origin_line, parse
-    profile = deployment.get('native_profile') or {}
-    model = profile.get('model', '')
-    lined = origin_line(model, profile.get('endpoint', ''))
-    return (*(parse(AGY_EFFORT.sub('', model)) if lined else (None, None, None)), source(deployment))
+    """(family, line, version, source) of a route: claude-api-fable-5-2 is ('claude', 'fable', (5, 2), 'api'), and
+    opencode-sub-gemini-4-argon is ('gemini', 'argon', (4,), 'opencode-sub'). A route has a line where
+    vendor_models.mirror_line confirms it serves that model line (the vendor's own CLI/API/AGY, or a recognized
+    mirror catalogue whose verified author identity matches the line); custom endpoints, local models, and unknown
+    models have none, whatever their wire name says."""
+    from .vendor_models import mirror_line
+    where = source(deployment)
+    found = mirror_line(deployment, where=where)
+    return (*(found[1] if found else (None, None, None)), where)
 
 
 def key_label(key, version=True):
@@ -226,12 +244,11 @@ def id_rule(text):
     as its version on its source (7, key). Any other id names exactly the route it resolves to here (8, its id:
     local-qwen and qwen38-gsq are one route), never another route of the same model; an id this machine cannot
     resolve names itself."""
-    from .cli_discovery import TEMPLATES
     from .native_catalog import select
     try:
         deployment = select(text)
     except (ValueError, OSError, KeyError, TypeError):  # not set up here: a shipped CLI template still names its model
-        deployment = json.loads(TEMPLATES.read_text(encoding='utf-8')).get(text)
+        deployment = _templates().get(text)
     key = route_key(deployment) if deployment else None
     return (7, key) if key and key[0] else (8, (deployment or {}).get('id') or text)
 
@@ -243,12 +260,13 @@ def rule_of(text):
     return parsed and (id_rule(text) if isinstance(parsed[1], str) else parsed)[1]
 
 
-def _profile(value, role):
+def _profile(value, role, resolve_id=None):
     saved = None if 'error' in value else value.get('routing_profile')
     if saved is None:
         return MappingProxyType({}), ()
     if not isinstance(saved, dict):
         return MappingProxyType({}), ('routing_profile is not an object; ignored',)
+    resolve_id = resolve_id or id_rule
     rules, problems = {}, [f'routing_profile.{key}: unknown; ignored' for key in sorted(set(saved) - {'off', 'on'})]
     for side in ('off', 'on'):
         roles = saved.get(side, {})
@@ -269,7 +287,7 @@ def _profile(value, role):
                         'not a route id or MODEL@SOURCE') + '; ignored')
                     continue
                 if isinstance(parsed[1], str):
-                    parsed = id_rule(text)
+                    parsed = resolve_id(text)
                     if parsed[0] == 7:
                         problems.append(f'routing_profile.{side}.{name}: {text} runs a model line; read as '
                                         f'{key_label(parsed[1])}')
@@ -282,14 +300,14 @@ def _profile(value, role):
 _profiles = {}
 
 
-def profile(value=None, role=None):
+def profile(value=None, role=None, *, resolve_id=None):
     """The saved routing_profile as ({role: {'off': ((text, specificity, rule), ...), 'on': (...)}}, problems), read
     only, for `role` only when one is named. What cannot be read is ignored and named in problems (tare setup shows
     them): it never stops routing, and ignoring it never makes more routes eligible than tare's default. The file is
     parsed once per version of it: save() empties the cache, and another process's save replaces the file (a new
     inode, also on Windows), so its size, time or inode differs and it is read again."""
     if value is not None:
-        return _profile(value, role)
+        return _profile(value, role) if resolve_id is None else _profile(value, role, resolve_id=resolve_id)
     path = store()
     try:
         found = path.stat()
@@ -301,16 +319,16 @@ def profile(value=None, role=None):
             _profiles.clear()
         # ponytail: a route id is resolved once per version of the file; a route set up later is seen after the next
         # save of the profile or a restart.
-        _profiles[stamp] = _profile(read(), role)
+        _profiles[stamp] = _profile(read(), role) if resolve_id is None else _profile(read(), role, resolve_id=resolve_id)
     return _profiles[stamp]
 
 
-def profile_state(role, deployment, value=None, key=None):
+def profile_state(role, deployment, value=None, key=None, *, parsed=None):
     """('off' or 'on', entry) of the most specific entry for this route and role (off wins a tie), or None: tare's
     default. A route is known by what it is, never by what it resembles: its line on its source when it has one, else
     its own id (an alias is checked as the route it realised). `key` asks for a (family, line, version, source) instead,
     which no version entry matches when its version is None (the /routes matrix asks for a line on a source)."""
-    rules = profile(value, role)[0].get(role)
+    rules = (profile(value, role)[0] if parsed is None else parsed).get(role)
     if not rules:
         return None
     key = key or route_key(deployment)
@@ -324,11 +342,11 @@ def profile_state(role, deployment, value=None, key=None):
     return found and ('off' if found[1] else 'on', found[2])
 
 
-def granted(role, deployment, value=None):
+def granted(role, deployment, value=None, *, parsed=None):
     """Whether the user granted `role` to this route: its most specific entry is an "on" naming the route itself (a
     tick in /routes, tare setup --auto ROLE:ID=on; an "off" of it wins a tie), and the route is a local model (source
     `local`: never a hosted route or a reseller). A broader "on" (`*@local`) grants nothing."""
-    state = profile_state(role, deployment, value=value)
+    state = profile_state(role, deployment, value=value, parsed=parsed)
     return bool(state) and state[0] == 'on' and '@' not in state[1] and source(deployment) == 'local'
 
 
@@ -350,54 +368,56 @@ def switched_off(role, deployment, *names, value=None):
     return None
 
 
-def auto_routes(role, grants=None):
+def auto_routes(role, grants=None, *, configured_table=None, credentials=None):
     """[(name, route or None, now)] of the routes automatic `role` routing considers here, checked as each path that
     reaches a route checks it, under that role, without a live probe: `now` is 'usable' when one of those paths takes
     it, else the first path's reason (a rule). The routing profile does not change it. Every local model in use here
-    (native_routes.local_models) is a row of each ranked role: one its role table row does not give the role is
-    checked as if the user granted it, and its name goes into `grants` (a set), off until the user does. The paths:
-    coordinator and implementer (tare auto's tiers, turn_engine.implementer_tiers) and planner the list the owner saved (availability;
-    none: local-default for the first two, nothing for the planner) and the role table (native_routes.admission, what
-    ranks; a coordinator on the implementer rows; coordinator_policy.eligible judges only a --coordinator pin, not
-    this path); explorer its role table; auditor and
+    (native_routes.local_models) is a row of each ranked role except `researcher` and `vision`: one its role table
+    row does not give the role is checked as if the user granted it, and its name goes into `grants` (a set), off
+    until the user does. The paths: coordinator and implementer (tare auto's tiers, turn_engine.implementer_tiers),
+    planner and vision the list the owner saved (availability; none: local-default for the first two, nothing for
+    planner or vision) and the role table (native_routes.admission, what ranks; a coordinator on the implementer rows;
+    coordinator_policy.eligible judges only a --coordinator pin, not this path); explorer its role table; auditor and
     plan-auditor the owner's auditor list when "Use my auditor routes" is chosen, else their role
-    table, never both (native_routes._reviewers); researcher its list (availability and the research tool's own
-    admission), tare auto's tiers (the /research link summary) and the Codex web search helper; vision and heads_up
-    their list, read as their writer reads it."""
+    table, never both (native_routes._reviewers); researcher the list the owner saved (availability and the research
+    tool's own admission), tare auto's tiers (the /research link summary), the Codex web search helper and its role
+    table; heads_up the list the owner saved (availability) and its role table."""
     from copy import deepcopy
-    from .cli_discovery import TEMPLATES
     from .execution_scope import current, for_role
     from .native_catalog import LOCAL, LOCAL_DEFAULT, select
-    from .native_routes import admission, configured, local_models, roles as table_roles
-    from .turn_engine import DEFAULT_POLICY, HELPER_ROUTES, available, implementer_tiers, policy
-    from .web_research import DEFAULT_ROUTES, admits, research_api_routes
-    templates = json.loads(TEMPLATES.read_text(encoding='utf-8'))
+    from .native_routes import admission, configured, local_models, role_admitted
+    from .turn_engine import HELPER_ROUTES, available, implementer_tiers, policy
+    from .web_research import admits, research_api_routes
+    templates = _templates()
     rules = policy()
     owner = role in ('auditor', 'plan-auditor') and not (
         current().changes(role) or rules.get('auditor_selection', 'cross_vendor_frontier') == 'cross_vendor_frontier')
     saved = rules.get('implementer') or [[LOCAL_DEFAULT]]
     lists = {'coordinator': saved, 'implementer': saved, 'planner': rules.get('planner', []),
              'researcher': [*(implementer_tiers('researcher') if role == 'researcher' else []), *HELPER_ROUTES],
-             'vision': rules.get('vision', DEFAULT_POLICY['vision']),
-             'heads_up': rules.get('heads_up') or DEFAULT_POLICY['heads_up']}
+             'vision': rules.get('vision', []),
+             'heads_up': rules.get('heads_up', [])}
 
     def flat(items):
         return [n for item in items or [] for n in (item if isinstance(item, list) else [item])]
     paths = {}  # name: how each path that reaches it judges it
     for name in flat(rules['auditor'] if owner else lists.get(role)):
         paths.setdefault(name, []).append('list')
-    for name in flat(rules.get('researcher', DEFAULT_ROUTES) if role == 'researcher' else []):
+    for name in flat(rules.get('researcher', []) if role == 'researcher' else []):
         paths.setdefault(name, []).append('research')
-    need, used = 'implementer' if role == 'coordinator' else role, set(local_models())
-    table = {row.get('native_catalog', row['id']): row for row in configured()['deployments']
-             if role in RANKED_ROLES and not owner and (need in table_roles(row, current()) or LOCAL.get(
+    allow_local_grant = role not in {'researcher', 'vision'}
+    used = set(local_models()) if allow_local_grant else set()
+    deployments = (configured_table if configured_table is not None else configured())['deployments']
+    table = {row.get('native_catalog', row['id']): row for row in deployments
+             if role in RANKED_ROLES and not owner and (role_admitted(row, role, current()) or LOCAL.get(
                  row.get('native_catalog'), row.get('native_catalog')) in used)}
-    grantable = {name for name, row in table.items() if need not in table_roles(row, current())}
+    grantable = {name for name, row in table.items() if allow_local_grant and not role_admitted(row, role, current())}
     for name in table:
         paths.setdefault(name, []).append('table')
         if grants is not None and name in grantable and paths[name] == ['table']:
             grants.add(name)
-    api_routes, credentials, found = research_api_routes() if role == 'researcher' else set(), {}, []
+    api_routes, credentials, found = (research_api_routes() if role == 'researcher' else set(),
+                                      {} if credentials is None else credentials, [])
     with for_role('auditor' if owner else role):  # pick_auditors checks as auditor; every other path as its role
         for name, ways in paths.items():
             known, reasons, row, own = None, [], table.get(name), None
@@ -655,7 +675,7 @@ def configured_routes():
         for key in ('profile', 'overflow', 'challenger'):
             name = settings.get(key)
             name = name.get('profile') if isinstance(name, dict) else name
-            if isinstance(name, str):
+            if isinstance(name, str) and not (key == 'profile' and name == 'auto'):
                 routes.append((f'/delegation {key}', name))
     except (ValueError, OSError):
         pass
@@ -1037,14 +1057,14 @@ def role_check(deployment):
 def route_for(name):
     """(deployment, why) for a route name, or for cli:NAME the CLI as discovery would offer it."""
     if name.startswith('cli:'):
-        from .cli_discovery import ACK_PROFILE, TEMPLATES, deployment, locate
+        from .cli_discovery import ACK_PROFILE, deployment, locate
         endpoint = 'cli://' + name[4:].lower()
         if endpoint not in ACK_PROFILE:
             return None, f'unknown CLI {name}: use cli:claude, cli:codex or cli:agy'
         executable = locate(endpoint)
         if not executable:
             return None, f'{endpoint} is not installed'
-        return deployment(json.loads(TEMPLATES.read_text(encoding='utf-8'))[ACK_PROFILE[endpoint]], executable), None
+        return deployment(_templates()[ACK_PROFILE[endpoint]], executable), None
     from .turn_engine import available
     return available(name)
 
@@ -1075,14 +1095,58 @@ def cost_line(deployment):
         if price.get('basis') == 'reference' else '') + f', then {TASK} at the same rates, its tokens unknown before it runs'
 
 
-def prove(name, confirm):
+def prove_binding(deployment, cost):
+    """Snapshot of the model, account/endpoint/credential, billing class, and cost text confirmed by the user."""
+    profile = deployment.get('native_profile') or {}
+    cli = deployment.get('native_cli') or {}
+    cred_env = deployment.get('native_credential_env')
+    env_val = os.environ.get(cred_env) if isinstance(cred_env, str) and cred_env else None
+    env_digest = hashlib.sha256(env_val.encode('utf-8')).hexdigest() if env_val is not None else None
+    from .challenger_variants import accounting
+    from .provider_spend import account as api_account
+    from .turn_engine import usage_account
+    try:
+        billing = accounting(deployment)
+    except (KeyError, TypeError, ValueError):
+        billing = deployment.get('native_challenger_accounting')
+    try:
+        sub_account = usage_account(deployment)
+    except (KeyError, TypeError, ValueError):
+        sub_account = None
+    try:
+        usd_account = api_account(deployment)
+    except (KeyError, TypeError, ValueError):
+        usd_account = None
+    return {
+        'id': deployment.get('id'),
+        'model': profile.get('model'),
+        'protocol': profile.get('protocol'),
+        'endpoint': profile.get('endpoint'),
+        'parameters_json': profile.get('parameters_json'),
+        'auth_env': profile.get('auth_env'),
+        'credential_env': cred_env,
+        'credential_env_sha256': env_digest,
+        'billing': billing,
+        'usage_account': sub_account,
+        'api_account': usd_account,
+        'cli_executable': cli.get('executable') if isinstance(cli, dict) else None,
+        'cost': cost,
+    }
+
+
+def prove(name, confirm, *, expected=None):
     """One minimal real call on a route, then, when it answered, the role check's short task, only after
     `confirm(cost line)` agrees; the result (never the reply) is kept in the setup, ok only when both passed. A proven
-    CLI is recorded for discovery, which then calls it ready."""
+    CLI is recorded for discovery, which then calls it ready.
+
+    When `expected` (from `prove_binding()`) is provided, the proof skips without calling any model if the resolved
+    route's model, account, endpoint/credential, or cost changed since confirmation."""
     deployment, why = route_for(name)
     if deployment is None:
         return {'ok': False, 'reason': why}
     line = cost_line(deployment)
+    if expected is not None and prove_binding(deployment, line) != expected:
+        return {'ok': None, 'reason': 'route, account, or cost changed after confirmation; skipped', 'cost': line}
     if not confirm(f'{name}: {line}.'):
         return {'ok': None, 'reason': 'not confirmed', 'cost': line}
     cli = deployment['native_profile']['protocol'] == 'vendor-cli'
@@ -1107,6 +1171,157 @@ def prove(name, confirm):
         proven(deployment['native_profile']['endpoint'], deployment['native_cli']['executable'])
     return remember(name, {'ok': ok, 'cost': line, **({} if ok else {'reason': reason}),
                            **({'role_check': check} if check else {})})
+
+
+_REAL_PROVE = prove
+
+
+def prove_bound(name, expected):
+    """Run `prove()` only for a route whose cost was shown and whose live model, account, and cost still match
+    `expected` (from `prove_binding()`)."""
+    if expected is None:
+        return {'ok': False, 'reason': 'no cost was shown before confirmation'}
+    expected_line = f"{name}: {expected['cost']}."
+    if prove is _REAL_PROVE:
+        return prove(name, lambda line: line == expected_line, expected=expected)
+    deployment, why = route_for(name)
+    if deployment is None:
+        return {'ok': False, 'reason': why}
+    line = cost_line(deployment)
+    if prove_binding(deployment, line) != expected:
+        return {'ok': None, 'reason': 'route, account, or cost changed after confirmation; skipped', 'cost': line}
+    return prove(name, lambda shown: shown == expected_line)
+
+
+def pending_proofs(roles=PROFILE_ROLES):
+    """Sorted list of unique liftable NOT_QUALIFIED_PIN_ONLY route names that are currently available here."""
+    from .native_catalog import select_cache
+    from .native_routes import configured, mirror
+    from .vendor_models import MIRROR_SOURCES
+    candidates = set()
+    with select_cache():
+        table = configured()
+        pin_only = {row.get('native_catalog'): row for row in table['deployments'] if row.get('qualified') is False}
+        credentials = {}
+        for role in roles:
+            for name, route, now in auto_routes(role, configured_table=table, credentials=credentials):
+                if route is None or now != 'NOT_QUALIFIED_PIN_ONLY':
+                    continue
+                key = route_key(route)
+                if (key[0] and key[3] not in MIRROR_SOURCES) or (name in pin_only and mirror(pin_only[name], route, role)):
+                    candidates.add(name)
+        return [name for name in sorted(candidates) if route_for(name)[0] is not None]
+
+
+def _prepare_prove(names, *, discover_all=False):
+    # What the TUI and tare serve do at start, and a proof right after an update needs: without the first a new
+    # CLI model has no route yet (native_deployment_unknown), without the second the cost line has no price.
+    if discover_all or any(not name.startswith('cli:') and route_for(name)[0] is None for name in names):
+        try:  # the installed CLIs' models as routes: no model call
+            from .cli_discovery import discover
+            discover()
+        except Exception:  # optional, as at start: the name then stays unknown and the proof says so
+            pass
+    try:  # the reference prices, at most once a day; no model call, no key sent
+        from .provider_prices import refresh_reading
+        refresh_reading()
+    except Exception:  # optional: the cost line then says the price is unknown, as before
+        pass
+
+
+def _run_prove(targets, *, yes=False, dry_run=False, as_json=False):
+    import sys
+    wants_all = any(t.lower() == 'all' for t in targets)
+    _prepare_prove(targets, discover_all=wants_all)
+    resolved = []
+    for target in targets:
+        if target.lower() == 'all':
+            resolved.extend(pending_proofs())
+        else:
+            resolved.append(target)
+    resolved = list(dict.fromkeys(resolved))
+    if not resolved:
+        print('{}' if as_json else 'Nothing to prove: no pending pin-only routes.')
+        return 0
+    if dry_run:
+        preview, lines = {}, []
+        for name in resolved:
+            deployment, why = route_for(name)
+            if deployment is None:
+                preview[name] = {'ok': False, 'reason': why}
+                lines.append(f'{name}: cannot be proven: {why}')
+            else:
+                cost = cost_line(deployment)
+                preview[name] = {'ok': None, 'reason': 'dry_run', 'cost': cost}
+                lines.append(f'{name}: {cost}.')
+        print(json.dumps(preview, indent=1) if as_json else '\n'.join(lines))
+        return 0
+    if not wants_all and len(resolved) == 1:
+        def confirm(line):
+            print(line, file=sys.stderr if as_json else sys.stdout)
+            if yes:
+                return True
+            try:
+                return sys.stdin.isatty() and input('Spend it? [y/N] ').strip().lower() == 'y'
+            except EOFError:
+                return False
+        results = {name: prove(name, confirm) for name in resolved}
+    else:
+        cost_stream = sys.stderr if as_json else sys.stdout
+        preview, bindings = {}, {}
+        for name in resolved:
+            deployment, why = route_for(name)
+            if deployment is None:
+                preview[name] = {'ok': False, 'reason': why}
+                print(f'{name}: cannot be proven: {why}', file=cost_stream)
+            else:
+                cost = cost_line(deployment)
+                bindings[name] = prove_binding(deployment, cost)
+                preview[name] = {'ok': None, 'reason': 'not confirmed', 'cost': cost}
+                print(f'{name}: {cost}.', file=cost_stream)
+        confirmable = [name for name in resolved if name in bindings]
+        if not confirmable:
+            results = preview
+        else:
+            if yes:
+                confirmed = True
+            else:
+                try:
+                    confirmed = (
+                        sys.stdin.isatty()
+                        and input(f'Prove {len(confirmable)} route(s)? [y/N] ').strip().lower() == 'y'
+                    )
+                except EOFError:
+                    confirmed = False
+            if not confirmed:
+                results = preview
+            else:
+                results = dict(preview)
+                for index, name in enumerate(confirmable, 1):
+                    if not as_json:
+                        print(f'[{index}/{len(confirmable)}] Proving {name}...')
+                    try:
+                        results[name] = prove_bound(name, bindings[name])
+                    except (ValueError, OSError, KeyError, TypeError) as exc:
+                        results[name] = {'ok': False, 'reason': str(exc)}
+    print(json.dumps(results, indent=1) if as_json else '\n'.join(
+        f"{name}: {'proven' if r.get('ok') else 'not proven: ' + str(r.get('reason') or '')}"
+        for name, r in results.items()))
+    return 0 if all(r.get('ok') is True for r in results.values()) else 1
+
+
+def prove_main(argv=None):
+    """Prove pending pin-only routes or named routes after showing their costs."""
+    import argparse
+    parser = argparse.ArgumentParser(prog='tare prove', description=prove_main.__doc__, allow_abbrev=False)
+    parser.add_argument('routes', nargs='+', metavar='ROUTE',
+                        help="Route name(s), cli:NAME, or 'all' for every pending pin-only route")
+    parser.add_argument('--yes', action='store_true', help='Prove without asking (scripts); the cost is still printed')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='List resolved routes and their costs with zero model calls')
+    parser.add_argument('--json', action='store_true')
+    args = parser.parse_args(argv)
+    return _run_prove(args.routes, yes=args.yes, dry_run=args.dry_run, as_json=args.json)
 
 
 def remember(name, record):
@@ -1256,8 +1471,9 @@ def main(argv=None):
     parser.add_argument('--meta-contributor', choices=('on', 'off'),
                         help='Allow Meta to use prompts, code and responses sent to Muse Spark Contributor')
     parser.add_argument('--prove', action='append', default=[], metavar='ROUTE',
-                        help='One minimal real call on a route (a profile name, or cli:codex), then one short task '
-                        'in the implementer role on a throwaway file, after showing its cost')
+                        help="One minimal real call on a route (a profile name, cli:codex, or 'all' for every "
+                        'pending pin-only route), then one short task in the implementer role on a throwaway file, '
+                        'after showing its cost')
     parser.add_argument('--yes', action='store_true', help='Prove without asking (scripts); the cost is still printed')
     parser.add_argument('--replace-older', action='store_true', help='Move routes you named to the newer models')
     parser.add_argument('--keep-older', action='store_true', help='Keep the older models routes you named run')
@@ -1276,32 +1492,7 @@ def main(argv=None):
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args(argv)
     if args.prove:
-        # What the TUI and tare serve do at start, and a proof right after an update needs: without the first a new
-        # CLI model has no route yet (native_deployment_unknown), without the second the cost line has no price.
-        if any(not name.startswith('cli:') and route_for(name)[0] is None for name in args.prove):
-            try:  # the installed CLIs' models as routes: no model call
-                from .cli_discovery import discover
-                discover()
-            except Exception:  # optional, as at start: the name then stays unknown and the proof says so
-                pass
-        try:  # the reference prices, at most once a day; no model call, no key sent
-            from .provider_prices import refresh_reading
-            refresh_reading()
-        except Exception:  # optional: the cost line then says the price is unknown, as before
-            pass
-
-        def confirm(line):
-            print(line)
-            if args.yes:
-                return True
-            try:
-                return sys.stdin.isatty() and input('Spend it? [y/N] ').strip().lower() == 'y'
-            except EOFError:
-                return False
-        results = {name: prove(name, confirm) for name in args.prove}
-        print(json.dumps(results, indent=1) if args.json else '\n'.join(
-            f"{name}: {'proven' if r['ok'] else 'not proven: ' + r['reason']}" for name, r in results.items()))
-        return 0 if all(r['ok'] for r in results.values()) else 1
+        return _run_prove(args.prove, yes=args.yes, as_json=args.json)
     try:
         if args.reset:
             store().unlink(missing_ok=True)

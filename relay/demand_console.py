@@ -82,6 +82,7 @@ class DemandConsole:
                     self.query_one('#'+name, Select).set_options([])
             self.query_one('#output').clear()
             self.workspace_root = self.root = root
+            self.load_input_history()
             self.clear_context()
             self.navigation_generation += 1
             self.invalidate_message_observations()

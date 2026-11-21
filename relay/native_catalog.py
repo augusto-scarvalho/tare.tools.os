@@ -1,10 +1,28 @@
 """Explicit named native deployments; model details remain in qualified profiles."""
+from contextlib import contextmanager
+from contextvars import ContextVar
+import copy
 import json
 import os
 from pathlib import Path
 from urllib.parse import urlparse
 
 from .native_generation import load_deployment
+
+_select_cache = ContextVar('native_catalog_select_cache', default=None)
+
+
+@contextmanager
+def select_cache():
+    """Cache named select() lookups for a read-only batch, returning copies so callers cannot mutate cached dicts."""
+    if _select_cache.get() is not None:
+        yield
+        return
+    token = _select_cache.set({})
+    try:
+        yield
+    finally:
+        _select_cache.reset(token)
 
 PROFILES = Path(__file__).with_name('native_deployments')
 LOCAL = {'openai-api': 'openai-api', 'gemini-api': 'gemini-api', 'claude-api': 'claude-api',
@@ -141,6 +159,24 @@ def select(name=None, path=None, *, role=None):
     if path is not None:
         return canonical_identity(load_deployment(path))
     name = name or 'local-qwen'
+    cache = _select_cache.get() if role is None and name != 'auto' else None
+    if cache is not None and name in cache:
+        ok, payload = cache[name]
+        if ok:
+            return copy.deepcopy(payload)
+        raise ValueError(payload)
+    try:
+        resolved = _select_named(name, role=role)
+    except ValueError as exc:
+        if cache is not None:
+            cache[name] = (False, str(exc))
+        raise
+    if cache is not None:
+        cache[name] = (True, copy.deepcopy(resolved))
+    return resolved
+
+
+def _select_named(name, *, role=None):
     if name == LOCAL_DEFAULT:
         return select(local_default())
     if name == 'auto':

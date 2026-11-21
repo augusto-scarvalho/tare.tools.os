@@ -17,8 +17,6 @@ from compute_plane.native_models import encode
 SCHEMA = 'tare.tools/web-research/1'
 MAX_TEXT, MAX_SOURCES, MAX_REQUESTS = 65536, 5, 8
 CACHE_SECONDS = 3600
-from .openrouter import RESEARCH_ROUTES
-DEFAULT_ROUTES = ('codex-cli-gpt-6-luna', 'claude-haiku-5-5-cli', 'agy-cli', *RESEARCH_ROUTES)
 
 
 def url(value):
@@ -112,19 +110,30 @@ def snapshot():
         return {'version':1,'routes':{name:value},'route_order':[name],'unavailable':{},'search_api':1,
                 'origin':'EXACT_TEMPORARY_PIN'}
     routes, skipped = {}, {}
-    api_routes = research_api_routes()
-    for name in policy().get('researcher', DEFAULT_ROUTES):
-        try:
-            value = native_catalog.select(name)
-            if not admits(name, value, api_routes):
-                raise ValueError('Choose an admitted research CLI or API connection.')
-            from .environment import allows
-            allowed, reason = allows(value)
-            if not allowed:
-                raise ValueError(str(reason))
-            routes[name] = deepcopy(value)
-        except (ValueError, OSError, KeyError, TypeError) as exc:
-            skipped[name] = str(exc)[:200]
+    if saved := policy().get('researcher'):
+        api_routes = research_api_routes()
+        for name in saved:
+            try:
+                value = native_catalog.select(name)
+                if not admits(name, value, api_routes):
+                    raise ValueError('Choose an admitted research CLI or API connection.')
+                from .environment import allows
+                allowed, reason = allows(value)
+                if not allowed:
+                    raise ValueError(str(reason))
+                routes[name] = deepcopy(value)
+            except (ValueError, OSError, KeyError, TypeError) as exc:
+                skipped[name] = str(exc)[:200]
+    else:
+        from .native_routes import ranked
+        deployments, selection = ranked('researcher')
+        names = {row['selected_deployment']: row['catalog'] for row in selection['candidates'] if row.get('eligible')}
+        for value in deployments:
+            routes[names[value['id']]] = deepcopy(value)
+        for row in selection['candidates']:
+            reason = row.get('reason')
+            if not row.get('eligible') and reason not in ('ROLE_NOT_CONFIGURED', 'PROFILE_NOT_INSTALLED'):
+                skipped[row['deployment']] = reason or 'UNAVAILABLE'
     return {'version': 1, 'routes': routes, 'route_order': list(routes), 'unavailable': skipped, 'search_api': 1,
             'origin': 'CONFIGURED'}
 

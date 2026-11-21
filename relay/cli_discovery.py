@@ -5,9 +5,11 @@ A CLI is 'found' when installed and 'ready' once it answered a proof the owner a
 Codex models come from Codex's own per-account cache (~/.codex/models_cache.json) when it
 exists, otherwise from the shipped templates. Claude Code has no listing: a model id that one of its family aliases
 resolves to and no template names yet is offered too (alias_models), read once per executable file. AGY lists its
-models (`agy models`, per account): a newer version of a line its templates have is offered too (agy_profiles), read
-again when the file changes or the reading is a day old. A newer version a CLI lists is mirrored to that vendor's
-API too (api_mirror), once the API's own list confirms it: the CLIs are the whitelist, the API's list only a check.
+models (`agy models`, per account): a newer version of a line its templates have, or a known Google line
+without an AGY template yet (while explicitly excluding AGY Orchestrator meta-agents), is offered too
+(agy_profiles), read again when the file changes or the reading is a day old. A model a CLI lists is
+mirrored to that vendor's API too (api_mirror) when it is newer than the bundled API profiles of its line or
+belongs to a known unbundled line, once the API's own list confirms it: the CLIs are the whitelist, the API's list only a check.
 Discovery keeps the profiles it wrote current (the
 cache records each written file's hash); a profile the user wrote or edited is never replaced.
 """
@@ -113,22 +115,49 @@ def alias_profiles(wanted, reading):
     return found
 
 
+def _agy_orchestrator(model_id, display=''):
+    """AGY Orchestrator meta-agents overlap tare's own coordinator/workflow and are never admitted as model routes."""
+    return ('orchestrator' in (model_id or '').casefold()
+            or (display or '').strip().casefold().startswith('orchestrator'))
+
+
+class _AgyListing(list):
+    """Filtered AGY model IDs, remembering whether `agy models` emitted any model rows before Orchestrator filtering."""
+
+    def __init__(self, items=(), *, saw_rows=False):
+        super().__init__(items)
+        self.saw_rows = saw_rows
+
+
 def agy_listing(executable):
     """The model ids `agy models` prints for the signed-in account (no model call): one 'id<TAB>Display' per line."""
     done = subprocess.run([executable, 'models'], capture_output=True, text=True, timeout=60,
                           stdin=subprocess.DEVNULL, cwd=str(Path(executable).absolute().parent))
     if done.returncode:
         raise OSError(f'agy models exited {done.returncode}')
-    # The id becomes a profile name: lowercase letters, digits, dots and hyphens only.
-    return [i for i in (l.split('	')[0].strip() for l in done.stdout.splitlines() if '	' in l)
-            if re.fullmatch(r'[a-z0-9][a-z0-9.-]*', i)]
+    ids, saw_rows = [], False
+    for line_text in done.stdout.splitlines():
+        if '\t' not in line_text:
+            continue
+        model_id, _, display = line_text.partition('\t')
+        model_id = model_id.strip()
+        if _agy_orchestrator(model_id, display):
+            if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', model_id):
+                saw_rows = True
+            continue
+        # The id becomes a profile name: lowercase letters, digits, dots and hyphens only.
+        if re.fullmatch(r'[a-z0-9][a-z0-9.-]*', model_id):
+            saw_rows = True
+            ids.append(model_id)
+    return _AgyListing(ids, saw_rows=saw_rows)
 
 
 def agy_models(cache, executable):
     """The `agy models` reading, kept in the cache and taken again when the executable file changes or the last
-    attempt is a day old (the list depends on the account too). An attempt that fails, or lists no id, keeps the
-    last ids; it counts as the attempt, so a CLI that cannot list is not started on every discovery.
-    `read_at` moves only when the ids change, so a profile's source does not change every day."""
+    attempt is a day old (the list depends on the account too). An attempt that fails, or produces no recognizable
+    rows, keeps the last ids while counting as the attempt; a valid reading whose rows were all excluded (for example,
+    Orchestrator-only output) clears the cached ids so retired profiles are removed. `read_at` moves only when the
+    ids change, so a profile's source does not change every day."""
     held = cache.get('agy_models')
     held = held if isinstance(held, dict) else {}
     now = datetime.now(timezone.utc)
@@ -143,33 +172,52 @@ def agy_models(cache, executable):
             ids = None
         held = {'ids': held.get('ids') or [], 'read_at': held.get('read_at', ''), 'fingerprint': fingerprint(executable),
                 'checked_at': now.isoformat()}
-        if ids:
-            if sorted(ids) != sorted(held['ids']):
+        if ids is not None and (ids or getattr(ids, 'saw_rows', False)):
+            cleaned = list(ids)
+            if sorted(cleaned) != sorted(held['ids']):
                 held['read_at'] = now.isoformat()
-            held['ids'] = ids
+            held['ids'] = cleaned
         cache['agy_models'] = held
     return held
 
 
 def agy_profiles(wanted, reading):
-    """Profiles for the AGY models that are a newer version of a line the templates have (gemini-4.1-argon beside
-    agy-gemini-4-argon-cli), copied from that line's newest template. AGY lists one id per effort: the map is rebuilt
-    from the listed ids for the efforts the template maps and never gains one (the Kernel takes only those)."""
-    from .vendor_models import AGY_EFFORT, line, parse
+    """Profiles for the AGY models that are either a newer version of a line the templates have (gemini-4.1-argon
+    beside agy-gemini-4-argon-cli) or the newest listed version of a known Google line without an AGY template yet
+    (gemini-4-carbon, gemini-4-neon), copied from that line's newest template or the newest Google AGY template. AGY
+    Orchestrator meta-agents are ignored, and the effort map keeps only the efforts the template maps (the Kernel takes
+    only those)."""
+    from .vendor_models import AGY_EFFORT, line, origin_line, parse
     efforts = {}
     for i in reading.get('ids') or []:
+        if _agy_orchestrator(i):
+            continue
         if AGY_EFFORT.search(i):
             efforts.setdefault(AGY_EFFORT.sub('', i), set()).add(AGY_EFFORT.search(i)[1])
     found = {}
+    google_templates = {
+        n: parse(AGY_EFFORT.sub('', t['native_profile']['model']))[2]
+        for n, t in wanted.items()
+        if (line(t['native_profile']['model']) or {}).get('vendor') == 'Google'
+    }
     for base, listed in sorted(efforts.items()):
-        if not line(base):
+        known = origin_line(f'{base}-high', 'cli://agy')
+        if not known:
             continue
         vendor, name, version = parse(base)
         same = {n: parse(AGY_EFFORT.sub('', t['native_profile']['model']))[2] for n, t in wanted.items()
                 if parse(AGY_EFFORT.sub('', t['native_profile']['model']))[:2] == (vendor, name)}
-        if not same or version <= max(same.values()):
-            continue
-        template = max(same, key=lambda n: (same[n], n))
+        if same:
+            if version <= max(same.values()):
+                continue
+            template = max(same, key=lambda n: (same[n], n))
+        else:
+            if known['vendor'] != 'Google' or not google_templates:
+                continue
+            max_listed = max(parse(b)[2] for b in efforts if parse(b)[:2] == (vendor, name))
+            if version < max_listed:
+                continue
+            template = max(google_templates, key=lambda n: (google_templates[n], n))
         value = deepcopy(wanted[template])
         mapped = [e for e in value['native_reasoning_models'] if e in listed]
         params = json.loads(value['native_profile'].get('parameters_json') or '{}')
@@ -213,7 +261,8 @@ def cli_ids(endpoint, reading):
         found = list(((reading or {}).get('models') or {}).values())
     else:
         own = 'gemini-'
-        found = [AGY_EFFORT.sub('', i) for i in (reading or {}).get('ids') or [] if AGY_EFFORT.search(i)]
+        found = [AGY_EFFORT.sub('', i) for i in (reading or {}).get('ids') or []
+                 if AGY_EFFORT.search(i) and not _agy_orchestrator(i)]
     return {i for i in found if isinstance(i, str) and i.startswith(own)}
 
 
@@ -273,11 +322,13 @@ def api_models(cache, vendor, deployment, key):
 
 
 def api_mirror(cache, listed, managed):
-    """Profiles for a model a vendor's CLI lists that is a newer version of a line than every bundled profile of
-    that line on the vendor's API (openai-api-gpt-6-2-sol beside openai-api), once the API's own list has it; copied
-    from that line's newest bundled profile that is not Pro. Only with the vendor's key stored and its API not
-    declined here: otherwise nothing is read or written for that vendor. Returns (profiles, {name prefix: endpoint}
-    of the vendors checked), so a profile whose id a CLI or the API list no longer has is retired."""
+    """Profiles for a model a vendor's CLI lists that is either a newer version of a line than every bundled profile of
+    that line on the vendor's API (openai-api-gpt-6-2-sol beside openai-api) or the newest listed version of a known
+    line with no bundled API file yet (gemini-api-4-neon), once the API's own list has it; copied from that line's
+    newest non-Pro bundled profile (or a same-vendor/same-class non-Pro profile when unbundled). Only with the vendor's
+    key stored and its API not declined here: otherwise nothing is read or written for that vendor. Returns (profiles,
+    {name prefix: endpoint} of the vendors checked), so a profile whose id a CLI or the API list no longer has is
+    retired."""
     from .environment import allows
     from .execution_scope import is_pro
     from .native_catalog import LOCAL, bundled
@@ -294,7 +345,13 @@ def api_mirror(cache, listed, managed):
             top[family] = max(top.get(family, ()), version)
             if not is_pro(value):
                 sibling[family] = max(sibling.get(family, ((), '')), (version, name))
+        newest_unbundled = {}
+        for i in ids:
+            family, version = parse(i)[:2], parse(i)[2]
+            if family not in top and version > newest_unbundled.get(family, ((), None))[0]:
+                newest_unbundled[family] = (version, i)
         candidates = {i for i in ids if parse(i)[:2] in top and parse(i)[2] > top[parse(i)[:2]]}
+        candidates |= {model for _, model in newest_unbundled.values()}
         if not ids or not (candidates or mine):
             continue  # no CLI reading to judge by, or nothing to add or retire: no key read, no request
         deployment = bundle[base]
@@ -307,7 +364,14 @@ def api_mirror(cache, listed, managed):
         checked[base+'-'] = deployment['native_profile']['endpoint']
         held = api_models(cache, vendor, deployment, key) if candidates else {}
         for model in sorted(candidates & set(held.get('ids') or [])):
-            template = sibling[parse(model)[:2]][1]
+            family = parse(model)[:2]
+            if family in sibling:
+                template = sibling[family][1]
+            else:
+                want_class = (line(model) or {}).get('class')
+                same_class = [n for n, v in bundle.items()
+                              if not is_pro(v) and (line(v['native_profile']['model']) or {}).get('class') == want_class]
+                template = max(same_class) if same_class else base
             value = deepcopy(bundle[template])
             value['id'] = f"{base}-{model.removeprefix(strip).replace('.', '-')}"
             value['model'] = value['native_profile']['model'] = model
@@ -394,6 +458,8 @@ def acknowledge(value):
         loaded = load_deployment(path)
         ok, content, receipt = generate_text(loaded, loaded['native_profile']['model'],
                                              'Reply with exactly: OK', 120, attempt_label='cli-discovery')
+        from .provider_spend import record_receipt
+        record_receipt(loaded, receipt)
     if ok and content.strip():
         return True, ''
     return False, str(receipt.get('failure_class') or 'empty reply')[:200]

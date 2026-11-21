@@ -6,8 +6,10 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from relay import cli_discovery, native_profiles, native_routes
+from relay import cli_discovery, model_choices, native_profiles, native_routes
 from test_cross_vendor_auditors import pool  # noqa: F401
+
+REAL_AGY_LISTING = cli_discovery.agy_listing  # before the autouse guard replaces it
 
 TEMPLATES = json.loads(cli_discovery.TEMPLATES.read_text(encoding='utf-8'))
 AGY = sorted(n for n, t in TEMPLATES.items() if t['native_profile']['endpoint'] == 'cli://agy')
@@ -148,3 +150,111 @@ def test_a_profile_the_user_edited_is_never_touched(agy, monkeypatch):
     agy.write_bytes(b'v3 even longer')
     assert read(monkeypatch, Lister(TODAY))['removed'] == []
     assert path.read_text(encoding='utf-8') == edited
+
+
+def test_known_google_lines_unlocked_on_agy_become_pin_only_profiles_and_exclude_xhigh(agy, monkeypatch):
+    unlocked = [
+        'gemini-4-carbon-low', 'gemini-4-carbon-medium', 'gemini-4-carbon-high',
+        'gemini-4-neon-low', 'gemini-4-neon-medium', 'gemini-4-neon-high', 'gemini-4-neon-xhigh',
+    ]
+    report = read(monkeypatch, Lister(TODAY + unlocked))
+    carbon, neon = 'agy-gemini-4-carbon-cli', 'agy-gemini-4-neon-cli'
+    assert sorted(report['added']) == sorted(AGY + [carbon, neon])
+
+    table = {r['id']: r for r in native_routes.configured()['deployments']}
+    chosen, selection = native_routes.ranked('planner')
+    reasons = {c['deployment']: c['reason'] for c in selection['candidates']}
+
+    for name, base, label in ((carbon, 'gemini-4-carbon', 'Gemini 4 Carbon'),
+                              (neon, 'gemini-4-neon', 'Gemini 4 Neon')):
+        value = profile(name)
+        assert value['id'] == name and value['model'] == value['native_profile']['model'] == f'{base}-high'
+        assert value['native_reasoning_models'] == {e: f'{base}-{e}' for e in ('low', 'medium', 'high')}
+        row = table[name]
+        assert row['qualified'] is False and row['cost_tier'] == 'flat'
+        assert row['roles'] == ['planner', 'plan-auditor', 'auditor', 'explorer', 'implementer']
+        assert reasons[name] == 'NOT_QUALIFIED_PIN_ONLY' and name not in [d['id'] for d in chosen]
+        shown = model_choices.describe(name, value)
+        assert (shown['label'], shown['group'], shown['route']['label'], shown['route']['efforts']) == (
+            label, 'Google', 'AGY CLI', ['low', 'medium', 'high']
+        )
+
+
+def test_orchestrator_models_are_explicitly_excluded_by_listing_discovery_and_cli_ids(agy, monkeypatch):
+    import subprocess
+    stdout = '\n'.join([
+        'gemini-pro-orchestrator-neon\tOrchestrator (Neon)',
+        'gemini-pro-orchestrator\tOrchestrator (Carbon)',
+        'gemini-pro-orchestrator-argon\tOrchestrator (Argon)',
+        'gemini-4-neon-high\tOrchestrator (Neon)',
+        'gemini-4-neon-high\tGemini 4 Neon (High)',
+        'gemini-4-argon-high\tGemini 4 Argon (High)',
+    ])
+    monkeypatch.setattr(subprocess, 'run', lambda *a, **k: subprocess.CompletedProcess(a[0], 0, stdout, ''))
+    assert REAL_AGY_LISTING(str(agy)) == ['gemini-4-neon-high', 'gemini-4-argon-high']
+
+    cached_with_orch = ['gemini-4-orchestrator-high', 'gemini-pro-orchestrator-neon', 'gemini-pro-orchestrator-high']
+    report = read(monkeypatch, Lister(TODAY + cached_with_orch))
+    assert sorted(report['added']) == AGY
+    assert cli_discovery.cli_ids('cli://agy', {'ids': cached_with_orch + ['gemini-4-neon-high']}) == {'gemini-4-neon'}
+
+
+def test_template_less_anthropic_lines_stay_ignored_and_multiple_google_versions_pick_newest(agy, monkeypatch):
+    extra = [
+        'claude-haiku-5-5-low', 'claude-haiku-5-5-medium', 'claude-haiku-5-5-high',
+        'claude-fable-5-2-low', 'claude-fable-5-2-medium', 'claude-fable-5-2-high',
+        'gemini-3-carbon-high', 'gemini-4-carbon-high',
+    ]
+    report = read(monkeypatch, Lister(TODAY + extra))
+    assert sorted(report['added']) == sorted(AGY + ['agy-gemini-4-carbon-cli'])
+    assert not native_profiles.local_path('agy-gemini-3-carbon-cli').exists()
+    assert not native_profiles.local_path('agy-claude-haiku-5-5-cli').exists()
+    assert not native_profiles.local_path('agy-claude-fable-5-2-cli').exists()
+
+
+def test_orchestrator_only_listing_clears_cached_neon_and_retires_profile_while_failures_keep_cache(agy, monkeypatch):
+    import subprocess
+    neon = 'agy-gemini-4-neon-cli'
+    initial = '\n'.join([
+        'gemini-4-neon-low\tGemini 4 Neon (Low)',
+        'gemini-4-neon-medium\tGemini 4 Neon (Medium)',
+        'gemini-4-neon-high\tGemini 4 Neon (High)',
+    ])
+    state = {'result': subprocess.CompletedProcess([], 0, initial, ''), 'error': None}
+
+    def fake_run(*args, **kwargs):
+        if state['error'] is not None:
+            raise state['error']
+        return state['result']
+
+    monkeypatch.setattr(subprocess, 'run', fake_run)
+    monkeypatch.setattr(cli_discovery, 'agy_listing', REAL_AGY_LISTING)
+
+    first = next(r for r in cli_discovery.discover() if r['endpoint'] == 'cli://agy')
+    assert neon in first['added'] and native_profiles.local_path(neon).is_file()
+
+    # Genuine read failures or blank/unparseable output preserve the cached Neon listing and profile.
+    for result, error in (
+        (subprocess.CompletedProcess([], 1, '', 'boom'), None),
+        (None, OSError('offline')),
+        (subprocess.CompletedProcess([], 0, '', ''), None),
+        (subprocess.CompletedProcess([], 0, 'warning: failed without tabs\n', ''), None),
+    ):
+        age(25)
+        state.update(result=result, error=error)
+        failed = next(r for r in cli_discovery.discover() if r['endpoint'] == 'cli://agy')
+        assert failed['removed'] == [] and native_profiles.local_path(neon).is_file()
+        cache = json.loads(cli_discovery.cache_file().read_text(encoding='utf-8'))
+        assert 'gemini-4-neon-high' in cache['agy_models']['ids']
+
+    # A successful `agy models` call returning only Orchestrators clears the cache and retires Neon.
+    age(25)
+    orch_only = '\n'.join([
+        'gemini-pro-orchestrator-neon\tOrchestrator (Neon)',
+        'gemini-4-neon-high\tOrchestrator (Neon)',
+    ])
+    state.update(result=subprocess.CompletedProcess([], 0, orch_only, ''), error=None)
+    retired = next(r for r in cli_discovery.discover() if r['endpoint'] == 'cli://agy')
+    assert retired['removed'] == [neon] and not native_profiles.local_path(neon).exists()
+    cache = json.loads(cli_discovery.cache_file().read_text(encoding='utf-8'))
+    assert cache['agy_models']['ids'] == []

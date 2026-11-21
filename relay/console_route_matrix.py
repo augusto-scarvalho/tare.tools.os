@@ -43,42 +43,61 @@ def entries(value, side, role):
     return texts if isinstance(texts, list) else []
 
 
-def reads(value, role, route, key=None, grant=False):
+def reads(value, role, route, key=None, grant=False, *, parsed=None):
     """'on' or 'off'; with `grant` (a local route its row does not give the role) 'on' only where the user granted
     it."""
     if grant:
-        return 'on' if env.granted(role, route, value) else 'off'
-    found = env.profile_state(role, route, value, key)
+        return 'on' if env.granted(role, route, value, parsed=parsed) else 'off'
+    found = env.profile_state(role, route, value, key, parsed=parsed)
     return 'off' if found and found[0] == 'off' else 'on'
 
 
-def make(value, role, pattern, want, cells, sources, grants=frozenset()):
+def make(value, role, pattern, want, cells, sources, grants=frozenset(), *, resolve_id=None):
     """Make every cell `pattern` targets read `want` for `role` (a cell: line@source or a route id, and its
     [(route, key)]), storing only differences from tare's default. The entries inside the target go; "off" then writes
     `pattern` itself when a targeted route still reads on, and each cell that still disagrees, because of an entry
     outside the target, gets its own entry: its line on its source, then a version or a route id. So an "on" is
     written only where something broader is off, or as the grant of a local route in `grants` (route ids: off until
     granted). `sources`: {id: source} of routes with no line."""
-    rule = env.rule_of(pattern)
+    id_lookup = resolve_id or env.id_rule
+
+    def rule_fn(text):
+        parsed_entry = env.entry(text)
+        return parsed_entry and (id_lookup(text) if isinstance(parsed_entry[1], str) else parsed_entry)[1]
+
+    rule = rule_fn(pattern)
 
     def covered(text):
-        inner = env.rule_of(text)
+        inner = rule_fn(text)
         if isinstance(rule, str):
             return inner == rule
         if isinstance(inner, str):  # a route with no line: only `*@SOURCE` and `*@*` cover it
             return rule[0] is None and rule[3] in ('*', sources.get(inner))
         return inner is not None and rule[3] in ('*', inner[3]) and all(w in (None, h) for w, h in zip(rule[:3], inner))
     value = env.edit_auto(value, role, lambda side, texts: [t for t in texts if not covered(t)])
-    if want == 'off' and any(reads(value, role, r, grant=r.get('id') in grants) == 'on'
-                             for _, routes in cells for r, _ in routes):
-        value = env.set_auto(value, f'{role}:{pattern}=off')
+    parsed_profile = None
+
+    def current_parsed():
+        nonlocal parsed_profile
+        if parsed_profile is None:
+            parsed_profile = env.profile(value, role, resolve_id=id_lookup)[0]
+        return parsed_profile
+
+    if want == 'off':
+        parsed_now = current_parsed()
+        if any(reads(value, role, r, grant=r.get('id') in grants, parsed=parsed_now) == 'on'
+               for _, routes in cells for r, _ in routes):
+            value = env.set_auto(value, f'{role}:{pattern}=off')
+            parsed_profile = None
     for name, routes in cells:
-        if '@' in name and reads(value, role, {}, env.rule_of(name)) != want:
+        if '@' in name and reads(value, role, {}, rule_fn(name), parsed=current_parsed()) != want:
             value = env.set_auto(value, f'{role}:{name}={want}')
+            parsed_profile = None
         for route, key in routes:
-            if reads(value, role, route, grant=route.get('id') in grants) != want:
+            if reads(value, role, route, grant=route.get('id') in grants, parsed=current_parsed()) != want:
                 own = env.key_label(key, bool(key[2])) if key[0] else route['id']
                 value = env.set_auto(value, f'{role}:{own}={want}')
+                parsed_profile = None
     return value
 
 
@@ -91,37 +110,69 @@ def load():
     row's label: a line's from the lines table (Claude Fable), a route with no line by its catalogue label or id; and
     per role the ids of the local routes only a grant gives it (no other path reaches them: off until ticked)."""
     from .model_choices import describe
+    from .native_catalog import select_cache
+    from .native_routes import configured
     from .vendor_models import LINES
-    value = env.read()
-    names = {role: set() for role in env.PROFILE_ROLES}
-    routes = {role: [(name, route, now, env.route_key(route)) for name, route, now in env.auto_routes(role, names[role])
-                     if route] for role in env.PROFILE_ROLES}
-    grants = {role: {r['id'] for n, r, *_ in rows if n in names[role]} - {r['id'] for n, r, *_ in rows
-                                                                            if n not in names[role]}
-              for role, rows in routes.items()}
-    labels = {}
-    for name, route, _, key in (item for rows in routes.values() for item in rows):
-        row = row_of(route, key)
-        if row in labels:
-            continue
-        if key[0]:
-            found = LINES.get(f'{key[0]}-{key[1]}')
-            labels[row] = ' '.join(re.sub(r'-?\{version\}', '', found['label']).split()) if found else row
-        else:
-            try:
-                labels[row] = describe(route['id'], route)['label'] or row
-            except (ValueError, OSError, KeyError, TypeError):
-                labels[row] = row
+    with select_cache():
+        value = env.read()
+        names = {role: set() for role in env.PROFILE_ROLES}
+        table = configured()
+        credentials = {}
+        routes = {role: [(name, route, now, env.route_key(route))
+                         for name, route, now in env.auto_routes(
+                             role, names[role], configured_table=table, credentials=credentials)
+                         if route] for role in env.PROFILE_ROLES}
+        grants = {role: {r['id'] for n, r, *_ in rows if n in names[role]} - {r['id'] for n, r, *_ in rows
+                                                                                if n not in names[role]}
+                  for role, rows in routes.items()}
+        labels = {}
+        for name, route, _, key in (item for rows in routes.values() for item in rows):
+            row = row_of(route, key)
+            if row in labels:
+                continue
+            if key[0]:
+                found = LINES.get(f'{key[0]}-{key[1]}')
+                labels[row] = ' '.join(re.sub(r'-?\{version\}', '', found['label']).split()) if found else row
+            else:
+                try:
+                    labels[row] = describe(route['id'], route)['label'] or row
+                except (ValueError, OSError, KeyError, TypeError):
+                    labels[row] = row
     return value, routes, labels, grants
 
 
-def mirrors(routes):
-    """{(role, name): row id} of each pin-only route with no line that serves a model the row named already serves
+def mirrors(routes, *, configured_table=None):
+    """{(role, name): row id} of each pin-only non-origin route that serves a model the row named already serves
     automatically for that role (native_routes.mirror): a proof admits it as that row's reserve."""
     from .native_routes import configured, mirror
-    rows = {row.get('native_catalog'): row for row in configured()['deployments'] if row.get('qualified') is False}
+    from .vendor_models import MIRROR_SOURCES
+    table = configured_table if configured_table is not None else configured()
+    rows = {row.get('native_catalog'): row for row in table['deployments'] if row.get('qualified') is False}
     return {(role, name): found['id'] for role, items in routes.items() for name, route, _, key in items
-            if name in rows and not key[0] and (found := mirror(rows[name], route, role))}
+            if name in rows and (not key[0] or key[3] in MIRROR_SOURCES) and (found := mirror(rows[name], route, role))}
+
+
+def _compute_row_classes(cells):
+    """Precompute {(role, row): class_str} in one pass with a single model_signals.reading() and per-route cache."""
+    from .model_signals import ORDER, klass, reading, shown
+    saved = reading()
+    by_id = {}
+    classes = {}
+    for role, role_cells in cells.items():
+        by_row = {}
+        for (row_name, _), route_items in role_cells.items():
+            found = by_row.setdefault(row_name, set())
+            for _, route, _, _ in route_items:
+                rid = route.get('id')
+                if rid not in by_id:
+                    try:
+                        by_id[rid] = (klass(route, saved=saved) or {}).get('class')
+                    except (ValueError, OSError, KeyError, TypeError):
+                        by_id[rid] = None
+                found.add(by_id[rid])
+        for row_name, found in by_row.items():
+            classes[role, row_name] = '/'.join(shown(c) for c in reversed(ORDER) if c in found)
+    return classes
 
 
 class Matrix(DataTable):
@@ -163,7 +214,8 @@ class ProveDialog(ModalScreen):
 
 
 class RouteMatrix(Vertical):
-    BINDINGS = [Binding('p', 'prove', 'Prove the selected cell')]
+    BINDINGS = [Binding('p', 'prove', 'Prove the selected cell'),
+                Binding('P', 'prove_all', 'Prove all pending')]
     DEFAULT_CSS = '''
     RouteMatrix { height: 1fr; }
     RouteMatrix .matrix-bar { height: 1; margin-bottom: 1; }
@@ -172,16 +224,18 @@ class RouteMatrix(Vertical):
     RouteMatrix Matrix { height: 1fr; }
     RouteMatrix .matrix-note { height: auto; color: $text-muted; }
     RouteMatrix OptionList { height: auto; max-height: 5; }
-    RouteMatrix #matrix-status { height: auto; max-height: 8; }
-    RouteMatrix #matrix-bulk { width: 1fr; }
+    RouteMatrix #matrix-status { height: 4; overflow-y: auto; }
+    RouteMatrix #matrix-bulk { width: 1fr; min-width: 12; }
     RouteMatrix #matrix-reload { display: none; }
     '''
 
     def compose(self):
         self.value = self.routes = self.saved = None
         self.role, self.warned, self.labels, self.proving, self.proved = 'coordinator', False, {}, False, {}  # what a user meets first
-        self.mirrors, self.grants = {}, {}
+        self.mirrors, self.grants, self.all_provable = {}, {}, []
         self.message, self.extra, self.identities, self.warnings = 'Reading the routes…', [], {}, []
+        self._id_rule_cache, self._rule_cache, self._profile_cache = {}, {}, {}
+        self._row_classes, self._task_cache, self._drawn_glyphs, self._last_highlighted = {}, {}, {}, None
         with Horizontal(classes='matrix-bar'):
             yield Select([(label, role) for role, label in CHOICES.items()], value=self.role, allow_blank=False,
                          id='matrix-role')
@@ -195,6 +249,7 @@ class RouteMatrix(Vertical):
             yield Select([], prompt='Bulk action…', id='matrix-bulk')
             yield Button('Reload', id='matrix-reload')
             yield Button('Prove · p', id='matrix-prove')
+            yield Button('Prove all · P', id='matrix-prove-all')
             yield Button('Save', id='matrix-save', classes='panel-primary')
 
     def open(self):
@@ -203,26 +258,94 @@ class RouteMatrix(Vertical):
         self.run_worker(self.load(), group='route-matrix', exclusive=True)
 
     async def load(self):
-        value, routes, labels, self.grants = await asyncio.to_thread(load)
+        from .model_signals import own_record
+        from .native_catalog import select_cache
+        existing = self.value
+
+        def load_bundle():
+            with select_cache():
+                value, routes, labels, grants = load()
+                record = own_record()  # each route's outcomes as implementer on this machine
+                found_mirrors = mirrors(routes)
+                cells = {role: {} for role in routes}
+                for role, rows in routes.items():
+                    for name, route, now, key in rows:
+                        cells[role].setdefault((row_of(route, key), key[3]), []).append((name, route, now, key))
+                row_classes = _compute_row_classes(cells)
+                from .vendor_models import MIRROR_SOURCES
+                provable_candidates = sorted({
+                    n for r, items in routes.items() for n, _, now, k in items
+                    if now == 'NOT_QUALIFIED_PIN_ONLY' and (
+                        (k[0] and k[3] not in MIRROR_SOURCES) or (r, n) in found_mirrors)
+                })
+                all_provable = [n for n in provable_candidates if env.route_for(n)[0] is not None]
+                id_rules = {}
+                active = value if existing is None else existing
+                for role in env.PROFILE_ROLES:
+                    for side in ('off', 'on'):
+                        for text in entries(active, side, role):
+                            parsed_entry = env.entry(text)
+                            if parsed_entry and isinstance(parsed_entry[1], str) and text not in id_rules:
+                                id_rules[text] = env.id_rule(text)
+            return value, routes, labels, grants, record, found_mirrors, cells, row_classes, all_provable, id_rules
+
+        (value, routes, labels, self.grants, self.record, self.mirrors,
+         self.cells, self._row_classes, self.all_provable, id_rules) = await asyncio.to_thread(load_bundle)
         if self.value is None:
             self.value, self.saved = value, copy.deepcopy(value.get('routing_profile'))
             self.message = ('This machine\'s setup cannot be read: ' + value['error'] + ' (tare setup --reset starts '
                             'again)' if 'error' in value else 'Space, Enter or a click on the selected cell ticks it.')
         self.routes, self.labels, self.identities = routes, labels, {}  # a route may run another model under its id
-        from .model_signals import own_record
-        self.record = await asyncio.to_thread(own_record)  # each route's outcomes as implementer on this machine
-        self.mirrors = await asyncio.to_thread(mirrors, routes)
+        self._id_rule_cache = id_rules
+        self._rule_cache.clear()
+        self._profile_cache.clear()
+        self._task_cache.clear()
+        self._drawn_glyphs.clear()
+        self._last_highlighted = None
         self.sources = {route['id']: key[3] for rows in routes.values() for _, route, _, key in rows if not key[0]}
-        self.cells = {role: {} for role in routes}
-        for role, rows in routes.items():
-            for name, route, now, key in rows:
-                self.cells[role].setdefault((row_of(route, key), key[3]), []).append((name, route, now, key))
         self.carried = {cell for found in self.cells.values() for cell in found}
         self.build()
 
+    def _id_rule(self, text):
+        if text not in self._id_rule_cache:
+            self._id_rule_cache[text] = env.id_rule(text)
+        return self._id_rule_cache[text]
+
+    def _rule(self, text):
+        if not isinstance(text, str):
+            return None
+        if text not in self._rule_cache:
+            parsed = env.entry(text)
+            self._rule_cache[text] = parsed and (self._id_rule(text) if isinstance(parsed[1], str) else parsed)[1]
+        return self._rule_cache[text]
+
+    def _parsed_profile(self, role):
+        if 'error' in self.value:
+            return env.profile(self.value, role, resolve_id=self._id_rule)
+        rp = self.value.get('routing_profile')
+        if rp is not None:
+            if not isinstance(rp, dict) or set(rp) - {'off', 'on'}:
+                return env.profile(self.value, role, resolve_id=self._id_rule)
+            for side in ('off', 'on'):
+                roles = rp.get(side, {})
+                if not isinstance(roles, dict) or not isinstance(roles.get(role, []), list):
+                    return env.profile(self.value, role, resolve_id=self._id_rule)
+        try:
+            key = (role, tuple(entries(self.value, 'off', role)), tuple(entries(self.value, 'on', role)))
+        except TypeError:
+            return env.profile(self.value, role, resolve_id=self._id_rule)
+        cached = self._profile_cache.get(key)
+        if cached is None:
+            if len(self._profile_cache) > 64:
+                self._profile_cache.clear()
+            cached = env.profile(self.value, role, resolve_id=self._id_rule)
+            self._profile_cache[key] = cached
+        return cached
+
     def state(self, route, key=None, role=None):
         role = role or self.role
-        return reads(self.value, role, route, key, route.get('id') in self.grants.get(role, ()))
+        return reads(self.value, role, route, key, route.get('id') in self.grants.get(role, ()),
+                     parsed=self._parsed_profile(role)[0])
 
     def look(self, row, where):
         """(the line's or route's own state, whether a route of it differs, whether one is usable now), or None when
@@ -235,6 +358,9 @@ class RouteMatrix(Vertical):
 
     def klass(self, row):
         """The class of a row's model as `tare models` gives it (two when its routes differ), '' with no line."""
+        cached = self._row_classes.get((self.role, row))
+        if cached is not None:
+            return cached
         from .model_signals import ORDER, klass, shown
         found = set()
         for (name, _), routes in self.cells[self.role].items():
@@ -243,17 +369,26 @@ class RouteMatrix(Vertical):
                     found.add((klass(route) or {}).get('class'))
                 except (ValueError, OSError, KeyError, TypeError):
                     pass  # a route with no model to read has no class
-        return '/'.join(shown(c) for c in reversed(ORDER) if c in found)
+        value = '/'.join(shown(c) for c in reversed(ORDER) if c in found)
+        self._row_classes[self.role, row] = value
+        return value
 
     def task(self, route):
+        rid = route.get('id')
+        if rid in self._task_cache:
+            return self._task_cache[rid]
         from .model_signals import task
         try:
-            return task(route)
+            value = task(route)
         except (ValueError, OSError, KeyError, TypeError):
-            return None  # a route with no model to read has no figure
+            value = None  # a route with no model to read has no figure
+        if rid is not None:
+            self._task_cache[rid] = value
+        return value
 
     def named(self, row):
-        return self.labels.get(row, row) + (' · ' + self.klass(row) if self.klass(row) else '')
+        kind = self.klass(row)
+        return self.labels.get(row, row) + (' · ' + kind if kind else '')
 
     def glyph(self, row, where):
         seen = self.look(row, where)
@@ -280,18 +415,21 @@ class RouteMatrix(Vertical):
             return
         table, query = self.query_one(Matrix), self.query_one('#matrix-search', Input).value.strip().lower()
         sources, groups, keep = self.columns(), self.groups(), self.query_one(Matrix).cursor_coordinate
+        named = {r: self.named(r) for _, rows in groups for r in rows}
+        self._drawn_glyphs.clear()
+        self._last_highlighted = None
         table.clear(columns=True)  # widths given: the table measures cells only once it next gets a message
         table.add_column('Model', key='model', width=max((len(name) + 1 for vendor, rows in groups for name in (
-            vendor, *(self.named(r) for r in rows))), default=5))
+            vendor, *(named[r] for r in rows))), default=5))
         for where in sources:
             label = SOURCE_LABELS.get(where, where)
             table.add_column(label, key=where, width=max(len(label), 5))
         for vendor, rows in groups:
-            rows = [r for r in rows if any(query in text.lower() for text in (r, self.named(r), vendor))]
+            rows = [r for r in rows if any(query in text.lower() for text in (r, named[r], vendor))]
             if rows:  # names come from routes and files: plain text, never markup
                 table.add_row(Text(vendor.upper()), *[''] * len(sources), key='#' + vendor)
                 for row in rows:
-                    table.add_row(Text(' ' + self.named(row)), *[''] * len(sources), key=row)
+                    table.add_row(Text(' ' + named[row]), *[''] * len(sources), key=row)
         table.move_cursor(row=keep.row, column=keep.column, animate=False)
         families = sorted({row.split('/')[0] for row, _ in self.cells[self.role] if '/' in row})
         others = [r for r in ROLES if r != self.role]
@@ -305,27 +443,33 @@ class RouteMatrix(Vertical):
             + [(f"tare's defaults for {ROLES[self.role]}", 'reset')])])
         self.paint()
 
-    def paint(self):
+    def paint(self, *, show=True):
         """Glyphs, the entries no cell draws and the status line, from the edited profile."""
-        table = self.query_one(Matrix)
+        table, cols = self.query_one(Matrix), self.columns()
         for row_key in list(table.rows):
             if not row_key.value.startswith('#'):
-                for where in self.columns():
-                    table.update_cell(row_key, where, Text(self.glyph(row_key.value, where)))  # not markup
+                for where in cols:
+                    glyph = self.glyph(row_key.value, where)
+                    cell = (row_key.value, where)
+                    if self._drawn_glyphs.get(cell) != glyph:
+                        table.update_cell(row_key, where, Text(glyph))  # not markup
+                        self._drawn_glyphs[cell] = glyph
         self.extra = [(side, text) for side in ('off', 'on') for text in entries(self.value, side, self.role)
-                      if not self.drawn(env.rule_of(text))]
-        lines = [*env.profile(self.value, self.role)[1],
+                      if not self.drawn(self._rule(text))]
+        lines = [*self._parsed_profile(self.role)[1],
                  *(['Entries without a cell (Enter or a click removes one; Save writes it):'] if self.extra else [])]
         label = self.query_one('#matrix-extra-label', Static)
         label.update('\n'.join(lines))
         label.display = bool(lines)
         extra = self.query_one(OptionList)
         extra.clear_options()
-        extra.add_options([Text(f'{side:<3}  {text}' if isinstance(text, str) and env.rule_of(text) else
+        extra.add_options([Text(f'{side:<3}  {text}' if self._rule(text) else
                                 f'{side:<3}  {text!r} (cannot be read; ignored)') for side, text in self.extra])
         extra.display = bool(self.extra)
         self.warnings = self.safety()
-        self.show()
+        self._last_highlighted = None
+        if show:
+            self.show()
 
     def drawn(self, rule):
         """Whether a cell stands for this entry: a line on a named source, or a route with no line, that the role
@@ -405,8 +549,9 @@ class RouteMatrix(Vertical):
             ['Unsaved changes: Save writes them; Esc asks before discarding them.'] if self.dirty() else [])]
         self.query_one('#matrix-status', Static).update('\n'.join(line for line in lines if line))
         self.query_one('#matrix-prove', Button).disabled = self.proving or not self.provable()
+        self.query_one('#matrix-prove-all', Button).disabled = self.proving or not self.provable_all()
 
-    def edit(self, change, message, name=None):
+    def edit(self, change, message, name=None, *, show=True):
         before = copy.deepcopy(self.value)
         try:
             self.value = change(self.value)
@@ -416,9 +561,11 @@ class RouteMatrix(Vertical):
         gone = [t for side in ('off', 'on') for t in entries(before, side, self.role)
                 if t != name and t not in entries(self.value, side, self.role)]
         self.warned = False
-        self.paint()
-        self.show(message + (' Removed ' + ', '.join(map(str, gone)) + '.' if gone else '')
-                  + (' Save writes it.' if self.dirty() else ' Nothing left to save.'))
+        self.paint(show=False)
+        self.message = (message + (' Removed ' + ', '.join(map(str, gone)) + '.' if gone else '')
+                        + (' Save writes it.' if self.dirty() else ' Nothing left to save.'))
+        if show:
+            self.show()
 
     def describe(self, row, where):
         name = f'{row}@{where}' if '/' in row else row
@@ -452,14 +599,21 @@ class RouteMatrix(Vertical):
         found = table.coordinate_to_cell_key(table.cursor_coordinate)
         return found.row_key.value, found.column_key.value
 
-    def liftable(self, name, now, key):
-        """Whether a proof would lift a route: pin only, of a known model line or a mirror (mirrors())."""
-        return now == 'NOT_QUALIFIED_PIN_ONLY' and bool(key[0] or (self.role, name) in self.mirrors)
+    def liftable(self, name, now, key, role=None):
+        """Whether a proof would lift a route: pin only, of an origin model line or a mirror (mirrors())."""
+        from .vendor_models import MIRROR_SOURCES
+        role = self.role if role is None else role
+        return now == 'NOT_QUALIFIED_PIN_ONLY' and bool(
+            (key[0] and key[3] not in MIRROR_SOURCES) or (role, name) in self.mirrors)
 
     def provable(self):
         """(route, key) of the selected cell's routes a proof would lift (liftable)."""
         cell = self.cursor_cell()
         return cell and [(n, k) for n, _, now, k in self.cells[self.role].get(cell, []) if self.liftable(n, now, k)]
+
+    def provable_all(self):
+        """Sorted list of unique liftable, available pin-only route names across all roles."""
+        return list(self.all_provable)
 
     def action_prove(self):
         """Confirm, then one real call per provable route of the selected cell. Starts only here, from the user."""
@@ -471,23 +625,46 @@ class RouteMatrix(Vertical):
                              'another route already serves automatically, can be.')
         self.run_worker(self.confirm_prove([n for n, _ in found]), group='route-matrix-prove')
 
-    async def confirm_prove(self, names):
-        def lines():  # the line `environment.prove` will ask about, said before anything is spent
+    def action_prove_all(self):
+        """Confirm, then prove every pending pin-only route currently available across all roles."""
+        if self.proving:
+            return self.show('A proof is already running.')
+        names = self.provable_all()
+        if not names:
+            return self.show('Nothing to prove: no pending pin-only routes are available here.')
+        self.run_worker(self.confirm_prove(names, from_all=True), group='route-matrix-prove')
+
+    async def confirm_prove(self, names, *, from_all=False):
+        def inspect():  # the line `environment.prove` will ask about, said before anything is spent
+            lines, bound, unavailable = [], [], []
             for name in names:
                 deployment, why = env.route_for(name)
-                yield f'{name}: ' + (env.cost_line(deployment) if deployment else f'cannot be proven: {why}')
-        text = await asyncio.to_thread(lambda: list(lines()))
+                if deployment is None:
+                    lines.append(f'{name}: cannot be proven: {why}')
+                    unavailable.append((name, why))
+                else:
+                    cost = env.cost_line(deployment)
+                    lines.append(f'{name}: {cost}')
+                    bound.append((name, env.prove_binding(deployment, cost)))
+            return lines, bound, unavailable
+        text, bound, unavailable = await asyncio.to_thread(inspect)
+        if not self.is_mounted:
+            return
+        if not bound:
+            reason = '; '.join(f'{name}: {why}' for name, why in unavailable)
+            return self.show(f'Nothing to prove: {reason}' if reason else
+                             'Nothing to prove: no pending pin-only routes are available here.')
         self.app.push_screen(ProveDialog(text), lambda yes: yes and self.run_worker(
-            self.prove(names), group='route-matrix-prove'))
+            self.prove(bound, skipped=unavailable, from_all=from_all), group='route-matrix-prove'))
 
-    async def prove(self, names):
+    async def prove(self, items, *, skipped=(), from_all=False):
         role, cell, self.proving, said = self.role, self.cursor_cell(), True, []
         try:
-            for i, name in enumerate(names, 1):
-                self.show(f'Proving {name} ({i} of {len(names)}): one minimal call, then a short task…')
-                # the user just confirmed that line; prove() keeps the result in the setup file, never the reply
+            for i, (name, binding) in enumerate(items, 1):
+                self.show(f'Proving {name} ({i} of {len(items)}): one minimal call, then a short task…')
+                # prove_bound checks that model, account, and cost still match what ProveDialog showed
                 try:
-                    record = await asyncio.to_thread(env.prove, name, lambda line: True)
+                    record = await asyncio.to_thread(env.prove_bound, name, binding)
                 except (ValueError, OSError, KeyError, TypeError) as exc:
                     record = {'ok': False, 'reason': str(exc)}
                 said.append((name, record))
@@ -496,19 +673,53 @@ class RouteMatrix(Vertical):
             self.proving = False
         if not self.is_mounted:
             return
-        now = {n: now for n, _, now, _ in (r for rows in self.cells[role].values() for r in rows)}
+        statuses = {}
+        for rows in self.routes.values():
+            for n, _, status, _ in rows:
+                statuses.setdefault(n, set()).add(status)
+        for name, why in skipped:
+            self.proved[name] = f'not proven: {why}'
         for name, record in said:  # kept for describe(): the reload moves the cursor, which rewrites the status line
+            if record.get('ok') is None:
+                self.proved[name] = f"skipped: {record.get('reason') or 'not confirmed'}"
+                continue
             failed_task = (record.get('role_check') or {}).get('ok') is False
+            lifted = any(s != 'NOT_QUALIFIED_PIN_ONLY' for s in statuses.get(name, ()))
+            mirror_target = next((self.mirrors[r, name] for r in self.routes if (r, name) in self.mirrors), None)
             self.proved[name] = 'proved here: ' + (
                 f"answered, but failed the role check: {record['role_check'].get('reason')}; it stays pin only"
                 if failed_task else
                 f"failed: {record.get('reason') or 'no reason given'}" if record.get('ok') is not True else
                 'answered and did the task; used automatically where it is ticked on' + (
-                    f', as a reserve after {self.mirrors[role, name]}' if (role, name) in self.mirrors else '')
-                if now.get(name) != 'NOT_QUALIFIED_PIN_ONLY' else
+                    f', as a reserve after {mirror_target}' if mirror_target else '')
+                if lifted else
                 'answered and did the task, but it stays pin only (a local model, or a reseller\'s that no other route '
                 'serves automatically, is not proven by this)')
-        self.show(self.describe(*cell))
+        if not from_all and not skipped and cell and not cell[0].startswith('#') and cell[1] != 'model':
+            self.show(self.describe(*cell))
+            return
+        after_cell = self.cursor_cell()
+        if after_cell and not after_cell[0].startswith('#') and after_cell[1] != 'model':
+            # Keep build()/load()'s queued CellHighlighted event from overwriting the batch proof summary.
+            self._last_highlighted = after_cell
+        passed = sum(1 for _, rec in said if rec.get('ok') is True)
+        changed = [n for n, rec in said if rec.get('ok') is None]
+        failed = [n for n, rec in said if rec.get('ok') is False]
+        if len(said) == 1 and not skipped:
+            name, _ = said[0]
+            self.show(f'{name}: {self.proved[name]}.')
+        elif passed == len(said) and not skipped:
+            self.show(f'Proved {passed} of {len(said)} route(s).')
+        else:
+            parts = [f'Proved {passed} of {len(said)} route(s)']
+            if changed:
+                parts.append(f"skipped (changed after confirmation): {', '.join(changed[:3])}"
+                             + ('…' if len(changed) > 3 else ''))
+            if failed:
+                parts.append(f"failed: {', '.join(failed[:3])}" + ('…' if len(failed) > 3 else ''))
+            if skipped:
+                parts.append(f'{len(skipped)} unavailable before confirmation')
+            self.show('; '.join(parts) + '.')
 
     def targets(self, rule):
         """The role's cells `rule` covers (a line on a source, a vendor's lines, a source, a route id), for make()."""
@@ -519,7 +730,7 @@ class RouteMatrix(Vertical):
                 hit = row == rule
             elif rule[0]:  # a vendor or a line: routes with a line only
                 hit = '/' in row and rule[3] in ('*', where) and all(
-                    w in (None, h) for w, h in zip(rule[:3], env.rule_of(name)))
+                    w in (None, h) for w, h in zip(rule[:3], self._rule(name)))
             else:  # *@SOURCE or *@*
                 hit = rule[3] in ('*', where)
             if hit:
@@ -527,8 +738,8 @@ class RouteMatrix(Vertical):
         return found
 
     def make(self, value, pattern, want):
-        return make(value, self.role, pattern, want, self.targets(env.rule_of(pattern)), self.sources,
-                    self.grants.get(self.role, frozenset()))
+        return make(value, self.role, pattern, want, self.targets(self._rule(pattern)), self.sources,
+                    self.grants.get(self.role, frozenset()), resolve_id=self._id_rule)
 
     def toggle(self, row, where):
         """Any cell the source carries for the role ticks; a rule on it stays marked. Nothing to name, nothing to tick."""
@@ -537,7 +748,7 @@ class RouteMatrix(Vertical):
             return self.show(self.describe(row, where))
         pattern = f'{row}@{where}' if '/' in row else row
         want = 'off' if seen[0] == 'on' else 'on'
-        self.edit(lambda v: self.make(v, pattern, want), f'{pattern}: {want}.', pattern)
+        self.edit(lambda v: self.make(v, pattern, want), f'{pattern}: {want}.', pattern, show=False)
         self.show(self.message + '\n' + self.describe(row, where))  # the tick and, still, any rule on the cell
 
     def bulk(self, action):
@@ -585,6 +796,10 @@ class RouteMatrix(Vertical):
         event.stop()
         row, where = event.cell_key.row_key.value, event.cell_key.column_key.value
         if not row.startswith('#') and where != 'model':
+            cell = (row, where)
+            if self._last_highlighted == cell:
+                return
+            self._last_highlighted = cell
             self.show(self.describe(row, where))
 
     def on_data_table_cell_selected(self, event):
@@ -605,6 +820,8 @@ class RouteMatrix(Vertical):
             return
         if event.button.id == 'matrix-prove':
             return self.action_prove()
+        if event.button.id == 'matrix-prove-all':
+            return self.action_prove_all()
         if event.button.id == 'matrix-reload':
             value = await asyncio.to_thread(env.read)
             if self.is_mounted:
