@@ -1504,7 +1504,7 @@ def test_a_push_runs_the_sandbox_probe_only_for_an_open_pull_request_and_a_pass_
     monkeypatch.setattr(ci_watch, 'sandbox_probe', lambda repo_dir: probed.append(repo_dir) or 'passed')
     answer = ci_watch.probe_pushed_pull_request(work, sleep=waits.append)
     assert answer == ('passed' if prs else None) and probed == ([work] if prs else []) and len(waits) == unreachable
-    assert ['pr', 'list', '--head', 'feature', '--base', 'main', '--state', 'open', '--json',
+    assert ['pr', 'list', '-R', 'me/os', '--head', 'feature', '--base', 'main', '--state', 'open', '--json',
             'number,url,title,headRefName'] in calls
     assert not [call for call in calls if call[:2] == ['pr', 'merge']] and not ci_watch.open_alerts() and not notified
 
@@ -1530,7 +1530,7 @@ def test_a_failed_probe_on_a_push_to_an_open_pull_request_turns_auto_merge_off_u
     calls, notified = pushed_github(monkeypatch, [OPEN_PR], disable_fails=disable_fails)
     probe_outcome(monkeypatch, returncode, '{"ok": false, "failed": ["node-commonjs"], "not_run": [], "seconds": 30}\n')
     assert ci_watch.probe_pushed_pull_request(work, session='s') == 'failed'
-    assert ['pr', 'merge', '7', '--disable-auto'] in calls
+    assert ['pr', 'merge', '7', '-R', 'me/os', '--disable-auto'] in calls
     [(key, alert)] = ci_watch.alert_entries()
     assert key == 'me/os|sandbox probe|feature' and notified == [alert] and alert['session'] == 's'
     assert named in alert['errors'][0] and 'run `tare ci pr` again' in alert['errors'][1]
@@ -1643,3 +1643,184 @@ def test_push_preflight_loads_without_package_context(monkeypatch):
     refusals = ci_watch._push_preflight().identity_refusals(
         [{'sha': 'abc12345', 'author': 'personal@example.org', 'committer': NOREPLY_EMAIL}])
     assert refusals == ['commit abc12345: author email personal@example.org is not a GitHub noreply address']
+
+
+def test_tare_ci_pr_and_shepherd_name_repository_and_target_non_main_default_branch(tmp_path, monkeypatch, capsys):
+    # SPEC-OS-SHIP-001 AC-01: every gh call names owner/repo explicitly and targets GitHub's default_branch, never a
+    # hard-coded main.
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    remote, work = tmp_path/'remote.git', tmp_path/'work'
+    subprocess.run(['git', 'init', '-q', '--bare', '-b', 'trunk', str(remote)], check=True)
+    subprocess.run(['git', 'clone', '-q', str(remote), str(work)], check=True, capture_output=True)
+    git = lambda *args: ci_watch.git_in(work, *args)
+    git('config', 'user.email', NOREPLY_EMAIL); git('config', 'user.name', 'T'); git('config', 'core.hooksPath', '')
+    (work/'README.md').write_text('hello\n')
+    git('add', '.'); git('commit', '-qm', 'init trunk'); git('push', '-q', 'origin', 'HEAD:trunk')
+    git('checkout', '-qb', 'feat/ext')
+    (work/'README.md').write_text('hello world\n')
+    git('commit', '-qam', 'Update README')
+
+    calls, prs = [], []
+
+    def gh(args, cwd):
+        calls.append(args)
+        if args[0] == 'api':
+            endpoint = args[1]
+            assert endpoint.startswith('repos/acme/ext'), endpoint
+            assert '/main' not in endpoint, endpoint
+            if endpoint == 'repos/acme/ext':
+                return json.dumps({'full_name': 'acme/ext', 'default_branch': 'trunk', 'private': False,
+                                   'visibility': 'public', 'allow_auto_merge': True, 'allow_merge_commit': True})
+            if endpoint == 'repos/acme/ext/branches/trunk':
+                return json.dumps({'protected': True})
+            if endpoint == 'repos/acme/ext/branches/trunk/protection':
+                return json.dumps({})
+            if endpoint == 'repos/acme/ext/rules/branches/trunk':
+                return json.dumps([])
+            raise AssertionError(endpoint)
+        assert '-R' in args and args[args.index('-R') + 1] == 'acme/ext', args
+        assert 'main' not in args, args
+        if args[:2] == ['pr', 'list']:
+            return json.dumps(prs)
+        if args[:2] == ['pr', 'create']:
+            assert args[args.index('--base') + 1] == 'trunk'
+            prs.append({'number': 12, 'url': 'https://github.com/acme/ext/pull/12'})
+            return prs[0]['url']
+        if args[:2] == ['pr', 'view']:
+            return json.dumps({'mergeStateStatus': 'BLOCKED'})
+        if args[:2] == ['pr', 'merge']:
+            return ''
+        raise AssertionError(args)
+
+    started = []
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+    monkeypatch.setattr(ci_watch, 'detached', lambda *args: started.append(args))
+    assert ci_watch.main(['pr', '--repo-dir', str(work), '-R', 'acme/ext']) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload['number'] == 12 and payload['repo'] == 'acme/ext' and payload['base'] == 'trunk'
+    assert payload['shepherd'] == 'started' and started == [('shepherd', work.resolve(), 12)]
+
+    # Pushing directly from the non-main default branch is refused.
+    git('checkout', '-q', 'trunk')
+    with pytest.raises(ValueError, match='trunk takes changes only through a pull request'):
+        ci_watch.pull_request(work, repo='acme/ext')
+
+    # Shepherd catches up against origin/trunk (no main branch exists anywhere in this repo).
+    (work/'trunk-only.txt').write_text('ahead\n')
+    git('add', 'trunk-only.txt'); git('commit', '-qm', 'advance trunk'); git('push', '-q', 'origin', 'trunk')
+    git('checkout', '-q', 'feat/ext')
+    shepherd_calls = []
+    views = iter([{'mergeStateStatus': 'BEHIND'}, {'state': 'MERGED'}])
+
+    def shepherd_gh(args, cwd):
+        shepherd_calls.append(args)
+        if args[:2] == ['repo', 'view']:
+            assert args[2] == 'acme/ext'
+            return json.dumps({'isArchived': False, 'isPrivate': False})
+        if args[:2] == ['run', 'list']:
+            assert args[args.index('-R') + 1] == 'acme/ext'
+            return '[]'
+        if args[:2] == ['pr', 'list']:
+            assert args[args.index('-R') + 1] == 'acme/ext' and args[args.index('--base') + 1] == 'trunk'
+            return '[]'
+        if args[:2] == ['pr', 'view']:
+            assert args[args.index('-R') + 1] == 'acme/ext'
+            return json.dumps({'state': 'OPEN', 'autoMergeRequest': {'mergeMethod': 'MERGE'}, 'headRefName': 'feat/ext',
+                               'headRefOid': 'h1', 'baseRefName': 'trunk', 'url': 'u', 'title': 'Update README',
+                               **next(views)})
+        raise AssertionError(args)
+
+    monkeypatch.setattr(ci_watch, 'gh', shepherd_gh)
+    assert ci_watch.shepherd(work.resolve(), 12, sleep=lambda s: None) == 'MERGED'
+    assert git('show', 'origin/feat/ext:trunk-only.txt') == 'ahead'
+
+
+def test_os_merge_helpers_run_only_when_their_files_exist(tmp_path, monkeypatch):
+    # SPEC-OS-SHIP-001 AC-02: repositories without CHANGELOG.md, sync_disposition_manifest.py, or work-graph.json
+    # never invoke those OS-specific helpers during catch_up or absorb.
+    remote, work = tmp_path/'remote.git', tmp_path/'work'
+    ci_watch.git_in(tmp_path, 'init', '-q', '--bare', '-b', 'master', str(remote))
+    ci_watch.git_in(tmp_path, 'clone', '-q', str(remote), str(work))
+    git = lambda *args: ci_watch.git_in(work, *args)
+    git('config', 'user.email', NOREPLY_EMAIL); git('config', 'user.name', 'T'); git('config', 'core.hooksPath', '')
+    (work/'app.py').write_text('x = 1\n')
+    git('add', '.'); git('commit', '-qm', 'init'); git('push', '-q', 'origin', 'HEAD:master')
+    git('checkout', '-qb', 'feature')
+    (work/'feature.py').write_text('f = 1\n')
+    git('add', '.'); git('commit', '-qm', 'feature'); git('push', '-q', 'origin', 'feature')
+    git('checkout', '-q', 'master')
+    (work/'other.py').write_text('o = 1\n')
+    git('add', '.'); git('commit', '-qm', 'master advance'); git('push', '-q', 'origin', 'master')
+    git('checkout', '-q', 'feature')
+
+    real_git_in = ci_watch.git_in
+    git_invocations = []
+
+    def spy_git_in(cwd, *args):
+        git_invocations.append(args)
+        return real_git_in(cwd, *args)
+
+    monkeypatch.setattr(ci_watch, 'git_in', spy_git_in)
+    monkeypatch.setattr(ci_watch, 'graph_merge_losses', lambda *a, **kw: pytest.fail('graph helper must not run'))
+    assert ci_watch.catch_up(work, 'feature', base='master') == []
+    assert not any(any('core.attributesFile=' in str(arg) for arg in inv) for inv in git_invocations)
+    ci_watch.absorb(work, 'feature')
+    assert (work/'other.py').read_text() == 'o = 1\n'
+
+    # Even if an unrelated repository happens to conflict on the manifest path without scripts/sync_disposition_manifest.py,
+    # catch_up returns the conflict instead of crashing trying to run the missing OS script.
+    git('checkout', '-q', 'master')
+    (work/ci_watch.MANIFEST).parent.mkdir(parents=True, exist_ok=True)
+    (work/ci_watch.MANIFEST).write_text('{"from": "master"}\n')
+    git('add', '.'); git('commit', '-qm', 'add manifest path on master'); git('push', '-q', 'origin', 'master')
+    git('checkout', '-q', 'feature')
+    (work/ci_watch.MANIFEST).parent.mkdir(parents=True, exist_ok=True)
+    (work/ci_watch.MANIFEST).write_text('{"from": "feature"}\n')
+    git('add', '.'); git('commit', '-qm', 'add manifest path on feature'); git('push', '-q', 'origin', 'feature')
+    assert ci_watch.catch_up(work, 'feature', base='master') == [ci_watch.MANIFEST]
+
+
+def test_second_tare_ci_pr_reuses_live_shepherd_and_restarts_only_when_stale(tmp_path, monkeypatch):
+    # SPEC-OS-SHIP-001 AC-07: a second tare ci pr on a PR with a live shepherd starts no second shepherd,
+    # including from a different checkout of the same repository; a stale beat restarts one.
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    remote, work, _ = feature_checkout(tmp_path, NOREPLY_EMAIL)
+    work2 = tmp_path/'work2'
+    subprocess.run(['git', 'clone', '-q', str(remote), str(work2)], check=True, capture_output=True)
+    ci_watch.git_in(work2, 'config', 'user.email', NOREPLY_EMAIL)
+    ci_watch.git_in(work2, 'config', 'user.name', 'T')
+    ci_watch.git_in(work2, 'config', 'core.hooksPath', '')
+
+    started = []
+    prs = []
+
+    def gh(args, cwd):
+        if args[0] == 'api':
+            return api_answer(args[1], settings={'full_name': 'acme/os', 'default_branch': 'main'})
+        if args[:2] == ['pr', 'list']:
+            return json.dumps(prs)
+        if args[:2] == ['pr', 'create']:
+            prs.append({'number': 5, 'url': 'https://github.com/acme/os/pull/5'})
+            return prs[0]['url']
+        if args[:2] == ['pr', 'view']:
+            return json.dumps({'mergeStateStatus': 'BLOCKED'})
+        return ''
+
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+    monkeypatch.setattr(ci_watch, 'detached', lambda *args: started.append(args))
+
+    first = ci_watch.pull_request(work)
+    assert first['shepherd'] == 'started' and len(started) == 1
+    second = ci_watch.pull_request(work)
+    assert second['shepherd'] == 'attached' and len(started) == 1
+
+    # Another checkout of the same repo and PR branch also attaches to the live shepherd.
+    ci_watch.git_in(work2, 'fetch', '-q', 'origin', 'feature')
+    ci_watch.git_in(work2, 'checkout', '-qb', 'feature', 'origin/feature')
+    third = ci_watch.pull_request(work2)
+    assert third['shepherd'] == 'attached' and len(started) == 1
+
+    # Once the recorded beat is older than SHEPHERD_SILENCE, tare ci pr starts a fresh shepherd.
+    ci_watch.update(lambda beats: [b.__setitem__('at', 0.0) for b in beats.values()], 'shepherds.json')
+    fourth = ci_watch.pull_request(work)
+    assert fourth['shepherd'] == 'started' and len(started) == 2
