@@ -1824,3 +1824,41 @@ def test_second_tare_ci_pr_reuses_live_shepherd_and_restarts_only_when_stale(tmp
     ci_watch.update(lambda beats: [b.__setitem__('at', 0.0) for b in beats.values()], 'shepherds.json')
     fourth = ci_watch.pull_request(work)
     assert fourth['shepherd'] == 'started' and len(started) == 2
+
+
+@pytest.mark.parametrize('origin_url,push_url,explicit,expected_fragment', [
+    ('https://github.com/acme/public.git', None, 'acme/private', 'does not match origin push repository acme/public'),
+    ('git@github.com:acme/public.git', None, 'other/repo', 'does not match origin push repository acme/public'),
+    ('https://user@github.com/acme/public.git', None, 'acme/other', 'does not match origin push repository acme/public'),
+    ('https://github.com/acme/repo.git', 'https://github.com/acme/other.git', 'acme/repo',
+     'does not match origin push repository acme/other'),
+    ('https://gitlab.com/acme/repo.git', None, 'acme/repo', 'does not match non-GitHub origin push remote'),
+    ('https://github.com/acme/private.git', 'https://github.com/acme/public.git', None,
+     'origin push URL (acme/public) does not match origin fetch repository acme/private'),
+])
+def test_tare_ci_pr_refuses_when_repo_flag_or_pushurl_diverges_from_origin(
+        tmp_path, monkeypatch, origin_url, push_url, explicit, expected_fragment):
+    # Follow-up to #289: if -R points to a different repository than origin (or pushurl diverges from origin),
+    # tare ci pr must refuse before any gh API query, absorb, or git push.
+    remote, work, git = feature_checkout(tmp_path, 'personal@example.org')
+    git('remote', 'set-url', 'origin', origin_url)
+    if push_url:
+        git('remote', 'set-url', '--push', 'origin', push_url)
+    calls = scripted_github(monkeypatch, lambda endpoint: api_answer(endpoint, settings={'private': True}))
+    with pytest.raises(ValueError, match='^Preflight refused:') as refused:
+        ci_watch.pull_request(work, repo=explicit)
+    assert expected_fragment in str(refused.value)
+    assert calls == [] and not on_remote(remote)
+
+
+@pytest.mark.parametrize('origin_url,explicit', [
+    ('https://github.com/Acme/Repo.git', 'acme/repo'),
+    ('git@github.com:acme/repo.git', 'Acme/Repo'),
+    ('ssh://git@github.com:22/acme/repo.git', 'acme/repo'),
+    ('https://x-access-token@github.com/acme/repo', 'acme/repo'),
+])
+def test_verify_origin_repo_accepts_matching_github_urls_case_insensitively(tmp_path, origin_url, explicit):
+    _, work, git = feature_checkout(tmp_path, NOREPLY_EMAIL)
+    git('remote', 'set-url', 'origin', origin_url)
+    ci_watch.verify_origin_repo(work, explicit)
+    assert ci_watch.remote_repo(work).casefold() == explicit.casefold()
