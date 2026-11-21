@@ -2,7 +2,7 @@
   "$schema": "https://tare.tools/schemas/v1/disposition-manifest.json",
   "version": "1.0.0",
   "generated_at": "2026-10-04T03:10:28.054735+00:00",
-  "total_modules": 451,
+  "total_modules": 452,
   "modules": [
     {
       "name": "consent_decisions.py",
@@ -3771,8 +3771,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 72707,
-      "sha256": "7f14483c2a15db375c4bedfa282f2a74c1b41eadb70060793a66894edb9e1e9a"
+      "size_bytes": 74684,
+      "sha256": "ac5d34213f4fab6ea53e68bb6ec674d3bebbbd3da174aa60c5c30a8139fe2081"
     },
     {
       "name": "folder_access.py",
@@ -4513,6 +4513,16 @@
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
       "size_bytes": 29521,
       "sha256": "a021a6eff7acb13075032831b7a0866c457c2d6db5599e47d0778ab8ce3438ce"
+    },
+    {
+      "name": "ship_triage.py",
+      "path": "tare.tools.os/relay/ship_triage.py",
+      "summary": "Rule-based CI failure triage and bounded, redacted, untrusted receipts (SPEC-OS-SHIP-001 AC-08, AC-09).",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
+      "size_bytes": 12402,
+      "sha256": "915c908e0a3a3e6ce8efb13c8a70f25c0ba0e00d0d36ba8dece1dc3bc4232257"
     }
   ]
 }

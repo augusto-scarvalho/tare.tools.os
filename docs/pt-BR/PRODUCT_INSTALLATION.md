@@ -448,29 +448,36 @@ atualização e rollback. Evidência.
 
 ## Atualização automática
 
-Os mantenedores publicam as releases: cada push que muda o `main` de um dos cinco repositórios pode virar
-uma release. `python scripts/ops/publish_product.py` gera o bundle a partir de espelhos próprios (em
-`%LOCALAPPDATA%/tare.tools/publisher/mirrors`, nunca os checkouts de desenvolvimento), testa a instalação numa
-pasta descartável e publica a release `product-<id>` no GitHub. Na máquina dos mantenedores, uma tarefa agendada,
-`Tare-Publish`, faz isso.
+Os mantenedores publicam as releases: cada push que muda o `main` de um dos cinco repositórios pode virar uma
+release. O CI faz a publicação ([ADR-074](../adr/ADR-074_PRODUCT_RELEASES_FROM_CI.md)): quando o `tare.tools CI`
+passa no `main`, o workflow `.github/workflows/release.yml` roda `python scripts/ops/publish_product.py` num runner
+Windows hospedado pelo GitHub para o commit que o CI testou. Ele monta o bundle a partir de espelhos novos dos cinco
+repositórios (nunca um checkout de desenvolvimento), testa a instalação numa pasta descartável e publica a release
+`product-<id>` no GitHub com `bundle.zip` e `published.json` (os commits a partir dos quais ela foi gerada, com os
+quais a próxima execução compara); as notas terminam com `CI passed on main: <run>`. O workflow gera a attestation de
+proveniência de build do bundle: confira um download com
+`gh attestation verify bundle.zip -R augusto-scarvalho/tare.tools.os`. Fora do GitHub Actions o publicador não
+publica nada a menos que receba `--here`, e mesmo assim apenas um rascunho: essa máquina não tem a chave de
+assinatura, e as cópias instaladas ignoram uma release sem assinatura. Assine o rascunho com a chave de recuperação e
+publique-o com os comandos no topo de `scripts/ops/release_signing_key.py`.
 
-Em cada máquina, a tarefa `Tare-Update` roda `tare.cmd auto-update` no logon e a cada 5 minutos (usa o
-`gh` já autenticado). Ela instala a release nova ao lado da atual e usa a
-transição I2I-02 descrita acima para reconciliar o Serve com segurança. O TUI nunca
-é fechado: ele avisa uma vez que há atualização instalada, e a próxima abertura
-já usa a nova versão; conversas continuam de onde pararam.
-
-A release é assinada (ADR-075). O workflow a cria como rascunho; um job separado, o único que guarda a chave
-Ed25519 do projeto, assina o bundle, confere a assinatura e só então envia `bundle.zip.sig` e publica o rascunho.
-Uma release publicada à mão com `publish_product.py --here` é sempre criada como rascunho: essa máquina não tem a
-chave de assinatura, e as cópias instaladas ignoram uma release sem assinatura. Assine o rascunho com a chave de
-recuperação e publique-o com os comandos no topo de `scripts/ops/release_signing_key.py`.
-A assinatura cobre `tare.tools product bundle` e uma quebra de linha, seguidos do SHA-256 de `bundle.zip` em
-hexadecimal. Para conferir um download à mão, a partir do bundle extraído:
-`python install.py verify-signature bundle.zip bundle.zip.sig` (ou `python relay/native_product.py
-verify-signature ...` num checkout); nenhum dos dois precisa de instalação, e o código de saída é 0 quando a
-assinatura é válida. As cópias instaladas exigem a assinatura: o atualizador só considera releases que têm o asset
-`bundle.zip.sig`, baixa-o junto com o bundle e o verifica com as chaves embutidas antes de extrair qualquer coisa.
-Um bundle cuja assinatura falta ou não confere não é instalado: `auto-update` informa `refused` com a tag, deixa a
+A release é assinada ([ADR-075](../adr/ADR-075_SIGNED_PRODUCT_RELEASES.md)). O workflow a cria como rascunho; um job
+separado, o único que guarda a chave de assinatura Ed25519 do projeto, assina o bundle, confere a assinatura e só
+então envia `bundle.zip.sig` e publica o rascunho. A assinatura cobre `tare.tools product bundle` e uma quebra de
+linha, seguidos do SHA-256 de `bundle.zip` em hexadecimal. Para conferir um download à mão a partir do bundle
+extraído, rode `python install.py verify-signature bundle.zip bundle.zip.sig`, ou num checkout com
+`python relay/native_product.py verify-signature bundle.zip bundle.zip.sig`; nenhum dos dois precisa de instalação, e
+o código de saída é 0 quando a assinatura é válida. `--key HEX` (repetível) confere contra outras chaves públicas em
+vez das embutidas. As cópias instaladas exigem a assinatura: o atualizador só considera releases que têm o asset
+`bundle.zip.sig`, baixa-o junto com o bundle e o verifica com as chaves embutidas antes de extrair qualquer coisa. Um
+bundle cuja assinatura falta ou não confere não é instalado: `auto-update` informa `refused` com a tag, deixa a
 instalação como estava e tenta de novo numa execução posterior, de modo que uma release corrigida à mão com a chave
 de recuperação ainda é instalada.
+
+Em cada máquina, a tarefa `Tare-Update` roda `tare.cmd auto-update` no logon e a cada 5 minutos. Ela lê as releases
+públicas por HTTPS (uma chamada à API do GitHub, duas quando a release instalada é mais antiga que as cem mais
+recentes; sem login e sem GitHub CLI), pega a release assinada mais nova (com `bundle.zip.sig`) cujas notas dizem que
+o CI passou e que seja mais nova que a instalada, baixa o `bundle.zip` e verifica a assinatura. Ela instala a release
+nova ao lado da atual e usa a transição I2I-02 descrita acima para reconciliar o Serve com segurança. O TUI nunca é
+fechado: ele avisa uma vez que há atualização instalada, e a próxima abertura já usa a nova versão; conversas
+continuam de onde pararam.
