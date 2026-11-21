@@ -144,3 +144,7 @@ def research(deployment, question, *, root, control, max_calls, refresh=False, o
             return {'status': 'FAILED', 'error': getattr(error, 'code', type(error).__name__),
                     'calls_used': len(generations()), 'usage': usage(), 'session_reused': existed,
                     **({'dispatched': dispatched} if dispatched else {'not_started': True})}
+        finally:
+            from .provider_spend import record_receipt
+            for row in generations():
+                record_receipt(deployment, {'attempt_id': row.get('call_id'), 'usage': row.get('usage')})

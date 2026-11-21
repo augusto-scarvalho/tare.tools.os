@@ -400,6 +400,14 @@ def declare(name, usd, now=None, renews=None, window=None, expires=None, dry=Fal
     balances = {**declared(), name: entry}
     folder().mkdir(parents=True, exist_ok=True)
     write_json_atomic(folder()/'provider-balance.json', balances)
+    if usd > 0:
+        from .turn_engine import clear_usage_limits
+        at = entry['at']
+        clear_usage_limits(
+            lambda key, item: key == name
+            and (type(item.get('recorded_at')) not in (int, float) or at >= item['recorded_at']),
+            now=at,
+        )
     return entry
 
 

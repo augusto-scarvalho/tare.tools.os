@@ -1268,6 +1268,11 @@ def _run_deployment(
             ok, content, native_receipt = generate_text(
                 deployment, requested, prompt, timeout, attempt_dir=attempt_dir,
                 attempt_label=attempt_label, credential_resolver=_vault_secret)
+            try:
+                from .provider_spend import record_receipt
+            except ImportError:
+                from provider_spend import record_receipt
+            record_receipt(deployment, native_receipt)
             if native_receipt.get("failure_class"):
                 code = native_receipt["failure_class"]
                 native_receipt = dict(native_receipt, native_failure_code=code,

@@ -498,3 +498,77 @@ def test_an_opencode_balance_charge_is_not_a_plan(providers, tmp_path):
         return provider_spend.last_plan('opencode-sub')
     assert post('balance', 1) is None and post('go', 2) == 'go' and post('go-plus', 3) == 'go-plus'
     assert post('byok', 4) == 'go-plus' and post('free', 5) == 'go-plus'  # the last reply that names a plan
+
+
+def test_fresh_quota_reading_with_headroom_clears_failure_limit_and_keeps_zero_or_unavailable(providers, monkeypatch):
+    from relay import provider_spend, turn_engine
+
+    codex_route = route('gpt-6.1-sol', 'cli://codex')
+    argon_route = route('gemini-4-argon-high', 'cli://agy')
+    openrouter_route = {'id': 'or-route', 'native_credential_env': 'OPENROUTER_API_KEY',
+                        'native_profile': {'endpoint': 'https://openrouter.ai/api/v1', 'model': 'x/y', 'protocol': 'openai-chat'}}
+    openai_route = {'id': 'oa-route', 'native_credential_env': 'OPENAI_API_KEY',
+                    'native_profile': {'endpoint': 'https://api.openai.com/v1', 'model': 'gpt-6', 'protocol': 'openai-responses'}}
+
+    until = turn_engine.note_usage_limit(codex_route, resets_at=NOW + 7200, now=NOW)
+    assert turn_engine.usage_limited(codex_route, now=NOW + 10) == until
+
+    # Default CODEX fixture has codex:week at 100% used (0 remaining): must stay parked.
+    report = provider_quota.refresh(now=NOW + 30)
+    codex_acc = next(a for a in report['accounts'] if a['account'] == 'codex')
+    assert codex_acc['parked_until'] == until
+    assert turn_engine.usage_limited(codex_route, now=NOW + 35) >= until
+
+    # Unavailable provider reading must never clear a failure block.
+    monkeypatch.setattr(provider_quota, 'codex_limits', lambda executable: (_ for _ in ()).throw(OSError('offline')))
+    report = provider_quota.refresh(now=NOW + 60)
+    assert next(a for a in report['accounts'] if a['account'] == 'codex')['parked_until'] == until
+    assert turn_engine.usage_limited(codex_route, now=NOW + 65) == until
+
+    # After a free limit reset, Codex reports remaining headroom -> failure block clears immediately.
+    reset_codex = {**CODEX, 'rateLimitsByLimitId': {
+        'codex': {'limitId': 'codex', 'planType': 'prolite', 'secondary': None,
+                  'primary': {'usedPercent': 10, 'windowDurationMins': 10080, 'resetsAt': 1794518478}}}}
+    monkeypatch.setattr(provider_quota, 'codex_limits', lambda executable: reset_codex)
+    report = provider_quota.refresh(now=NOW + 120)
+    codex_acc = next(a for a in report['accounts'] if a['account'] == 'codex')
+    assert 'parked_until' not in codex_acc
+    assert turn_engine.usage_limited(codex_route, now=NOW + 120) is None
+
+    # A refusal recorded AFTER that headroom reading is NOT cleared by the older cached reading.
+    later_until = turn_engine.note_usage_limit(codex_route, resets_at=NOW + 9000, now=NOW + 180)
+    assert turn_engine.usage_limited(codex_route, now=NOW + 185) == later_until
+
+    # AGY per-model limit stays blocked while Argon's bucket is 0 (despite Gemini Models having 51.6%),
+    # then clears once Argon's bucket reports remaining > 0.
+    argon_until = turn_engine.note_usage_limit(argon_route, resets_at=NOW + 7200, now=NOW + 180, kind='model')
+    provider_quota.refresh(now=NOW + 200)
+    assert turn_engine.usage_limited(argon_route, now=NOW + 205) >= argon_until
+    real_run = provider_quota.run
+
+    def agy_reset(executable, *arguments, timeout=90):
+        if executable == 'agy.exe' and '/quota' in arguments:
+            restored = json.loads(json.dumps(AGY))
+            restored['groups'][2]['buckets'][0]['remaining_fraction'] = 0.8
+            return json.dumps({'status': 'SUCCESS', 'command': {'name': 'usage', 'data': restored}})
+        return real_run(executable, *arguments, timeout=timeout)
+
+    monkeypatch.setattr(provider_quota, 'run', agy_reset)
+    provider_quota.refresh(now=NOW + 240)
+    assert turn_engine.usage_limited(argon_route, now=NOW + 245) is None
+
+    # OpenRouter credit: UNAVAILABLE keeps it parked; fresh OBSERVED credit > 0 clears it.
+    or_until = turn_engine.note_usage_limit(openrouter_route, resets_at=NOW + 7200, now=NOW + 250)
+    provider_quota.refresh(now=NOW + 260)
+    assert turn_engine.usage_limited(openrouter_route, now=NOW + 265) == or_until
+    monkeypatch.setattr(provider_quota, 'read_openrouter', lambda key, now: {
+        'credit': {'currency': 'USD', 'total': 20, 'remaining': 5.0}, 'source': 'GET /credits'})
+    report = provider_quota.refresh(now=NOW + 300)
+    assert 'parked_until' not in next(a for a in report['accounts'] if a['account'] == 'openrouter')
+    assert turn_engine.usage_limited(openrouter_route, now=NOW + 305) is None
+
+    # Declared API account: a fresh positive balance declared after refusal lifts the refusal block.
+    oa_until = turn_engine.note_usage_limit(openai_route, resets_at=NOW + 7200, now=NOW + 310)
+    assert turn_engine.usage_limited(openai_route, now=NOW + 315) == oa_until
+    provider_spend.declare('openai-api', 15.0, now=NOW + 320)
+    assert turn_engine.usage_limited(openai_route, now=NOW + 325) is None
