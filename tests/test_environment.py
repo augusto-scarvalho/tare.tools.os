@@ -571,7 +571,7 @@ def test_pending_proofs_filters_unavailable_and_bulk_prove_requires_confirmation
     monkeypatch.setattr(native_routes, 'configured', lambda: {'deployments': [
         {'id': 'route-unavail', 'native_catalog': 'route-unavail', 'model': 'glm-5.3', 'qualified': False, 'roles': ['implementer']},
     ]})
-    monkeypatch.setattr(environment, 'route_key', lambda d: ('claude', 'fable', (5, 2), 'openrouter') if d['id'] != 'route-two' else ('gemini', 'carbon', (4,), 'openrouter'))
+    monkeypatch.setattr(environment, 'route_key', lambda d: ('claude', 'fable', (5, 2), 'api') if d['id'] != 'route-two' else ('gemini', 'carbon', (4,), 'api'))
     proven = set()
     monkeypatch.setattr(environment, 'auto_routes', lambda role, *a, **kw: [
         ('route-two', r2, 'usable' if 'route-two' in proven else 'NOT_QUALIFIED_PIN_ONLY'),

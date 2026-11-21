@@ -870,3 +870,42 @@ def test_matrix_prove_skips_unpreviewed_and_changed_routes_after_confirmation(po
         assert app.screen is panel and calls == []
 
     journey(tmp_path, steps, size=(100, 32))
+
+
+def test_mirror_routes_of_known_lines_align_under_their_origin_line_and_source(pool, tmp_path, monkeypatch):
+    install(pool, 'claude-opus-5-5-cli', 'cli://claude', 'claude-opus-5-5')
+
+    async def steps(app, pilot, panel, cell, status):
+        matrix = panel.query_one(RouteMatrix)
+        found = cells(panel)
+        assert ('gemini/argon', 'opencode-sub') in found
+        assert [r['id'] for r in found['gemini/argon', 'opencode-sub']] == ['opencode-sub-gemini-4-argon']
+        assert 'opencode-sub-gemini-4-argon' not in {row for row, _ in found}
+
+        # Verify vendor grouping places Gemini Argon under Google, not Other.
+        grouped = dict(matrix.groups())
+        assert 'gemini/argon' in grouped['Google'] and 'gemini/argon' not in grouped.get('Other', ())
+
+        # Ticking the mirror cell stores the exact line@source rule matching tare setup --auto.
+        assert await cell('gemini/argon', 'opencode-sub') == '[ ]'
+        await saved(pilot, panel)
+        assert stored() == environment.set_auto({}, 'auditor:gemini/argon@opencode-sub=off')['routing_profile']
+        assert environment.profile_state('auditor', native_catalog.select('opencode-sub-gemini-4-argon')) == (
+            'off', 'gemini/argon@opencode-sub')
+
+        # Also check implementer mirrors (Haiku and GPT Luna on OpenCode sub) and coordinator Bedrock mirrors.
+        panel.query_one('#matrix-role', Select).value = 'implementer'
+        await pilot.pause()
+        impl_cells = cells(panel)
+        assert [r['id'] for r in impl_cells['claude/haiku', 'opencode-sub']] == ['opencode-sub-claude-haiku-5-5']
+        assert [r['id'] for r in impl_cells['gpt/luna', 'opencode-sub']] == ['opencode-sub-gpt-6-luna']
+
+        panel.query_one('#matrix-role', Select).value = 'coordinator'
+        await pilot.pause()
+        coord_cells = cells(panel)
+        assert [r['id'] for r in coord_cells['claude/opus', 'bedrock']] == ['bedrock-opus']
+        assert 'bedrock-opus' not in {row for row, _ in coord_cells}
+        coord_grouped = dict(matrix.groups())
+        assert 'claude/opus' in coord_grouped['Anthropic'] and 'claude/opus' not in coord_grouped.get('Other', ())
+
+    journey(tmp_path, steps)
