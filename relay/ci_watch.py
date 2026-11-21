@@ -55,6 +55,7 @@ import subprocess
 from compute_plane.managed_process import host_executable
 import sys
 import time
+from urllib.parse import quote
 
 FAILED = {'failure', 'timed_out', 'startup_failure'}
 FULL_EVENTS = {'schedule', 'workflow_dispatch'}  # runs that prove the whole suite
@@ -186,7 +187,8 @@ def nightly(repo_dir):
     """Settle the repository's latest completed full run (scheduled or dispatched) of each workflow and branch:
     it alone says whether the whole suite passes; older runs would flap the alert and notify again. Returns the
     alerts it opened."""
-    repo = json.loads(gh(['repo', 'view', '--json', 'nameWithOwner'], repo_dir))['nameWithOwner']
+    hint = remote_repo(repo_dir)
+    repo = json.loads(gh(['repo', 'view', *([hint] if hint else []), '--json', 'nameWithOwner'], repo_dir))['nameWithOwner']
     latest = {}
     for event in sorted(FULL_EVENTS):
         for run in json.loads(gh(['run', 'list', '-R', repo, '--event', event, '--limit', '5', '--json', FIELDS], repo_dir) or '[]'):
@@ -227,7 +229,9 @@ def watch(repo_dir, sha, *, session=None, appear=180, limit=5400, every=30, slee
     repo, started, settled, opened = None, time.monotonic(), set(), []
     while time.monotonic() - started < limit:
         try:
-            repo = repo or json.loads(gh(['repo', 'view', '--json', 'nameWithOwner'], repo_dir))['nameWithOwner']
+            if not repo:
+                hint = remote_repo(repo_dir)
+                repo = json.loads(gh(['repo', 'view', *([hint] if hint else []), '--json', 'nameWithOwner'], repo_dir))['nameWithOwner']
             runs = runs_for(repo_dir, sha, repo)
         except (OSError, subprocess.SubprocessError, ValueError, KeyError):
             runs = None  # GitHub unreachable for a moment (even the first call): keep waiting
@@ -378,23 +382,43 @@ class PushIdentityRefused(ValueError):
         super().__init__('Preflight refused: ' + '; '.join(self.refusals) + '.' + tail)
 
 
-def catch_up(repo_dir, branch, *, check_identity=True):
-    """Merge main into the pushed `branch` in a throwaway worktree and push the merge (its CI runs again). Returns
+def _tree_has_file(cwd, rel_path, *refs):
+    """True when `rel_path` exists in the working tree or in any of the given git refs."""
+    if (Path(cwd)/rel_path).exists():
+        return True
+    for ref in refs:
+        try:
+            if git_in(cwd, 'ls-tree', '--name-only', ref, '--', rel_path):
+                return True
+        except subprocess.CalledProcessError:
+            continue
+    return False
+
+
+def catch_up(repo_dir, branch, *, base='main', check_identity=True):
+    """Merge `base` into the pushed `branch` in a throwaway worktree and push the merge (its CI runs again). Returns
     [] when pushed, or the files that conflict (nothing is pushed). Raises PushIdentityRefused before pushing when
-    `check_identity` is true and the merge commit carries a non-noreply author or committer email."""
+    `check_identity` is true and the merge commit carries a non-noreply author or committer email.
+    OS-specific merge helpers (CHANGELOG.md union, disposition manifest regeneration, work-graph loss check) run only
+    when their files exist in the tree (SPEC-OS-SHIP-001 AC-02)."""
     import shutil
     import tempfile
-    git_in(repo_dir, 'fetch', '--quiet', 'origin', 'main', branch)
+    git_in(repo_dir, 'fetch', '--quiet', 'origin', base, branch)
     tree = Path(tempfile.mkdtemp(prefix='tare-pr-'))
-    rules = tree.with_suffix('.attributes')  # the union also for branches opened before .gitattributes said so
-    rules.write_text('CHANGELOG.md merge=union\n', encoding='utf-8')
+    rules = None
     try:
         git_in(repo_dir, 'worktree', 'add', '--quiet', '--detach', str(tree), f'origin/{branch}')
+        merge_args = []
+        if _tree_has_file(tree, 'CHANGELOG.md', f'origin/{base}'):
+            rules = tree.with_suffix('.attributes')  # the union also for branches opened before .gitattributes said so
+            rules.write_text('CHANGELOG.md merge=union\n', encoding='utf-8')
+            merge_args = ['-c', f'core.attributesFile={rules}']
         try:
-            git_in(tree, '-c', f'core.attributesFile={rules}', 'merge', '--no-commit', '--no-ff', '--no-edit', '--quiet', 'origin/main')
+            git_in(tree, *merge_args, 'merge', '--no-commit', '--no-ff', '--no-edit', '--quiet', f'origin/{base}')
         except subprocess.CalledProcessError:
             conflicts = git_in(tree, 'diff', '--name-only', '--diff-filter=U').splitlines() or ['(the merge failed)']
-            if conflicts != [MANIFEST]:
+            sync_script = tree/'scripts'/'sync_disposition_manifest.py'
+            if conflicts != [MANIFEST] or not sync_script.is_file():
                 return conflicts
             # The manifest holds every relay module's hash: any two pull requests that touch code rewrite neighbouring
             # lines of it. Its merged content is a function of the merged files, so regenerate it (2026-10-06), from
@@ -404,13 +428,15 @@ def catch_up(repo_dir, branch, *, check_identity=True):
             theirs['modules'] += [m for m in ours['modules'] if m['path'] not in known]
             (tree/MANIFEST).write_text(json.dumps(theirs, indent=2, ensure_ascii=False) + '\n', encoding='utf-8',
                                        newline='\n')
-            subprocess.run([sys.executable, str(tree/'scripts'/'sync_disposition_manifest.py'), str(tree)],
+            subprocess.run([sys.executable, str(sync_script), str(tree)],
                            check=True, capture_output=True, timeout=120)
             git_in(tree, 'add', '--', MANIFEST)
-        if graph_merge_losses(tree, 'HEAD') or graph_merge_losses(tree, 'origin/main'):
+        has_graph = _tree_has_file(tree, GRAPH, 'HEAD', f'origin/{base}')
+        if has_graph and (graph_merge_losses(tree, 'HEAD') or graph_merge_losses(tree, f'origin/{base}')):
             return [GRAPH]
         if git_in(tree, 'ls-files', '--unmerged'):
-            return [GRAPH]
+            unmerged = git_in(tree, 'diff', '--name-only', '--diff-filter=U').splitlines()
+            return unmerged or ([GRAPH] if has_graph else ['(unmerged files)'])
         if subprocess.run([host_executable('git', required=True), '-C', str(tree), 'rev-parse', '--quiet', '--verify', 'MERGE_HEAD'], capture_output=True).returncode == 0:
             git_in(tree, '-c', 'core.hooksPath=', 'commit', '--no-edit', '--quiet')
         if check_identity:
@@ -422,7 +448,8 @@ def catch_up(repo_dir, branch, *, check_identity=True):
         git_in(tree, '-c', 'core.hooksPath=', 'push', '--quiet', 'origin', f'HEAD:{branch}')
         return []
     finally:
-        rules.unlink(missing_ok=True)
+        if rules is not None:
+            rules.unlink(missing_ok=True)
         try:
             git_in(repo_dir, 'worktree', 'remove', '--force', str(tree))
         except (OSError, subprocess.SubprocessError):
@@ -430,9 +457,9 @@ def catch_up(repo_dir, branch, *, check_identity=True):
             subprocess.run([host_executable('git', required=True), '-C', str(repo_dir), 'worktree', 'prune'], capture_output=True)
 
 
-def queue_ahead(repo_dir, number, repo):
-    """Older open pull requests into main with auto-merge on: they are brought up to date before this one."""
-    rows = json.loads(gh(['pr', 'list', '-R', repo, '--base', 'main', '--state', 'open', '--json',
+def queue_ahead(repo_dir, number, repo, *, base='main'):
+    """Older open pull requests into `base` with auto-merge on: they are brought up to date before this one."""
+    rows = json.loads(gh(['pr', 'list', '-R', repo, '--base', base, '--state', 'open', '--json',
                           'number,createdAt,autoMergeRequest'], repo_dir) or '[]')
     mine = next((r for r in rows if r['number'] == number), None)
     if mine is None:
@@ -549,8 +576,26 @@ def revive(now=None):
     return [beat['number'] for beat in stale]
 
 
-def shepherd(repo_dir, number, *, session=None, every=60, limit=None, sleep=time.sleep):
-    """Keep pull request `number` up to date with main until it merges, closes or loses auto-merge.
+def live_shepherd(beats, repo_dir, number, repo=None, now=None):
+    """The beat key of an active shepherd already following this pull request, or None (SPEC-OS-SHIP-001 AC-07)."""
+    now = time.time() if now is None else now
+    target_dir = str(Path(repo_dir).resolve()) if repo_dir else ''
+    for key, beat in beats.items():
+        if not isinstance(beat, dict) or beat.get('number') != number:
+            continue
+        beat_at = beat.get('at')
+        if not isinstance(beat_at, (int, float)) or now - beat_at > SHEPHERD_SILENCE:
+            continue
+        if repo and beat.get('repo') == repo:
+            return key
+        beat_dir = beat.get('repo_dir')
+        if beat_dir and (str(beat_dir) == str(repo_dir) or str(Path(beat_dir).resolve()) == target_dir):
+            return key
+    return None
+
+
+def shepherd(repo_dir, number, *, session=None, every=60, limit=None, sleep=time.sleep, repo=None):
+    """Keep pull request `number` up to date with its base branch until it merges, closes or loses auto-merge.
     A conflict outside CHANGELOG.md, or the first CI failure, is an alert of the pushing `session`
     for as long as it lasts (once per head). It beats in shepherds.json until the pull request is done, so revive()
     starts it again if it stops before. It has no time limit (`limit` seconds, for tests): a pull request can wait
@@ -566,13 +611,14 @@ def shepherd(repo_dir, number, *, session=None, every=60, limit=None, sleep=time
     started, state, alerted, settled = time.monotonic(), None, None, set()
     name, view, failing = f'{repo_dir}#{number}', None, 0
     stored = read('shepherds.json').get(name, {})
-    repo, branch = stored.get('repo'), stored.get('branch')  # a revive keeps the head branch it read
+    repo = repo_name(repo) or stored.get('repo')
+    branch, base = stored.get('branch'), stored.get('base')  # a revive keeps the head and base branches it read
     private = stored.get('private')
 
     def beat():  # written before it waits, so a restart answered not-found still knows the branch it read
         update(lambda beats: beats.__setitem__(name, {'repo_dir': str(repo_dir), 'number': number, 'repo': repo,
-                                                       'branch': branch, 'private': private, 'session': session,
-                                                       'at': time.time()}), 'shepherds.json')
+                                                       'branch': branch, 'base': base, 'private': private,
+                                                       'session': session, 'at': time.time()}), 'shepherds.json')
 
     while limit is None or time.monotonic() - started < limit:
         beat()
@@ -595,7 +641,8 @@ def shepherd(repo_dir, number, *, session=None, every=60, limit=None, sleep=time
                            read_branch or branch or recorded_branch(repo, number))
                     return 'GONE'
                 view = json.loads(gh(['pr', 'view', str(number), '-R', repo, '--json',
-                                      'state,mergeStateStatus,autoMergeRequest,headRefName,headRefOid,url,title'], repo_dir))
+                                      'state,mergeStateStatus,autoMergeRequest,headRefName,headRefOid,baseRefName,url,title'],
+                                     repo_dir))
             except (OSError, subprocess.SubprocessError, ValueError, KeyError) as error:
                 if not gone(error):
                     raise  # unreachable, not gone: the round's own handler below counts it
@@ -605,6 +652,8 @@ def shepherd(repo_dir, number, *, session=None, every=60, limit=None, sleep=time
                        (view or {}).get('headRefName') or branch or recorded_branch(repo, number))
                 return 'GONE'
             branch = view['headRefName']  # the beat keeps it, so a later restart's not-found still finds its pushes
+            target_base = view.get('baseRefName') or base or 'main'
+            base = target_base
             beat()  # persisted now, before the wait: a restart answered not-found still finds its pushes
             key, head, state = f"{repo}|pull request|{branch}", view['headRefOid'], view['state']
             for run in runs_for(repo_dir, head, repo) or []:  # the pushes it made had no watcher
@@ -616,19 +665,24 @@ def shepherd(repo_dir, number, *, session=None, every=60, limit=None, sleep=time
                 update(lambda beats: beats.pop(name, None), 'shepherds.json')
                 return state
             problem, failures = None, []
+            conflict_label = f'conflicts with {target_base}'
             if view['mergeStateStatus'] in ('BEHIND', 'DIRTY'):
-                if alerted and alerted[:2] == ('conflicts with main', head):
-                    problem = ('conflicts with main', alerted[2])  # main not merged in yet: no new attempt on this head
-                elif not queue_ahead(repo_dir, number, repo):  # the oldest waiting pull request goes first
+                if alerted and alerted[:2] == (conflict_label, head):
+                    problem = (conflict_label, alerted[2])  # base not merged in yet: no new attempt on this head
+                elif not queue_ahead(repo_dir, number, repo, base=target_base):  # the oldest waiting pull request goes first
                     try:
                         # Anything other than an observed private repository counts as public: fail closed (backlog #80).
-                        conflicts = (catch_up(repo_dir, view['headRefName'], check_identity=False)
-                                     if private is True else catch_up(repo_dir, view['headRefName']))
+                        extra = {}
+                        if target_base != 'main':
+                            extra['base'] = target_base
+                        if private is True:
+                            extra['check_identity'] = False
+                        conflicts = catch_up(repo_dir, view['headRefName'], **extra)
                     except PushIdentityRefused as refused:
                         errors = [*refused.refusals, *([refused.fix] if refused.fix else [])]
                         problem = ('push identity refused', errors)
                     else:
-                        problem = ('conflicts with main', conflicts) if conflicts else None
+                        problem = (conflict_label, conflicts) if conflicts else None
             elif view['mergeStateStatus'] in ('BLOCKED', 'UNSTABLE'):
                 failures = failed_runs(repo_dir, head, repo)
                 problem = ('CI failed', [f"{r['workflowName']}: {r['url']}" for r in failures]) if failures else None
@@ -675,7 +729,7 @@ def detached(*args, session=None):
 
 
 def absorb(repo_dir, branch):
-    """Bring into the local branch what the shepherd pushed to it (main merged in), so the next push fast-forwards;
+    """Bring into the local branch what the shepherd pushed to it (base merged in), so the next push fast-forwards;
     a conflict leaves the branch as it was."""
     if git_in(repo_dir, 'status', '--porcelain', '--untracked-files=no'):
         raise ValueError('Commit or stash local changes before absorbing remote commits.')
@@ -686,7 +740,8 @@ def absorb(repo_dir, branch):
     if subprocess.run([host_executable('git', required=True), '-C', str(repo_dir), 'merge-base', '--is-ancestor', f'origin/{branch}', 'HEAD']).returncode:
         try:
             git_in(repo_dir, 'merge', '--no-commit', '--no-ff', '--no-edit', '--quiet', f'origin/{branch}')
-            if graph_merge_losses(repo_dir, 'HEAD') or graph_merge_losses(repo_dir, f'origin/{branch}'):
+            if (_tree_has_file(repo_dir, GRAPH, 'HEAD', f'origin/{branch}')
+                    and (graph_merge_losses(repo_dir, 'HEAD') or graph_merge_losses(repo_dir, f'origin/{branch}'))):
                 raise ValueError(f'origin/{branch} discards delivery context in {GRAPH}; reconcile it with the backlog CLI first.')
             git_in(repo_dir, 'commit', '--no-edit', '--quiet')
         except (subprocess.CalledProcessError, ValueError, KeyError, TypeError):
@@ -702,21 +757,36 @@ def pr_identity(value):
         and re.fullmatch(r'https://[^/\s]+/[^/\s]+/[^/\s]+/pull/'+str(number), url) is not None)
 
 
-def preflight(repo_dir):
-    """What GitHub says about the repository and its main branch. The repository settings are required (a failure
-    propagates, so nothing is pushed blind); the protection readings fall back to "unknown" or "none"."""
-    def read(endpoint, default):
+def preflight(repo_dir, *, repo=None):
+    """What GitHub says about the repository and its default branch. The repository settings are required (a failure
+    propagates, so nothing is pushed blind); the protection readings fall back to "unknown" or "none".
+    When `repo` or `origin`'s GitHub remote names `owner/name`, every `gh api` call targets it explicitly, and all
+    branch queries target `settings["default_branch"]` rather than a hard-coded `main` (SPEC-OS-SHIP-001 AC-01)."""
+    if repo is not None and not repo_name(repo):
+        raise ValueError(f'Invalid repository name: {repo}')
+    explicit = repo_name(repo) if repo is not None else None
+    target = explicit or remote_repo(repo_dir)
+    base_api = f'repos/{target}' if target else 'repos/{owner}/{repo}'
+
+    def read_api(endpoint, default):
         try:
             value = json.loads(gh(['api', endpoint], repo_dir))
         except (ValueError, OSError, subprocess.SubprocessError):
             return default
         return value if isinstance(value, type(default)) else default
-    settings = json.loads(gh(['api', 'repos/{owner}/{repo}'], repo_dir))
+
+    settings = json.loads(gh(['api', base_api], repo_dir))
     if not isinstance(settings, dict):
         raise ValueError('Preflight refused: GitHub did not return the repository settings.')
-    return {'settings': settings, 'branch': read('repos/{owner}/{repo}/branches/main', {}),
-            'protection': read('repos/{owner}/{repo}/branches/main/protection', {}),  # 404 or 403: none we can see
-            'rules': read('repos/{owner}/{repo}/rules/branches/main', [])}
+    resolved = explicit or repo_name(settings.get('full_name')) or target
+    api_repo = f'repos/{resolved}' if resolved else base_api
+    raw_default = settings.get('default_branch')
+    default_branch = raw_default.strip() if isinstance(raw_default, str) and raw_default.strip() else 'main'
+    encoded = quote(default_branch, safe='')
+    return {'settings': settings, 'repo': resolved, 'default_branch': default_branch,
+            'branch': read_api(f'{api_repo}/branches/{encoded}', {}),
+            'protection': read_api(f'{api_repo}/branches/{encoded}/protection', {}),  # 404 or 403: none we can see
+            'rules': read_api(f'{api_repo}/rules/branches/{encoded}', [])}
 
 
 def merge_plan(settings, branch, protection, rules):
@@ -763,12 +833,12 @@ SANDBOX_PATHS = ('relay/command_protection.py', 'relay/sandbox_secrets.py', 'rel
                  'scripts/ops/sandbox_probe.py')
 
 
-def sandbox_probe(repo_dir):
+def sandbox_probe(repo_dir, *, base='main'):
     """'not needed', 'passed' or 'not run: no sandbox on this host'; ValueError when the probe of this checkout fails.
     No flag skips it: someone who must can open the pull request with gh by hand."""
-    git_in(repo_dir, 'fetch', '--quiet', 'origin', 'main')
+    git_in(repo_dir, 'fetch', '--quiet', 'origin', base)
     if not any(path.startswith(SANDBOX_PATHS) for path in
-               git_in(repo_dir, 'diff', '--name-only', 'origin/main...HEAD').splitlines()):
+               git_in(repo_dir, 'diff', '--name-only', f'origin/{base}...HEAD').splitlines()):
         return 'not needed'
     repo_dir = Path(repo_dir)
     path = os.pathsep.join((str(repo_dir), str(repo_dir/'satellites'/'tare.tools.kernel')))
@@ -793,30 +863,36 @@ def sandbox_probe(repo_dir):
 
 
 def probe_pushed_pull_request(repo_dir, *, session=None, tries=3, every=30, sleep=time.sleep):
-    """Run the sandbox probe for a push to a branch whose pull request into main is open, as `tare ci pr` does before
-    it opens one: the post-commit hook pushes later commits there with auto-merge on, and CI cannot run the Windows
-    sandbox. A probe that fails or does not finish turns auto-merge off and alerts under a key of its own, since the
-    shepherd clears its pull request's alert when auto-merge goes off; `tare ci pr` clears it once its probe passes. A
-    gh that cannot say whether the pull request exists is retried, then alerted. Returns the probe's answer, 'failed',
-    or None when there was nothing to probe."""
+    """Run the sandbox probe for a push to a branch whose pull request into the default branch is open, as
+    `tare ci pr` does before it opens one: the post-commit hook pushes later commits there with auto-merge on, and CI
+    cannot run the Windows sandbox. A probe that fails or does not finish turns auto-merge off and alerts under a key
+    of its own, since the shepherd clears its pull request's alert when auto-merge goes off; `tare ci pr` clears it
+    once its probe passes. A gh that cannot say whether the pull request exists is retried, then alerted. Returns the
+    probe's answer, 'failed', or None when there was nothing to probe."""
     try:
         branch = git_in(repo_dir, 'rev-parse', '--abbrev-ref', 'HEAD')  # the checkout as it is now, as the probe
     except (OSError, subprocess.SubprocessError):
         return None  # no checkout left to probe
-    if branch in ('HEAD', 'main', 'dev'):
+    if branch in ('HEAD', 'dev'):
         return None
-    repo = str(repo_dir)
+    hint = remote_repo(repo_dir)
+    repo, base = hint or str(repo_dir), 'main'
     for left in reversed(range(tries)):
         try:
-            repo = json.loads(gh(['repo', 'view', '--json', 'nameWithOwner'], repo_dir))['nameWithOwner']
-            found = json.loads(gh(['pr', 'list', '--head', branch, '--base', 'main', '--state', 'open', '--json',
-                                   'number,url,title,headRefName'], repo_dir) or '[]')
+            info = json.loads(gh(['repo', 'view', *([hint] if hint else []), '--json',
+                                  'nameWithOwner,defaultBranchRef'], repo_dir))
+            repo = info['nameWithOwner']
+            base = ((info.get('defaultBranchRef') or {}).get('name') or 'main')
+            if branch == base:
+                return None
+            found = json.loads(gh(['pr', 'list', '-R', repo, '--head', branch, '--base', base, '--state', 'open',
+                                   '--json', 'number,url,title,headRefName'], repo_dir) or '[]')
             break
         except (OSError, subprocess.SubprocessError, ValueError, KeyError) as error:
             if not left:
                 reason = f"{error} {getattr(error, 'stderr', None) or ''}".strip()[-500:]
                 pr_alert(repo, '?', {'headRefName': branch, 'title': branch, 'url': ''}, 'sandbox probe not run',
-                         [f'gh could not say whether this branch has an open pull request into main: {reason}',
+                         [f'gh could not say whether this branch has an open pull request into {base}: {reason}',
                           'If it has one and its commits touch the sandbox, run `python scripts/ops/'
                           'sandbox_probe.py`; if it fails, turn auto-merge off (`gh pr merge <number> --disable-auto`)'
                           ', fix it and run `tare ci pr` again.'], session, 'sandbox probe')
@@ -826,11 +902,11 @@ def probe_pushed_pull_request(repo_dir, *, session=None, tries=3, every=30, slee
         return None
     pr = found[0]
     try:
-        return sandbox_probe(repo_dir)
+        return sandbox_probe(repo_dir) if base == 'main' else sandbox_probe(repo_dir, base=base)
     except (ValueError, OSError, subprocess.SubprocessError) as error:  # what makes `tare ci pr` refuse
         failed = f"{error} {getattr(error, 'stderr', None) or ''}".strip().removeprefix('Preflight refused: ')
     try:
-        gh(['pr', 'merge', str(pr['number']), '--disable-auto'], repo_dir)
+        gh(['pr', 'merge', str(pr['number']), '-R', repo, '--disable-auto'], repo_dir)
         what, off = 'sandbox probe failed, auto-merge turned off', 'so auto-merge was turned off'
     except (OSError, subprocess.SubprocessError) as error:
         what = 'sandbox probe failed, auto-merge still on'
@@ -842,43 +918,50 @@ def probe_pushed_pull_request(repo_dir, *, session=None, tries=3, every=30, slee
     return 'failed'
 
 
-def pull_request(repo_dir, body=None):
-    """main takes changes through pull requests that merge themselves once CI is green: refuse what the
-    preflight refuses, push the current branch, open its pull request into main (or reuse the open one), turn on
-    auto-merge with the merge method the repository allows and, when main moved, bring the branch up to date
-    (main requires it). Returns {'number', 'url', 'state', 'preflight', 'sandbox_probe'}."""
+def pull_request(repo_dir, body=None, *, repo=None):
+    """The default branch takes changes through pull requests that merge themselves once CI is green: refuse what the
+    preflight refuses, push the current branch, open its pull request into the repository's default branch (or reuse
+    the open one), turn on auto-merge with the merge method the repository allows and, when the default branch moved,
+    bring the branch up to date. Every `gh` call names the repository when known (AC-01), and a live shepherd for the
+    same pull request is reused instead of starting a second one (AC-07).
+    Returns {'number', 'url', 'state', 'preflight', 'sandbox_probe', ...}."""
     def git(*args):
         return subprocess.run([host_executable('git', required=True), '-C', str(repo_dir), *args], capture_output=True, text=True, encoding='utf-8',
                               errors='replace', check=True).stdout.strip()
     branch = git('rev-parse', '--abbrev-ref', 'HEAD')
-    if branch in ('HEAD', 'main', 'dev'):
-        raise ValueError('Work on a branch: main takes changes only through a pull request.')
+    if branch == 'HEAD':
+        raise ValueError('Work on a branch: detached HEAD cannot open a pull request.')
+    read_data = preflight(repo_dir, repo=repo)
+    resolved_repo = read_data['repo']
+    base = read_data['default_branch']
+    if branch in (base, 'dev'):
+        raise ValueError(f'Work on a branch: {base} takes changes only through a pull request.')
     absorb(repo_dir, branch)
-    read = preflight(repo_dir)
-    plan = merge_plan(read['settings'], read['branch'], read['protection'], read['rules'])
+    plan = merge_plan(read_data['settings'], read_data['branch'], read_data['protection'], read_data['rules'])
     push_preflight = _push_preflight()
     executable = host_executable('git', required=True)
     refusals = []
-    if read['settings'].get('private') is not True:  # anything but a private repository counts as public: fail closed
+    if read_data['settings'].get('private') is not True:  # anything but a private repository counts as public: fail closed
         refusals = push_preflight.identity_refusals(push_preflight.unpublished(repo_dir, 'HEAD', git=executable))
     fix = ' ' + push_preflight.FIX if refusals else ''
     if plan['signed_commits']:
-        refusals += [f'commit {sha[:8]} is not signed and main requires signed commits'
+        refusals += [f'commit {sha[:8]} is not signed and {base} requires signed commits'
                      for sha in push_preflight.unsigned(repo_dir, 'HEAD', git=executable)]
     if refusals:
         raise ValueError('Preflight refused: ' + '; '.join(refusals) + '.' + fix)
-    probe = sandbox_probe(repo_dir)
+    probe = sandbox_probe(repo_dir) if base == 'main' else sandbox_probe(repo_dir, base=base)
     git('push', '--quiet', '--set-upstream', 'origin', branch)
-    found = json.loads(gh(['pr', 'list', '--head', branch, '--base', 'main', '--state', 'open', '--json', 'number,url'],
-                          repo_dir) or '[]')
+    repo_flag = ['-R', resolved_repo] if resolved_repo else []
+    found = json.loads(gh(['pr', 'list', *repo_flag, '--head', branch, '--base', base, '--state', 'open', '--json',
+                           'number,url'], repo_dir) or '[]')
     if not found:
-        git('fetch', '--quiet', 'origin', 'main')
-        commits = git('log', '--format=- %s', 'origin/main..HEAD')
+        git('fetch', '--quiet', 'origin', base)
+        commits = git('log', '--format=- %s', f'origin/{base}..HEAD')
         lines = commits.splitlines()
         title = lines[0][2:] if len(lines) == 1 else f'{branch}: {len(lines)} commits'
-        created = gh(['pr', 'create', '--base', 'main', '--head', branch, '--title', title[:120],
+        created = gh(['pr', 'create', *repo_flag, '--base', base, '--head', branch, '--title', title[:120],
             '--body', body or ('Commits:\n' + commits if commits else branch)], repo_dir).strip()
-        found = json.loads(gh(['pr', 'list', '--head', branch, '--base', 'main', '--state', 'open', '--json',
+        found = json.loads(gh(['pr', 'list', *repo_flag, '--head', branch, '--base', base, '--state', 'open', '--json',
                                'number,url'], repo_dir))
         if not found and re.fullmatch(r'https://[^/\s]+/[^/\s]+/[^/\s]+/pull/[1-9][0-9]*', created):
             found = [{'number': 0, 'url': created}]
@@ -888,34 +971,54 @@ def pull_request(repo_dir, body=None):
         url = found[0].get('url')
         if not isinstance(url, str) or not re.fullmatch(r'https://[^/\s]+/[^/\s]+/[^/\s]+/pull/[1-9][0-9]*', url):
             raise ValueError('Invalid pull request identity; auto-merge was not requested.')
-        observed = json.loads(gh(['pr', 'view', url, '--json', 'number,url,headRefName,baseRefName'], repo_dir))
-        if not pr_identity(observed) or observed.get('headRefName') != branch or observed.get('baseRefName') != 'main':
+        observed = json.loads(gh(['pr', 'view', url, *repo_flag, '--json', 'number,url,headRefName,baseRefName'], repo_dir))
+        if not pr_identity(observed) or observed.get('headRefName') != branch or observed.get('baseRefName') != base:
             raise ValueError('Pull request identity is not confirmed for this branch; auto-merge was not requested.')
         found = [observed]
     number, url = found[0]['number'], found[0]['url']
     # gh --auto merges immediately when the base has no enforced protection.
     # Keep the reviewable PR open rather than assuming another repo's CI gate.
     if plan['protected'] is not True:
-        return {'number': number, 'url': url, 'preflight': plan, 'sandbox_probe': probe,
+        return {'number': number, 'url': url, 'preflight': plan, 'sandbox_probe': probe, 'repo': resolved_repo,
+                'base': base,
                 'state': 'UNPROTECTED_AWAITING_INTEGRATION' if plan['protected'] is False else 'PROTECTION_UNCONFIRMED'}
     if plan['auto_merge'] is False:
         return {'number': number, 'url': url, 'state': 'AUTO_MERGE_DISABLED_AWAITING_INTEGRATION', 'preflight': plan,
-                'sandbox_probe': probe}
+                'sandbox_probe': probe, 'repo': resolved_repo, 'base': base}
     try:
-        gh(['pr', 'merge', str(number), '--auto', '--' + plan['method']], repo_dir)
+        gh(['pr', 'merge', str(number), *repo_flag, '--auto', '--' + plan['method']], repo_dir)
     except subprocess.CalledProcessError as exc:
         if 'Auto merge is not allowed for this repository' not in str(exc.stderr or ''):
             raise
         return {'number': number, 'url': url, 'state': 'AUTO_MERGE_DISABLED_AWAITING_INTEGRATION', 'preflight': plan,
-                'sandbox_probe': probe}
+                'sandbox_probe': probe, 'repo': resolved_repo, 'base': base}
     # The probe passed and auto-merge is on again: the alert of an earlier push's failed probe is past.
-    update(lambda alerts: alerts.pop(f"{read['settings'].get('full_name')}|sandbox probe|{branch}", None))
-    state = json.loads(gh(['pr', 'view', str(number), '--json', 'mergeStateStatus'], repo_dir))['mergeStateStatus']
-    if state == 'BEHIND':  # main moved: GitHub merges main into the branch, and the local branch follows
-        gh(['pr', 'update-branch', str(number)], repo_dir)
+    update(lambda alerts: alerts.pop(f"{resolved_repo or read_data['settings'].get('full_name')}|sandbox probe|{branch}", None))
+    state = json.loads(gh(['pr', 'view', str(number), *repo_flag, '--json', 'mergeStateStatus'], repo_dir))['mergeStateStatus']
+    if state == 'BEHIND':  # base moved: GitHub merges base into the branch, and the local branch follows
+        gh(['pr', 'update-branch', str(number), *repo_flag], repo_dir)
         git('pull', '--quiet', '--ff-only', 'origin', branch)
-    detached('shepherd', repo_dir, number)
-    return {'number': number, 'url': url, 'state': state, 'preflight': plan, 'sandbox_probe': probe}
+    name = f'{repo_dir}#{number}'
+    need_shepherd = []
+
+    def claim_shepherd(beats):
+        if live_shepherd(beats, repo_dir, number, resolved_repo) is not None:
+            need_shepherd.append(False)
+            return
+        beats[name] = {'repo_dir': str(repo_dir), 'number': number, 'repo': resolved_repo, 'branch': branch,
+                       'base': base, 'private': read_data['settings'].get('private'),
+                       'session': os.environ.get('CLAUDE_CODE_SESSION_ID'), 'at': time.time()}
+        need_shepherd.append(True)
+
+    update(claim_shepherd, 'shepherds.json')
+    if need_shepherd[0]:
+        try:
+            detached('shepherd', repo_dir, number)
+        except BaseException:
+            update(lambda beats: beats.pop(name, None), 'shepherds.json')
+            raise
+    return {'number': number, 'url': url, 'state': state, 'preflight': plan, 'sandbox_probe': probe,
+            'repo': resolved_repo, 'base': base, 'shepherd': 'started' if need_shepherd[0] else 'attached'}
 
 
 def forget_pushing_worktree():
@@ -934,11 +1037,26 @@ def forget_pushing_worktree():
 
 
 REPOSITORY_NAME = re.compile(r'[^/\s:\\]+/[^/\s:\\]+')
+GITHUB_REMOTE = re.compile(
+    r'^(?:https?://github\.com/|ssh://git@github\.com/|git@github\.com:)([^/\s]+/[^/\s]+?)(?:\.git)?/?$'
+)
 
 
 def repo_name(value):
     """`owner/name` when the value names a repository gh can be asked about; a local path names none."""
     return value if isinstance(value, str) and REPOSITORY_NAME.fullmatch(value) else None
+
+
+def remote_repo(repo_dir):
+    """`owner/name` parsed from the checkout's `origin` GitHub remote, or None for local/non-GitHub remotes."""
+    if not repo_dir or not Path(repo_dir).is_dir():
+        return None
+    try:
+        url = git_in(repo_dir, 'remote', 'get-url', 'origin')
+    except (OSError, subprocess.SubprocessError):
+        return None
+    found = GITHUB_REMOTE.fullmatch(url.strip())
+    return repo_name(found.group(1)) if found else None
 
 
 def repository_view(repo, fields='isArchived'):
@@ -1036,11 +1154,12 @@ def main(argv=None):
     dismiss = sub.add_parser('dismiss', help='drop one alert, by the key check prints')
     dismiss.add_argument('key')
     sub.add_parser('stop-hook')
-    pr = sub.add_parser('pr', help='push this branch and open (or update) its pull request into main, auto-merged '
-                                   'once CI is green')
+    pr = sub.add_parser('pr', help='push this branch and open (or update) its pull request into the default branch, '
+                                   'auto-merged once CI is green')
     pr.add_argument('--repo-dir', type=Path, default=Path.cwd())
+    pr.add_argument('-R', '--repo', help='GitHub repository as OWNER/REPO (default: read from origin/GitHub)')
     pr.add_argument('--body', help='the pull request description (default: its commits)')
-    keep = sub.add_parser('shepherd', help='keep a pull request up to date with main until it merges')
+    keep = sub.add_parser('shepherd', help='keep a pull request up to date with its base branch until it merges')
     keep.add_argument('repo_dir', type=Path)
     keep.add_argument('number', type=int)
     args = parser.parse_args(argv)
@@ -1055,7 +1174,7 @@ def main(argv=None):
         return 0
     if args.action == 'pr':
         try:
-            print(json.dumps(pull_request(args.repo_dir.resolve(), args.body)))
+            print(json.dumps(pull_request(args.repo_dir.resolve(), args.body, repo=args.repo)))
             return 0
         except (ValueError, OSError, subprocess.SubprocessError) as exc:
             detail = getattr(exc, 'stderr', '') or ''
