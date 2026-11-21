@@ -142,13 +142,14 @@ def load():
 
 
 def mirrors(routes, *, configured_table=None):
-    """{(role, name): row id} of each pin-only route with no line that serves a model the row named already serves
+    """{(role, name): row id} of each pin-only non-origin route that serves a model the row named already serves
     automatically for that role (native_routes.mirror): a proof admits it as that row's reserve."""
     from .native_routes import configured, mirror
+    from .vendor_models import MIRROR_SOURCES
     table = configured_table if configured_table is not None else configured()
     rows = {row.get('native_catalog'): row for row in table['deployments'] if row.get('qualified') is False}
     return {(role, name): found['id'] for role, items in routes.items() for name, route, _, key in items
-            if name in rows and not key[0] and (found := mirror(rows[name], route, role))}
+            if name in rows and (not key[0] or key[3] in MIRROR_SOURCES) and (found := mirror(rows[name], route, role))}
 
 
 def _compute_row_classes(cells):
@@ -271,9 +272,11 @@ class RouteMatrix(Vertical):
                     for name, route, now, key in rows:
                         cells[role].setdefault((row_of(route, key), key[3]), []).append((name, route, now, key))
                 row_classes = _compute_row_classes(cells)
+                from .vendor_models import MIRROR_SOURCES
                 provable_candidates = sorted({
                     n for r, items in routes.items() for n, _, now, k in items
-                    if now == 'NOT_QUALIFIED_PIN_ONLY' and (k[0] or (r, n) in found_mirrors)
+                    if now == 'NOT_QUALIFIED_PIN_ONLY' and (
+                        (k[0] and k[3] not in MIRROR_SOURCES) or (r, n) in found_mirrors)
                 })
                 all_provable = [n for n in provable_candidates if env.route_for(n)[0] is not None]
                 id_rules = {}
@@ -597,9 +600,11 @@ class RouteMatrix(Vertical):
         return found.row_key.value, found.column_key.value
 
     def liftable(self, name, now, key, role=None):
-        """Whether a proof would lift a route: pin only, of a known model line or a mirror (mirrors())."""
+        """Whether a proof would lift a route: pin only, of an origin model line or a mirror (mirrors())."""
+        from .vendor_models import MIRROR_SOURCES
         role = self.role if role is None else role
-        return now == 'NOT_QUALIFIED_PIN_ONLY' and bool(key[0] or (role, name) in self.mirrors)
+        return now == 'NOT_QUALIFIED_PIN_ONLY' and bool(
+            (key[0] and key[3] not in MIRROR_SOURCES) or (role, name) in self.mirrors)
 
     def provable(self):
         """(route, key) of the selected cell's routes a proof would lift (liftable)."""

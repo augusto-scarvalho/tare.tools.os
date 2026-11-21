@@ -218,15 +218,15 @@ def source(deployment):
 
 
 def route_key(deployment):
-    """(family, line, version, source) of a route: claude-api-fable-5-2 is ('claude', 'fable', (5, 2), 'api'). A route
-    has a line only where vendor_models.origin_line says its endpoint serves that vendor's own model (the vendor's
-    CLI or API, or AGY); any other route (a reseller, a custom endpoint, a local model) has none, whatever its wire
-    name says."""
-    from .vendor_models import AGY_EFFORT, origin_line, parse
-    profile = deployment.get('native_profile') or {}
-    model = profile.get('model', '')
-    lined = origin_line(model, profile.get('endpoint', ''))
-    return (*(parse(AGY_EFFORT.sub('', model)) if lined else (None, None, None)), source(deployment))
+    """(family, line, version, source) of a route: claude-api-fable-5-2 is ('claude', 'fable', (5, 2), 'api'), and
+    opencode-sub-gemini-4-argon is ('gemini', 'argon', (4,), 'opencode-sub'). A route has a line where
+    vendor_models.mirror_line confirms it serves that model line (the vendor's own CLI/API/AGY, or a recognized
+    mirror catalogue whose verified author identity matches the line); custom endpoints, local models, and unknown
+    models have none, whatever their wire name says."""
+    from .vendor_models import mirror_line
+    where = source(deployment)
+    found = mirror_line(deployment, where=where)
+    return (*(found[1] if found else (None, None, None)), where)
 
 
 def key_label(key, version=True):
@@ -1197,6 +1197,7 @@ def pending_proofs(roles=PROFILE_ROLES):
     """Sorted list of unique liftable NOT_QUALIFIED_PIN_ONLY route names that are currently available here."""
     from .native_catalog import select_cache
     from .native_routes import configured, mirror
+    from .vendor_models import MIRROR_SOURCES
     candidates = set()
     with select_cache():
         table = configured()
@@ -1207,7 +1208,7 @@ def pending_proofs(roles=PROFILE_ROLES):
                 if route is None or now != 'NOT_QUALIFIED_PIN_ONLY':
                     continue
                 key = route_key(route)
-                if key[0] or (name in pin_only and mirror(pin_only[name], route, role)):
+                if (key[0] and key[3] not in MIRROR_SOURCES) or (name in pin_only and mirror(pin_only[name], route, role)):
                     candidates.add(name)
         return [name for name in sorted(candidates) if route_for(name)[0] is not None]
 

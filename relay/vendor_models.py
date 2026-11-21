@@ -28,6 +28,53 @@ ORIGINS = {'Anthropic': {'cli://claude', 'cli://agy', 'api.anthropic.com'},
 AGY_EFFORT = re.compile(r'-(low|medium|high|xhigh)$')
 # Bedrock's spelling of a model: an optional geography, the vendor, the id, an optional -vN and :N (us.zai.glm-5.3).
 BEDROCK = re.compile(r'(?:(?:us|us-gov|eu|apac|jp|au|ca|global)\.)?[a-z0-9-]+\.(.+?)(?:-v\d+)?(?::\d+)?')
+# Reseller / mirror sources whose model ids can be mapped to a known origin line once verified by author identity.
+MIRROR_SOURCES = ('bedrock', 'openrouter', 'opencode-sub', 'opencode-api')
+
+
+def bare_model(deployment, where=None):
+    """The canonical model id with its catalogue's own decoration removed, or None for local/custom endpoints."""
+    from .environment import source
+    profile = deployment.get('native_profile') or {}
+    model = profile.get('model', '')
+    where = source(deployment) if where is None else where
+    if where == 'bedrock':
+        found = BEDROCK.fullmatch(model)
+        return found[1] if found else None
+    if where == 'openrouter':
+        return model.split('/')[1] if ':' not in model and model.count('/') == 1 else None
+    if where == 'agy':
+        return AGY_EFFORT.sub('', model)
+    return model if where in ('opencode-sub', 'opencode-api', 'api', 'claude-code', 'codex') else None
+
+
+def mirror_line(deployment, where=None):
+    """(line_row, (family, line, version)) when `deployment` serves a known model line — either on the vendor's own
+    origin (`origin_line`) or through a recognized mirror catalogue (`MIRROR_SOURCES`) whose verified author identity
+    matches the line's vendor and bias domain. Local gateways, custom endpoints, variant suffixes (`:free`), and
+    mismatched authors return None."""
+    from .environment import source
+    profile = deployment.get('native_profile') or {}
+    model, endpoint = profile.get('model', ''), profile.get('endpoint', '')
+    if not model:
+        return None
+    if row := origin_line(model, endpoint):
+        return row, parse(AGY_EFFORT.sub('', model))
+    where = source(deployment) if where is None else where
+    if where not in MIRROR_SOURCES:
+        return None
+    bare = bare_model(deployment, where=where)
+    row = bare and line(bare)
+    if not row:
+        return None
+    try:
+        from .work_audit import identity
+        ident = identity(deployment, 'auditor')
+    except (ValueError, KeyError, TypeError, OSError):
+        return None
+    if (ident.vendor, ident.bias_domain) != (row['vendor'], row['bias_domain']):
+        return None
+    return row, parse(bare)
 
 
 def parse(slug):
@@ -66,22 +113,11 @@ def same_model(a, b):
     `-vN` and `:N` (us.zai.glm-5.3 is glm-5.3), OpenRouter's `<vendor>/` (an id with a `:` variant is refused), AGY's
     effort suffix; an OpenCode id and a vendor's own CLI or API id as they are. Nothing else comes off: a -flash, -pro,
     preview or dated id is another model. A local model or any other endpoint is never the same."""
-    from .environment import source
     from .work_audit import identity
 
-    def bare(deployment):
-        model, where = deployment['native_profile']['model'], source(deployment)
-        if where == 'bedrock':
-            found = BEDROCK.fullmatch(model)
-            return found and found[1]
-        if where == 'openrouter':
-            return ':' not in model and model.count('/') == 1 and model.split('/')[1]
-        if where == 'agy':
-            return AGY_EFFORT.sub('', model)
-        return where in ('opencode-sub', 'opencode-api', 'api', 'claude-code', 'codex') and model
     try:
-        mine = bare(a)
-        if not mine or mine != bare(b):
+        mine = bare_model(a)
+        if not mine or mine != bare_model(b):
             return False
         one, other = identity(a, 'auditor'), identity(b, 'auditor')
         return (one.vendor, one.bias_domain) == (other.vendor, other.bias_domain)
