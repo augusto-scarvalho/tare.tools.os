@@ -166,29 +166,80 @@ def test_pipe_panel_line_input_then_eof(tmp_path,monkeypatch):
 @pytest.mark.skipif(os.name != 'nt',reason='Windows PowerShell')
 @pytest.mark.timeout(120)  # a cold powershell.exe on a loaded runner can take well over the suite's 30 s
 def test_powershell_read_host_with_live_display(tmp_path):
+    def wait_for(service, handle, needle, *, timeout, nudge_after=None):
+        started = time.monotonic()
+        deadline = started + timeout
+        nudged = False
+        next_probe = started + 0.5
+        view = None
+        while time.monotonic() < deadline:
+            snapshot = service.view(handle)
+            view = snapshot['text']
+            plain = view.plain if view is not None else ''
+            if needle in plain:
+                return True, {'view': view, 'issue': snapshot['issue'], 'sequence': snapshot['sequence']}
+            now = time.monotonic()
+            if now >= next_probe:
+                next_probe = now + 0.5
+                state = service.read(handle)
+                if state['status'] != 'running':
+                    # Re-check view once after exit in case the final ConPTY frame just landed.
+                    time.sleep(0.15)
+                    snapshot = service.view(handle)
+                    view = snapshot['text']
+                    if view is not None and needle in view.plain:
+                        return True, {'view': view, 'issue': snapshot['issue'], 'sequence': snapshot['sequence']}
+                    break
+                if nudge_after is not None and not nudged and now - started >= nudge_after and not plain.strip():
+                    nudged = True
+                    try:
+                        # Inbox Windows Server ConPTY occasionally stalls its initial VT frame until resized.
+                        service.resize(handle, 81, 24)
+                        service.resize(handle, 80, 24)
+                    except (ValueError, OSError, RuntimeError):
+                        pass
+            time.sleep(.05)
+        state = service.read(handle)
+        snapshot = service.view(handle)
+        view = snapshot['text']
+        raw_stdout = state['output']['stdout']['text']
+        visible = [line.rstrip() for line in (view.plain.splitlines() if view is not None else ()) if line.strip()]
+        return False, {
+            'status': state['status'],
+            'exit_code': state['exit_code'],
+            'reason': state['reason'],
+            'error': state['error'],
+            'elapsed_ms': state['elapsed_ms'],
+            'issue': snapshot['issue'],
+            'sequence': snapshot['sequence'],
+            'raw_stdout_len': len(raw_stdout),
+            'raw_stdout_sample': repr(raw_stdout[:200]),
+            'visible_lines': visible[:10],
+            'nudged': nudged,
+        }
+
     project = tmp_path/'project'; project.mkdir()
-    terminals = ConsoleTerminals()
-    try:
-        terminals.connection(tmp_path/'custody',{'project':str(project)})
-        service = SessionTerminal(terminals,tmp_path/'custody')
-        started = service.client.request('start',repository='project',request_id='shell',mode='pty',
-            argv=['powershell.exe','-NoLogo','-NoProfile','-Command',
-                  "Write-Host 'SHELL_READY'; $answer = Read-Host 'Value'; Write-Output ('ACK:'+$answer)"])
-        handle = started['handle']
-        # Ceilings, not delays: each loop ends as soon as its text appears. A cold PowerShell start on a loaded
-        # hosted Windows runner exceeded the earlier shared 10 s.
-        deadline = time.monotonic()+60
-        while time.monotonic()<deadline:
-            view = service.view(handle)['text']
-            if view is not None and 'Value:' in view.plain: break
-            time.sleep(.05)
-        assert view is not None and 'Value:' in view.plain
-        service.send(handle,'rendered\r')
-        deadline = time.monotonic()+30
-        while time.monotonic()<deadline:
-            view = service.view(handle)['text']
-            if view is not None and 'ACK:rendered' in view.plain: break
-            time.sleep(.05)
-        assert 'ACK:rendered' in view.plain
-    finally:
-        terminals.close()
+    prompt_diagnostics = []
+    for attempt in range(2):
+        terminals = ConsoleTerminals()
+        try:
+            custody = tmp_path/f'custody-{attempt}'
+            terminals.connection(custody, {'project': str(project)})
+            service = SessionTerminal(terminals, custody)
+            started = service.client.request('start', repository='project', request_id=f'shell-{attempt}', mode='pty',
+                argv=['powershell.exe', '-NoLogo', '-NoProfile', '-Command',
+                      "Write-Host 'SHELL_READY'; $answer = Read-Host 'Value'; Write-Output ('ACK:'+$answer)"])
+            handle = started['handle']
+            # Ceilings, not delays: each loop ends as soon as its text appears. A loaded Windows Server runner can
+            # occasionally stall one cold PowerShell ConPTY startup silently; nudge ConPTY once and retry once cleanly.
+            ok, info = wait_for(service, handle, 'Value:', timeout=30, nudge_after=8.0)
+            if not ok:
+                prompt_diagnostics.append({'attempt': attempt + 1, **info})
+                continue
+            service.send(handle, 'rendered\r')
+            acked, ack_info = wait_for(service, handle, 'ACK:rendered', timeout=30)
+            assert acked, f'PowerShell Read-Host did not echo ACK:rendered (attempt {attempt + 1}): {ack_info}'
+            return
+        finally:
+            terminals.close()
+    raise AssertionError(f'PowerShell Read-Host never rendered Value: across attempts: {prompt_diagnostics}')
