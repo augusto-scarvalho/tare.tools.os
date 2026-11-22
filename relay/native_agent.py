@@ -565,7 +565,13 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                     state['managed_skills'] = validated
             elif config.get('managed_skills'):
                 from .managed_skills import freeze_session_pool, partition_pool_for_role
-                skill_project = next(iter(config['repositories'].values()), None)
+                instr_repos = config.get('instruction_repositories')
+                if isinstance(instr_repos, list) and len(instr_repos) == 1 and instr_repos[0] in config['repositories']:
+                    skill_project = config['repositories'][instr_repos[0]]
+                elif len(config['repositories']) == 1:
+                    skill_project = next(iter(config['repositories'].values()))
+                else:
+                    skill_project = None
                 pool = freeze_session_pool(config['managed_skills'], project=skill_project)
                 active_skills, withheld_skills = partition_pool_for_role(pool, effective_role)
                 if active_skills:

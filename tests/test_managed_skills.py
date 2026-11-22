@@ -637,3 +637,53 @@ def test_tui_roles_dialog_configures_skill_roles_and_role_policy(tmp_path, monke
             assert 'impl,plan,p-aud,aud' in app.screen.current['label']
 
     asyncio.run(scenario())
+
+
+def test_multi_repo_audit_uses_instruction_repository_for_project_skill_policy(setup, tmp_path, monkeypatch):
+    config, custody, root = setup
+    storage = tmp_path / 'storage'
+    evidence = tmp_path / 'aa-evidence'
+    evidence.mkdir()
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(storage))
+    src = tmp_path / 'audit-skill'
+    _write(src, 'SKILL.md', '---\nname: Audit Skill\n---\nAUDIT_SECRET_RULE.\n')
+    bundles.capture_bundle(src, name='audit-skill', storage_root=storage)
+    managed.adopt_snapshot('audit-skill', allowed_roles=['auditor'], storage_root=storage)
+    # Disable auditor skills for the instruction project (root), while aa-evidence stays default-enabled.
+    managed.set_role_policy('auditor', False, project=root, storage_root=storage)
+
+    multi_cfg = {
+        **config,
+        'role': 'auditor',
+        'repositories': {'aa-evidence': str(evidence), 'project': str(root)},
+        'instruction_repositories': ['project'],
+        'writable': {},
+        'verifiers': {},
+        'capabilities': ['read', 'list'],
+        'managed_skills': ['audit-skill'],
+    }
+    client = Client(steps=[('tare_deliver', {'summary': 'Reviewed.'})])
+    out = native_agent.run_session(multi_cfg, deployment(), custody, 'Audit change.', client=client, local_counter=client)
+    assert out['status'] == 'PROPOSED'
+    saved = json.loads((custody / 'native-agent.json').read_text(encoding='utf-8'))
+    assert saved.get('managed_skills', []) == []
+    assert saved['managed_skills_withheld'][0]['reason'] == 'role_disabled_by_policy'
+    systems = [m['content'] for path, body in client.calls if path == '/chat/completions'
+               for m in body['messages'] if m['role'] == 'system']
+    assert not any('AUDIT_SECRET_RULE.' in s for s in systems)
+
+
+def test_empty_rendered_managed_skill_validates_on_child_delegation(tmp_path):
+    storage = tmp_path / 'storage'
+    src = tmp_path / 'optional-notes'
+    _write(src, 'SKILL.md', '---\nname: Optional Notes\n---\n<notes>')
+    bundles.capture_bundle(src, name='optional-notes', storage_root=storage)
+    managed.adopt_snapshot('optional-notes', allowed_roles=['implementer'], storage_root=storage)
+    managed.set_overlay('optional-notes', '<notes>', storage_root=storage)
+    managed.set_parameter('optional-notes', 'notes', '', param_type='string', storage_root=storage)
+
+    pool = managed.freeze_session_pool(['optional-notes'], storage_root=storage)
+    child_slice = managed.frozen_for_role({'managed_skills_pool': pool}, 'implementer')
+    assert len(child_slice) == 1 and child_slice[0]['text'] == ''
+    validated = managed.validate_inherited_frozen_skills(child_slice, role='implementer')
+    assert len(validated) == 1 and validated[0]['text'] == ''

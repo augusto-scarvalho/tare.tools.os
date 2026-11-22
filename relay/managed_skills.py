@@ -898,7 +898,7 @@ def validate_inherited_frozen_skills(skills, *, role: str) -> list[dict]:
         if item.get('authority') != 'NONE' or item.get('effects_authorized') is not False:
             raise ValueError(f'Inherited managed skill {sid!r} must carry authority=NONE and effects_authorized=False')
         text = item.get('text')
-        if not isinstance(text, str) or not text:
+        if not isinstance(text, str):
             raise ValueError(f'Inherited managed skill {sid!r} is missing text')
         encoded_size = len(text.encode('utf-8'))
         if encoded_size > MAX_SKILL_TEXT_BYTES:
