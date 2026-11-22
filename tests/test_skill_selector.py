@@ -176,7 +176,13 @@ def test_selector_isolates_compound_slugs_and_shared_prefix_skill_families(tmp_p
     assert r_exact['status'] == 'selected'
     assert r_exact['selected_ids'] == ['coord-canary']
 
-    # Shared-prefix family queried with spaces ('ponytail audit') must select ONLY ponytail-audit.
+    # Shared-prefix family queried with spaces ('ponytail audit') must select ONLY ponytail-audit,
+    # even in a 30+ skill catalog where uncapped IDF would otherwise push a single prefix token over 4.0.
+    for i in range(27):
+        _adopt(
+            tmp_path, storage, f'misc-tool-{i}', f'Misc Tool {i}',
+            f'Unrelated helper number {i}.', '# Misc\nDo unrelated work.',
+        )
     r_family = selector.select_skills('Run ponytail audit on auth.py', storage_root=storage)
     assert r_family['status'] == 'selected'
     assert r_family['selected_ids'] == ['ponytail-audit']

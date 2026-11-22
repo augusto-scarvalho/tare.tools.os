@@ -26,6 +26,7 @@ SHORTLIST_THRESHOLD = 2.0
 SELECT_THRESHOLD = 4.0
 AMBIGUITY_MARGIN = 1.5
 AMBIGUITY_TERM_OVERLAP = 0.7
+MAX_IDF = 1.6
 
 # Bilingual (EN + PT-BR) filler words ignored during lexical matching so ordinary phrasing abstains cleanly.
 _STOPWORDS = frozenset({
@@ -287,7 +288,7 @@ def select_skills(
         for tok in vocab:
             doc_freq[tok] = doc_freq.get(tok, 0) + 1
     idf_map = {
-        tok: round(1.0 + math.log((1.0 + n_docs) / (1.0 + doc_freq.get(tok, 0))) / 2.0, 3)
+        tok: round(min(MAX_IDF, 1.0 + math.log((1.0 + n_docs) / (1.0 + doc_freq.get(tok, 0))) / 2.0), 3)
         for tok in query_tokens
     }
 
