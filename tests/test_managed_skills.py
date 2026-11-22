@@ -231,6 +231,7 @@ def test_tui_skills_panel_capture_manage_edit_activate_and_bindings_without_mode
             preview = panel.query_one('#workbench-preview', TextArea)
             assert preview.read_only is False
             preview.load_text('Edited overlay instructions.\n')
+            await pilot.pause()
             await pilot.click('#skills-save')
             await pilot.pause()
             assert preview.read_only is True
@@ -252,3 +253,101 @@ def test_tui_skills_panel_capture_manage_edit_activate_and_bindings_without_mode
             assert not app.backend.launches
 
     asyncio.run(scenario())
+
+
+def test_parameter_type_change_rejects_incompatible_project_overrides(tmp_path):
+    storage = tmp_path / 'storage'
+    src = tmp_path / 'skill'
+    proj = tmp_path / 'proj'
+    proj.mkdir()
+    _write(src, 'SKILL.md', '---\nname: Typed\n---\nLimit <limit>.\n')
+    bundles.capture_bundle(src, storage_root=storage)
+    managed.adopt_snapshot('typed', storage_root=storage)
+    managed.set_parameter('typed', 'limit', '10', param_type='string', storage_root=storage)
+    managed.set_parameter('typed', 'limit', 'unlimited', project=proj, storage_root=storage)
+
+    # Incompatible type change must fail closed without mutating stored parameter.
+    with pytest.raises(ValueError, match='Existing project override'):
+        managed.set_parameter('typed', 'limit', '20', param_type='int', storage_root=storage)
+    after = managed.effective_view('typed', project=proj, storage_root=storage)
+    assert after['parameters']['limit']['type'] == 'string'
+    assert after['parameters']['limit']['value'] == 'unlimited'
+
+    # Compatible project override coerces cleanly on type change.
+    managed.set_parameter('typed', 'limit', '15', project=proj, storage_root=storage)
+    managed.set_parameter('typed', 'limit', '20', param_type='int', storage_root=storage)
+    coerced = managed.effective_view('typed', project=proj, storage_root=storage)
+    assert coerced['parameters']['limit']['type'] == 'int'
+    assert coerced['parameters']['limit']['value'] == 15
+
+
+def test_provider_continuation_inherits_parent_frozen_managed_skills(setup, tmp_path, monkeypatch):
+    config, custody, root = setup
+    storage = tmp_path / 'storage'
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(storage))
+    src = tmp_path / 'skill-src'
+    _write(src, 'SKILL.md', '---\nname: Cont Skill\n---\nParent frozen text v1.\n')
+    bundles.capture_bundle(src, storage_root=storage)
+    managed.adopt_snapshot('cont-skill', storage_root=storage)
+
+    config.update(capabilities=['read', 'list'], verifiers={}, managed_skills=['cont-skill'])
+    client1 = Client(steps=[('tare_deliver', {'summary': 'Parent turn.'})])
+    native_agent.run_session(config, deployment(), custody, 'Start task.', client=client1, local_counter=client1)
+
+    # Remove the managed skill after parent started; continuation MUST still inherit frozen v1.
+    managed.remove_managed('cont-skill', storage_root=storage)
+
+    from relay import native_continuity
+    child_custody = tmp_path / 'child-session'
+    prev = native_continuity.preview(custody, root)
+    native_continuity.save_request(child_custody, prev, prev['text'], deployment())
+    parent_state = json.loads((custody / 'native-agent.json').read_text(encoding='utf-8'))
+    client2 = Client(steps=[('tare_deliver', {'summary': 'Continued turn.'})])
+    result2 = native_agent.run_session(
+        parent_state['config'], deployment(), child_custody, prev['text'],
+        client=client2, local_counter=client2,
+    )
+    assert result2['status'] == 'PROPOSED'
+    child_state = json.loads((child_custody / 'native-agent.json').read_text(encoding='utf-8'))
+    assert child_state['managed_skills'] == parent_state['managed_skills']
+    systems = [m['content'] for path, body in client2.calls if path == '/chat/completions'
+               for m in body['messages'] if m['role'] == 'system']
+    assert any('Parent frozen text v1.' in s for s in systems)
+
+
+def test_tui_editing_project_overlay_writes_back_to_project_not_global(tmp_path, monkeypatch):
+    storage = tmp_path / 'state'
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(storage))
+    proj_a = tmp_path / 'proj-a'
+    proj_b = tmp_path / 'proj-b'
+    proj_a.mkdir()
+    proj_b.mkdir()
+    ext = tmp_path / 'ext'
+    _write(ext, 'SKILL.md', '---\nname: Scoped\n---\nBase text.\n')
+    bundles.capture_bundle(ext, storage_root=storage)
+    managed.adopt_snapshot('scoped', storage_root=storage)
+    managed.set_overlay('scoped', 'Project A v1.\n', project=proj_a, storage_root=storage)
+
+    async def scenario():
+        app = WorkConsole(proj_a, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(130, 44)) as pilot:
+            await app.workers.wait_for_complete()
+            app.action_skills()
+            await pilot.pause()
+            panel = app.screen
+            assert panel.current['row_kind'] == 'managed'
+            await pilot.click('#skills-save')
+            await pilot.pause()
+            panel.query_one('#workbench-preview', TextArea).load_text('Project A v2.\n')
+            await pilot.pause()
+            await pilot.click('#skills-save')
+            await pilot.pause()
+            assert 'Project A v2.' in panel.query_one('#workbench-preview', TextArea).text
+
+    asyncio.run(scenario())
+    eff_a = managed.effective_view('scoped', project=proj_a, storage_root=storage)
+    eff_b = managed.effective_view('scoped', project=proj_b, storage_root=storage)
+    assert eff_a['effective_text'] == 'Project A v2.\n'
+    assert eff_a['text_source'] == 'project_overlay'
+    assert eff_b['effective_text'] == '---\nname: Scoped\n---\nBase text.\n'
+    assert eff_b['text_source'] == 'base'

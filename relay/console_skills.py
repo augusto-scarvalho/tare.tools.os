@@ -18,7 +18,7 @@ class SkillsPanel(WorkbenchPanel):
     SkillsPanel.narrow #workbench-list { height: 4; }
     SkillsPanel #workbench-preview { height: 1fr; }
     SkillsPanel #workbench-status { height: auto; max-height: 2; }
-    SkillsPanel .panel-actions Button { min-width: 6; padding: 0 1; margin-right: 1; }
+    SkillsPanel .panel-actions Button { min-width: 6; padding: 0 1; margin-left: 1; margin-right: 0; }
     '''
 
     def __init__(self, root: Path, *, selected_managed: list[str], on_toggle_managed, submit_project):
@@ -28,6 +28,7 @@ class SkillsPanel(WorkbenchPanel):
         self.on_toggle_managed = on_toggle_managed
         self.view_mode = 'content'  # 'content' | 'diff' | 'bindings'
         self.editing_overlay = False
+        self.editing_project_scope = False
         self._load_rows()
 
     def _load_rows(self):
@@ -143,6 +144,7 @@ class SkillsPanel(WorkbenchPanel):
 
         self.current = self.rows[index]
         self.editing_overlay = False
+        self.editing_project_scope = False
         preview = self.query_one('#workbench-preview', TextArea)
         preview.read_only = True
         kind = self.current['row_kind']
@@ -268,19 +270,24 @@ class SkillsPanel(WorkbenchPanel):
                     preview.load_text(view['raw_text'])
                     preview.read_only = False
                     self.editing_overlay = True
+                    self.editing_project_scope = (view['text_source'] == 'project_overlay')
+                    scope_label = 'project overlay' if self.editing_project_scope else 'global overlay'
                     self.query_one('#skills-save', Button).label = 'Save'
                     self.query_one('#workbench-status', Static).update(
-                        f"Editing overlay for {sid} (use <param> placeholders). Click Save to persist."
+                        f"Editing {scope_label} for {sid} (use <param> placeholders). Click Save to persist."
                     )
                     preview.focus()
                 else:
                     edited = preview.text
-                    view = managed.set_overlay(sid, edited)
+                    target_project = self.root if self.editing_project_scope else None
+                    view = managed.set_overlay(sid, edited, project=target_project)
                     self.editing_overlay = False
+                    self.editing_project_scope = False
                     preview.read_only = True
+                    scope_label = 'project overlay' if target_project else 'global overlay'
                     self._reload_and_select(
                         'managed:' + sid,
-                        f"Saved overlay for {sid} (sha256={view['effective_sha256'][:12]}). New sessions will freeze it.",
+                        f"Saved {scope_label} for {sid} (sha256={view['effective_sha256'][:12]}). New sessions will freeze it.",
                     )
             elif bid == 'skills-update' and self.current and self.current['row_kind'] == 'managed':
                 sid = self.current['skill_id']

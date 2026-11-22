@@ -253,6 +253,18 @@ def set_parameter(
             _coerce_param_value(default, effective_type, effective_choices)
             if default is not None else (existing['default'] if existing and existing['type'] == effective_type else coerced)
         )
+        # Validate and coerce any existing per-project overrides before persisting type/choice changes.
+        revalidated_overrides = {}
+        for pkey, p_entry in (entry.get('project_overrides') or {}).items():
+            p_params = p_entry.get('parameters') or {}
+            if pname in p_params:
+                try:
+                    revalidated_overrides[pkey] = _coerce_param_value(p_params[pname], effective_type, effective_choices)
+                except ValueError as exc:
+                    raise ValueError(
+                        f'Existing project override for parameter {pname!r} ({pkey}) is incompatible with '
+                        f'type {effective_type!r}: {exc}'
+                    ) from exc
         spec = {
             'type': effective_type,
             'default': coerced_default,
@@ -262,6 +274,8 @@ def set_parameter(
         if effective_choices is not None:
             spec['choices'] = list(effective_choices)
         params[pname] = spec
+        for pkey, new_val in revalidated_overrides.items():
+            entry['project_overrides'][pkey]['parameters'][pname] = new_val
 
     entry['updated_at'] = _now_iso()
     _save_store(store, storage_root=storage_root)

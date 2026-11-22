@@ -537,7 +537,10 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 state['common_guidance'] = common
             if owned := saved_guidance()['variables']:
                 state['guidance_variables'] = owned
-            if config.get('managed_skills'):
+            if continuation:
+                if parent.get('managed_skills'):
+                    state['managed_skills'] = deepcopy(parent['managed_skills'])
+            elif config.get('managed_skills'):
                 from .managed_skills import freeze_for_session as freeze_managed_skills
                 skill_project = next(iter(config['repositories'].values()), None)
                 state['managed_skills'] = freeze_managed_skills(config['managed_skills'], project=skill_project)
