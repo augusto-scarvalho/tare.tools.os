@@ -221,6 +221,7 @@ class WorkbenchPanel(SupportPanel):
         self.render_rows()
         if self.refresh_rows:
             self.set_interval(self.refresh_interval, self.refresh_observations)
+        self.query_one('#workbench-list', OptionList).focus()
 
     def action_document_start(self):
         if isinstance(self.app.focused, TextArea):

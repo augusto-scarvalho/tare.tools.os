@@ -145,6 +145,54 @@ def test_selector_five_states_hard_eligibility_shortlist_cap_and_fingerprint(tmp
     assert corrupt_err['error']
 
 
+def test_selector_isolates_compound_slugs_and_shared_prefix_skill_families(tmp_path):
+    storage = tmp_path / 'storage'
+    _adopt(
+        tmp_path, storage, 'coord-canary', 'Coord Canary',
+        'Coordinator reply tagging convention.', '# Tag\nStart with tag.',
+    )
+    _adopt(
+        tmp_path, storage, 'impl-canary', 'Impl Canary',
+        'Adds a canary header marker to edited Python files.', '# Header\nPlace marker.',
+    )
+    _adopt(
+        tmp_path, storage, 'ponytail-audit', 'Ponytail Audit',
+        'Runs deep audit checks on code changes.', '# Audit\nVerify invariants.',
+    )
+    _adopt(
+        tmp_path, storage, 'ponytail-debt', 'Ponytail Debt',
+        'Tracks technical debt items in repositories.', '# Debt\nList debt.',
+    )
+    _adopt(
+        tmp_path, storage, 'ponytail-gain', 'Ponytail Gain',
+        'Measures refactor performance gains.', '# Gain\nBenchmark.',
+    )
+
+    # Explicit compound slug mention must select ONLY coord-canary and never spill 'canary' into impl-canary.
+    r_exact = selector.select_skills(
+        'Using coord-canary, tell me what add(2, 3) returns in one short sentence. Do not edit files.',
+        storage_root=storage,
+    )
+    assert r_exact['status'] == 'selected'
+    assert r_exact['selected_ids'] == ['coord-canary']
+
+    # Shared-prefix family queried with spaces ('ponytail audit') must select ONLY ponytail-audit,
+    # even in a 30+ skill catalog where uncapped IDF would otherwise push a single prefix token over 4.0.
+    for i in range(27):
+        _adopt(
+            tmp_path, storage, f'misc-tool-{i}', f'Misc Tool {i}',
+            f'Unrelated helper number {i}.', '# Misc\nDo unrelated work.',
+        )
+    r_family = selector.select_skills('Run ponytail audit on auth.py', storage_root=storage)
+    assert r_family['status'] == 'selected'
+    assert r_family['selected_ids'] == ['ponytail-audit']
+
+    # Common stopwords like 'any' must not trigger shortlist noise on unrelated prompts.
+    r_plain = selector.select_skills('Do not edit any files; list what is here.', storage_root=storage)
+    assert r_plain['status'] == 'no_skill'
+    assert r_plain['selected_ids'] == []
+
+
 def test_session_auto_skills_opt_in_freezes_receipt_isolates_roles_and_continues(setup, tmp_path, monkeypatch):
     config, custody, root = setup
     storage = tmp_path / 'storage'

@@ -26,14 +26,17 @@ SHORTLIST_THRESHOLD = 2.0
 SELECT_THRESHOLD = 4.0
 AMBIGUITY_MARGIN = 1.5
 AMBIGUITY_TERM_OVERLAP = 0.7
+MAX_IDF = 1.6
 
 # Bilingual (EN + PT-BR) filler words ignored during lexical matching so ordinary phrasing abstains cleanly.
 _STOPWORDS = frozenset({
-    'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'can', 'do', 'for', 'from', 'has', 'have',
-    'help', 'how', 'in', 'into', 'is', 'it', 'me', 'my', 'need', 'no', 'not', 'of', 'on', 'one',
-    'or', 'our', 'please', 'run', 'see', 'should', 'some', 'that', 'the', 'their', 'them', 'then',
-    'there', 'these', 'this', 'to', 'use', 'using', 'want', 'we', 'what', 'when', 'where', 'which',
-    'with', 'without', 'work', 'you', 'your',
+    'a', 'about', 'after', 'all', 'also', 'an', 'and', 'any', 'are', 'as', 'at', 'be', 'before',
+    'both', 'but', 'by', 'can', 'could', 'do', 'each', 'every', 'for', 'from', 'has', 'have',
+    'help', 'how', 'in', 'into', 'is', 'it', 'just', 'me', 'more', 'most', 'my', 'need', 'no',
+    'not', 'of', 'on', 'one', 'only', 'or', 'other', 'our', 'out', 'over', 'please', 'run', 'same',
+    'see', 'should', 'some', 'such', 'than', 'that', 'the', 'their', 'them', 'then', 'there',
+    'these', 'they', 'this', 'to', 'use', 'using', 'very', 'want', 'we', 'well', 'what', 'when',
+    'where', 'which', 'will', 'with', 'without', 'work', 'would', 'you', 'your',
     'ao', 'aos', 'aqui', 'as', 'ate', 'com', 'como', 'criar', 'da', 'das', 'de', 'dele', 'dela',
     'depois', 'do', 'dos', 'ela', 'ele', 'em', 'entre', 'era', 'essa', 'esse', 'esta', 'este',
     'eu', 'fazer', 'faz', 'foi', 'isso', 'isto', 'ja', 'mais', 'mas', 'me', 'meu', 'minha', 'na',
@@ -109,6 +112,25 @@ def _build_lightweight_record(view: dict) -> dict:
     }
 
 
+def _has_exact_phrase(text_folded: str, phrase: str) -> bool:
+    return len(phrase) >= 2 and bool(re.search(rf'(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])', text_folded))
+
+
+def _tokens_without_other_compound_slugs(
+    query_folded: str,
+    own_slug: str,
+    matched_compound_slugs: list[str],
+    default_tokens: list[str],
+) -> list[str]:
+    others = [s for s in matched_compound_slugs if s != own_slug]
+    if not others:
+        return default_tokens
+    masked = query_folded
+    for other in others:
+        masked = re.sub(rf'(?<![a-z0-9]){re.escape(other)}(?![a-z0-9])', ' ', masked)
+    return _tokenize(masked)
+
+
 def _score_record(
     rec: dict,
     *,
@@ -133,27 +155,31 @@ def _score_record(
 
     # 1. Explicit triggers (phrase match or exact token match).
     for trig in rec['triggers']:
-        if len(trig) >= 2 and re.search(rf'(?<![a-z0-9]){re.escape(trig)}(?![a-z0-9])', query_folded):
+        if _has_exact_phrase(query_folded, trig):
             score += 5.0
             add_match(trig, 'trigger')
 
     # 2. Exact full skill_id slug mention in prompt (e.g. "use pxl-pixel-art").
     slug = rec['slug_folded']
-    if len(slug) >= 3 and re.search(rf'(?<![a-z0-9]){re.escape(slug)}(?![a-z0-9])', query_folded):
+    if len(slug) >= 3 and _has_exact_phrase(query_folded, slug):
         score += 6.0
         add_match(slug, 'skill_id')
 
     # 3. Token-level weighted lexical matching with gentle IDF multiplier.
+    # Multi-token slugs/names scale per-token weights so a single shared prefix (e.g. kiro-*, ponytail-*)
+    # never crosses SELECT_THRESHOLD on its own while multi-token matches still select cleanly.
+    slug_weight = 4.0 if len(rec['slug_tokens']) <= 1 else 2.0
+    name_weight = 3.0 if len(rec['name_tokens']) <= 1 else 1.8
     for tok in query_tokens:
         idf = idf_map.get(tok, 1.0)
         if tok in rec['trigger_tokens'] and tok not in seen_terms:
             score += 3.5 * idf
             add_match(tok, 'trigger')
         elif tok in rec['slug_tokens']:
-            score += 4.0 * idf
+            score += slug_weight * idf
             add_match(tok, 'skill_id')
         elif tok in rec['name_tokens']:
-            score += 3.0 * idf
+            score += name_weight * idf
             add_match(tok, 'skill_name')
         elif tok in rec['desc_tokens']:
             score += 1.5 * idf
@@ -262,14 +288,29 @@ def select_skills(
         for tok in vocab:
             doc_freq[tok] = doc_freq.get(tok, 0) + 1
     idf_map = {
-        tok: round(1.0 + math.log((1.0 + n_docs) / (1.0 + doc_freq.get(tok, 0))) / 2.0, 3)
+        tok: round(min(MAX_IDF, 1.0 + math.log((1.0 + n_docs) / (1.0 + doc_freq.get(tok, 0))) / 2.0), 3)
         for tok in query_tokens
     }
 
+    matched_compound_slugs = sorted(
+        {
+            rec['slug_folded']
+            for rec in all_records
+            if ('-' in rec['slug_folded'] or '_' in rec['slug_folded'])
+            and len(rec['slug_folded']) >= 3
+            and _has_exact_phrase(query_folded, rec['slug_folded'])
+        },
+        key=len,
+        reverse=True,
+    )
+
     scored_eligible: list[dict] = []
     for rec in eligible_records:
+        rec_tokens = _tokens_without_other_compound_slugs(
+            query_folded, rec['slug_folded'], matched_compound_slugs, query_tokens,
+        )
         score, terms, fields = _score_record(
-            rec, query_folded=query_folded, query_tokens=query_tokens, idf_map=idf_map,
+            rec, query_folded=query_folded, query_tokens=rec_tokens, idf_map=idf_map,
         )
         if score >= SHORTLIST_THRESHOLD:
             scored_eligible.append({
@@ -289,8 +330,11 @@ def select_skills(
 
     unavailable_matches: list[dict] = []
     for rec, inelig_reason in ineligible_records:
+        rec_tokens = _tokens_without_other_compound_slugs(
+            query_folded, rec['slug_folded'], matched_compound_slugs, query_tokens,
+        )
         score, terms, fields = _score_record(
-            rec, query_folded=query_folded, query_tokens=query_tokens, idf_map=idf_map,
+            rec, query_folded=query_folded, query_tokens=rec_tokens, idf_map=idf_map,
         )
         if score >= SELECT_THRESHOLD:
             unavailable_matches.append({

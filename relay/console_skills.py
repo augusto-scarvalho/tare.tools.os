@@ -9,6 +9,13 @@ from .console_panels import SupportPanel
 from .console_workbench import WorkbenchPanel, plain
 
 
+def _set_button_label(btn: Button, label: str):
+    """Update a Button label and invalidate layout so auto-width expands instead of clipping."""
+    if str(btn.label) != label:
+        btn.label = label
+        btn.refresh(layout=True)
+
+
 class SkillRolesDialog(SupportPanel):
     """Modal to configure per-skill allowed roles and global/project per-role skill policy."""
 
@@ -48,6 +55,7 @@ class SkillRolesDialog(SupportPanel):
 
     def on_mount(self):
         self._render_roles(preserve_index=0)
+        self.query_one('#roles-list', OptionList).focus()
 
     def action_close(self):
         if self.is_current:
@@ -65,10 +73,10 @@ class SkillRolesDialog(SupportPanel):
             idx = 0
 
         scope_word = 'project' if self.project_scope else 'global'
-        self.query_one('#roles-scope', Button).label = 'Scope: Project' if self.project_scope else 'Scope: Global'
+        _set_button_label(self.query_one('#roles-scope', Button), 'Scope: Project' if self.project_scope else 'Scope: Global')
         mode_btn = self.query_one('#roles-mode', Button)
         mode_btn.disabled = self.skill_id is None
-        mode_btn.label = 'Role policy' if self.mode == 'skill' else 'Skill roles'
+        _set_button_label(mode_btn, 'Role policy' if self.mode == 'skill' else 'Skill roles')
 
         options = []
         if self.mode == 'skill' and self.skill_id:
@@ -224,7 +232,25 @@ class SkillsPanel(WorkbenchPanel):
         self.editing_overlay = False
         self.editing_project_scope = False
         self.show_hidden_vendor = False
+        self._pending_status: tuple[str | None, str] | None = None
         self._load_rows()
+
+    def action_close(self):
+        if self.editing_overlay:
+            self.editing_overlay = False
+            self.editing_project_scope = False
+            preview = self.query_one('#workbench-preview', TextArea)
+            preview.read_only = True
+            target_id = self.current['id'] if self.current else None
+            self._reload_and_select(target_id, 'Cancelled overlay edit.')
+            self.query_one('#workbench-list', OptionList).focus()
+            return
+        super().action_close()
+
+    def on_input_submitted(self, event):
+        if event.input.id == 'skills-capture-path':
+            event.stop()
+            self._capture_from_input()
 
     def _load_rows(self):
         from .console_resources import discover_skills
@@ -264,6 +290,15 @@ class SkillsPanel(WorkbenchPanel):
                 'label': f"[managed] {m['skill_id']} ({m['snapshot_id'][:8]}) · {tag_str} · {m['skill_name']}",
             })
 
+        if (managed_list or self.auto_skills) and self.on_toggle_auto_skills is not None:
+            mode_tag = 'ON (shortlist + abstain)' if self.auto_skills else 'OFF (manual only)'
+            rows.append({
+                'id': 'auto-skills-toggle',
+                'row_kind': 'auto_skills_toggle',
+                'managed_count': len(managed_list),
+                'label': f'[selector] Auto-select skills: {mode_tag}',
+            })
+
         # Show latest inert snapshot per bundle (especially useful for newly captured bundles not yet managed).
         latest_by_bundle = {}
         for s in bundles.list_snapshots():
@@ -287,19 +322,15 @@ class SkillsPanel(WorkbenchPanel):
             vtag = '+'.join(item['vendors'])
             cls_tag = vendor_cat.CLASS_LABELS.get(item['classification'], item['classification'])
             sync_tag = f" · {item['sync_status']}" if item['sync_status'] != 'not_imported' else ''
+            name_suffix = (
+                f" · {item['skill_name']}"
+                if item['skill_name'].strip().lower() != item['slug'].strip().lower() else ''
+            )
             rows.append({
                 **item,
                 'id': 'vendor:' + item['catalog_id'],
                 'row_kind': 'vendor',
-                'label': f"[{vtag}] {item['slug']} · {cls_tag}{sync_tag} · {item['skill_name']}",
-            })
-        if (managed_list or self.auto_skills) and self.on_toggle_auto_skills is not None:
-            mode_tag = 'ON (shortlist + abstain)' if self.auto_skills else 'OFF (manual only)'
-            rows.append({
-                'id': 'auto-skills-toggle',
-                'row_kind': 'auto_skills_toggle',
-                'managed_count': len(managed_list),
-                'label': f'[selector] Auto-select skills: {mode_tag}',
+                'label': f"[{vtag}] {item['slug']} · {cls_tag}{sync_tag}{name_suffix}",
             })
         if catalog['hidden_count']:
             action = 'Hide' if self.show_hidden_vendor else 'Show'
@@ -358,25 +389,25 @@ class SkillsPanel(WorkbenchPanel):
         toggle_btn = self.query_one('#skills-toggle', Button)
         toggle_btn.disabled = not (valid and kind == 'managed')
         if kind == 'managed' and row['skill_id'] in self.selected_managed:
-            toggle_btn.label = 'Deactivate'
+            _set_button_label(toggle_btn, 'Deactivate')
         else:
-            toggle_btn.label = 'Activate'
+            _set_button_label(toggle_btn, 'Activate')
         manage_btn = self.query_one('#skills-manage', Button)
         if kind == 'vendor':
             manage_btn.disabled = not (valid and row.get('sync_status') == 'not_imported')
-            manage_btn.label = 'Import'
+            _set_button_label(manage_btn, 'Import')
         elif kind == 'auto_skills_toggle':
             manage_btn.disabled = self.on_toggle_auto_skills is None
-            manage_btn.label = 'Disable' if self.auto_skills else 'Enable'
+            _set_button_label(manage_btn, 'Disable' if self.auto_skills else 'Enable')
         elif kind == 'vendor_hidden_toggle':
             manage_btn.disabled = False
-            manage_btn.label = 'Hide' if self.show_hidden_vendor else 'Show'
+            _set_button_label(manage_btn, 'Hide' if self.show_hidden_vendor else 'Show')
         else:
             manage_btn.disabled = not (valid and kind == 'snapshot')
-            manage_btn.label = 'Manage'
+            _set_button_label(manage_btn, 'Manage')
         save_btn = self.query_one('#skills-save', Button)
         save_btn.disabled = not (valid and kind == 'managed')
-        save_btn.label = 'Save' if self.editing_overlay else 'Edit'
+        _set_button_label(save_btn, 'Save' if self.editing_overlay else 'Edit')
         self.query_one('#skills-update', Button).disabled = not (valid and kind == 'managed' and has_update)
 
     def show_row(self, index):
@@ -496,22 +527,55 @@ class SkillsPanel(WorkbenchPanel):
             preview.load_text('Preview unavailable.')
             message, valid = str(exc), False
 
+        if self._pending_status is not None:
+            pending_id, pending_msg = self._pending_status
+            if self.current and self.current['id'] == pending_id:
+                message = pending_msg
+            else:
+                self._pending_status = None
+
         self.query_one('#workbench-status', Static).update(plain(message))
         self._sync_buttons(self.current, valid=valid, has_update=has_update)
 
     def _reload_and_select(self, target_id: str | None, status: str):
         self.editing_overlay = False
         self._load_rows()
+        matched_id = None
         if target_id:
             for r in self.rows:
                 if r['id'] == target_id:
                     self.current = r
+                    matched_id = r['id']
                     break
+        if matched_id is None and self.rows:
+            matched_id = self.rows[0]['id']
+        self._pending_status = (matched_id, status)
         self.render_rows()
         self.query_one('#workbench-status', Static).update(plain(status))
 
+    def _capture_from_input(self):
+        from . import skill_bundles as bundles
+        self._pending_status = None
+        try:
+            raw_path = self.query_one('#skills-capture-path', Input).value.strip()
+            if not raw_path:
+                raise ValueError('Enter a local skill directory path to capture.')
+            captured = bundles.capture_bundle(Path(raw_path))
+            self.query_one('#skills-capture-path', Input).value = ''
+            self.view_mode = 'content'
+            target_id = 'snapshot:' + captured['bundle_id'] + '@' + captured['snapshot_id']
+            state = 'already captured' if captured.get('already_captured') else 'captured inertly'
+            self._reload_and_select(
+                target_id,
+                f"Bundle {captured['bundle_id']}@{captured['snapshot_id'][:8]} {state} "
+                f"({captured['summary']['file_count']} files; no code executed).",
+            )
+        except (OSError, ValueError, UnicodeError) as exc:
+            self.query_one('#workbench-status', Static).update(plain(str(exc)))
+
     def handle_button_pressed(self, event):
         bid = event.button.id
+        self._pending_status = None
         if bid == 'workbench-close':
             self.action_close()
             return
@@ -525,23 +589,11 @@ class SkillsPanel(WorkbenchPanel):
             return
 
         from . import managed_skills as managed
-        from . import skill_bundles as bundles
 
         try:
             if bid == 'skills-capture':
-                raw_path = self.query_one('#skills-capture-path', Input).value.strip()
-                if not raw_path:
-                    raise ValueError('Enter a local skill directory path to capture.')
-                captured = bundles.capture_bundle(Path(raw_path))
-                self.query_one('#skills-capture-path', Input).value = ''
-                self.view_mode = 'content'
-                target_id = 'snapshot:' + captured['bundle_id'] + '@' + captured['snapshot_id']
-                state = 'already captured' if captured.get('already_captured') else 'captured inertly'
-                self._reload_and_select(
-                    target_id,
-                    f"Bundle {captured['bundle_id']}@{captured['snapshot_id'][:8]} {state} "
-                    f"({captured['summary']['file_count']} files; no code executed).",
-                )
+                self._capture_from_input()
+                return
             elif bid == 'skills-manage' and self.current and self.current['row_kind'] == 'snapshot':
                 view = managed.adopt_snapshot(self.current['bundle_id'], self.current['snapshot_id'])
                 self.view_mode = 'content'
@@ -595,7 +647,7 @@ class SkillsPanel(WorkbenchPanel):
                     self.editing_overlay = True
                     self.editing_project_scope = (view['text_source'] == 'project_overlay')
                     scope_label = 'project overlay' if self.editing_project_scope else 'global overlay'
-                    self.query_one('#skills-save', Button).label = 'Save'
+                    _set_button_label(self.query_one('#skills-save', Button), 'Save')
                     self.query_one('#workbench-status', Static).update(
                         f"Editing {scope_label} for {sid} (use <param> placeholders). Click Save to persist."
                     )

@@ -724,6 +724,7 @@ class DemandConsole:
         self.restore_selection(asdict(Selection(old.root, mode=mode, deployment=old.deployment,
             profile=old.profile, unlimited=old.unlimited, guide_next=old.guide_next,
             max_model_calls=old.max_model_calls, max_seconds=old.max_seconds, local_models=old.local_models,
+            managed_skills=list(old.managed_skills), auto_skills=old.auto_skills,
             execution_policy={'coordinator': self.default_coordinator})))
         self.assistant_session = None
         self.assistant_history = []
