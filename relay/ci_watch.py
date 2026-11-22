@@ -658,7 +658,7 @@ def shepherd(repo_dir, number, *, session=None, every=60, limit=None, sleep=time
     not-found still finds the push alerts of that branch -- and names it (-R) in every gh call; only a catch-up needs
     the checkout. A pull request or repository that was removed or archived ends it with 'GONE' in that round, without
     an alert of its own: its beat and that pull request's alerts go with it."""
-    started, state, alerted, settled = time.monotonic(), None, None, set()
+    started, state, alerted, settled, recorded_receipts = time.monotonic(), None, None, set(), set()
     name, view, failing = f'{repo_dir}#{number}', None, 0
     stored = read('shepherds.json').get(name, {})
     repo = repo_name(repo) or stored.get('repo')
@@ -736,12 +736,19 @@ def shepherd(repo_dir, number, *, session=None, every=60, limit=None, sleep=time
             elif view['mergeStateStatus'] in ('BLOCKED', 'UNSTABLE'):
                 failures = failed_runs(repo_dir, head, repo)
                 problem = ('CI failed', [f"{r['workflowName']}: {r['url']}" for r in failures]) if failures else None
+            # Record one triage receipt per failing attempt independently of alert deduplication (#291 follow-up).
+            failure_logs = {}
+            for r in failures:
+                run_attempt = attempt(r)
+                if run_attempt not in recorded_receipts:
+                    log, _ = record_failure_receipt(repo, repo_dir, r, pr=number, head_sha=head)
+                    recorded_receipts.add(run_attempt)
+                    failure_logs[run_attempt] = log
             if problem and (not alerted or alerted[:2] != (problem[0], head)):
                 # The failing tests themselves, as a push's alert has them: the only alert this pull request's CI gets.
                 failed_lines = []
                 for r in failures:
-                    log, _ = record_failure_receipt(repo, repo_dir, r, pr=number, head_sha=head)
-                    failed_lines.extend(excerpt(repo_dir, r['databaseId'], repo, log=log))
+                    failed_lines.extend(excerpt(repo_dir, r['databaseId'], repo, log=failure_logs.get(attempt(r))))
                 errors = problem[1] + failed_lines
                 pr_alert(repo, number, view, problem[0], errors, session)
                 alerted = (problem[0], head, problem[1])
