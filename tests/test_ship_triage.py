@@ -151,3 +151,49 @@ def test_shepherd_and_settle_persist_redacted_triage_receipts_when_failures_are_
     assert receipt['pr'] == 9 and receipt['head_sha'] == 'abc1234' and receipt['untrusted'] is True
     assert receipt['verification_checks'] == [['python', '-m', 'pytest', 'tests/test_x.py::test_fail', '-q']]
     assert secret not in json.dumps(receipt) and '[redacted]' in json.dumps(receipt)
+
+
+def test_shepherd_records_receipt_per_failing_attempt_on_same_sha_with_single_alert(tmp_path, monkeypatch):
+    monkeypatch.setenv('TARE_CI_ALERTS', str(tmp_path/'ci'))
+    notified = []
+    monkeypatch.setattr(ci_watch, 'notify', lambda alert: notified.append(alert))
+    views = iter([
+        {'mergeStateStatus': 'BLOCKED'},
+        {'mergeStateStatus': 'BLOCKED'},
+        {'state': 'MERGED'},
+    ])
+    attempts = iter([1, 2])
+    logs = iter([
+        'ci\tRun tests\t2026-11-20T01:00:00Z FAILED tests/test_a.py::test_one - first failure\n',
+        'ci\tRun tests\t2026-11-20T01:05:00Z FAILED tests/test_b.py::test_two - second failure\n',
+    ])
+    current_attempt = [1]
+
+    def gh(args, cwd):
+        if args[:2] == ['repo', 'view']:
+            return json.dumps({'nameWithOwner': 'acme/os', 'isArchived': False})
+        if args[:2] == ['pr', 'view']:
+            view = next(views)
+            if view.get('mergeStateStatus') == 'BLOCKED':
+                current_attempt[0] = next(attempts)
+            return json.dumps({'state': 'OPEN', 'autoMergeRequest': {'mergeMethod': 'MERGE'}, 'headRefName': 'feat',
+                               'headRefOid': 'abc1234', 'baseRefName': 'main', 'url': 'https://github.com/acme/os/pull/9',
+                               'title': 'Fix', **view})
+        if args[:2] == ['run', 'list']:
+            return json.dumps([{'databaseId': 55, 'attempt': current_attempt[0], 'status': 'completed',
+                                'conclusion': 'failure', 'workflowName': 'CI', 'headBranch': 'feat',
+                                'event': 'pull_request', 'url': 'https://github.com/acme/os/actions/runs/55',
+                                'createdAt': '2026-11-20T01:00:00Z', 'displayTitle': 'Fix'}])
+        if args[:2] == ['run', 'view']:
+            return next(logs)
+        return ''
+
+    monkeypatch.setattr(ci_watch, 'gh', gh)
+    assert ci_watch.shepherd(tmp_path, 9, sleep=lambda s: None) == 'MERGED'
+    r1 = json.loads((tmp_path/'ci'/'receipts'/'55-1.json').read_text(encoding='utf-8'))
+    r2 = json.loads((tmp_path/'ci'/'receipts'/'55-2.json').read_text(encoding='utf-8'))
+    assert r1['attempt'] == 1 and r1['head_sha'] == 'abc1234'
+    assert r2['attempt'] == 2 and r2['head_sha'] == 'abc1234'
+    assert r1['verification_checks'] == [['python', '-m', 'pytest', 'tests/test_a.py::test_one', '-q']]
+    assert r2['verification_checks'] == [['python', '-m', 'pytest', 'tests/test_b.py::test_two', '-q']]
+    assert len(notified) == 1
