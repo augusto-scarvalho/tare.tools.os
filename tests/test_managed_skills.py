@@ -231,7 +231,7 @@ def test_tui_skills_panel_capture_manage_edit_activate_and_bindings_without_mode
             preview = panel.query_one('#workbench-preview', TextArea)
             assert preview.read_only is False
             preview.load_text('Edited overlay instructions.\n')
-            await pilot.pause()
+            await pilot.pause(.4)  # Textual's pressed animation suppresses an immediate second click.
             await pilot.click('#skills-save')
             await pilot.pause()
             assert preview.read_only is True
@@ -245,7 +245,7 @@ def test_tui_skills_panel_capture_manage_edit_activate_and_bindings_without_mode
 
             # 5. Cycle Diff / Bindings view.
             await pilot.click('#skills-view')
-            await pilot.pause()
+            await pilot.pause(.4)  # Textual's pressed animation suppresses an immediate second click.
             assert 'Base -> Effective' in panel.query_one('#workbench-preview', TextArea).text
             await pilot.click('#skills-view')
             await pilot.pause()
@@ -339,7 +339,7 @@ def test_tui_editing_project_overlay_writes_back_to_project_not_global(tmp_path,
             await pilot.click('#skills-save')
             await pilot.pause()
             panel.query_one('#workbench-preview', TextArea).load_text('Project A v2.\n')
-            await pilot.pause()
+            await pilot.pause(.4)  # Textual's pressed animation suppresses an immediate second click.
             await pilot.click('#skills-save')
             await pilot.pause()
             assert 'Project A v2.' in panel.query_one('#workbench-preview', TextArea).text
