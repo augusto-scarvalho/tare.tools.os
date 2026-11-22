@@ -269,7 +269,7 @@ def test_symlink_in_root_or_inside_bundle_is_refused(tmp_path, link_target):
     except (OSError, NotImplementedError) as exc:
         pytest.skip(f'Symlinks unavailable: {exc}')
 
-    with pytest.raises(ValueError, match='Linked|reparse'):
+    with pytest.raises(ValueError, match='[Ll]inked|reparse'):
         bundles.inspect_bundle(target)
 
 
