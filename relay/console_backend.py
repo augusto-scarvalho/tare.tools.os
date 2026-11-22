@@ -85,6 +85,7 @@ class Selection:
     terminal: bool = False
     command_protection: dict = field(default_factory=dict)
     project_admission: dict = field(default_factory=lambda: {'mode': 'quarantine', 'root_sha256': None, 'nested': False})
+    managed_skills: list[str] = field(default_factory=list)
     write_paths: list[str] = field(default_factory=list)
     graph_path: str = ''
     folder_grants: str = ''  # the project's grants file: new sessions may ask to read outside folders
@@ -337,6 +338,8 @@ def command(selection, resume=False, *, replan=False, assistant=False):
             instruction = (ASSISTANT_CONTEXT if assistant else '')+prompt
             args += ['--root', str(root), '--session', selection.session,
                      '--instruction', instruction, '--role', selection.role]
+            for skill_id in selection.managed_skills:
+                args += ['--skill', skill_id]
             if not assistant and selection.role=='auditor':
                 args += ['--typed-output']
             args += ['--specgraph-context' if selection.specgraph_context else '--no-context']

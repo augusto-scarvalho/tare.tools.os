@@ -776,18 +776,17 @@ class ConversationWorkbench:
             panel = WorkbenchPanel('Artifacts · captured responses and diffs', rows, kind=kind,
                                    submit=lambda *args: self.add_workbench_draft(scope, *args))
         elif kind == 'skills':
-            from .console_resources import discover_skills, preview_skill
+            from .console_skills import SkillsPanel
             try:
-                rows = [dict(r, id=r['path'], label=r['path']+' · '+r['sha256']+' · '+str(r['size_bytes'])+' B')
-                        for r in discover_skills(root)]
+                panel = SkillsPanel(
+                    root,
+                    selected_managed=list(getattr(self, 'selected_managed_skills', ())),
+                    on_toggle_managed=self.toggle_managed_skill,
+                    submit_project=lambda *args: self.add_workbench_draft(scope, *args, skill=True),
+                )
             except (OSError, ValueError) as exc:
                 self.notify(str(exc), severity='error')
                 return False
-            panel = WorkbenchPanel('Project skills', rows, kind=kind,
-                                   preview=lambda r: ('Project: '+str(root.resolve())+'\nPath: '+r['path']+
-                                       '\nSHA-256: '+r['sha256']+'\nSize: '+str(r['size_bytes'])+
-                                       ' bytes\n\n'+preview_skill(root, r['path'], r['sha256'])),
-                                   submit=lambda *args: self.add_workbench_draft(scope, *args, skill=True))
         else:
             # Reuse the owner that distinguishes saved authority from new-session defaults.
             from .project_permissions import permissions_view
