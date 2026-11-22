@@ -333,9 +333,11 @@ com uma nova contagem.
   `.agents/skills/<name>/SKILL.md` de primeiro nível (**Add to draft** insere um
   snapshot atômico conferido por hash até 16 KiB no rascunho), captura pastas locais
   de skill como snapshots inertes versionados fora da descoberta ativa (**Capture**) e
-  gerencia skills configuráveis com overlays editáveis, parâmetros tipados, diffs
-  explícitos contra upstream, tabela de bindings por runtime e ativação explícita
-  (**Activate / Deactivate**) congelada por nova sessão (veja [Managed skills](../guides/SKILLS.md)).
+  gerencia skills configuráveis com overlays editáveis, parâmetros tipados,
+  acesso e política por papel (**Roles** — `explorer`, `researcher`, `vision` e
+  `heads_up` desabilitados por padrão), diffs explícitos contra upstream, tabela
+  de bindings por runtime e ativação explícita (**Activate / Deactivate**)
+  congelada por nova sessão (veja [Managed skills](../guides/SKILLS.md)).
   Selecionar, capturar ou ativar uma skill nunca executa scripts nem amplia permissões.
 
 O gerenciamento de servidores MCP externos, marketplaces remotos de skills, ramificação de conversas

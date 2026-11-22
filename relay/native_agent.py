@@ -292,7 +292,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 pause_requested=None, receive_message=None, permission_directory=None,
                 active_time_budget=None,active_call_budget=None,recheck_candidate=False,retry_delivery=False,repair_plan=False,
                 unlimited_resources=(), model_recovery_call_limit=None, folder_consent_request=None,
-                raw_user_reply=None, invocation_limits=None, parent_clock=None):
+                raw_user_reply=None, invocation_limits=None, parent_clock=None,
+                inherited_managed_skills=None):
     from compute_plane.native_capabilities import NativeCapabilities
     from compute_plane.native_models import NativeHttpClient, NativeModelAdapter
     from compute_plane.native_project_context import NativeProjectContext
@@ -313,6 +314,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
         follow_up = raw_user_reply
     if type(recover_plan_source) is not bool:
         raise ValueError('native_plan_recovery_requires_boolean')
+    if resume and inherited_managed_skills is not None:
+        raise ValueError('inherited_managed_skills applies only to new sessions.')
     if type(retry_delivery) is not bool or type(repair_plan) is not bool or sum((bool(retry_delivery),bool(repair_plan),bool(recheck_candidate)))>1:
         raise ValueError('Choose either candidate recheck or delivery retry.')
     host_retry = recheck_candidate or retry_delivery or repair_plan
@@ -537,13 +540,46 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 state['common_guidance'] = common
             if owned := saved_guidance()['variables']:
                 state['guidance_variables'] = owned
+            effective_role = state.get('conversation_role') or config['role']
+            if inherited_managed_skills is not None and config.get('managed_skills'):
+                raise ValueError('Cannot combine config.managed_skills with inherited_managed_skills.')
             if continuation:
-                if parent.get('managed_skills'):
+                if inherited_managed_skills is not None:
+                    raise ValueError('Cannot combine provider continuation with inherited_managed_skills.')
+                if parent.get('managed_skills_pool'):
+                    from .managed_skills import partition_pool_for_role
+                    state['managed_skills_pool'] = deepcopy(parent['managed_skills_pool'])
+                    active_skills, withheld_skills = partition_pool_for_role(
+                        state['managed_skills_pool'], effective_role,
+                    )
+                    if active_skills:
+                        state['managed_skills'] = active_skills
+                    if withheld_skills:
+                        state['managed_skills_withheld'] = withheld_skills
+                elif parent.get('managed_skills'):
                     state['managed_skills'] = deepcopy(parent['managed_skills'])
+            elif inherited_managed_skills is not None:
+                from .managed_skills import validate_inherited_frozen_skills
+                validated = validate_inherited_frozen_skills(inherited_managed_skills, role=effective_role)
+                if validated:
+                    state['managed_skills'] = validated
             elif config.get('managed_skills'):
-                from .managed_skills import freeze_for_session as freeze_managed_skills
-                skill_project = next(iter(config['repositories'].values()), None)
-                state['managed_skills'] = freeze_managed_skills(config['managed_skills'], project=skill_project)
+                from .managed_skills import freeze_session_pool, partition_pool_for_role
+                instr_repos = config.get('instruction_repositories')
+                if isinstance(instr_repos, list) and len(instr_repos) == 1 and instr_repos[0] in config['repositories']:
+                    skill_project = config['repositories'][instr_repos[0]]
+                elif len(config['repositories']) == 1:
+                    skill_project = next(iter(config['repositories'].values()))
+                else:
+                    skill_project = None
+                pool = freeze_session_pool(config['managed_skills'], project=skill_project)
+                active_skills, withheld_skills = partition_pool_for_role(pool, effective_role)
+                if active_skills:
+                    state['managed_skills'] = active_skills
+                if withheld_skills:
+                    state['managed_skills_withheld'] = withheld_skills
+                if state.get('conversation_role') == 'coordinator' or not (delegated_leaf or exploration_leaf):
+                    state['managed_skills_pool'] = pool
             if capsule:
                 # Frozen here: the system text and the first message must not change within a session.
                 state['prompt_capsule'] = capsule
@@ -945,7 +981,16 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                     ((' ' + conversation_guidance)
                      if state.get('conversation_flow') and not state.get('conversation_role') else '') +
                     ''.join(' ' + fill(text['text'], found) for text in state.get('common_guidance', ())) +
-                    (managed_skills_block(state.get('managed_skills', ())) if state.get('managed_skills') else ''))
+                    (managed_skills_block(
+                        state.get('managed_skills', ()),
+                        delegated_pool=(
+                            state.get('managed_skills_pool')
+                            if state.get('conversation_role') == 'coordinator' else None
+                        ),
+                        role=state.get('conversation_role') or config['role'],
+                    ) if state.get('managed_skills') or (
+                        state.get('conversation_role') == 'coordinator' and state.get('managed_skills_pool')
+                    ) else ''))
             from .native_spend import compose, settings
             spend_policy, tariff = settings(deployment, configured=True)
             shared_tools = conversation_tools or planning_tools or exploration_tools or implement_tools

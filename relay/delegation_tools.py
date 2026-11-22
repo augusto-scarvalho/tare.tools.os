@@ -635,12 +635,16 @@ class ExplorationTools:
             row['attempts'] = list(row.get('attempts') or []) + [executed_attempt(deployment, {'status': 'DISPATCHING'})]
             save_json(folder/'receipt.json', row)  # an interruption keeps this attempt with an unknown result
             from .execution_scope import user_choice
+            from .managed_skills import frozen_for_role as frozen_skills_for_role
+            explorer_skills = frozen_skills_for_role(self.state, 'explorer')
             with user_choice('explorer', deployment if self.configured(deployment) else None):
                 outcome = run_session(config, deployment, folder/'session', instruction,
                              limits=execution_resources.limits(dict(max_model_calls=calls, max_seconds=seconds, max_model_retries=0, max_stagnant_turns=4),
                                                                ('stagnation',) if execution_resources.selected('stagnation') else ()),
                             cancellation=ParentCancellation(control), exploration_leaf=True,
-                            exploration_scope=row['source_path'], **options)
+                            exploration_scope=row['source_path'],
+                            **({'inherited_managed_skills': explorer_skills} if explorer_skills else {}),
+                            **options)
             settle_attempt(row['attempts'][-1], outcome)
             save_json(folder/'receipt.json', row)
             if (outcome or {}).get('model_recovery', {}).get('available') and not control.should_stop():

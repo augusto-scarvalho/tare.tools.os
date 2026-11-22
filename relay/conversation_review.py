@@ -1099,6 +1099,8 @@ def _review(owner, task, tree, producer, unit, changed, checks, control, *, _una
     row['attempts'] = [executed_attempt(deployment, {'status': 'DISPATCHING'})]
     save_json(path, row, max_bytes=MAX_RECEIPT_BYTES)
     try:
+        from .managed_skills import frozen_for_role as frozen_skills_for_role
+        auditor_skills = frozen_skills_for_role(owner.state, 'auditor')
         outcome = run_session(config, deployment, job/'session',
             'Independently review review:request.json and review:diff.patch against the requested outcome. '
             +('JSON files in diff_projection are rendered canonically for review, with every changed value retained. '
@@ -1151,7 +1153,8 @@ def _review(owner, task, tree, producer, unit, changed, checks, control, *, _una
             # per-call default. Its enclosing review/shared deadline still wins.
             limits={'max_model_calls': calls, 'max_seconds': None if seconds is None else int(seconds),
                     'request_seconds': AUDIT_REQUEST_SECONDS if seconds is None else min(AUDIT_REQUEST_SECONDS,int(seconds))},
-            cancellation=control.cancellation, delegated_leaf=True)
+            cancellation=control.cancellation, delegated_leaf=True,
+            **({'inherited_managed_skills': auditor_skills} if auditor_skills else {}))
         row['calls_used'] = count_calls(job/'session') if (job/'session/journal.jsonl').exists() else calls
         from .native_routes import settle_attempt
         settle_attempt(row['attempts'][-1], outcome)
