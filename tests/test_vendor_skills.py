@@ -301,3 +301,58 @@ def test_tui_vendor_catalog_import_hidden_toggle_and_live_drift_update(tmp_path,
             assert not app.backend.launches
 
     asyncio.run(scenario())
+
+
+def test_unc_link_target_rejected_before_resolve_and_cyclic_links_never_crash(tmp_path, monkeypatch):
+    fake_entry = tmp_path / 'unc-skill'
+    fake_entry.mkdir()
+    monkeypatch.setattr(vendor_cat._bundles, '_is_link_or_reparse', lambda p: p == fake_entry)
+    monkeypatch.setattr(os, 'readlink', lambda p: r'\\evil-server\share\skill')
+    resolve_called = []
+    orig_resolve = Path.resolve
+
+    def guarded_resolve(self, strict=False):
+        if 'evil-server' in str(self) or self == fake_entry:
+            resolve_called.append(str(self))
+            raise AssertionError('UNC target must never be resolved or contacted')
+        return orig_resolve(self, strict=strict)
+
+    monkeypatch.setattr(Path, 'resolve', guarded_resolve)
+    assert vendor_cat._resolve_vendor_skill_root(fake_entry) is None
+    assert resolve_called == []
+
+    # Cyclic / chained symlink must be refused cleanly without raising RuntimeError.
+    home = tmp_path / 'home'
+    a = home / '.claude' / 'skills' / 'cycle-a'
+    b = home / '.claude' / 'skills' / 'cycle-b'
+    if _link_dir(a, b) and _link_dir(b, a):
+        cat = vendor_cat.discover_vendor_catalog(home=home, storage_root=tmp_path / 'storage')
+        assert cat['items'] == []
+
+
+def test_same_named_different_vendor_skills_and_unusual_folder_names_stay_isolated(tmp_path):
+    home = tmp_path / 'home'
+    storage = tmp_path / 'storage'
+    _write(home / '.claude' / 'skills' / 'review', 'SKILL.md', '---\nname: Claude Review\n---\nClaude rules.\n')
+    _write(home / '.codex' / 'skills' / 'review', 'SKILL.md', '---\nname: Codex Review\n---\nDifferent Codex rules.\n')
+    # Non-ASCII / dot-dot folder name must not crash catalog discovery.
+    _write(home / '.claude' / 'skills' / '审查', 'SKILL.md', '---\nname: 审查\n---\nUnicode skill body.\n')
+    _write(home / '.codex' / 'skills' / 'review..backup', 'SKILL.md', '---\nname: Backup Review\n---\nBackup body.\n')
+
+    cat1 = vendor_cat.discover_vendor_catalog(home=home, storage_root=storage)
+    assert len(cat1['items']) == 4
+
+    # Import Claude's `review`: Codex's distinct `review` MUST stay `not_imported` (not `vendor_changed`).
+    imported_claude = vendor_cat.import_vendor_skill('review', vendor='claude', home=home, storage_root=storage)
+    assert imported_claude['skill_id'] == 'review'
+
+    cat2 = vendor_cat.discover_vendor_catalog(home=home, storage_root=storage)
+    codex_review = next(it for it in cat2['items'] if it['slug'] == 'review' and it['primary_vendor'] == 'codex')
+    assert codex_review['sync_status'] == 'not_imported'
+    assert codex_review['managed_skill_id'] is None
+
+    # 1-click import of Codex's distinct `review` auto-disambiguates to `review-codex` without clobbering Claude's.
+    imported_codex = vendor_cat.import_vendor_skill(codex_review, home=home, storage_root=storage)
+    assert imported_codex['skill_id'] == 'review-codex'
+    assert 'Different Codex rules.' in imported_codex['effective_text']
+    assert 'Claude rules.' in managed.effective_view('review', storage_root=storage)['effective_text']

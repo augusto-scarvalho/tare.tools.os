@@ -163,6 +163,22 @@ def default_vendor_sources(home=None) -> list[dict]:
     return sources
 
 
+def _strip_win_verbatim_prefix(raw: str) -> str:
+    """Strip Windows verbatim prefixes (`\\?\\`, `\\??\\`) to inspect UNC/local paths without touching the network."""
+    for prefix in ('\\\\?\\UNC\\', '//?/UNC/', '\\??\\UNC\\', '\\\\?\\unc\\', '\\??\\unc\\'):
+        if raw.startswith(prefix):
+            return '\\\\' + raw[len(prefix):]
+    for prefix in ('\\\\?\\', '//?/', '\\??\\'):
+        if raw.startswith(prefix):
+            return raw[len(prefix):]
+    return raw
+
+
+def _is_raw_unc(raw: str) -> bool:
+    cleaned = _strip_win_verbatim_prefix(raw)
+    return cleaned.startswith('\\\\') or cleaned.startswith('//')
+
+
 def _resolve_vendor_skill_root(entry: Path) -> tuple[Path, bool] | None:
     """Resolve a direct vendor skill entry safely: allows one explicit top-level local link/junction hop."""
     try:
@@ -176,11 +192,29 @@ def _resolve_vendor_skill_root(entry: Path) -> tuple[Path, bool] | None:
         if _is_unc_or_network(abs_entry):
             return None
         return abs_entry, False
-    # One explicit top-level hop (e.g. ~/.claude/skills/pxl-pixel-art -> C:\side-projects\claude-pxl).
-    # Internal links inside the bundle remain strictly refused by skill_bundles.capture_bundle().
+    # Inspect the raw link target BEFORE resolving/stating so UNC network targets are never contacted,
+    # and chained/cyclic symlinks are rejected cleanly without RuntimeError.
     try:
-        resolved = entry.resolve(strict=True)
+        raw_target = os.readlink(entry)
     except OSError:
+        return None
+    if not raw_target or _is_raw_unc(raw_target):
+        return None
+    cleaned = _strip_win_verbatim_prefix(raw_target)
+    candidate = Path(cleaned)
+    if not candidate.is_absolute():
+        candidate = entry.parent / candidate
+    candidate_abs = Path(os.path.normpath(str(candidate.absolute())))
+    if _is_unc_or_network(candidate_abs):
+        return None
+    try:
+        # Exactly one hop: refuse chained links/junctions (also blocks symlink cycles deterministically).
+        if not os.path.lexists(candidate_abs) or _bundles._is_link_or_reparse(candidate_abs):
+            return None
+        if not candidate_abs.is_dir():
+            return None
+        resolved = candidate_abs.resolve(strict=True)
+    except (OSError, RuntimeError):
         return None
     if _is_unc_or_network(resolved) or not resolved.is_dir():
         return None
@@ -440,7 +474,15 @@ def _scan_source(source: dict) -> list[dict]:
             sha256 = hashlib.sha256(raw).hexdigest()
             skill_name, description = _parse_frontmatter(text, child.name)
         has_scripts = (capture_root / 'scripts').is_dir() and not _bundles._is_link_or_reparse(capture_root / 'scripts')
-        slug = _bundles.normalize_bundle_id(child.name)
+        slug = None
+        for candidate_slug in (child.name, skill_name):
+            try:
+                slug = _bundles.normalize_bundle_id(candidate_slug)
+                break
+            except ValueError:
+                continue
+        if slug is None:
+            slug = f'skill-{sha256[:8]}'
         cls = classify_vendor_skill(
             slug=slug,
             name=skill_name,
@@ -495,14 +537,13 @@ def discover_vendor_catalog(
     for item in raw_items:
         by_hash.setdefault(item['skill_md_sha256'], []).append(item)
 
-    # Cross-reference with existing managed skills for sync/drift visibility.
+    # Cross-reference with existing managed skills by canonical origin_path only (never conflate
+    # different-content skills that happen to share a folder name across vendors).
     store = _managed.load_store(storage_root=storage_root)
     managed_by_origin: dict[str, dict] = {}
-    managed_by_bundle: dict[str, dict] = {}
     for sid, entry in store['skills'].items():
         if entry.get('origin_path'):
             managed_by_origin[os.path.normcase(str(Path(entry['origin_path']).absolute()))] = entry
-        managed_by_bundle[entry['bundle_id']] = entry
 
     all_deduped: list[dict] = []
     for sha, group in by_hash.items():
@@ -539,8 +580,6 @@ def discover_vendor_catalog(
             if norm_root in managed_by_origin:
                 matched_entry = managed_by_origin[norm_root]
                 break
-        if matched_entry is None and primary['slug'] in managed_by_bundle:
-            matched_entry = managed_by_bundle[primary['slug']]
 
         if matched_entry is None:
             sync_status = 'not_imported'
@@ -679,9 +718,17 @@ def import_vendor_skill(
             f"(exceeds {_managed.MAX_SKILL_TEXT_BYTES} byte managed limit); trim or sanitize it first"
         )
 
+    target_sid = skill_id
+    if target_sid is None:
+        store = _managed.load_store(storage_root=storage_root)
+        existing = store['skills'].get(item['slug'])
+        if existing is not None and os.path.normcase(str(Path(existing.get('origin_path') or '').absolute())) != os.path.normcase(str(Path(item['capture_root']).absolute())):
+            target_sid = f"{item['slug']}-{item['primary_vendor']}"
+        else:
+            target_sid = item['slug']
     captured = _bundles.capture_bundle(
         Path(item['capture_root']),
-        name=item['slug'],
+        name=target_sid,
         storage_root=storage_root,
     )
     roles = allowed_roles if allowed_roles is not None else (
@@ -690,7 +737,7 @@ def import_vendor_skill(
     return _managed.adopt_snapshot(
         captured['bundle_id'],
         captured['snapshot_id'],
-        skill_id=skill_id or item['slug'],
+        skill_id=target_sid,
         allowed_roles=roles,
         origin_vendor=item['primary_vendor'],
         origin_vendors=list(item['vendors']),
