@@ -5,7 +5,188 @@ from rich.text import Text
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Input, OptionList, Static, TextArea
 
+from .console_panels import SupportPanel
 from .console_workbench import WorkbenchPanel, plain
+
+
+class SkillRolesDialog(SupportPanel):
+    """Modal to configure per-skill allowed roles and global/project per-role skill policy."""
+
+    BINDINGS = [('escape', 'close', 'Back')]
+    DEFAULT_CSS = '''
+    SkillRolesDialog #roles-list { height: 1fr; }
+    SkillRolesDialog #roles-status { height: auto; max-height: 2; margin-top: 1; }
+    SkillRolesDialog .panel-actions Button { min-width: 6; padding: 0 1; margin-left: 1; margin-right: 0; }
+    '''
+
+    def __init__(self, root: Path, *, skill_id: str | None = None):
+        super().__init__()
+        self.root = Path(root)
+        self.skill_id = skill_id
+        self.mode = 'skill' if skill_id else 'policy'
+        self.project_scope = False
+        if skill_id:
+            from . import managed_skills as managed
+            try:
+                view = managed.effective_view(skill_id, project=self.root)
+                self.project_scope = (view['roles_source'] == 'project')
+            except (OSError, ValueError):
+                pass
+
+    def compose(self):
+        with Vertical(classes='support-body'):
+            with Horizontal(classes='panel-header'):
+                yield Static('', id='roles-title', classes='panel-title', markup=False)
+                yield Button('Back · Esc', id='roles-close')
+            yield OptionList(id='roles-list')
+            yield Static('', id='roles-status', markup=False)
+            with Horizontal(classes='panel-actions'):
+                yield Button('Toggle', id='roles-toggle', classes='panel-primary')
+                yield Button('Scope: Global', id='roles-scope')
+                yield Button('Role policy', id='roles-mode', disabled=self.skill_id is None)
+                yield Button('Reset', id='roles-reset')
+
+    def on_mount(self):
+        self._render_roles(preserve_index=0)
+
+    def action_close(self):
+        self.dismiss(True)
+
+    def _target_project(self):
+        return self.root if self.project_scope else None
+
+    def _render_roles(self, *, preserve_index: int | None = None, status: str | None = None):
+        from . import managed_skills as managed
+
+        menu = self.query_one('#roles-list', OptionList)
+        idx = menu.highlighted if preserve_index is None else preserve_index
+        if idx is None or not 0 <= idx < len(managed.SKILL_ROLES):
+            idx = 0
+
+        scope_word = 'project' if self.project_scope else 'global'
+        self.query_one('#roles-scope', Button).label = 'Scope: Project' if self.project_scope else 'Scope: Global'
+        mode_btn = self.query_one('#roles-mode', Button)
+        mode_btn.disabled = self.skill_id is None
+        mode_btn.label = 'Role policy' if self.mode == 'skill' else 'Skill roles'
+
+        options = []
+        if self.mode == 'skill' and self.skill_id:
+            view = managed.effective_view(self.skill_id, project=self._target_project())
+            policy_detail = managed.get_role_policy(project=self._target_project())
+            title = f"Skill roles · {self.skill_id} ({scope_word})"
+            for role in managed.SKILL_ROLES:
+                checked = role in view['allowed_roles']
+                pol_on = policy_detail[role]['enabled']
+                mark = '[x]' if checked else '[ ]'
+                if checked and not pol_on:
+                    note = ' · BLOCKED (role policy OFF)'
+                elif not pol_on:
+                    note = ' · policy OFF'
+                else:
+                    note = ''
+                options.append(Text(plain(f"{mark} {managed.ROLE_LABELS[role]} ({role}){note}")))
+            default_status = (
+                f"Effective roles ({view['roles_source']}): "
+                + (', '.join(view['effective_roles']) if view['effective_roles'] else '(none)')
+                + '. Applies to new conversations and their delegated roles.'
+            )
+        else:
+            self.mode = 'policy'
+            policy_detail = managed.get_role_policy(project=self._target_project())
+            title = f"Role policy · all skills ({scope_word})"
+            for role in managed.SKILL_ROLES:
+                info = policy_detail[role]
+                mark = '[ON ]' if info['enabled'] else '[OFF]'
+                options.append(Text(plain(
+                    f"{mark} {managed.ROLE_LABELS[role]} ({role}) · {info['source']}"
+                )))
+            default_status = (
+                'Disabled roles receive zero managed skills regardless of individual skill settings.'
+            )
+
+        self.query_one('#roles-title', Static).update(plain(title))
+        menu.set_options(options)
+        menu.highlighted = idx
+        self.query_one('#roles-status', Static).update(plain(status if status is not None else default_status))
+
+    def _toggle_highlighted(self):
+        from . import managed_skills as managed
+
+        menu = self.query_one('#roles-list', OptionList)
+        idx = menu.highlighted if menu.highlighted is not None else 0
+        if not 0 <= idx < len(managed.SKILL_ROLES):
+            return
+        role = managed.SKILL_ROLES[idx]
+        target = self._target_project()
+        if self.mode == 'skill' and self.skill_id:
+            view = managed.effective_view(self.skill_id, project=target)
+            current = list(view['allowed_roles'])
+            if role in current:
+                current.remove(role)
+            else:
+                current.append(role)
+            updated = managed.set_skill_roles(self.skill_id, current, project=target)
+            state = 'allowed' if role in updated['allowed_roles'] else 'removed'
+            extra = ' (blocked by role policy)' if role in updated['disabled_by_policy_roles'] else ''
+            self._render_roles(
+                preserve_index=idx,
+                status=f"{self.skill_id}: {role} {state} ({'project' if target else 'global'}){extra}.",
+            )
+        else:
+            detail = managed.get_role_policy(project=target)
+            now_on = not detail[role]['enabled']
+            managed.set_role_policy(role, now_on, project=target)
+            self._render_roles(
+                preserve_index=idx,
+                status=f"Role {role} {'enabled' if now_on else 'disabled'} for managed skills ({'project' if target else 'global'}).",
+            )
+
+    def on_option_list_option_selected(self, event):
+        event.stop()
+        try:
+            self._toggle_highlighted()
+        except (OSError, ValueError) as exc:
+            self.query_one('#roles-status', Static).update(plain(str(exc)))
+
+    def on_button_pressed(self, event):
+        event.stop()
+        bid = event.button.id
+        if bid == 'roles-close':
+            self.action_close()
+            return
+        from . import managed_skills as managed
+
+        try:
+            if bid == 'roles-toggle':
+                self._toggle_highlighted()
+            elif bid == 'roles-scope':
+                self.project_scope = not self.project_scope
+                self._render_roles()
+            elif bid == 'roles-mode' and self.skill_id:
+                self.mode = 'policy' if self.mode == 'skill' else 'skill'
+                self._render_roles()
+            elif bid == 'roles-reset':
+                menu = self.query_one('#roles-list', OptionList)
+                idx = menu.highlighted if menu.highlighted is not None else 0
+                target = self._target_project()
+                if self.mode == 'skill' and self.skill_id:
+                    managed.set_skill_roles(self.skill_id, None, project=target)
+                    msg = (
+                        f"Cleared project role override for {self.skill_id}."
+                        if target else
+                        f"Reset {self.skill_id} roles to defaults."
+                    )
+                else:
+                    role = managed.SKILL_ROLES[idx]
+                    managed.set_role_policy(role, None, project=target)
+                    msg = (
+                        f"Cleared project policy override for {role}."
+                        if target else
+                        f"Reset {role} policy to default."
+                    )
+                self._render_roles(preserve_index=idx, status=msg)
+        except (OSError, ValueError) as exc:
+            self.query_one('#roles-status', Static).update(plain(str(exc)))
 
 
 class SkillsPanel(WorkbenchPanel):
@@ -18,7 +199,8 @@ class SkillsPanel(WorkbenchPanel):
     SkillsPanel.narrow #workbench-list { height: 4; }
     SkillsPanel #workbench-preview { height: 1fr; }
     SkillsPanel #workbench-status { height: auto; max-height: 2; }
-    SkillsPanel .panel-actions Button { min-width: 6; padding: 0 1; margin-left: 1; margin-right: 0; }
+    SkillsPanel .panel-actions Button { min-width: 5; padding: 0 1; margin-left: 1; margin-right: 0; }
+    SkillsPanel.narrow .panel-actions Button { min-width: 4; padding: 0; margin-left: 1; margin-right: 0; }
     '''
 
     def __init__(self, root: Path, *, selected_managed: list[str], on_toggle_managed, submit_project):
@@ -51,6 +233,7 @@ class SkillsPanel(WorkbenchPanel):
             tags = []
             if m['skill_id'] in self.selected_managed:
                 tags.append('ACTIVE')
+            tags.append(managed.format_role_tags(m['effective_roles']))
             if m['has_overlay']:
                 tags.append('edited')
             if m['parameter_count']:
@@ -98,6 +281,7 @@ class SkillsPanel(WorkbenchPanel):
                 yield Button('Activate', id='skills-toggle', disabled=True)
                 yield Button('Manage', id='skills-manage', disabled=True)
                 yield Button('Edit', id='skills-save', disabled=True)
+                yield Button('Roles', id='skills-roles')
                 yield Button('Update', id='skills-update', disabled=True)
                 yield Button('View', id='skills-view')
 
@@ -183,8 +367,9 @@ class SkillsPanel(WorkbenchPanel):
                     f"Upstream {view['upstream_update']['latest_snapshot_id'][:8]} available. "
                     if has_update else ''
                 )
+                role_note = f"Roles: {managed.format_role_tags(view['effective_roles'])}. "
                 message = (
-                    f"{active_note}{update_note}Origin: {view['origin']['bundle_id']}@{view['origin']['snapshot_id'][:8]} "
+                    f"{active_note}{update_note}{role_note}Origin: {view['origin']['bundle_id']}@{view['origin']['snapshot_id'][:8]} "
                     f"({view['text_source']}). Frozen per session; no effects authorized."
                 )
                 valid = True
@@ -289,6 +474,16 @@ class SkillsPanel(WorkbenchPanel):
                         'managed:' + sid,
                         f"Saved {scope_label} for {sid} (sha256={view['effective_sha256'][:12]}). New sessions will freeze it.",
                     )
+            elif bid == 'skills-roles':
+                sid = self.current['skill_id'] if self.current and self.current['row_kind'] == 'managed' else None
+                target_id = self.current['id'] if self.current else None
+                self.app.push_screen(
+                    SkillRolesDialog(self.root, skill_id=sid),
+                    callback=lambda _changed: self._reload_and_select(
+                        target_id,
+                        f"Updated role settings for {sid}." if sid else 'Updated per-role skill policy.',
+                    ),
+                )
             elif bid == 'skills-update' and self.current and self.current['row_kind'] == 'managed':
                 sid = self.current['skill_id']
                 view = managed.apply_upstream_update(sid, 'latest', keep_overlay=False)

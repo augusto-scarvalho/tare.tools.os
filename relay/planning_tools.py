@@ -626,11 +626,14 @@ class PlanningTools:
                     'paths, dependencies, checks and uncertainties in steps/criteria/remaining; ' + task_contract +
                     'Do not implement or admit graph work.\n' + encode(mission))
         brief = compose(mission)
+        from .managed_skills import frozen_for_role as frozen_skills_for_role
+        planner_skills = frozen_skills_for_role(self.state, 'planner')
         with local_slot(deployment):
             outcome = run_session(config, deployment, job/'session', brief,
                 limits={'max_model_calls': calls, 'max_seconds': None if seconds is None else int(seconds),
                         'request_seconds': MAX_SECONDS if seconds is None else int(seconds)}, cancellation=control.cancellation,
-                delegated_leaf=True)
+                delegated_leaf=True,
+                **({'inherited_managed_skills': planner_skills} if planner_skills else {}))
         row['calls_used'] = planner_calls = count_calls(job/'session') if (job/'session/journal.jsonl').is_file() else calls
         row['amount_committed'] = self.spent(outcome, parent_spend, row['amount_committed'])
         if outcome['status'] == 'PROPOSED':
@@ -759,11 +762,14 @@ class PlanningTools:
                           instruction_repositories=list(parent['repositories']),
                           writable={}, verifiers={}, capabilities=['read', 'list', 'search'],
                           specgraph_edit_context=False)
+            from .managed_skills import frozen_for_role as frozen_skills_for_role
+            critic_skills = frozen_skills_for_role(self.state, 'plan-auditor')
             with local_slot(reviewer):
                 outcome = run_session(config, reviewer, session, CRITIC_BRIEF,
                     limits={'max_model_calls': calls, 'max_seconds': None if seconds is None else int(seconds),
                             'request_seconds': CRITIC_SECONDS if seconds is None else int(seconds)},
-                    cancellation=control.cancellation, delegated_leaf=True)
+                    cancellation=control.cancellation, delegated_leaf=True,
+                    **({'inherited_managed_skills': critic_skills} if critic_skills else {}))
             out.update(model_calls=self.settle(row, session, calls, before, money, outcome, parent_spend, allowance))
             if outcome['status'] != 'PROPOSED':
                 return {**out, 'status': 'FAILED', 'reason': str(outcome.get('failure_code') or outcome['status'])}
@@ -831,11 +837,14 @@ class PlanningTools:
             review['revision_reason'] = 'NOT_FUNDED'
             return None
         try:
+            from .managed_skills import frozen_for_role as frozen_skills_for_role
+            planner_skills = frozen_skills_for_role(self.state, 'planner')
             with local_slot(deployment):
                 outcome = run_session(config, deployment, session, brief,
                     limits={'max_model_calls': calls, 'max_seconds': None if seconds is None else int(seconds),
                             'request_seconds': MAX_SECONDS if seconds is None else int(seconds)},
-                    cancellation=control.cancellation, delegated_leaf=True)
+                    cancellation=control.cancellation, delegated_leaf=True,
+                    **({'inherited_managed_skills': planner_skills} if planner_skills else {}))
             review['revision_model_calls'] = self.settle(row, session, calls, before, money, outcome, parent_spend, allowance)
             if outcome['status'] != 'PROPOSED':
                 review['revision_reason'] = str(outcome.get('failure_code') or outcome['status'])

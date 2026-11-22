@@ -1583,8 +1583,11 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                                if control is not None else {}))
                         row['resumed_session']=str(session_path)
                     else:
+                        from .managed_skills import frozen_for_role as frozen_skills_for_role
+                        inherited_skills = frozen_skills_for_role(state, 'implementer')
                         outcome = run_session(child, deployment, session_path, instruction,
                                               limits=selected_limits, delegated_leaf=True,
+                                              **({'inherited_managed_skills': inherited_skills} if inherited_skills else {}),
                                               **({'receive_message':receive_advice} if handoff is not None else {}),
                                               **({'cancellation': control.cancellation, 'parent_clock': control.monotonic}
                                                  if control is not None else {}))

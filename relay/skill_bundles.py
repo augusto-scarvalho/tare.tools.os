@@ -1267,17 +1267,38 @@ def main(argv=None) -> int:
     p_adopt.add_argument('bundle', help='Captured bundle id')
     p_adopt.add_argument('snapshot', nargs='?', default='latest', help='Snapshot ref (default: latest)')
     p_adopt.add_argument('--as', dest='skill_id', help='Explicit managed skill id')
+    p_adopt.add_argument('--roles', help='Comma-separated allowed roles (defaults to coordinator,implementer,planner,plan-auditor,auditor)')
     p_adopt.add_argument('--json', action='store_true', dest='as_json')
 
-    p_managed = sub.add_parser('managed', help='List managed skills with origin, overlay, and update status')
+    p_managed = sub.add_parser('managed', help='List managed skills with origin, roles, overlay, and update status')
     p_managed.add_argument('--project', type=Path, help='Resolve per-project overrides for this folder')
+    p_managed.add_argument('--role', help='Filter to skills effectively allowed for this role')
     p_managed.add_argument('--json', action='store_true', dest='as_json')
 
-    p_effective = sub.add_parser('effective', help='Show effective rendered skill content, provenance, and diffs')
+    p_effective = sub.add_parser('effective', help='Show effective rendered skill content, roles, provenance, and diffs')
     p_effective.add_argument('skill_id', help='Managed skill id')
     p_effective.add_argument('--project', type=Path, help='Resolve per-project overrides for this folder')
+    p_effective.add_argument('--role', help='Check whether this role can access this skill')
     p_effective.add_argument('--text-only', action='store_true', help='Print only the rendered effective text')
     p_effective.add_argument('--json', action='store_true', dest='as_json')
+
+    p_roles = sub.add_parser('roles', help='Show or configure allowed roles for a managed skill')
+    p_roles.add_argument('skill_id', help='Managed skill id')
+    p_roles.add_argument('roles', nargs='*', help='Allowed roles (e.g. implementer planner auditor)')
+    roles_mode = p_roles.add_mutually_exclusive_group()
+    roles_mode.add_argument('--none', action='store_true', dest='clear_all', help='Disallow this skill for all roles')
+    roles_mode.add_argument('--reset', action='store_true', help='Reset global roles to defaults or clear project override')
+    p_roles.add_argument('--project', type=Path, help='Scope allowed roles to one project folder')
+    p_roles.add_argument('--json', action='store_true', dest='as_json')
+
+    p_rpol = sub.add_parser('role-policy', help='Show or configure global/project role enablement for all managed skills')
+    p_rpol.add_argument('role', nargs='?', help='Role name (omit to display all roles)')
+    rpol_mode = p_rpol.add_mutually_exclusive_group()
+    rpol_mode.add_argument('--enable', action='store_true', help='Allow managed skills for this role')
+    rpol_mode.add_argument('--disable', action='store_true', help='Disable all managed skills for this role')
+    rpol_mode.add_argument('--reset', action='store_true', help='Reset this role to default (or clear project override)')
+    p_rpol.add_argument('--project', type=Path, help='Scope role policy to one project folder')
+    p_rpol.add_argument('--json', action='store_true', dest='as_json')
 
     p_edit = sub.add_parser('edit', help='Set or clear an editable overlay for a managed skill')
     p_edit.add_argument('skill_id', help='Managed skill id')
@@ -1363,18 +1384,24 @@ def main(argv=None) -> int:
             return 0
         from . import managed_skills as managed
         if args.action == 'adopt':
-            view = managed.adopt_snapshot(args.bundle, args.snapshot, skill_id=args.skill_id)
+            roles = [r.strip() for r in args.roles.split(',') if r.strip()] if args.roles is not None else None
+            view = managed.adopt_snapshot(args.bundle, args.snapshot, skill_id=args.skill_id, allowed_roles=roles)
             print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))
             return 0
         if args.action == 'managed':
-            rows = managed.list_managed(project=args.project)
+            rows = managed.list_managed(project=args.project, role=args.role)
             if args.as_json:
                 print(json.dumps(rows, indent=2, ensure_ascii=False))
             elif not rows:
-                print('No managed skills configured yet. Capture a bundle and run `tare skills adopt <bundle>`.')
+                msg = (
+                    f'No managed skills available for role {args.role}.'
+                    if args.role else
+                    'No managed skills configured yet. Capture a bundle and run `tare skills adopt <bundle>`.'
+                )
+                print(msg)
             else:
                 for r in rows:
-                    flags = [r['text_source']]
+                    flags = [r['text_source'], f"roles={managed.format_role_tags(r['effective_roles'])}"]
                     if r['parameter_count']:
                         flags.append(f"{r['parameter_count']} params")
                     if r['upstream_update_available']:
@@ -1382,13 +1409,44 @@ def main(argv=None) -> int:
                     print(f"{r['skill_id']}  ({r['bundle_id']}@{r['snapshot_id']})  [{', '.join(flags)}]  {r['skill_name']}")
             return 0
         if args.action == 'effective':
-            view = managed.effective_view(args.skill_id, project=args.project)
+            view = managed.effective_view(args.skill_id, project=args.project, role=args.role)
             if args.as_json:
                 print(json.dumps(view, indent=2, ensure_ascii=False))
             elif args.text_only:
                 print(view['effective_text'])
             else:
                 print(managed.format_effective(view))
+            return 0
+        if args.action == 'roles':
+            if args.clear_all:
+                if args.roles:
+                    raise ValueError('Do not pass role names together with --none')
+                view = managed.set_skill_roles(args.skill_id, [], project=args.project)
+            elif args.reset:
+                if args.roles:
+                    raise ValueError('Do not pass role names together with --reset')
+                view = managed.set_skill_roles(args.skill_id, None, project=args.project)
+            elif args.roles:
+                view = managed.set_skill_roles(args.skill_id, args.roles, project=args.project)
+            else:
+                view = managed.effective_view(args.skill_id, project=args.project)
+            print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))
+            return 0
+        if args.action == 'role-policy':
+            if args.role is None:
+                if args.enable or args.disable or args.reset:
+                    raise ValueError('Specify a role name with --enable, --disable, or --reset')
+                policy = managed.get_role_policy(project=args.project)
+            elif args.enable:
+                policy = managed.set_role_policy(args.role, True, project=args.project)
+            elif args.disable:
+                policy = managed.set_role_policy(args.role, False, project=args.project)
+            elif args.reset:
+                policy = managed.set_role_policy(args.role, None, project=args.project)
+            else:
+                managed._validate_role(args.role)
+                policy = managed.get_role_policy(project=args.project)
+            print(json.dumps(policy, indent=2, ensure_ascii=False) if args.as_json else managed.format_role_policy(policy))
             return 0
         if args.action == 'edit':
             if args.clear:

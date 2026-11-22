@@ -11,7 +11,7 @@ from relay import console_backend
 from relay import managed_skills as managed
 from relay import native_agent
 from relay import skill_bundles as bundles
-from relay.console_skills import SkillsPanel
+from relay.console_skills import SkillRolesDialog, SkillsPanel
 from relay.console_workbench import WorkbenchPanel
 from relay.native_console import WorkConsole
 import tare_ops
@@ -351,3 +351,289 @@ def test_tui_editing_project_overlay_writes_back_to_project_not_global(tmp_path,
     assert eff_a['text_source'] == 'project_overlay'
     assert eff_b['effective_text'] == '---\nname: Scoped\n---\nBase text.\n'
     assert eff_b['text_source'] == 'base'
+
+
+def test_role_policy_defaults_double_gate_and_project_overrides(tmp_path):
+    storage = tmp_path / 'storage'
+    src = tmp_path / 'craft'
+    proj_a = tmp_path / 'proj-a'
+    proj_b = tmp_path / 'proj-b'
+    proj_a.mkdir()
+    proj_b.mkdir()
+    _write(src, 'SKILL.md', '---\nname: Craft\n---\nCraft rule.\n')
+    bundles.capture_bundle(src, storage_root=storage)
+    adopted = managed.adopt_snapshot('craft', storage_root=storage)
+
+    # Fail-closed defaults: explorer, researcher, vision, heads_up disabled; core work roles enabled.
+    pol = managed.effective_role_policy(storage_root=storage)
+    assert pol['explorer'] is False and pol['researcher'] is False
+    assert pol['vision'] is False and pol['heads_up'] is False
+    assert pol['coordinator'] is True and pol['implementer'] is True
+    assert pol['planner'] is True and pol['plan-auditor'] is True and pol['auditor'] is True
+    assert adopted['effective_roles'] == ['coordinator', 'implementer', 'planner', 'plan-auditor', 'auditor']
+
+    # Restrict skill to implementer, planner, auditor (excluding coordinator).
+    managed.set_skill_roles('craft', ['implementer', 'planner', 'auditor', 'explorer'], storage_root=storage)
+    v_coord = managed.effective_view('craft', role='coordinator', storage_root=storage)
+    assert v_coord['role_access'] == {'role': 'coordinator', 'allowed': False, 'reason': 'role_not_allowed_on_skill'}
+    # Double gate: explorer is listed on the skill but still blocked by disabled role policy.
+    v_expl = managed.effective_view('craft', role='explorer', storage_root=storage)
+    assert v_expl['role_access'] == {'role': 'explorer', 'allowed': False, 'reason': 'role_disabled_by_policy'}
+    assert v_expl['disabled_by_policy_roles'] == ['explorer']
+    assert 'explorer' not in v_expl['effective_roles']
+    assert managed.list_managed(role='explorer', storage_root=storage) == []
+    assert [r['skill_id'] for r in managed.list_managed(role='implementer', storage_root=storage)] == ['craft']
+
+    # Per-project role policy & skill-role override do not leak across projects.
+    managed.set_role_policy('explorer', True, project=proj_a, storage_root=storage)
+    assert managed.effective_view('craft', project=proj_a, role='explorer', storage_root=storage)['role_access']['allowed'] is True
+    assert managed.effective_view('craft', project=proj_b, role='explorer', storage_root=storage)['role_access']['allowed'] is False
+
+    managed.set_skill_roles('craft', ['auditor'], project=proj_a, storage_root=storage)
+    managed.set_overlay('craft', 'Project A overlay.\n', project=proj_a, storage_root=storage)
+    # Clearing overlay on proj_a must preserve proj_a's allowed_roles override.
+    managed.set_overlay('craft', None, project=proj_a, storage_root=storage)
+    va = managed.effective_view('craft', project=proj_a, storage_root=storage)
+    vb = managed.effective_view('craft', project=proj_b, storage_root=storage)
+    assert va['allowed_roles'] == ['auditor'] and va['roles_source'] == 'project'
+    assert vb['allowed_roles'] == ['implementer', 'planner', 'auditor', 'explorer'] and vb['roles_source'] == 'global'
+
+    with pytest.raises(ValueError, match='Unknown skill role'):
+        managed.set_skill_roles('craft', ['not-a-role'], storage_root=storage)
+    with pytest.raises(ValueError, match='Unknown skill role'):
+        managed.set_role_policy('not-a-role', False, storage_root=storage)
+
+
+def test_coordinator_freezes_per_role_pool_and_isolates_child_roles_without_live_reread(setup, tmp_path, monkeypatch):
+    config, custody, root = setup
+    storage = tmp_path / 'storage'
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(storage))
+
+    for slug, title, body, roles in (
+        ('coord-playbook', 'Coord Playbook', 'COORD_ONLY_DIRECTIVE_V1.\n', ['coordinator']),
+        ('worker-craft', 'Worker Craft', 'WORKER_CRAFT_BODY_V1.\n', ['implementer', 'planner', 'auditor']),
+        ('explorer-blocked', 'Explorer Blocked', 'EXPLORER_BLOCKED_BODY.\n', ['explorer']),
+    ):
+        src = tmp_path / f'src-{slug}'
+        _write(src, 'SKILL.md', f'---\nname: {title}\n---\n{body}')
+        bundles.capture_bundle(src, name=slug, storage_root=storage)
+        managed.adopt_snapshot(slug, allowed_roles=roles, storage_root=storage)
+
+    # Conversation runs as read-only explorer tool role with conversation_role='coordinator'.
+    coord_config = {
+        **config,
+        'role': 'explorer',
+        'writable': {},
+        'verifiers': {},
+        'capabilities': ['read', 'list', 'search'],
+        'managed_skills': ['coord-playbook', 'worker-craft', 'explorer-blocked'],
+    }
+    c_coord = Client(steps=[('tare_deliver', {'summary': 'Coordinated turn.'})])
+    res_coord = native_agent.run_session(
+        coord_config, deployment(), custody, 'Coordinate work.',
+        conversation=True, client=c_coord, local_counter=c_coord,
+    )
+    assert res_coord['status'] == 'PROPOSED'
+
+    parent_state = json.loads((custody / 'native-agent.json').read_text(encoding='utf-8'))
+    assert [s['skill_id'] for s in parent_state['managed_skills']] == ['coord-playbook']
+    withheld_map = {w['skill_id']: w['reason'] for w in parent_state['managed_skills_withheld']}
+    assert withheld_map == {
+        'worker-craft': 'role_not_allowed_on_skill',
+        'explorer-blocked': 'role_not_allowed_on_skill',
+    }
+    expl_active, expl_withheld = managed.partition_pool_for_role(parent_state['managed_skills_pool'], 'explorer')
+    assert expl_active == []
+    assert all(w['reason'] == 'role_disabled_by_policy' for w in expl_withheld)
+
+    coord_systems = [m['content'] for path, body in c_coord.calls if path == '/chat/completions'
+                     for m in body['messages'] if m['role'] == 'system']
+    assert any('COORD_ONLY_DIRECTIVE_V1.' in s for s in coord_systems)
+    assert any('worker-craft -> implementer, planner, auditor' in s for s in coord_systems)
+    assert not any('WORKER_CRAFT_BODY_V1.' in s for s in coord_systems)
+    assert not any('EXPLORER_BLOCKED_BODY.' in s for s in coord_systems)
+
+    # Mutate managed.json AFTER conversation started (edit text, enable explorer, delete coord-playbook).
+    managed.set_overlay('worker-craft', 'MUTATED_V2_SHOULD_NOT_APPEAR.\n', storage_root=storage)
+    managed.set_role_policy('explorer', True, storage_root=storage)
+    managed.remove_managed('coord-playbook', storage_root=storage)
+
+    # Child slices MUST come strictly from parent_state['managed_skills_pool'] frozen at conversation start.
+    assert managed.frozen_for_role(parent_state, 'explorer') == []
+    assert managed.frozen_for_role(parent_state, 'researcher') == []
+    assert managed.frozen_for_role(parent_state, 'plan-auditor') == []
+
+    for child_role, caps, typed in (
+        ('implementer', ['read', 'list'], False),
+        ('planner', ['read', 'list'], False),
+        ('auditor', ['read', 'list'], False),
+    ):
+        child_skills = managed.frozen_for_role(parent_state, child_role)
+        assert [s['skill_id'] for s in child_skills] == ['worker-craft']
+        child_cfg = {
+            **config,
+            'role': child_role,
+            'writable': {} if child_role != 'implementer' else config['writable'],
+            'verifiers': {},
+            'capabilities': caps,
+            'typed_output': typed,
+        }
+        c_child = Client(steps=[('tare_deliver', {'summary': f'{child_role} done.'})])
+        child_custody = tmp_path / f'child-{child_role}'
+        child_dep = deployment()
+        if child_role == 'planner':
+            child_dep = {
+                **child_dep,
+                'native_profile': {**child_dep['native_profile'], 'parameters_json': '{"reasoning_effort": "high"}'},
+            }
+        out = native_agent.run_session(
+            child_cfg, child_dep, child_custody, f'Run as {child_role}.',
+            delegated_leaf=True, inherited_managed_skills=child_skills,
+            client=c_child, local_counter=c_child,
+        )
+        assert out['status'] == 'PROPOSED'
+        child_sys = [m['content'] for path, body in c_child.calls if path == '/chat/completions'
+                     for m in body['messages'] if m['role'] == 'system']
+        assert any('WORKER_CRAFT_BODY_V1.' in s for s in child_sys)
+        assert not any('COORD_ONLY_DIRECTIVE_V1.' in s for s in child_sys)
+        assert not any('MUTATED_V2_SHOULD_NOT_APPEAR.' in s for s in child_sys)
+        child_state = json.loads((child_custody / 'native-agent.json').read_text(encoding='utf-8'))
+        # Child custody never stores the parent's full multi-role pool.
+        assert 'managed_skills_pool' not in child_state
+
+    # Fail-closed enforcement: wrong role or tampered inherited frozen skill is refused.
+    coord_only_frozen = managed.frozen_for_role(parent_state, 'coordinator')
+    with pytest.raises(ValueError, match='not authorized for role'):
+        native_agent.run_session(
+            {**config, 'role': 'implementer', 'capabilities': ['read'], 'verifiers': {}},
+            deployment(), tmp_path / 'bad-role', 'Do work.',
+            delegated_leaf=True, inherited_managed_skills=coord_only_frozen,
+            client=Client(steps=[]), local_counter=Client(steps=[]),
+        )
+    tampered = [{**managed.frozen_for_role(parent_state, 'implementer')[0], 'text': 'TAMPERED'}]
+    with pytest.raises(ValueError, match='effective_sha256 mismatch'):
+        native_agent.run_session(
+            {**config, 'role': 'implementer', 'capabilities': ['read'], 'verifiers': {}},
+            deployment(), tmp_path / 'bad-hash', 'Do work.',
+            delegated_leaf=True, inherited_managed_skills=tampered,
+            client=Client(steps=[]), local_counter=Client(steps=[]),
+        )
+    with pytest.raises(ValueError, match='applies only to new sessions'):
+        native_agent.run_session(
+            None, None, custody, resume=True, follow_up='More.', message_id='m-bad',
+            inherited_managed_skills=coord_only_frozen,
+            client=Client(steps=[]), local_counter=Client(steps=[]),
+        )
+
+    # Provider continuation preserves both coordinator skills and frozen child-role pool.
+    from relay import native_continuity
+    cont_custody = tmp_path / 'cont-coord'
+    prev = native_continuity.preview(custody, root)
+    native_continuity.save_request(cont_custody, prev, prev['text'], deployment())
+    c_cont = Client(steps=[('tare_deliver', {'summary': 'Continued coordinator.'})])
+    native_agent.run_session(
+        parent_state['config'], deployment(), cont_custody, prev['text'],
+        conversation=True, client=c_cont, local_counter=c_cont,
+    )
+    cont_state = json.loads((cont_custody / 'native-agent.json').read_text(encoding='utf-8'))
+    assert [s['skill_id'] for s in cont_state['managed_skills']] == ['coord-playbook']
+    assert [s['skill_id'] for s in managed.frozen_for_role(cont_state, 'implementer')] == ['worker-craft']
+    assert managed.frozen_for_role(cont_state, 'implementer')[0]['text'].endswith('WORKER_CRAFT_BODY_V1.\n')
+    assert managed.frozen_for_role(cont_state, 'explorer') == []
+
+
+def test_cli_roles_and_role_policy_subcommands(tmp_path, monkeypatch, capsys):
+    storage = tmp_path / 'storage'
+    proj = tmp_path / 'proj'
+    proj.mkdir()
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(storage))
+    src = tmp_path / 'pxl-role'
+    _write(src, 'SKILL.md', '---\nname: PXL Role\n---\nDraw cleanly.\n')
+
+    assert tare_ops.main(['skills', 'capture', str(src), '--json']) == 0
+    capsys.readouterr()
+    assert tare_ops.main(['skills', 'adopt', 'pxl-role', '--roles', 'implementer,planner,auditor', '--json']) == 0
+    adopted = json.loads(capsys.readouterr().out)
+    assert adopted['effective_roles'] == ['implementer', 'planner', 'auditor']
+
+    assert tare_ops.main(['skills', 'managed', '--role', 'coordinator', '--json']) == 0
+    assert json.loads(capsys.readouterr().out) == []
+    assert tare_ops.main(['skills', 'managed', '--role', 'auditor', '--json']) == 0
+    assert [r['skill_id'] for r in json.loads(capsys.readouterr().out)] == ['pxl-role']
+
+    assert tare_ops.main(['skills', 'effective', 'pxl-role', '--role', 'explorer', '--json']) == 0
+    eff = json.loads(capsys.readouterr().out)
+    assert eff['role_access'] == {'role': 'explorer', 'allowed': False, 'reason': 'role_disabled_by_policy'}
+
+    assert tare_ops.main(['skills', 'roles', 'pxl-role', 'coordinator', '--project', str(proj), '--json']) == 0
+    proj_view = json.loads(capsys.readouterr().out)
+    assert proj_view['effective_roles'] == ['coordinator'] and proj_view['roles_source'] == 'project'
+
+    assert tare_ops.main(['skills', 'role-policy', 'researcher', '--disable', '--json']) == 0
+    pol = json.loads(capsys.readouterr().out)
+    assert pol['researcher'] == {'enabled': False, 'source': 'global'}
+
+    assert tare_ops.main(['skills', 'roles', 'pxl-role', '--none', '--json']) == 0
+    assert json.loads(capsys.readouterr().out)['effective_roles'] == []
+
+    assert tare_ops.main(['skills', 'roles', 'pxl-role', '--reset', '--json']) == 0
+    assert json.loads(capsys.readouterr().out)['effective_roles'] == list(managed.DEFAULT_ENABLED_ROLES)
+
+
+@pytest.mark.parametrize('size', [(80, 24), (130, 44)])
+def test_tui_roles_dialog_configures_skill_roles_and_role_policy(tmp_path, monkeypatch, size):
+    storage = tmp_path / 'state'
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(storage))
+    root = tmp_path / 'project'
+    root.mkdir()
+    src = tmp_path / 'pxl-tui'
+    _write(src, 'SKILL.md', '---\nname: PXL TUI\n---\nInstructions.\n')
+    bundles.capture_bundle(src, storage_root=storage)
+    managed.adopt_snapshot('pxl-tui', storage_root=storage)
+
+    async def scenario():
+        app = WorkConsole(root, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=size) as pilot:
+            await app.workers.wait_for_complete()
+            app.action_skills()
+            await pilot.pause()
+            panel = app.screen
+            assert isinstance(panel, SkillsPanel)
+            assert panel.region.contains_region(panel.query_one('#skills-roles').region)
+            assert panel.region.contains_region(panel.query_one('#skills-view').region)
+
+            # Open Roles dialog on the highlighted managed skill.
+            await pilot.click('#skills-roles')
+            await pilot.pause()
+            dialog = app.screen
+            assert isinstance(dialog, SkillRolesDialog)
+            assert dialog.region.contains_region(dialog.query_one('#roles-toggle').region)
+            assert dialog.region.contains_region(dialog.query_one('#roles-reset').region)
+
+            # Index 0 is coordinator: toggle it OFF for pxl-tui.
+            await pilot.click('#roles-toggle')
+            await pilot.pause()
+            view = managed.effective_view('pxl-tui', storage_root=storage)
+            assert 'coordinator' not in view['allowed_roles']
+
+            # Switch to Role policy mode and verify explorer starts OFF, then toggle explorer ON and reset back OFF.
+            await pilot.click('#roles-mode')
+            await pilot.pause()
+            roles_list = dialog.query_one('#roles-list', OptionList)
+            expl_idx = managed.SKILL_ROLES.index('explorer')
+            roles_list.highlighted = expl_idx
+            await pilot.pause(.4)  # Textual's pressed animation suppresses an immediate second click.
+            await pilot.click('#roles-toggle')
+            await pilot.pause()
+            assert managed.effective_role_policy(storage_root=storage)['explorer'] is True
+            await pilot.click('#roles-reset')
+            await pilot.pause()
+            assert managed.effective_role_policy(storage_root=storage)['explorer'] is False
+
+            # Close dialog and verify SkillsPanel reflects updated role tags.
+            await pilot.click('#roles-close')
+            await pilot.pause()
+            assert isinstance(app.screen, SkillsPanel)
+            assert 'impl,plan,p-aud,aud' in app.screen.current['label']
+
+    asyncio.run(scenario())
