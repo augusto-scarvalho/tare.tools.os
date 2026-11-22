@@ -88,6 +88,22 @@ def test_selector_five_states_hard_eligibility_shortlist_cap_and_fingerprint(tmp
     assert amb['selected_ids'] == []
     assert {c['skill_id'] for c in amb['shortlist']} >= {'review-strict', 'review-quick'}
 
+    # Ambiguity must still be detected even when max_shortlist=1 truncates the displayed shortlist.
+    amb_capped = selector.select_skills(
+        'run a code diff review checklist', role='auditor', max_shortlist=1, storage_root=storage,
+    )
+    assert amb_capped['status'] == 'ambiguous'
+    assert amb_capped['selected_ids'] == []
+    assert len(amb_capped['shortlist']) == 1
+
+    # Non-overlapping skills both matching strongly with max_shortlist=1 must also respect the shortlist cap
+    # (abstain on tight tie at cutoff, never return a selected_id outside the shortlist).
+    tight_cap = selector.select_skills(
+        'draw a pixel art sprite and synthesize a jump sound effect', max_shortlist=1, storage_root=storage,
+    )
+    assert len(tight_cap['shortlist']) == 1
+    assert set(tight_cap['selected_ids']).issubset({c['skill_id'] for c in tight_cap['shortlist']})
+
     # 5. Hard eligibility: explorer disabled by policy -> NEVER promoted by score -> unavailable.
     unavail_expl = selector.select_skills('use pxl-art for pixel art sprites', role='explorer', storage_root=storage)
     assert unavail_expl['status'] == 'unavailable'
@@ -202,6 +218,38 @@ def test_session_auto_skills_opt_in_freezes_receipt_isolates_roles_and_continues
     saved2 = json.loads((custody2 / 'native-agent.json').read_text(encoding='utf-8'))
     assert saved2['skill_selection']['status'] == 'no_skill'
     assert 'managed_skills' not in saved2
+
+    # TUI ASSISTANT_CONTEXT boilerplate (contains '/terminal', '/diff', etc.) must NEVER falsely trigger skills.
+    from relay.console_entry import ASSISTANT_CONTEXT
+    _adopt(
+        tmp_path, storage, 'terminal-helper', 'Terminal Helper',
+        'Terminal session diagnostics.',
+        'TERMINAL_BODY.',
+        roles=['implementer', 'planner'],
+        triggers=['terminal'],
+    )
+    tui_abstain = tmp_path / 'tui-abstain'
+    c3 = Client(steps=[('tare_deliver', {'summary': 'Renamed.'})])
+    native_agent.run_session(
+        {**config, 'capabilities': ['read', 'list'], 'verifiers': {}, 'auto_skills': True},
+        deployment(), tui_abstain, ASSISTANT_CONTEXT + 'Rename variable foo to bar.',
+        conversation=True, client=c3, local_counter=c3,
+    )
+    saved3 = json.loads((tui_abstain / 'native-agent.json').read_text(encoding='utf-8'))
+    assert saved3['skill_selection']['status'] == 'no_skill'
+    assert 'managed_skills' not in saved3
+
+    # Real operator mention of 'terminal' after ASSISTANT_CONTEXT still selects terminal-helper.
+    tui_match = tmp_path / 'tui-match'
+    c4 = Client(steps=[('tare_deliver', {'summary': 'Checked.'})])
+    native_agent.run_session(
+        {**config, 'capabilities': ['read', 'list'], 'verifiers': {}, 'auto_skills': True},
+        deployment(), tui_match, ASSISTANT_CONTEXT + 'Run a terminal diagnostic check on the logs.',
+        conversation=True, client=c4, local_counter=c4,
+    )
+    saved4 = json.loads((tui_match / 'native-agent.json').read_text(encoding='utf-8'))
+    assert saved4['skill_selection']['status'] == 'selected'
+    assert saved4['skill_selection']['selected_ids'] == ['terminal-helper']
 
 
 def test_cli_select_triggers_and_agent_auto_skills_flag_wiring(tmp_path, monkeypatch, capsys):

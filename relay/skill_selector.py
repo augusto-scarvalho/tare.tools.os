@@ -302,10 +302,12 @@ def select_skills(
                 'reason': inelig_reason,
             })
 
-    # Verify backing inert snapshots strictly for shortlisted candidates before any selection succeeds.
+    # Verify backing inert snapshots for every threshold-passing candidate (so max_shortlist truncation
+    # never hides a competing tie) and enough sub-threshold candidates to populate the bounded shortlist.
     shortlist: list[dict] = []
+    passing: list[dict] = []
     for cand in scored_eligible:
-        if len(shortlist) >= max_shortlist:
+        if not cand['meets_threshold'] and len(shortlist) >= max_shortlist:
             break
         try:
             _bundles.load_snapshot(
@@ -322,10 +324,14 @@ def select_skills(
                     'reason': 'snapshot_invalid',
                 })
             continue
-        shortlist.append({k: v for k, v in cand.items() if not k.startswith('_')})
+        item = {k: v for k, v in cand.items() if not k.startswith('_')}
+        if item['meets_threshold']:
+            passing.append(item)
+        if len(shortlist) < max_shortlist:
+            shortlist.append(item)
 
     unavailable_matches.sort(key=lambda item: (-item['score'], item['skill_id']))
-    passing = [item for item in shortlist if item['meets_threshold']]
+    effective_max_selected = min(max_selected, max_shortlist)
 
     status: str
     reason: str
@@ -346,7 +352,7 @@ def select_skills(
                 'No eligible managed skill crossed the deterministic selection threshold; abstaining.'
             )
     else:
-        # Check for genuine ambiguity: competing skills matching essentially the same intent within AMBIGUITY_MARGIN.
+        # Check for genuine ambiguity across ALL verified passing candidates before any shortlist cutoff.
         competing_pair = None
         for i, first in enumerate(passing):
             for second in passing[i + 1:]:
@@ -364,14 +370,17 @@ def select_skills(
                 f"Competing eligible skills matched overlapping terms within score margin: "
                 f"{competing_pair[0]} vs {competing_pair[1]}; abstaining until explicitly chosen."
             )
-        elif len(passing) > max_selected and (passing[max_selected - 1]['score'] - passing[max_selected]['score']) <= AMBIGUITY_MARGIN:
+        elif (
+            len(passing) > effective_max_selected
+            and (passing[effective_max_selected - 1]['score'] - passing[effective_max_selected]['score']) <= AMBIGUITY_MARGIN
+        ):
             status = 'ambiguous'
             reason = (
-                f'More than {max_selected} eligible skills clustered at the selection cutoff; '
+                f'More than {effective_max_selected} eligible skills clustered at the selection cutoff; '
                 'abstaining until explicitly narrowed.'
             )
         else:
-            selected_ids = [item['skill_id'] for item in passing[:max_selected]]
+            selected_ids = [item['skill_id'] for item in passing[:effective_max_selected]]
             status = 'selected'
             reason = f"Deterministically selected {len(selected_ids)} eligible skill(s) from {len(shortlist)} shortlisted."
 

@@ -578,10 +578,14 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                     skill_project = None
                 selected_ids = list(config.get('managed_skills') or ())
                 if config.get('auto_skills'):
+                    from .console_entry import ASSISTANT_CONTEXT
                     from .skill_selector import select_skills
                     sel_role = None if state.get('conversation_role') == 'coordinator' else effective_role
+                    sel_query = instruction if isinstance(instruction, str) else ''
+                    if sel_query.startswith(ASSISTANT_CONTEXT):
+                        sel_query = sel_query[len(ASSISTANT_CONTEXT):]
                     receipt = select_skills(
-                        instruction if isinstance(instruction, str) else '',
+                        sel_query,
                         project=skill_project,
                         role=sel_role,
                         safe=True,

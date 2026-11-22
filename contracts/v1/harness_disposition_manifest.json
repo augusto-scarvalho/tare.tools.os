@@ -2151,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 137523,
-      "sha256": "ff27a2b5982c59677b641b01d838a1b8dc3985419ab4605fd1d7415247f2ade5"
+      "size_bytes": 137765,
+      "sha256": "4a676ef88587c9ff0a7998d957651beb503186521bbb8c03c0c6852eefd48fc5"
     },
     {
       "name": "native_artifacts.py",
@@ -4571,8 +4571,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 17470,
-      "sha256": "dc6289d087827e1fdd86403b5e96be7e6dabbe08e5350a4375f27985a26a4706"
+      "size_bytes": 17839,
+      "sha256": "fce8ae9319f6e94e63d71c2fef67bd2e8ca39aa8627cb7802bc2ba176eec4135"
     }
   ]
 }
