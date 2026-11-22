@@ -50,7 +50,8 @@ class SkillRolesDialog(SupportPanel):
         self._render_roles(preserve_index=0)
 
     def action_close(self):
-        self.dismiss(True)
+        if self.is_current:
+            self.dismiss(True)
 
     def _target_project(self):
         return self.root if self.project_scope else None
@@ -509,8 +510,7 @@ class SkillsPanel(WorkbenchPanel):
         self.render_rows()
         self.query_one('#workbench-status', Static).update(plain(status))
 
-    def on_button_pressed(self, event):
-        event.stop()
+    def handle_button_pressed(self, event):
         bid = event.button.id
         if bid == 'workbench-close':
             self.action_close()
@@ -521,7 +521,7 @@ class SkillsPanel(WorkbenchPanel):
             except (OSError, ValueError) as exc:
                 self.query_one('#workbench-status', Static).update(plain(str(exc)))
                 return
-            self.dismiss(None)
+            self.action_close()
             return
 
         from . import managed_skills as managed
