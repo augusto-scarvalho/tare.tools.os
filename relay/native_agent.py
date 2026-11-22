@@ -64,7 +64,7 @@ def configuration(value):
             'schema', 'role', 'repositories', 'writable', 'verifiers', 'index_states',
             'context_policy', 'specgraph_edit_context', 'typed_output', 'input_artifacts', 'capabilities', 'terminal', 'project_graph',
             'folder_access', 'instruction_repositories', 'command_protection', 'command_context', 'command_runtimes', 'project_admission', 'shared_context', 'delegated_verifiers',
-            'same_family_audit'}):
+            'same_family_audit', 'managed_skills'}):
         raise ValueError('explicit_native_agent_configuration_required')
     if 'same_family_audit' in value and (value['same_family_audit'] is not True or value.get('role') != 'auditor'):
         raise ValueError('same_family_audit is set only by the local-only conversation review, for an auditor.')
@@ -182,6 +182,9 @@ def configuration(value):
         raise ValueError('native_agent_input_artifacts_over_budget')
     if not isinstance(context, dict) or set(context) - {'margin', 'trigger', 'target', 'keep_recent_turns', 'max_compactions', 'allow_estimated_counts'}:
         raise ValueError('native_agent_context_policy_invalid')
+    if value.get('managed_skills') is not None:
+        from .managed_skills import validate_skill_ids
+        value = {**value, 'managed_skills': validate_skill_ids(value['managed_skills'])}
     return {**value, 'role': role, 'repositories': resolved, 'writable': writable,
             'verifiers': verifiers, 'index_states': indexes, 'context_policy': context}
 
@@ -534,6 +537,13 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 state['common_guidance'] = common
             if owned := saved_guidance()['variables']:
                 state['guidance_variables'] = owned
+            if continuation:
+                if parent.get('managed_skills'):
+                    state['managed_skills'] = deepcopy(parent['managed_skills'])
+            elif config.get('managed_skills'):
+                from .managed_skills import freeze_for_session as freeze_managed_skills
+                skill_project = next(iter(config['repositories'].values()), None)
+                state['managed_skills'] = freeze_managed_skills(config['managed_skills'], project=skill_project)
             if capsule:
                 # Frozen here: the system text and the first message must not change within a session.
                 state['prompt_capsule'] = capsule
@@ -889,6 +899,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                     # 2026-10-04 (7 against 10 right), so it stays off. Local models keep tool_choice auto.
                     artifact_options.update(force_final_delivery=True)
             from .guidance import fill, values as guidance_values
+            from .managed_skills import session_system_block as managed_skills_block
             # Variables (/guidance) in the role guidance and the common texts: the built-in ones as of this invocation.
             found = guidance_values(owner=state.get('guidance_variables', {}), model_id=profile.model,
                                     model_name=deployment.get('model'),
@@ -933,7 +944,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                      'commands, tell the user so.' if withheld else '') +
                     ((' ' + conversation_guidance)
                      if state.get('conversation_flow') and not state.get('conversation_role') else '') +
-                    ''.join(' ' + fill(text['text'], found) for text in state.get('common_guidance', ())))
+                    ''.join(' ' + fill(text['text'], found) for text in state.get('common_guidance', ())) +
+                    (managed_skills_block(state.get('managed_skills', ())) if state.get('managed_skills') else ''))
             from .native_spend import compose, settings
             spend_policy, tariff = settings(deployment, configured=True)
             shared_tools = conversation_tools or planning_tools or exploration_tools or implement_tools
@@ -1478,6 +1490,8 @@ def main(argv=None):
     parser.add_argument('--command-review-seconds', type=int, default=60)
     parser.add_argument('--command-classifier', choices=('model','jev'))
     parser.add_argument('--command-review-policy', choices=('always','on_demand'))
+    parser.add_argument('--skill', action='append', default=None,
+                        help='Activate an explicitly managed tare skill for this new session (frozen at start)')
     args = parser.parse_args(argv[:boundary])
     if verifier is not None:
         args.verify_command = verifier
@@ -1541,12 +1555,15 @@ def main(argv=None):
                             or args.command_review is not None or args.command_isolation != 'mxc'
                             or args.max_command_reviews != 6 or args.command_review_seconds != 60
                              or args.command_classifier is not None or args.command_review_policy is not None
-                             or args.findings is not None or args.findings_sha256 is not None):
+                             or args.findings is not None or args.findings_sha256 is not None
+                             or args.skill is not None):
             raise ValueError('native_agent_startup_options_are_saved_use_resume_without_repeating_them')
         admission_args = (args.project_admission is not None or args.root_instruction_pin is not None
                           or args.nested_instructions)
         if admission_args and (args.resume or args.config or args.continue_provider):
             raise ValueError('Admission is saved; use /permissions, review and start a new session.')
+        if args.skill and (args.config or args.continue_provider):
+            raise ValueError('Managed skills apply to a new session; cannot combine --skill with --config or --continue-provider.')
         if args.verify_command == []:
             raise ValueError('native_agent_verify_command_requires_an_executable')
         if args.config and (args.root is not None or args.role is not None
@@ -1627,6 +1644,9 @@ def main(argv=None):
                 config['project_graph'] = {'repository': repo.name, 'path': args.project_graph}
             if args.folder_grants is not None:
                 config['folder_access'] = {'grants': str(args.folder_grants.absolute())}
+            if args.skill:
+                from .managed_skills import validate_skill_ids
+                config['managed_skills'] = validate_skill_ids(args.skill)
         if execution_resources.selected('compactions', args.unlimited):
             config = {**config, 'context_policy': {**config.get('context_policy', {}), 'max_compactions': None}}
         prompt = continuation_request['text'] if continuation_request else args.instruction

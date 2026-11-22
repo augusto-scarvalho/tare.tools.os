@@ -322,14 +322,15 @@ nothing is lost, and sending any message continues the conversation with a new c
   pending scope for a new conversation, plus project instructions. Use
   `/permissions` to change defaults for future conversations.
 - `/skills` previews immediate `skills/<name>/SKILL.md` and
-  `.agents/skills/<name>/SKILL.md` files. **Add to draft** explicitly asks the agent
-  to read and use that skill when you send. It does not execute the skill or
-  expand permissions. Each skill is limited to 32 KiB; only the first 128 directory
-  entries in each location are inspected and the returned inventory is sorted.
-  Linked paths, junctions, invalid UTF-8 and changed previews are rejected.
-  The draft carries a path reference: the agent reads current contents at execution.
+  `.agents/skills/<name>/SKILL.md` files (**Add to draft** inserts an atomic
+  hash-checked snapshot up to 16 KiB combined), captures local skill folders as
+  inert versioned snapshots outside active discovery (**Capture**), and manages
+  configurable skills with overlays, typed parameters, explicit upstream diffs,
+  per-runtime binding visibility, and explicit **Activate / Deactivate** selection
+  frozen per new session (see [Managed skills](SKILLS.md)). Selecting, capturing,
+  or activating a skill never executes scripts or expands permissions.
 
-External MCP server management, global/user skill catalogs, conversation branching,
+External MCP server management, remote skill marketplaces, conversation branching,
 and independent steering of flow children remain follow-up work.
 
 ## 7. Cancellation

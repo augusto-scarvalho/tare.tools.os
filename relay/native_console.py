@@ -351,6 +351,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         self.storage_fallback = storage_fallback
         self.permission_write_paths = []
         self.project_admission = {'mode': 'quarantine', 'root_sha256': None, 'nested': False}
+        self.selected_managed_skills = []
         self.command_protection = {}
         self.project_graph_path = ''
         self.graph_profile_root = self.graph_profile_error = None
@@ -989,7 +990,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         yield SystemCommand('Challenger mode', 'Configure automatic experiments and resource limits', self.action_challenger)
         yield SystemCommand('Storage and cleanup', 'Inspect disk usage and preview safe cleanup', self.action_storage)
         yield SystemCommand('Planning and exploration', 'Choose delegated models and shared task limits', self.action_delegation)
-        yield SystemCommand('Project skills', 'Preview a project skill and add it to your draft', self.action_skills)
+        yield SystemCommand('Skills', 'Inspect project skills, capture inert bundles, and manage active skills', self.action_skills)
         yield SystemCommand('Available tools', 'Inspect effective conversation tools and project instructions', self.action_tools)
         yield SystemCommand('Conversations', 'Search and reopen saved conversations · F1', self.action_conversations)
         yield SystemCommand('Files pane', 'What the agents read and edit, this turn or this session · F8', self.action_files)
@@ -1356,6 +1357,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             terminal=self.query_one('#terminal', Checkbox).value,
             command_protection=dict(self.command_protection),
             project_admission=dict(self.project_admission),
+            managed_skills=list(self.selected_managed_skills),
             write_paths=list(self.permission_write_paths),
             graph_path=self.project_graph_path,
             folder_grants=self.folder_grants(field('root')), folder_note=self.folder_note,
@@ -1401,6 +1403,19 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         self.status_text = plain(value)
         show(self.query_one('#status', Static), self.status_text)
         self.refresh_presence()
+
+    def toggle_managed_skill(self, skill_id: str) -> list[str]:
+        from .managed_skills import MAX_SESSION_SKILLS, validate_skill_ids
+        sid = validate_skill_ids([skill_id])[0]
+        if sid in self.selected_managed_skills:
+            self.selected_managed_skills = [s for s in self.selected_managed_skills if s != sid]
+        else:
+            if len(self.selected_managed_skills) >= MAX_SESSION_SKILLS:
+                raise ValueError(f'At most {MAX_SESSION_SKILLS} managed skills may be active in one session.')
+            self.selected_managed_skills = [*self.selected_managed_skills, sid]
+        if self.demand_id:
+            self.save_demand()
+        return list(self.selected_managed_skills)
 
     def show_plan(self, result):
         from .native_plan import render, render_summary

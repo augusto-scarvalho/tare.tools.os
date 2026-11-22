@@ -2,7 +2,7 @@
   "$schema": "https://tare.tools/schemas/v1/disposition-manifest.json",
   "version": "1.0.0",
   "generated_at": "2026-10-04T03:10:28.054735+00:00",
-  "total_modules": 453,
+  "total_modules": 455,
   "modules": [
     {
       "name": "consent_decisions.py",
@@ -2151,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 131531,
-      "sha256": "40bc0932720e80e3a62ba21947bb15f01d17b21759f2165d25e18dbb79a4bb4c"
+      "size_bytes": 133029,
+      "sha256": "e91456161db914b4617d95f4555bb5a4e0e9870a5f5eb0f207bf4974c755c416"
     },
     {
       "name": "native_artifacts.py",
@@ -2661,8 +2661,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 43404,
-      "sha256": "391402da5217d83fd9d8639e66ac05608364d1947d624f810699254a007cbcd0"
+      "size_bytes": 43564,
+      "sha256": "ad7a439bf1eb795901c6cca1126b9e60edf7f585cf12a036f83ab9af13a2f2ba"
     },
     {
       "name": "human_wait.py",
@@ -2681,8 +2681,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 186402,
-      "sha256": "b3e5252b80ad9a2623026c4af038d65c681ac303f837936564d228a3362c6b75"
+      "size_bytes": 187240,
+      "sha256": "450c58e9a8adadbc1835c8daea8b069abed289287d2fc014a49d6460fed148f3"
     },
     {
       "name": "native_display.py",
@@ -2891,8 +2891,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns conversation and cross-flow navigation; execution and evidence owners stay unchanged.",
-      "size_bytes": 42207,
-      "sha256": "ebe307be0f5550302b4a75df660b2196f446376030308a4b2d8a8a723ff913c3"
+      "size_bytes": 42276,
+      "sha256": "59e40e51ce7441561d828ab8bcf082edd4e2a3621f5bdacf5796cb4d92b99490"
     },
     {
       "name": "console_recovery.py",
@@ -3421,8 +3421,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator views and draft composition; Runtime retains execution authority.",
-      "size_bytes": 46272,
-      "sha256": "794503768d6c5a27ec3b7ab98245997fc49c97bcab55a8727f722fbb6366833b"
+      "size_bytes": 45933,
+      "sha256": "6c732494f8c5b48462bb2b67447e93cab947586f65491cce5c3b1aec7e429516"
     },
     {
       "name": "adaptive_routes.py",
@@ -4531,8 +4531,28 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 59868,
-      "sha256": "8255fd66c23f42180002ee01ae1cf731f4ea440116709d4ceac23ff3e33b765a"
+      "size_bytes": 67791,
+      "sha256": "fdeea8e16b6c321b7712d6047122e068fb5e7ca4858999534f618b1e77d53cbf"
+    },
+    {
+      "name": "managed_skills.py",
+      "path": "tare.tools.os/relay/managed_skills.py",
+      "summary": "Managed configurable skills with explicit origin, typed parameters, overlays, upstream diffs, runtime bindings, and frozen per-session activation (SKL-01).",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
+      "size_bytes": 28756,
+      "sha256": "88fcdfdf9a654878129af9afe9ecf25607436fe4f0e1ab23128c2e6efdc50019"
+    },
+    {
+      "name": "console_skills.py",
+      "path": "tare.tools.os/relay/console_skills.py",
+      "summary": "/skills TUI panel for project skill snapshots, inert local bundle capture, and managed configurable skills (SKL-01/SKL-02).",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
+      "size_bytes": 16360,
+      "sha256": "49a7f174ce97fe5972e8cb018b46a194366b8daddf3bb34a3384ce1444ed8132"
     }
   ]
 }

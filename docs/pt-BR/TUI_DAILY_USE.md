@@ -330,14 +330,15 @@ com uma nova contagem.
   escopo pendente de uma conversa nova, além das instruções do projeto. Use
   `/permissions` para mudar os padrões de conversas futuras.
 - `/skills` mostra a prévia dos arquivos `skills/<name>/SKILL.md` e
-  `.agents/skills/<name>/SKILL.md` de primeiro nível. **Add to draft** pede explicitamente ao agente
-  que leia e use essa skill quando você enviar. Ele não executa a skill nem
-  amplia permissões. Cada skill é limitada a 32 KiB; só as primeiras 128 entradas de diretório
-  de cada local são inspecionadas, e o inventário retornado vem ordenado.
-  Caminhos com link, junctions, UTF-8 inválido e prévias alteradas são recusados.
-  O rascunho leva uma referência de caminho: o agente lê o conteúdo atual na execução.
+  `.agents/skills/<name>/SKILL.md` de primeiro nível (**Add to draft** insere um
+  snapshot atômico conferido por hash até 16 KiB no rascunho), captura pastas locais
+  de skill como snapshots inertes versionados fora da descoberta ativa (**Capture**) e
+  gerencia skills configuráveis com overlays editáveis, parâmetros tipados, diffs
+  explícitos contra upstream, tabela de bindings por runtime e ativação explícita
+  (**Activate / Deactivate**) congelada por nova sessão (veja [Managed skills](../guides/SKILLS.md)).
+  Selecionar, capturar ou ativar uma skill nunca executa scripts nem amplia permissões.
 
-O gerenciamento de servidores MCP externos, catálogos globais/de usuário de skills, ramificação de conversas
+O gerenciamento de servidores MCP externos, marketplaces remotos de skills, ramificação de conversas
 e o direcionamento independente dos filhos de um flow continuam como trabalho futuro.
 
 ## 7. Cancelamento

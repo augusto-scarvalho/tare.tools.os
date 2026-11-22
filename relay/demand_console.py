@@ -181,6 +181,7 @@ class DemandConsole:
         banner.update('This TUI only: '+policy.label())
         banner.display = policy.active
         self.project_admission = dict(selected.project_admission)
+        self.selected_managed_skills = list(selected.managed_skills)
         self.permission_write_paths = list(selected.write_paths)
         self.permission_profile_root = str(Path(selected.root).resolve())
         self.permission_profile_error = None

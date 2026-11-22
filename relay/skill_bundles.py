@@ -1263,6 +1263,56 @@ def main(argv=None) -> int:
     p_diff.add_argument('new', nargs='?', default='latest', help='Target snapshot ref (default: latest)')
     p_diff.add_argument('--json', action='store_true', dest='as_json')
 
+    p_adopt = sub.add_parser('adopt', help='Create a managed skill from a verified inert snapshot')
+    p_adopt.add_argument('bundle', help='Captured bundle id')
+    p_adopt.add_argument('snapshot', nargs='?', default='latest', help='Snapshot ref (default: latest)')
+    p_adopt.add_argument('--as', dest='skill_id', help='Explicit managed skill id')
+    p_adopt.add_argument('--json', action='store_true', dest='as_json')
+
+    p_managed = sub.add_parser('managed', help='List managed skills with origin, overlay, and update status')
+    p_managed.add_argument('--project', type=Path, help='Resolve per-project overrides for this folder')
+    p_managed.add_argument('--json', action='store_true', dest='as_json')
+
+    p_effective = sub.add_parser('effective', help='Show effective rendered skill content, provenance, and diffs')
+    p_effective.add_argument('skill_id', help='Managed skill id')
+    p_effective.add_argument('--project', type=Path, help='Resolve per-project overrides for this folder')
+    p_effective.add_argument('--text-only', action='store_true', help='Print only the rendered effective text')
+    p_effective.add_argument('--json', action='store_true', dest='as_json')
+
+    p_edit = sub.add_parser('edit', help='Set or clear an editable overlay for a managed skill')
+    p_edit.add_argument('skill_id', help='Managed skill id')
+    edit_src = p_edit.add_mutually_exclusive_group(required=True)
+    edit_src.add_argument('--text', help='New overlay markdown text')
+    edit_src.add_argument('--file', type=Path, dest='overlay_file', help='Read overlay UTF-8 text from a local file')
+    edit_src.add_argument('--clear', action='store_true', help='Clear the overlay and return to base snapshot text')
+    p_edit.add_argument('--project', type=Path, help='Scope overlay to one project folder')
+    p_edit.add_argument('--json', action='store_true', dest='as_json')
+
+    p_param = sub.add_parser('param', help='Define, set, or delete a typed skill parameter')
+    p_param.add_argument('skill_id', help='Managed skill id')
+    p_param.add_argument('name', help='Parameter name (used as <name> in skill text)')
+    p_param.add_argument('value', nargs='?', help='Parameter value (omit only with --delete)')
+    p_param.add_argument('--type', dest='param_type', default='string', choices=('string', 'int', 'float', 'bool', 'choice'))
+    p_param.add_argument('--default', dest='default_value', help='Explicit default value')
+    p_param.add_argument('--choices', help='Comma-separated choices (for --type choice)')
+    p_param.add_argument('--description', default='')
+    p_param.add_argument('--project', type=Path, help='Set or delete a per-project parameter override')
+    p_param.add_argument('--delete', action='store_true', help='Delete this parameter (or project override)')
+    p_param.add_argument('--json', action='store_true', dest='as_json')
+
+    p_update = sub.add_parser('update', help='Explicitly update a managed skill to a newer verified snapshot')
+    p_update.add_argument('skill_id', help='Managed skill id')
+    p_update.add_argument('snapshot', nargs='?', default='latest', help='Target snapshot ref (default: latest)')
+    p_update.add_argument('--keep-overlay', action='store_true', help='Keep existing global overlay over the new base')
+    p_update.add_argument('--json', action='store_true', dest='as_json')
+
+    p_remove = sub.add_parser('remove', help='Remove a managed skill config (inert snapshots stay intact)')
+    p_remove.add_argument('skill_id', help='Managed skill id')
+    p_remove.add_argument('--json', action='store_true', dest='as_json')
+
+    p_bindings = sub.add_parser('bindings', help='Show per-runtime support and boundaries for managed skills')
+    p_bindings.add_argument('--json', action='store_true', dest='as_json')
+
     args = parser.parse_args(argv)
     try:
         if args.action == 'inspect':
@@ -1310,6 +1360,80 @@ def main(argv=None) -> int:
         if args.action == 'diff':
             report = diff_snapshots(args.bundle, args.old, args.new)
             print(json.dumps(report, indent=2, ensure_ascii=False) if args.as_json else format_diff(report))
+            return 0
+        from . import managed_skills as managed
+        if args.action == 'adopt':
+            view = managed.adopt_snapshot(args.bundle, args.snapshot, skill_id=args.skill_id)
+            print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))
+            return 0
+        if args.action == 'managed':
+            rows = managed.list_managed(project=args.project)
+            if args.as_json:
+                print(json.dumps(rows, indent=2, ensure_ascii=False))
+            elif not rows:
+                print('No managed skills configured yet. Capture a bundle and run `tare skills adopt <bundle>`.')
+            else:
+                for r in rows:
+                    flags = [r['text_source']]
+                    if r['parameter_count']:
+                        flags.append(f"{r['parameter_count']} params")
+                    if r['upstream_update_available']:
+                        flags.append(f"update->{r['latest_snapshot_id']}")
+                    print(f"{r['skill_id']}  ({r['bundle_id']}@{r['snapshot_id']})  [{', '.join(flags)}]  {r['skill_name']}")
+            return 0
+        if args.action == 'effective':
+            view = managed.effective_view(args.skill_id, project=args.project)
+            if args.as_json:
+                print(json.dumps(view, indent=2, ensure_ascii=False))
+            elif args.text_only:
+                print(view['effective_text'])
+            else:
+                print(managed.format_effective(view))
+            return 0
+        if args.action == 'edit':
+            if args.clear:
+                new_text = None
+            elif args.overlay_file is not None:
+                raw, _ = _read_pinned_bytes(args.overlay_file.absolute(), managed.MAX_SKILL_TEXT_BYTES)
+                if raw is None:
+                    raise ValueError(f'Overlay file exceeds {managed.MAX_SKILL_TEXT_BYTES} bytes')
+                try:
+                    new_text = raw.decode('utf-8', errors='strict')
+                except UnicodeError as exc:
+                    raise ValueError('Overlay file must be valid UTF-8') from exc
+            else:
+                new_text = args.text
+            view = managed.set_overlay(args.skill_id, new_text, project=args.project)
+            print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))
+            return 0
+        if args.action == 'param':
+            if args.delete:
+                view = managed.delete_parameter(args.skill_id, args.name, project=args.project)
+            else:
+                if args.value is None:
+                    raise ValueError('Provide a parameter value or pass --delete')
+                choices = [c.strip() for c in args.choices.split(',') if c.strip()] if args.choices else None
+                view = managed.set_parameter(
+                    args.skill_id, args.name, args.value,
+                    param_type=args.param_type, default=args.default_value,
+                    choices=choices, description=args.description, project=args.project,
+                )
+            print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))
+            return 0
+        if args.action == 'update':
+            view = managed.apply_upstream_update(args.skill_id, args.snapshot, keep_overlay=args.keep_overlay)
+            print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))
+            return 0
+        if args.action == 'remove':
+            removed = managed.remove_managed(args.skill_id)
+            if args.as_json:
+                print(json.dumps({'skill_id': args.skill_id, 'removed': removed}))
+            else:
+                print(f'Removed managed skill {args.skill_id}.' if removed else f'Managed skill {args.skill_id} was not found.')
+            return 0 if removed else 2
+        if args.action == 'bindings':
+            rows = managed.runtime_bindings()
+            print(json.dumps(rows, indent=2, ensure_ascii=False) if args.as_json else managed.format_bindings(rows))
             return 0
     except ValueError as exc:
         print(f'Error: {exc}', file=sys.stderr)

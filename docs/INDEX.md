@@ -34,6 +34,8 @@ documents are the reference.
   conversation and role.
 - [Guidance sent to the models](guides/GUIDANCE.md): the `/guidance` panel; tare's role guidance (editable), the
   blocks Claude Code, Codex and AGY add on their own (remove or replace where allowed) and tare's protocol texts.
+- [Managed skills and inert bundle snapshots](guides/SKILLS.md): `/skills` and `tare skills`; inert local bundle
+  capture, configurable overlays and typed parameters, explicit upstream diffs, runtime bindings and per-session freezing.
 - [Ways of working](guides/WAYS_OF_WORKING.md): the four answer forms of a session (direct by default, three
   opt-in experiments).
 - [Delegated planning](guides/DELEGATED_PLANNING.md): the separate planner used for changes and its
