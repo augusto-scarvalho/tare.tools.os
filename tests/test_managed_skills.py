@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
-from textual.widgets import Button, Input, OptionList, TextArea
+from textual.widgets import Button, Input, OptionList, Static, TextArea
 
 from relay import console_backend
 from relay import managed_skills as managed
@@ -734,5 +734,91 @@ def test_skills_panel_close_and_add_buttons_dispatch_once_without_screen_stack_e
             assert len(calls) == 1
             assert not isinstance(app.screen, SkillsPanel)
             assert len(app.screen_stack) == 1
+
+    asyncio.run(scenario())
+
+
+def test_skills_panel_dogfood_focus_new_conversation_status_and_button_widths(tmp_path, monkeypatch):
+    storage = tmp_path / 'state'
+    root = tmp_path / 'project'
+    root.mkdir()
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(storage))
+    bundle = tmp_path / 'bundle-canary'
+    _write(bundle, 'SKILL.md', '---\nname: Canary\ndescription: Test skill\n---\nCanary rules.\n')
+
+    async def scenario():
+        app = WorkConsole(root, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(140, 42)) as pilot:
+            await app.workers.wait_for_complete()
+            app.action_skills()
+            await pilot.pause()
+            panel = app.screen
+            assert isinstance(panel, SkillsPanel)
+            menu = panel.query_one('#workbench-list', OptionList)
+            # Initial focus lands on the list (not Back · Esc) so arrows work immediately.
+            assert app.focused is menu
+
+            # Pressing Enter in capture path submits capture and preserves feedback status past OptionHighlighted.
+            cap_input = panel.query_one('#skills-capture-path', Input)
+            cap_input.value = str(bundle)
+            cap_input.focus()
+            await pilot.press('enter')
+            await pilot.pause(.2)
+            assert 'captured inertly' in str(panel.query_one('#workbench-status', Static).render())
+
+            # Adopt snapshot -> Activate -> Deactivate button expands without clipping ('Deactiva').
+            await pilot.click('#skills-manage')
+            await pilot.pause(.2)
+            assert 'created from snapshot' in str(panel.query_one('#workbench-status', Static).render())
+            await pilot.click('#skills-toggle')
+            await pilot.pause(.2)
+            toggle_btn = panel.query_one('#skills-toggle', Button)
+            assert str(toggle_btn.label) == 'Deactivate'
+            assert toggle_btn.content_region.width >= len('Deactivate') + 2
+
+            # Auto-select toggle sits right after managed skills (before snapshots) and 'Disable' fits unclipped.
+            toggle_idx = next(i for i, r in enumerate(panel.rows) if r['row_kind'] == 'auto_skills_toggle')
+            snap_idx = next(i for i, r in enumerate(panel.rows) if r['row_kind'] == 'snapshot')
+            assert toggle_idx < snap_idx
+            menu.highlighted = toggle_idx
+            await pilot.pause(.2)
+            await pilot.click('#skills-manage')
+            await pilot.pause(.2)
+            manage_btn = panel.query_one('#skills-manage', Button)
+            assert str(manage_btn.label) == 'Disable'
+            assert manage_btn.content_region.width >= len('Disable') + 2
+
+            # Esc while editing overlay cancels edit instead of dismissing /skills.
+            managed_idx = next(i for i, r in enumerate(panel.rows) if r['row_kind'] == 'managed')
+            menu.highlighted = managed_idx
+            await pilot.pause(.2)
+            await pilot.click('#skills-save')
+            await pilot.pause(.2)
+            assert panel.editing_overlay is True
+            await pilot.press('escape')
+            await pilot.pause(.2)
+            assert app.screen is panel and panel.editing_overlay is False
+            assert 'Cancelled overlay edit' in str(panel.query_one('#workbench-status', Static).render())
+
+            # Roles dialog focuses #roles-list on open.
+            await pilot.click('#skills-roles')
+            await pilot.pause(.2)
+            dialog = app.screen
+            assert isinstance(dialog, SkillRolesDialog)
+            assert app.focused is dialog.query_one('#roles-list', OptionList)
+            await pilot.press('escape')
+            await pilot.pause(.2)
+            await pilot.press('escape')
+            await pilot.pause(.2)
+
+            # Starting /new preserves both activated managed skills and opt-in auto_skills for the new session.
+            assert app.selected_managed_skills == ['canary']
+            assert app.auto_skills is True
+            assert app.new_conversation() is True
+            await pilot.pause(.2)
+            assert app.selected_managed_skills == ['canary']
+            assert app.auto_skills is True
+            assert app.selection().managed_skills == ['canary']
+            assert app.selection().auto_skills is True
 
     asyncio.run(scenario())

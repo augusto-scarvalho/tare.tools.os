@@ -2891,8 +2891,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns conversation and cross-flow navigation; execution and evidence owners stay unchanged.",
-      "size_bytes": 42330,
-      "sha256": "b0cfb1bf242cc387a650ce5ecdae847d5a60c8df6cd7d7e2a80b01b0870b84f6"
+      "size_bytes": 42412,
+      "sha256": "4859dfc6321164d9449144ca129c7c1cce26ae280fc2f6b042d37285bcc7c757"
     },
     {
       "name": "console_recovery.py",
@@ -3421,8 +3421,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator views and draft composition; Runtime retains execution authority.",
-      "size_bytes": 46213,
-      "sha256": "0d68860ae843fd2936e09cc0a13f87a7b0343814db9e232035468368ac2b4887"
+      "size_bytes": 46275,
+      "sha256": "fff919bc8a1af389b7b085953ffe6c53fe57db9b692a227f6960ae1910ab5d9a"
     },
     {
       "name": "adaptive_routes.py",
@@ -4551,8 +4551,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 34357,
-      "sha256": "3653d308604d64ca3995faa98da5d03c6a95c5772fe015b025c0c059d408b62c"
+      "size_bytes": 36436,
+      "sha256": "1a1c4c3c4944fe05832a68d9c10b3ea0ca912a046d809092c3a3005d04fa1d09"
     },
     {
       "name": "vendor_skills.py",
@@ -4571,8 +4571,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 17839,
-      "sha256": "fce8ae9319f6e94e63d71c2fef67bd2e8ca39aa8627cb7802bc2ba176eec4135"
+      "size_bytes": 19601,
+      "sha256": "ad1d4225f26c4d25a302317f4df7fc4485f2980c3c3264784ba11ed53a777249"
     }
   ]
 }
