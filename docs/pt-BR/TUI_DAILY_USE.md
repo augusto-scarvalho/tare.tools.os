@@ -339,8 +339,9 @@ com uma nova contagem.
   configuráveis com overlays editáveis, parâmetros tipados, acesso e política por
   papel (**Roles** — `explorer`, `researcher`, `vision` e `heads_up` desabilitados
   por padrão), diffs explícitos contra upstream e origem local em disco, tabela de
-  bindings por runtime e ativação explícita (**Activate / Deactivate**) congelada
-  por nova sessão (veja [Managed skills](../guides/SKILLS.md)).
+  bindings por runtime, ativação explícita (**Activate / Deactivate**) e seleção
+  automática determinística opt-in (**Auto-select** com shortlist e abstenção)
+  congelada por nova sessão (veja [Managed skills](../guides/SKILLS.md)).
   Selecionar, capturar ou ativar uma skill nunca executa scripts nem amplia permissões.
 
 O gerenciamento de servidores MCP externos, marketplaces remotos de skills, ramificação de conversas

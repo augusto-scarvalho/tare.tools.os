@@ -2,7 +2,7 @@
   "$schema": "https://tare.tools/schemas/v1/disposition-manifest.json",
   "version": "1.0.0",
   "generated_at": "2026-10-04T03:10:28.054735+00:00",
-  "total_modules": 456,
+  "total_modules": 457,
   "modules": [
     {
       "name": "consent_decisions.py",
@@ -2151,8 +2151,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 135885,
-      "sha256": "62d68a2393cd9ecf0228559bf8f5c940e74a60cb0fd7eabb19de5d0eec5dc1c8"
+      "size_bytes": 137523,
+      "sha256": "ff27a2b5982c59677b641b01d838a1b8dc3985419ab4605fd1d7415247f2ade5"
     },
     {
       "name": "native_artifacts.py",
@@ -2661,8 +2661,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 43564,
-      "sha256": "ad7a439bf1eb795901c6cca1126b9e60edf7f585cf12a036f83ab9af13a2f2ba"
+      "size_bytes": 43674,
+      "sha256": "7d8d714ded5cbf3fe495ac5b28be0f9752d3715f34b82c50ea4101c819f27b4c"
     },
     {
       "name": "human_wait.py",
@@ -2681,8 +2681,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 187240,
-      "sha256": "450c58e9a8adadbc1835c8daea8b069abed289287d2fc014a49d6460fed148f3"
+      "size_bytes": 187508,
+      "sha256": "ac7616b50156550371863985ba803b78e42b8a15b6ce7c93a395dc28f53e0e29"
     },
     {
       "name": "native_display.py",
@@ -2891,8 +2891,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS owns conversation and cross-flow navigation; execution and evidence owners stay unchanged.",
-      "size_bytes": 42276,
-      "sha256": "59e40e51ce7441561d828ab8bcf082edd4e2a3621f5bdacf5796cb4d92b99490"
+      "size_bytes": 42330,
+      "sha256": "b0cfb1bf242cc387a650ce5ecdae847d5a60c8df6cd7d7e2a80b01b0870b84f6"
     },
     {
       "name": "console_recovery.py",
@@ -3421,8 +3421,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator views and draft composition; Runtime retains execution authority.",
-      "size_bytes": 45933,
-      "sha256": "6c732494f8c5b48462bb2b67447e93cab947586f65491cce5c3b1aec7e429516"
+      "size_bytes": 46093,
+      "sha256": "bfedbd071f9cecd44676f610ed52906e12ec8ee56da6437d5090c2d5f3b75a7e"
     },
     {
       "name": "adaptive_routes.py",
@@ -4531,8 +4531,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 74951,
-      "sha256": "10e7c574833e1eb04cd8bb34a99ea203225fa25b296c1878de462dd00a937c2b"
+      "size_bytes": 77677,
+      "sha256": "4b6f7e5553fe498a913365fdf3411ae09602e70f1e0b265f7a4b97ff59ce598a"
     },
     {
       "name": "managed_skills.py",
@@ -4541,8 +4541,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 45657,
-      "sha256": "2db37af0a87ce26acb6a527116c1f951e3b8f310b740e730d4cbb5cb5aaf3f5b"
+      "size_bytes": 49467,
+      "sha256": "d9bfab7eea5e8c0e1b0af64f35fce4022c7a68db2bd4a2dc0f641a8e6559e60b"
     },
     {
       "name": "console_skills.py",
@@ -4551,8 +4551,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 31345,
-      "sha256": "5f98e052066fc03eef790b7aa108be19e72088e2c4a98ddef4993522cbb5fca1"
+      "size_bytes": 34341,
+      "sha256": "3b3f389db39264562a164c3f1523a36e982d563b327264f6731f1879a80079bb"
     },
     {
       "name": "vendor_skills.py",
@@ -4563,6 +4563,16 @@
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
       "size_bytes": 33242,
       "sha256": "bc4488fb6213c0de34bd0bf6df66a802d15b37ae118784ea82e836d80c7f268f"
+    },
+    {
+      "name": "skill_selector.py",
+      "path": "tare.tools.os/relay/skill_selector.py",
+      "summary": "Deterministic lexical managed skill selection with bounded shortlist, hard eligibility filtering, and explicit 5-state abstention (SKL-06 Corte A).",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
+      "size_bytes": 17470,
+      "sha256": "dc6289d087827e1fdd86403b5e96be7e6dabbe08e5350a4375f27985a26a4706"
     }
   ]
 }

@@ -203,11 +203,22 @@ class SkillsPanel(WorkbenchPanel):
     SkillsPanel.narrow .panel-actions Button { min-width: 4; padding: 0; margin-left: 1; margin-right: 0; }
     '''
 
-    def __init__(self, root: Path, *, selected_managed: list[str], on_toggle_managed, submit_project):
+    def __init__(
+        self,
+        root: Path,
+        *,
+        selected_managed: list[str],
+        on_toggle_managed,
+        submit_project,
+        auto_skills: bool = False,
+        on_toggle_auto_skills=None,
+    ):
         super().__init__('Skills · project, managed & vendor catalog', [], kind='skills', submit=submit_project)
         self.root = Path(root)
         self.selected_managed = list(selected_managed)
         self.on_toggle_managed = on_toggle_managed
+        self.auto_skills = bool(auto_skills)
+        self.on_toggle_auto_skills = on_toggle_auto_skills
         self.view_mode = 'content'  # 'content' | 'diff' | 'bindings'
         self.editing_overlay = False
         self.editing_project_scope = False
@@ -281,6 +292,14 @@ class SkillsPanel(WorkbenchPanel):
                 'row_kind': 'vendor',
                 'label': f"[{vtag}] {item['slug']} · {cls_tag}{sync_tag} · {item['skill_name']}",
             })
+        if (managed_list or self.auto_skills) and self.on_toggle_auto_skills is not None:
+            mode_tag = 'ON (shortlist + abstain)' if self.auto_skills else 'OFF (manual only)'
+            rows.append({
+                'id': 'auto-skills-toggle',
+                'row_kind': 'auto_skills_toggle',
+                'managed_count': len(managed_list),
+                'label': f'[selector] Auto-select skills: {mode_tag}',
+            })
         if catalog['hidden_count']:
             action = 'Hide' if self.show_hidden_vendor else 'Show'
             rows.append({
@@ -345,6 +364,9 @@ class SkillsPanel(WorkbenchPanel):
         if kind == 'vendor':
             manage_btn.disabled = not (valid and row.get('sync_status') == 'not_imported')
             manage_btn.label = 'Import'
+        elif kind == 'auto_skills_toggle':
+            manage_btn.disabled = self.on_toggle_auto_skills is None
+            manage_btn.label = 'Disable' if self.auto_skills else 'Enable'
         elif kind == 'vendor_hidden_toggle':
             manage_btn.disabled = False
             manage_btn.label = 'Hide' if self.show_hidden_vendor else 'Show'
@@ -433,6 +455,26 @@ class SkillsPanel(WorkbenchPanel):
                 else:
                     message = f"Inert vendor skill ({cls_tag}). Click Import to capture and manage with suggested roles."
                 valid = True
+            elif kind == 'auto_skills_toggle':
+                fp = managed.catalog_index_fingerprint(project=self.root)
+                state_word = (
+                    'ENABLED (opt-in deterministic shortlist + abstention)'
+                    if self.auto_skills else
+                    'DISABLED (manual --skill / Activate only)'
+                )
+                body = (
+                    f"Auto-select managed skills: {state_word}\n"
+                    f"Managed skills configured: {self.current.get('managed_count', 0)}\n"
+                    f"Catalog index SHA-256: {fp[:16]}\n\n"
+                    'How it works (SKL-06 Corte A — zero model calls, zero token spend):\n'
+                    '- Filters strictly by role policy and per-skill allowed_roles before ranking.\n'
+                    '- Ranks lightweight metadata (triggers, skill_id, name, description, headings) into a shortlist of at most 5.\n'
+                    '- Abstains cleanly (no_skill) when nothing crosses threshold, and refuses to guess on ambiguous ties.\n'
+                    '- Freezes the selection receipt into native-agent.json for new conversations.\n\n'
+                    'CLI preview: `tare skills select "<prompt>"`  |  Configure keywords: `tare skills triggers <id> <phrase>...`'
+                )
+                message = 'Click Enable / Disable to toggle opt-in deterministic auto-selection for new conversations.'
+                valid = True
             elif kind == 'vendor_hidden_toggle':
                 counts = self.current.get('counts_by_class') or {}
                 body = (
@@ -516,6 +558,17 @@ class SkillsPanel(WorkbenchPanel):
                     f"Imported {view['skill_id']} from {'+'.join(self.current['vendors'])} "
                     f"(roles={managed.format_role_tags(view['effective_roles'])}; no code executed).",
                 )
+            elif bid == 'skills-manage' and self.current and self.current['row_kind'] == 'auto_skills_toggle':
+                if self.on_toggle_auto_skills is not None:
+                    self.auto_skills = bool(self.on_toggle_auto_skills())
+                    self._reload_and_select(
+                        'auto-skills-toggle',
+                        (
+                            'Opt-in auto-select skills ENABLED (deterministic shortlist + abstention for new conversations).'
+                            if self.auto_skills else
+                            'Auto-select skills DISABLED (manual Activate / --skill only).'
+                        ),
+                    )
             elif bid == 'skills-manage' and self.current and self.current['row_kind'] == 'vendor_hidden_toggle':
                 self.show_hidden_vendor = not self.show_hidden_vendor
                 self._reload_and_select(

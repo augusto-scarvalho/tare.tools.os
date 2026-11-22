@@ -32,6 +32,8 @@ tare skills param <skill-id> <name> <value> [--type string|int|float|bool|choice
 tare skills edit <skill-id> (--text "..." | --file PATH | --clear) [--project PATH]
 tare skills roles <skill-id> [ROLE ...] [--none | --reset] [--project PATH]
 tare skills role-policy [ROLE] [--enable | --disable | --reset] [--project PATH]
+tare skills triggers <skill-id> [PHRASE ...] [--clear | --reset] [--project PATH]
+tare skills select "<prompt>" [--role ROLE] [--project PATH] [--max-shortlist 5]
 tare skills effective <skill-id> [--project PATH] [--role ROLE] [--text-only]
 tare skills update <skill-id> [snapshot] [--from-origin] [--keep-overlay]
 tare skills remove <skill-id>
@@ -68,9 +70,17 @@ A role receives a managed skill only when **both** the role policy is enabled **
 - Each role receives only its own frozen slice: the coordinator receives only coordinator-allowed skills (plus a 1-line summary of delegated child-role skills without loading their body), delegated `implementer`, `planner`, `plan-auditor`, `auditor`, and `explorer` workers inherit only their allowed slice from the parent's frozen pool, and disabled roles always receive zero skills.
 - Editing `managed.json`, changing role policies, or deleting a skill mid-conversation never mutates running conversations, delegated child workers, `--resume`, or provider continuations.
 
-## 4. Session activation and runtime bindings
+## 4. Deterministic shortlist and explicit abstention (`SKL-06` Corte A)
 
-- **CLI:** pass `--skill <skill-id>` (repeatable) when starting a new `tare agent` session. `--skill` is refused on `--resume`, `--config`, or `--continue-provider`.
+Opt-in automatic selection evaluates lightweight metadata (`triggers`, `skill_id`, `skill_name`, `description`, top-level headings) with zero model calls and zero token spend:
+
+- **Hard eligibility gates first:** `role_policy` ∩ `allowed_roles` and backing snapshot integrity are checked before any skill can be selected; ineligible skills never become eligible through lexical scores.
+- **Bounded shortlist & 5 explicit states:** returns at most 5 shortlisted candidates and one explicit outcome (`selected`, `no_skill`, `ambiguous`, `unavailable`, or `error` — technical errors are never masked as `no_skill`).
+- **Frozen selection receipt:** pass `--auto-skills` on a new `tare agent` session (or enable `[selector] Auto-select skills` in `/skills`). The selection receipt (`tare.tools/skill-selection/1`, including `catalog_sha256` and `query_sha256`) is frozen into `native-agent.json` alongside `managed_skills_pool` and preserved unchanged on `--resume` and provider continuation. Explicit `--skill` / **Activate** selections remain respected.
+
+## 5. Session activation and runtime bindings
+
+- **CLI:** pass `--skill <skill-id>` (repeatable) and/or `--auto-skills` when starting a new `tare agent` session. Both flags are refused on `--resume`, `--config`, or `--continue-provider`.
 - **TUI (`/skills`):** inspect project skills (**Add to draft** still appends an atomic hash-checked snapshot up to 16 KiB), capture local folders into inert snapshots (**Capture**), promote snapshots to managed skills (**Manage**), edit overlays (**Edit** / **Save**), configure per-skill roles and global/project role policies (**Roles**), inspect diffs and per-runtime bindings (**View**), apply upstream updates (**Update**), and **Activate / Deactivate** managed skills for new conversations.
 - **Frozen per session:** when a new session starts, tare verifies each selected skill's backing inert snapshot and freezes its rendered text, SHA-256, parameters, effective roles, and origin into `native-agent.json`. Later edits, parameter changes, role edits, or upstream updates never reach already-started or resumed sessions.
 - **Runtime support (`tare skills bindings`):** portable skill text is frozen into the session system prompt across Claude CLI, Codex CLI (where Codex's own `skills_instructions` are left out by default via `/guidance`), AGY CLI, Direct HTTP API, and Local Gateway. Auxiliary scripts and external bindings remain inert data unless authorized separately through host permissions.

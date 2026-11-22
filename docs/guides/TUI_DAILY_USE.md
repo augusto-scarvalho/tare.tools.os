@@ -330,8 +330,9 @@ nothing is lost, and sending any message continues the conversation with a new c
   manages configurable skills with overlays, typed parameters, per-role access and
   role policies (**Roles** — `explorer`, `researcher`, `vision`, and `heads_up`
   disabled by default), explicit upstream and live origin-drift diffs, per-runtime
-  binding visibility, and explicit **Activate / Deactivate** selection frozen per
-  new session (see [Managed skills](SKILLS.md)). Selecting, capturing,
+  binding visibility, explicit **Activate / Deactivate** selection, and opt-in
+  deterministic **Auto-select** shortlist/abstention frozen per new session (see
+  [Managed skills](SKILLS.md)). Selecting, capturing,
   or activating a skill never executes scripts or expands permissions.
 
 External MCP server management, remote skill marketplaces, conversation branching,
