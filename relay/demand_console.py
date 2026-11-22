@@ -182,6 +182,7 @@ class DemandConsole:
         banner.display = policy.active
         self.project_admission = dict(selected.project_admission)
         self.selected_managed_skills = list(selected.managed_skills)
+        self.auto_skills = bool(selected.auto_skills)
         self.permission_write_paths = list(selected.write_paths)
         self.permission_profile_root = str(Path(selected.root).resolve())
         self.permission_profile_error = None

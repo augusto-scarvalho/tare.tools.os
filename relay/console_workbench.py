@@ -782,6 +782,8 @@ class ConversationWorkbench:
                     root,
                     selected_managed=list(getattr(self, 'selected_managed_skills', ())),
                     on_toggle_managed=self.toggle_managed_skill,
+                    auto_skills=bool(getattr(self, 'auto_skills', False)),
+                    on_toggle_auto_skills=getattr(self, 'toggle_auto_skills', None),
                     submit_project=lambda *args: self.add_workbench_draft(scope, *args, skill=True),
                 )
             except (OSError, ValueError) as exc:

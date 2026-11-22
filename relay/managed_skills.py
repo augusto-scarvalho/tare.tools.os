@@ -23,6 +23,8 @@ MAX_SKILL_TEXT_BYTES = _bundles.MAX_SKILL_DOC_BYTES  # 64 KiB
 MAX_SESSION_SKILLS = 8
 MAX_SESSION_SKILLS_BYTES = 128 * 1024
 MAX_PARAMETERS = 32
+MAX_TRIGGERS = 32
+MAX_TRIGGER_LEN = 64
 PARAM_NAME_RE = re.compile(r'^[A-Za-z][A-Za-z0-9 _.-]{0,39}$')
 PARAM_TYPES = ('string', 'int', 'float', 'bool', 'choice')
 
@@ -91,11 +93,32 @@ def _validate_role_policy_map(raw, *, context: str = 'role_policy') -> dict[str,
     return out
 
 
+def _validate_triggers_list(triggers) -> list[str]:
+    if not isinstance(triggers, (list, tuple)):
+        raise ValueError('triggers must be a list of keyword/phrase strings')
+    if len(triggers) > MAX_TRIGGERS:
+        raise ValueError(f'At most {MAX_TRIGGERS} triggers are allowed per managed skill')
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in triggers:
+        if not isinstance(raw, str):
+            raise ValueError('Each trigger must be a string')
+        cleaned = ' '.join(raw.strip().split())
+        if not cleaned or len(cleaned) > MAX_TRIGGER_LEN:
+            raise ValueError(f'Each trigger must be 1..{MAX_TRIGGER_LEN} characters')
+        low = cleaned.lower()
+        if low not in seen:
+            seen.add(low)
+            out.append(cleaned)
+    return out
+
+
 def _project_override_empty(proj_entry: dict) -> bool:
     return (
         proj_entry.get('overlay_text') is None
         and not proj_entry.get('parameters')
         and proj_entry.get('allowed_roles') is None
+        and proj_entry.get('triggers') is None
     )
 
 
@@ -501,6 +524,57 @@ def set_skill_roles(
     return effective_view(sid, project=project, storage_root=storage_root)
 
 
+def set_triggers(
+    skill_id: str,
+    triggers,
+    *,
+    project=None,
+    storage_root=None,
+) -> dict:
+    """Set explicit lexical trigger keywords/phrases for deterministic selection (global or per-project)."""
+    sid = _validate_skill_id(skill_id)
+    store = load_store(storage_root=storage_root)
+    entry = store['skills'].get(sid)
+    if entry is None:
+        raise ValueError(f'Managed skill {sid!r} not found')
+    proj_key = _normalize_project_key(project)
+    if proj_key is None:
+        entry['triggers'] = [] if triggers is None else _validate_triggers_list(triggers)
+    else:
+        overrides = entry.setdefault('project_overrides', {})
+        if triggers is None:
+            proj_entry = overrides.get(proj_key)
+            if proj_entry is not None:
+                proj_entry.pop('triggers', None)
+                if _project_override_empty(proj_entry):
+                    overrides.pop(proj_key, None)
+        else:
+            proj_entry = overrides.setdefault(proj_key, {'overlay_text': None, 'parameters': {}})
+            proj_entry['triggers'] = _validate_triggers_list(triggers)
+    entry['updated_at'] = _now_iso()
+    _save_store(store, storage_root=storage_root)
+    return effective_view(sid, project=project, storage_root=storage_root)
+
+
+def catalog_index_fingerprint(*, project=None, storage_root=None) -> str:
+    """Deterministic SHA-256 fingerprint of effective managed catalog metadata (invalidates stale selection receipts)."""
+    store = load_store(storage_root=storage_root)
+    proj_key = _normalize_project_key(project)
+    policy = {r: info['enabled'] for r, info in _resolve_role_policy_detail(store, proj_key).items()}
+    rows = []
+    for sid in sorted(store['skills']):
+        view = effective_view(sid, project=project, storage_root=storage_root)
+        rows.append({
+            'skill_id': sid,
+            'effective_sha256': view['effective_sha256'],
+            'allowed_roles': view['allowed_roles'],
+            'effective_roles': view['effective_roles'],
+            'triggers': view['triggers'],
+        })
+    payload = json.dumps({'schema': SCHEMA, 'role_policy': policy, 'skills': rows}, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()
+
+
 def remove_managed(skill_id: str, *, storage_root=None) -> bool:
     """Remove a managed skill entry; historical inert snapshots and saved sessions stay untouched."""
     sid = _validate_skill_id(skill_id)
@@ -613,6 +687,15 @@ def effective_view(skill_id: str, *, project=None, role: str | None = None, stor
     effective_roles = [r for r in allowed_roles if role_policy[r]]
     disabled_by_policy_roles = [r for r in allowed_roles if not role_policy[r]]
 
+    raw_global_triggers = entry.get('triggers')
+    global_triggers = _validate_triggers_list(raw_global_triggers) if raw_global_triggers is not None else []
+    if proj_override and proj_override.get('triggers') is not None:
+        triggers = _validate_triggers_list(proj_override['triggers'])
+        triggers_source = 'project'
+    else:
+        triggers = global_triggers
+        triggers_source = 'global'
+
     merged_params = {}
     fill_values = {}
     for pname, spec in sorted((entry.get('parameters') or {}).items()):
@@ -677,6 +760,8 @@ def effective_view(skill_id: str, *, project=None, role: str | None = None, stor
         'role_policy': role_policy,
         'effective_roles': effective_roles,
         'disabled_by_policy_roles': disabled_by_policy_roles,
+        'triggers': triggers,
+        'triggers_source': triggers_source,
         'parameters': merged_params,
         'base_text': entry['base_text'],
         'raw_text': raw_text,
@@ -727,6 +812,7 @@ def list_managed(*, project=None, role: str | None = None, storage_root=None) ->
             'roles_source': view['roles_source'],
             'effective_roles': view['effective_roles'],
             'disabled_by_policy_roles': view['disabled_by_policy_roles'],
+            'triggers': view['triggers'],
             'parameter_count': len(view['parameters']),
             'origin_vendor': view['origin'].get('origin_vendor'),
             'origin_vendors': list(view['origin'].get('origin_vendors') or ()),
@@ -1003,6 +1089,8 @@ def format_effective(view: dict) -> str:
     if 'role_access' in view:
         ra = view['role_access']
         lines.append(f"Role check ({ra['role']}): allowed={ra['allowed']} ({ra['reason']})")
+    if view.get('triggers'):
+        lines.append(f"Triggers ({view['triggers_source']}): {', '.join(view['triggers'])}")
     if view['parameters']:
         lines.append('Parameters:')
         for pname, spec in view['parameters'].items():

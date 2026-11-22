@@ -352,6 +352,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         self.permission_write_paths = []
         self.project_admission = {'mode': 'quarantine', 'root_sha256': None, 'nested': False}
         self.selected_managed_skills = []
+        self.auto_skills = False
         self.command_protection = {}
         self.project_graph_path = ''
         self.graph_profile_root = self.graph_profile_error = None
@@ -1358,6 +1359,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             command_protection=dict(self.command_protection),
             project_admission=dict(self.project_admission),
             managed_skills=list(self.selected_managed_skills),
+            auto_skills=bool(self.auto_skills),
             write_paths=list(self.permission_write_paths),
             graph_path=self.project_graph_path,
             folder_grants=self.folder_grants(field('root')), folder_note=self.folder_note,
@@ -1416,6 +1418,12 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         if self.demand_id:
             self.save_demand()
         return list(self.selected_managed_skills)
+
+    def toggle_auto_skills(self) -> bool:
+        self.auto_skills = not bool(self.auto_skills)
+        if self.demand_id:
+            self.save_demand()
+        return self.auto_skills
 
     def show_plan(self, result):
         from .native_plan import render, render_summary

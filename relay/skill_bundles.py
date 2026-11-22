@@ -1354,6 +1354,22 @@ def main(argv=None) -> int:
                           help='Allow importing a hidden cli_internal/blocked_capability skill explicitly')
     p_import.add_argument('--json', action='store_true', dest='as_json')
 
+    p_triggers = sub.add_parser('triggers', help='Show or set explicit lexical trigger phrases for a managed skill')
+    p_triggers.add_argument('skill_id', help='Managed skill id')
+    p_triggers.add_argument('triggers', nargs='*', help='Trigger phrases/keywords (e.g. "pixel art" sprite)')
+    trig_mode = p_triggers.add_mutually_exclusive_group()
+    trig_mode.add_argument('--clear', action='store_true', help='Clear all triggers (or set empty list)')
+    trig_mode.add_argument('--reset', action='store_true', help='Reset global triggers or clear project override')
+    p_triggers.add_argument('--project', type=Path, help='Scope triggers to one project folder')
+    p_triggers.add_argument('--json', action='store_true', dest='as_json')
+
+    p_select = sub.add_parser('select', help='Preview deterministic lexical shortlist and abstention for a prompt')
+    p_select.add_argument('prompt', help='User demand / prompt text to evaluate against eligible managed skills')
+    p_select.add_argument('--role', help='Evaluate eligibility strictly for one role (omit for conversation-wide)')
+    p_select.add_argument('--project', type=Path, help='Resolve per-project overrides for this folder')
+    p_select.add_argument('--max-shortlist', type=int, default=5, help='Maximum shortlist size (1..5)')
+    p_select.add_argument('--json', action='store_true', dest='as_json')
+
     args = parser.parse_args(argv)
     try:
         if args.action == 'inspect':
@@ -1539,6 +1555,32 @@ def main(argv=None) -> int:
                 allow_hidden=args.allow_hidden,
             )
             print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))
+            return 0
+        if args.action == 'triggers':
+            if args.clear:
+                if args.triggers:
+                    raise ValueError('Do not pass trigger phrases together with --clear')
+                view = managed.set_triggers(args.skill_id, [], project=args.project)
+            elif args.reset:
+                if args.triggers:
+                    raise ValueError('Do not pass trigger phrases together with --reset')
+                view = managed.set_triggers(args.skill_id, None, project=args.project)
+            elif args.triggers:
+                view = managed.set_triggers(args.skill_id, args.triggers, project=args.project)
+            else:
+                view = managed.effective_view(args.skill_id, project=args.project)
+            print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))
+            return 0
+        if args.action == 'select':
+            from . import skill_selector as selector
+            receipt = selector.select_skills(
+                args.prompt,
+                project=args.project,
+                role=args.role,
+                max_shortlist=args.max_shortlist,
+                safe=False,
+            )
+            print(json.dumps(receipt, indent=2, ensure_ascii=False) if args.as_json else selector.format_selection(receipt))
             return 0
     except ValueError as exc:
         print(f'Error: {exc}', file=sys.stderr)

@@ -64,7 +64,7 @@ def configuration(value):
             'schema', 'role', 'repositories', 'writable', 'verifiers', 'index_states',
             'context_policy', 'specgraph_edit_context', 'typed_output', 'input_artifacts', 'capabilities', 'terminal', 'project_graph',
             'folder_access', 'instruction_repositories', 'command_protection', 'command_context', 'command_runtimes', 'project_admission', 'shared_context', 'delegated_verifiers',
-            'same_family_audit', 'managed_skills'}):
+            'same_family_audit', 'managed_skills', 'auto_skills'}):
         raise ValueError('explicit_native_agent_configuration_required')
     if 'same_family_audit' in value and (value['same_family_audit'] is not True or value.get('role') != 'auditor'):
         raise ValueError('same_family_audit is set only by the local-only conversation review, for an auditor.')
@@ -185,6 +185,8 @@ def configuration(value):
     if value.get('managed_skills') is not None:
         from .managed_skills import validate_skill_ids
         value = {**value, 'managed_skills': validate_skill_ids(value['managed_skills'])}
+    if 'auto_skills' in value and type(value['auto_skills']) is not bool:
+        raise ValueError('native_agent_auto_skills_boolean_required')
     return {**value, 'role': role, 'repositories': resolved, 'writable': writable,
             'verifiers': verifiers, 'index_states': indexes, 'context_policy': context}
 
@@ -541,11 +543,13 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             if owned := saved_guidance()['variables']:
                 state['guidance_variables'] = owned
             effective_role = state.get('conversation_role') or config['role']
-            if inherited_managed_skills is not None and config.get('managed_skills'):
-                raise ValueError('Cannot combine config.managed_skills with inherited_managed_skills.')
+            if inherited_managed_skills is not None and (config.get('managed_skills') or config.get('auto_skills')):
+                raise ValueError('Cannot combine config.managed_skills or auto_skills with inherited_managed_skills.')
             if continuation:
                 if inherited_managed_skills is not None:
                     raise ValueError('Cannot combine provider continuation with inherited_managed_skills.')
+                if parent.get('skill_selection'):
+                    state['skill_selection'] = deepcopy(parent['skill_selection'])
                 if parent.get('managed_skills_pool'):
                     from .managed_skills import partition_pool_for_role
                     state['managed_skills_pool'] = deepcopy(parent['managed_skills_pool'])
@@ -563,8 +567,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 validated = validate_inherited_frozen_skills(inherited_managed_skills, role=effective_role)
                 if validated:
                     state['managed_skills'] = validated
-            elif config.get('managed_skills'):
-                from .managed_skills import freeze_session_pool, partition_pool_for_role
+            elif config.get('managed_skills') or config.get('auto_skills'):
+                from .managed_skills import MAX_SESSION_SKILLS, freeze_session_pool, partition_pool_for_role
                 instr_repos = config.get('instruction_repositories')
                 if isinstance(instr_repos, list) and len(instr_repos) == 1 and instr_repos[0] in config['repositories']:
                     skill_project = config['repositories'][instr_repos[0]]
@@ -572,14 +576,34 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                     skill_project = next(iter(config['repositories'].values()))
                 else:
                     skill_project = None
-                pool = freeze_session_pool(config['managed_skills'], project=skill_project)
-                active_skills, withheld_skills = partition_pool_for_role(pool, effective_role)
-                if active_skills:
-                    state['managed_skills'] = active_skills
-                if withheld_skills:
-                    state['managed_skills_withheld'] = withheld_skills
-                if state.get('conversation_role') == 'coordinator' or not (delegated_leaf or exploration_leaf):
-                    state['managed_skills_pool'] = pool
+                selected_ids = list(config.get('managed_skills') or ())
+                if config.get('auto_skills'):
+                    from .console_entry import ASSISTANT_CONTEXT
+                    from .skill_selector import select_skills
+                    sel_role = None if state.get('conversation_role') == 'coordinator' else effective_role
+                    sel_query = instruction if isinstance(instruction, str) else ''
+                    if sel_query.startswith(ASSISTANT_CONTEXT):
+                        sel_query = sel_query[len(ASSISTANT_CONTEXT):]
+                    receipt = select_skills(
+                        sel_query,
+                        project=skill_project,
+                        role=sel_role,
+                        safe=True,
+                    )
+                    state['skill_selection'] = receipt
+                    if receipt['status'] == 'selected':
+                        for sid in receipt['selected_ids']:
+                            if sid not in selected_ids and len(selected_ids) < MAX_SESSION_SKILLS:
+                                selected_ids.append(sid)
+                if selected_ids:
+                    pool = freeze_session_pool(selected_ids, project=skill_project)
+                    active_skills, withheld_skills = partition_pool_for_role(pool, effective_role)
+                    if active_skills:
+                        state['managed_skills'] = active_skills
+                    if withheld_skills:
+                        state['managed_skills_withheld'] = withheld_skills
+                    if state.get('conversation_role') == 'coordinator' or not (delegated_leaf or exploration_leaf):
+                        state['managed_skills_pool'] = pool
             if capsule:
                 # Frozen here: the system text and the first message must not change within a session.
                 state['prompt_capsule'] = capsule
@@ -1537,6 +1561,8 @@ def main(argv=None):
     parser.add_argument('--command-review-policy', choices=('always','on_demand'))
     parser.add_argument('--skill', action='append', default=None,
                         help='Activate an explicitly managed tare skill for this new session (frozen at start)')
+    parser.add_argument('--auto-skills', action='store_true',
+                        help='Opt-in deterministic lexical skill shortlist with explicit abstention (frozen at start)')
     args = parser.parse_args(argv[:boundary])
     if verifier is not None:
         args.verify_command = verifier
@@ -1601,14 +1627,14 @@ def main(argv=None):
                             or args.max_command_reviews != 6 or args.command_review_seconds != 60
                              or args.command_classifier is not None or args.command_review_policy is not None
                              or args.findings is not None or args.findings_sha256 is not None
-                             or args.skill is not None):
+                             or args.skill is not None or args.auto_skills):
             raise ValueError('native_agent_startup_options_are_saved_use_resume_without_repeating_them')
         admission_args = (args.project_admission is not None or args.root_instruction_pin is not None
                           or args.nested_instructions)
         if admission_args and (args.resume or args.config or args.continue_provider):
             raise ValueError('Admission is saved; use /permissions, review and start a new session.')
-        if args.skill and (args.config or args.continue_provider):
-            raise ValueError('Managed skills apply to a new session; cannot combine --skill with --config or --continue-provider.')
+        if (args.skill or args.auto_skills) and (args.config or args.continue_provider):
+            raise ValueError('Managed skills apply to a new session; cannot combine --skill or --auto-skills with --config or --continue-provider.')
         if args.verify_command == []:
             raise ValueError('native_agent_verify_command_requires_an_executable')
         if args.config and (args.root is not None or args.role is not None
@@ -1692,6 +1718,8 @@ def main(argv=None):
             if args.skill:
                 from .managed_skills import validate_skill_ids
                 config['managed_skills'] = validate_skill_ids(args.skill)
+            if args.auto_skills:
+                config['auto_skills'] = True
         if execution_resources.selected('compactions', args.unlimited):
             config = {**config, 'context_policy': {**config.get('context_policy', {}), 'max_compactions': None}}
         prompt = continuation_request['text'] if continuation_request else args.instruction
