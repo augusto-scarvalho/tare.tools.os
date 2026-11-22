@@ -339,6 +339,7 @@ def test_rewritten_manifest_with_matching_new_hashes_is_rejected_under_original_
     manifest['bundle_sha256'] = bundles._compute_bundle_sha256(
         manifest['files'],
         complete_directory=manifest['scope']['complete_directory'],
+        truncated=manifest['summary']['truncated'],
         include=manifest['scope']['include'],
         skipped=manifest['skipped'],
         excluded_dirs=manifest['excluded_dirs'],

@@ -191,6 +191,7 @@ def _compute_bundle_sha256(
     file_entries: list[dict],
     *,
     complete_directory: bool,
+    truncated: bool,
     include: list[str] | None,
     skipped: list[dict],
     excluded_dirs: list[str],
@@ -202,6 +203,7 @@ def _compute_bundle_sha256(
             for item in sorted(file_entries, key=lambda x: x['path'])
         ],
         'complete_directory': bool(complete_directory),
+        'truncated': bool(truncated),
         'include': sorted(include) if include else None,
         'skipped': [
             {'path': s['path'], 'kind': s.get('kind'), 'size_bytes': s.get('size_bytes'), 'reason': s.get('reason')}
@@ -617,6 +619,7 @@ def _scan_bundle(
     bundle_sha256 = _compute_bundle_sha256(
         captured_files,
         complete_directory=complete_directory,
+        truncated=truncated,
         include=list(include_filter) if include_filter else None,
         skipped=skipped,
         excluded_dirs=excluded_found,
@@ -773,9 +776,13 @@ def verify_snapshot_dir(directory: Path) -> dict:
     if not all(isinstance(v, list) for v in (skipped_list, excluded_list, outside_list)):
         raise ValueError('Snapshot manifest has invalid coverage lists')
 
+    summary = manifest.get('summary')
+    if not isinstance(summary, dict) or not isinstance(summary.get('truncated'), bool):
+        raise ValueError('Snapshot manifest has invalid summary metadata')
     expected_sha = _compute_bundle_sha256(
         files_list,
         complete_directory=scope['complete_directory'],
+        truncated=summary['truncated'],
         include=scope.get('include'),
         skipped=skipped_list,
         excluded_dirs=excluded_list,
