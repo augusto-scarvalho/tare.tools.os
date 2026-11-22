@@ -24,6 +24,8 @@ tare skills diff <bundle> [old] [new]
 Create a managed skill from a verified inert snapshot, configure typed parameters or an overlay, inspect diffs, and explicitly adopt upstream updates:
 
 ```powershell
+tare skills catalog [--vendor claude|codex|agy] [--class CLASS] [--all]
+tare skills import <slug-or-id> [--vendor claude|codex|agy] [--as skill-id] [--roles r1,r2] [--all]
 tare skills adopt <bundle> [snapshot] [--as skill-id] [--roles r1,r2]
 tare skills managed [--project PATH] [--role ROLE]
 tare skills param <skill-id> <name> <value> [--type string|int|float|bool|choice] [--choices a,b] [--project PATH]
@@ -31,14 +33,27 @@ tare skills edit <skill-id> (--text "..." | --file PATH | --clear) [--project PA
 tare skills roles <skill-id> [ROLE ...] [--none | --reset] [--project PATH]
 tare skills role-policy [ROLE] [--enable | --disable | --reset] [--project PATH]
 tare skills effective <skill-id> [--project PATH] [--role ROLE] [--text-only]
-tare skills update <skill-id> [snapshot] [--keep-overlay]
+tare skills update <skill-id> [snapshot] [--from-origin] [--keep-overlay]
 tare skills remove <skill-id>
 tare skills bindings
 ```
 
 - Configuration lives in `<storage>/serve/skills/managed.json` (`tare.tools/managed-skills/1`), separate from `<storage>/serve/guidance.json`.
 - Parameters use `<name>` placeholders rendered in a single pass (`guidance.fill`). Per-project parameter, role, and overlay overrides never mutate the global base.
-- When a newer inert snapshot of the same bundle is captured, `tare skills managed`, `effective`, and `/skills` flag the update with a reviewable `base -> upstream` diff; tare never silently replaces the managed skill.
+- When a newer inert snapshot of the same bundle is captured—or when a managed skill's local `origin_path` changes on disk—`tare skills managed`, `effective`, and `/skills` flag the update/drift with a reviewable diff (`base -> upstream` or `base -> origin (live)`); tare never silently replaces the managed skill.
+
+## 2b. Local vendor catalog discovery (`SKL-01c`)
+
+`tare skills catalog` and `/skills` read local Claude Code (`~/.claude/skills` and installed plugins), Codex (`~/.codex/skills`, `.system`, `~/.agents/skills`), and AGY (`~/.gemini/antigravity-cli/skills`, `~/.gemini/skills`, `builtin/skills`) directories strictly read-only, deduplicating identical `SKILL.md` SHA-256 entries across vendors:
+
+- **Deterministic zero-token classification:**
+  - `portable_ready`: portable markdown guidance ready for 1-click import across all models.
+  - `local_tool_hybrid`: references local CLIs/scripts (`pxl`, `tune`, `playwright`, etc.) that stay inert unless authorized separately.
+  - `needs_sanitization`: exceeds 64 KiB or mixes portable guidance with foreign harness cues.
+  - `blocked_capability` *(auto-hidden)*: requires blocked external APIs/credentials (e.g. `OPENAI_API_KEY` image generation).
+  - `cli_internal` *(auto-hidden)*: vendor-specific CLI/harness skills (`agy-customizations`, `native_swarm`, `skill-installer`, `openai-docs`, etc.).
+- **One-click import & role suggestions:** `tare skills import` (or **Import** in `/skills`) captures the resolved local folder inertly (allowing one explicit top-level linked vendor root while keeping full confinement inside the bundle) and adopts it with suggested roles inside the enabled core roles (never enabling `explorer`/`researcher`/`vision`/`heads_up`).
+- **Native CLI loading stays off:** vendor skills imported into tare run uniformly across every runtime without enabling native vendor CLI skill injection.
 
 ## 3. Role-scoped availability and per-role policy (`SKL-01b`)
 

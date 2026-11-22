@@ -204,19 +204,21 @@ class SkillsPanel(WorkbenchPanel):
     '''
 
     def __init__(self, root: Path, *, selected_managed: list[str], on_toggle_managed, submit_project):
-        super().__init__('Skills · project, managed & inert snapshots', [], kind='skills', submit=submit_project)
+        super().__init__('Skills · project, managed & vendor catalog', [], kind='skills', submit=submit_project)
         self.root = Path(root)
         self.selected_managed = list(selected_managed)
         self.on_toggle_managed = on_toggle_managed
         self.view_mode = 'content'  # 'content' | 'diff' | 'bindings'
         self.editing_overlay = False
         self.editing_project_scope = False
+        self.show_hidden_vendor = False
         self._load_rows()
 
     def _load_rows(self):
         from .console_resources import discover_skills
         from . import managed_skills as managed
         from . import skill_bundles as bundles
+        from . import vendor_skills as vendor_cat
 
         rows = []
         for r in discover_skills(self.root):
@@ -240,6 +242,8 @@ class SkillsPanel(WorkbenchPanel):
                 tags.append(f"{m['parameter_count']}p")
             if m['upstream_update_available']:
                 tags.append('update')
+            if m.get('origin_drift_available'):
+                tags.append('drift')
             tag_str = ' · '.join(tags) if tags else 'base'
             rows.append({
                 **m,
@@ -261,6 +265,30 @@ class SkillsPanel(WorkbenchPanel):
                 'id': 'snapshot:' + s['bundle_id'] + '@' + s['snapshot_id'],
                 'row_kind': 'snapshot',
                 'label': f"[snapshot] {s['bundle_id']}@{s['snapshot_id'][:8]} · {state}/{scope_tag} · {s['skill_name']}",
+            })
+
+        # Read-only deduplicated vendor catalog (Claude Code / Codex / AGY).
+        catalog = vendor_cat.discover_vendor_catalog(include_hidden=self.show_hidden_vendor)
+        for item in catalog['items']:
+            if item['sync_status'] == 'in_sync' and not self.show_hidden_vendor:
+                continue
+            vtag = '+'.join(item['vendors'])
+            cls_tag = vendor_cat.CLASS_LABELS.get(item['classification'], item['classification'])
+            sync_tag = f" · {item['sync_status']}" if item['sync_status'] != 'not_imported' else ''
+            rows.append({
+                **item,
+                'id': 'vendor:' + item['catalog_id'],
+                'row_kind': 'vendor',
+                'label': f"[{vtag}] {item['slug']} · {cls_tag}{sync_tag} · {item['skill_name']}",
+            })
+        if catalog['hidden_count']:
+            action = 'Hide' if self.show_hidden_vendor else 'Show'
+            rows.append({
+                'id': 'vendor-hidden-toggle',
+                'row_kind': 'vendor_hidden_toggle',
+                'hidden_count': catalog['hidden_count'],
+                'counts_by_class': catalog['counts_by_class'],
+                'label': f"[catalog] {action} {catalog['hidden_count']} hidden vendor skill(s) (cli-only / blocked-cap)",
             })
 
         self.rows = rows
@@ -313,7 +341,16 @@ class SkillsPanel(WorkbenchPanel):
             toggle_btn.label = 'Deactivate'
         else:
             toggle_btn.label = 'Activate'
-        self.query_one('#skills-manage', Button).disabled = not (valid and kind == 'snapshot')
+        manage_btn = self.query_one('#skills-manage', Button)
+        if kind == 'vendor':
+            manage_btn.disabled = not (valid and row.get('sync_status') == 'not_imported')
+            manage_btn.label = 'Import'
+        elif kind == 'vendor_hidden_toggle':
+            manage_btn.disabled = False
+            manage_btn.label = 'Hide' if self.show_hidden_vendor else 'Show'
+        else:
+            manage_btn.disabled = not (valid and kind == 'snapshot')
+            manage_btn.label = 'Manage'
         save_btn = self.query_one('#skills-save', Button)
         save_btn.disabled = not (valid and kind == 'managed')
         save_btn.label = 'Save' if self.editing_overlay else 'Edit'
@@ -325,6 +362,7 @@ class SkillsPanel(WorkbenchPanel):
         from .console_resources import preview_skill
         from . import managed_skills as managed
         from . import skill_bundles as bundles
+        from . import vendor_skills as vendor_cat
 
         self.current = self.rows[index]
         self.editing_overlay = False
@@ -337,11 +375,13 @@ class SkillsPanel(WorkbenchPanel):
         try:
             if self.view_mode == 'bindings':
                 body = managed.format_bindings()
-                message = 'Per-runtime bindings for tare managed skills. Click Diff / Bindings to return to content.'
+                message = 'Per-runtime bindings for tare managed skills. Click View to return to content.'
                 valid = True
                 if kind == 'managed':
                     view = managed.effective_view(self.current['skill_id'], project=self.root)
-                    has_update = bool(view['upstream_update'].get('available'))
+                    has_update = bool(view['upstream_update'].get('available')) or bool(
+                        (view.get('origin_drift') or {}).get('available')
+                    )
             elif kind == 'project':
                 text = preview_skill(self.root, self.current['path'], self.current['sha256'])
                 body = (
@@ -352,26 +392,56 @@ class SkillsPanel(WorkbenchPanel):
                 valid = True
             elif kind == 'managed':
                 view = managed.effective_view(self.current['skill_id'], project=self.root)
-                has_update = bool(view['upstream_update'].get('available'))
+                up_avail = bool(view['upstream_update'].get('available'))
+                drift_avail = bool((view.get('origin_drift') or {}).get('available'))
+                has_update = up_avail or drift_avail
                 if self.view_mode == 'diff':
                     chunks = []
                     if view['rendered_diff']:
                         chunks.append('=== Base -> Effective ===\n' + view['rendered_diff'])
-                    if has_update and view['upstream_update'].get('skill_md_diff'):
+                    if up_avail and view['upstream_update'].get('skill_md_diff'):
                         chunks.append('=== Base -> Upstream ===\n' + view['upstream_update']['skill_md_diff'])
-                    body = '\n\n'.join(chunks) or 'No difference against base snapshot or upstream.'
+                    if drift_avail and view['origin_drift'].get('skill_md_diff'):
+                        chunks.append('=== Base -> Origin (live) ===\n' + view['origin_drift']['skill_md_diff'])
+                    body = '\n\n'.join(chunks) or 'No difference against base snapshot, upstream, or live origin.'
                 else:
                     body = view['effective_text']
                 active_note = 'ACTIVE for next new session. ' if self.current['skill_id'] in self.selected_managed else ''
                 update_note = (
+                    'Origin changed on disk (click Update to re-capture). '
+                    if drift_avail else
                     f"Upstream {view['upstream_update']['latest_snapshot_id'][:8]} available. "
-                    if has_update else ''
+                    if up_avail else ''
                 )
                 role_note = f"Roles: {managed.format_role_tags(view['effective_roles'])}. "
                 message = (
                     f"{active_note}{update_note}{role_note}Origin: {view['origin']['bundle_id']}@{view['origin']['snapshot_id'][:8]} "
                     f"({view['text_source']}). Frozen per session; no effects authorized."
                 )
+                valid = True
+            elif kind == 'vendor':
+                body = vendor_cat.preview_vendor_item(self.current)
+                cls_tag = self.current['classification']
+                if self.current['sync_status'] == 'vendor_changed':
+                    message = f"Vendor origin changed for managed skill {self.current['managed_skill_id']}; select the managed row and click Update."
+                elif self.current['sync_status'] == 'in_sync':
+                    message = f"Already managed as {self.current['managed_skill_id']} (in sync with vendor origin)."
+                elif cls_tag == 'needs_sanitization':
+                    message = 'Classified as needs_sanitization (oversized or foreign harness cues). Review before importing.'
+                elif cls_tag in vendor_cat.HIDDEN_CLASSES:
+                    message = f'Auto-hidden ({cls_tag}): vendor-specific or blocked external API; native CLI skill loading stays off.'
+                else:
+                    message = f"Inert vendor skill ({cls_tag}). Click Import to capture and manage with suggested roles."
+                valid = True
+            elif kind == 'vendor_hidden_toggle':
+                counts = self.current.get('counts_by_class') or {}
+                body = (
+                    f"Auto-hidden local vendor skills: {self.current['hidden_count']}\n"
+                    f"  - cli_internal (vendor-specific CLI/harness skills): {counts.get('cli_internal', 0)}\n"
+                    f"  - blocked_capability (external APIs / credentials blocked by sandbox): {counts.get('blocked_capability', 0)}\n\n"
+                    'Click Show / Hide to inspect or hide these items. Native vendor CLI skill loading stays off in tare.'
+                )
+                message = 'Click Show / Hide to toggle auto-hidden vendor-specific and blocked-capability skills.'
                 valid = True
             else:
                 manifest = bundles.load_snapshot(self.current['bundle_id'], self.current['snapshot_id'], verify=True)
@@ -437,6 +507,21 @@ class SkillsPanel(WorkbenchPanel):
                     'managed:' + view['skill_id'],
                     f"Managed skill {view['skill_id']} created from snapshot {view['origin']['snapshot_id'][:8]}.",
                 )
+            elif bid == 'skills-manage' and self.current and self.current['row_kind'] == 'vendor':
+                from . import vendor_skills as vendor_cat
+                view = vendor_cat.import_vendor_skill(self.current)
+                self.view_mode = 'content'
+                self._reload_and_select(
+                    'managed:' + view['skill_id'],
+                    f"Imported {view['skill_id']} from {'+'.join(self.current['vendors'])} "
+                    f"(roles={managed.format_role_tags(view['effective_roles'])}; no code executed).",
+                )
+            elif bid == 'skills-manage' and self.current and self.current['row_kind'] == 'vendor_hidden_toggle':
+                self.show_hidden_vendor = not self.show_hidden_vendor
+                self._reload_and_select(
+                    'vendor-hidden-toggle',
+                    'Showing auto-hidden vendor skills.' if self.show_hidden_vendor else 'Auto-hidden vendor skills collapsed.',
+                )
             elif bid == 'skills-toggle' and self.current and self.current['row_kind'] == 'managed':
                 sid = self.current['skill_id']
                 self.selected_managed = list(self.on_toggle_managed(sid))
@@ -486,12 +571,16 @@ class SkillsPanel(WorkbenchPanel):
                 )
             elif bid == 'skills-update' and self.current and self.current['row_kind'] == 'managed':
                 sid = self.current['skill_id']
-                view = managed.apply_upstream_update(sid, 'latest', keep_overlay=False)
+                cur_view = managed.effective_view(sid, project=self.root)
+                if (cur_view.get('origin_drift') or {}).get('available'):
+                    from . import vendor_skills as vendor_cat
+                    view = vendor_cat.sync_managed_from_origin(sid, keep_overlay=False)
+                    note = f"Re-captured origin and updated {sid} to snapshot {view['origin']['snapshot_id'][:8]}."
+                else:
+                    view = managed.apply_upstream_update(sid, 'latest', keep_overlay=False)
+                    note = f"Updated {sid} to upstream snapshot {view['origin']['snapshot_id'][:8]}."
                 self.view_mode = 'content'
-                self._reload_and_select(
-                    'managed:' + sid,
-                    f"Updated {sid} to upstream snapshot {view['origin']['snapshot_id'][:8]}.",
-                )
+                self._reload_and_select('managed:' + sid, note)
             elif bid == 'skills-view':
                 order = ('content', 'diff', 'bindings')
                 self.view_mode = order[(order.index(self.view_mode) + 1) % len(order)]

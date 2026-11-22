@@ -1321,9 +1321,11 @@ def main(argv=None) -> int:
     p_param.add_argument('--delete', action='store_true', help='Delete this parameter (or project override)')
     p_param.add_argument('--json', action='store_true', dest='as_json')
 
-    p_update = sub.add_parser('update', help='Explicitly update a managed skill to a newer verified snapshot')
+    p_update = sub.add_parser('update', help='Explicitly update a managed skill to a newer verified snapshot or live origin')
     p_update.add_argument('skill_id', help='Managed skill id')
     p_update.add_argument('snapshot', nargs='?', default='latest', help='Target snapshot ref (default: latest)')
+    p_update.add_argument('--from-origin', action='store_true',
+                          help='Re-capture the skill origin_path inertly first, then apply the update')
     p_update.add_argument('--keep-overlay', action='store_true', help='Keep existing global overlay over the new base')
     p_update.add_argument('--json', action='store_true', dest='as_json')
 
@@ -1333,6 +1335,24 @@ def main(argv=None) -> int:
 
     p_bindings = sub.add_parser('bindings', help='Show per-runtime support and boundaries for managed skills')
     p_bindings.add_argument('--json', action='store_true', dest='as_json')
+
+    p_catalog = sub.add_parser('catalog', help='Discover, classify, and deduplicate local Claude/Codex/AGY skills (read-only)')
+    p_catalog.add_argument('--vendor', choices=('claude', 'codex', 'agy'), help='Filter to one vendor ecosystem')
+    p_catalog.add_argument('--class', dest='classification',
+                           choices=('portable_ready', 'local_tool_hybrid', 'needs_sanitization', 'blocked_capability', 'cli_internal'),
+                           help='Filter to one static classification bucket')
+    p_catalog.add_argument('--all', action='store_true', dest='include_hidden',
+                           help='Include auto-hidden cli_internal and blocked_capability skills')
+    p_catalog.add_argument('--json', action='store_true', dest='as_json')
+
+    p_import = sub.add_parser('import', help='Capture and adopt one discovered vendor skill in one step')
+    p_import.add_argument('target', help='Vendor catalog slug or catalog_id (from `tare skills catalog`)')
+    p_import.add_argument('--vendor', choices=('claude', 'codex', 'agy'), help='Disambiguate by vendor')
+    p_import.add_argument('--as', dest='skill_id', help='Explicit managed skill id')
+    p_import.add_argument('--roles', help='Comma-separated allowed roles (defaults to classifier suggestion)')
+    p_import.add_argument('--all', action='store_true', dest='allow_hidden',
+                          help='Allow importing a hidden cli_internal/blocked_capability skill explicitly')
+    p_import.add_argument('--json', action='store_true', dest='as_json')
 
     args = parser.parse_args(argv)
     try:
@@ -1406,6 +1426,8 @@ def main(argv=None) -> int:
                         flags.append(f"{r['parameter_count']} params")
                     if r['upstream_update_available']:
                         flags.append(f"update->{r['latest_snapshot_id']}")
+                    if r.get('origin_drift_available'):
+                        flags.append('origin-drift')
                     print(f"{r['skill_id']}  ({r['bundle_id']}@{r['snapshot_id']})  [{', '.join(flags)}]  {r['skill_name']}")
             return 0
         if args.action == 'effective':
@@ -1479,7 +1501,11 @@ def main(argv=None) -> int:
             print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))
             return 0
         if args.action == 'update':
-            view = managed.apply_upstream_update(args.skill_id, args.snapshot, keep_overlay=args.keep_overlay)
+            if args.from_origin:
+                from . import vendor_skills as vendor_cat
+                view = vendor_cat.sync_managed_from_origin(args.skill_id, keep_overlay=args.keep_overlay)
+            else:
+                view = managed.apply_upstream_update(args.skill_id, args.snapshot, keep_overlay=args.keep_overlay)
             print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))
             return 0
         if args.action == 'remove':
@@ -1492,6 +1518,27 @@ def main(argv=None) -> int:
         if args.action == 'bindings':
             rows = managed.runtime_bindings()
             print(json.dumps(rows, indent=2, ensure_ascii=False) if args.as_json else managed.format_bindings(rows))
+            return 0
+        if args.action == 'catalog':
+            from . import vendor_skills as vendor_cat
+            catalog = vendor_cat.discover_vendor_catalog(
+                vendor=args.vendor,
+                include_hidden=args.include_hidden,
+                classification=args.classification,
+            )
+            print(json.dumps(catalog, indent=2, ensure_ascii=False) if args.as_json else vendor_cat.format_catalog(catalog))
+            return 0
+        if args.action == 'import':
+            from . import vendor_skills as vendor_cat
+            roles = [r.strip() for r in args.roles.split(',') if r.strip()] if args.roles is not None else None
+            view = vendor_cat.import_vendor_skill(
+                args.target,
+                vendor=args.vendor,
+                skill_id=args.skill_id,
+                allowed_roles=roles,
+                allow_hidden=args.allow_hidden,
+            )
+            print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))
             return 0
     except ValueError as exc:
         print(f'Error: {exc}', file=sys.stderr)

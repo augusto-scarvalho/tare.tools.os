@@ -332,12 +332,15 @@ com uma nova contagem.
 - `/skills` mostra a prévia dos arquivos `skills/<name>/SKILL.md` e
   `.agents/skills/<name>/SKILL.md` de primeiro nível (**Add to draft** insere um
   snapshot atômico conferido por hash até 16 KiB no rascunho), captura pastas locais
-  de skill como snapshots inertes versionados fora da descoberta ativa (**Capture**) e
-  gerencia skills configuráveis com overlays editáveis, parâmetros tipados,
-  acesso e política por papel (**Roles** — `explorer`, `researcher`, `vision` e
-  `heads_up` desabilitados por padrão), diffs explícitos contra upstream, tabela
-  de bindings por runtime e ativação explícita (**Activate / Deactivate**)
-  congelada por nova sessão (veja [Managed skills](../guides/SKILLS.md)).
+  de skill como snapshots inertes versionados fora da descoberta ativa (**Capture**),
+  descobre e classifica localmente skills do Claude/Codex/AGY em modo somente leitura
+  com deduplicação por SHA-256 e **Import** em 1 clique (ocultando automaticamente
+  skills exclusivas de CLI ou bloqueadas por API externa) e gerencia skills
+  configuráveis com overlays editáveis, parâmetros tipados, acesso e política por
+  papel (**Roles** — `explorer`, `researcher`, `vision` e `heads_up` desabilitados
+  por padrão), diffs explícitos contra upstream e origem local em disco, tabela de
+  bindings por runtime e ativação explícita (**Activate / Deactivate**) congelada
+  por nova sessão (veja [Managed skills](../guides/SKILLS.md)).
   Selecionar, capturar ou ativar uma skill nunca executa scripts nem amplia permissões.
 
 O gerenciamento de servidores MCP externos, marketplaces remotos de skills, ramificação de conversas
