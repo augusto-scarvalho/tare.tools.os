@@ -231,6 +231,8 @@ def adopt_snapshot(
     *,
     skill_id: str | None = None,
     allowed_roles=None,
+    origin_vendor: str | None = None,
+    origin_vendors: list[str] | None = None,
     storage_root=None,
 ) -> dict:
     """Create a managed skill from a verified inert bundle snapshot without activating it in any session."""
@@ -252,6 +254,8 @@ def adopt_snapshot(
         'snapshot_id': manifest['snapshot_id'],
         'bundle_sha256': manifest['bundle_sha256'],
         'origin_path': manifest['source']['origin_path'],
+        'origin_vendor': origin_vendor,
+        'origin_vendors': list(origin_vendors) if origin_vendors else ([origin_vendor] if origin_vendor else []),
         'skill_name': manifest['source']['skill_name'],
         'description': manifest['source']['description'],
         'base_sha256': _digest(base_text),
@@ -646,6 +650,8 @@ def effective_view(skill_id: str, *, project=None, role: str | None = None, stor
         if rendered != entry['base_text'] else ''
     )
     upstream = _upstream_status(entry, storage_root=storage_root)
+    from .vendor_skills import check_origin_drift
+    origin_drift = check_origin_drift(entry.get('origin_path'), entry['base_sha256'], entry['base_text'])
 
     view = {
         'schema': SCHEMA,
@@ -659,6 +665,8 @@ def effective_view(skill_id: str, *, project=None, role: str | None = None, stor
             'snapshot_id': entry['snapshot_id'],
             'bundle_sha256': entry['bundle_sha256'],
             'origin_path': entry['origin_path'],
+            'origin_vendor': entry.get('origin_vendor'),
+            'origin_vendors': list(entry.get('origin_vendors') or ()),
             'base_sha256': entry['base_sha256'],
         },
         'text_source': text_source,
@@ -677,6 +685,7 @@ def effective_view(skill_id: str, *, project=None, role: str | None = None, stor
         'overlay_diff': overlay_diff,
         'rendered_diff': rendered_diff,
         'upstream_update': upstream,
+        'origin_drift': origin_drift,
         'created_at': entry['created_at'],
         'updated_at': entry['updated_at'],
     }
@@ -719,7 +728,10 @@ def list_managed(*, project=None, role: str | None = None, storage_root=None) ->
             'effective_roles': view['effective_roles'],
             'disabled_by_policy_roles': view['disabled_by_policy_roles'],
             'parameter_count': len(view['parameters']),
+            'origin_vendor': view['origin'].get('origin_vendor'),
+            'origin_vendors': list(view['origin'].get('origin_vendors') or ()),
             'upstream_update_available': bool(view['upstream_update'].get('available')),
+            'origin_drift_available': bool(view['origin_drift'].get('available')),
             'latest_snapshot_id': view['upstream_update'].get('latest_snapshot_id'),
             'updated_at': view['updated_at'],
         })
@@ -1004,9 +1016,18 @@ def format_effective(view: dict) -> str:
         )
     else:
         lines.append(f"Upstream status: up to date ({orig['snapshot_id']})")
+    drift = view.get('origin_drift') or {}
+    if drift.get('available'):
+        lines.append(
+            f"Origin drift detected on disk: live SKILL.md sha256={drift['current_sha256'][:12]} "
+            '(run `tare skills update <id> --from-origin` or click Update in /skills)'
+        )
     if view['rendered_diff']:
         lines.append('\nDiff vs base snapshot:')
         lines.append(view['rendered_diff'])
+    if drift.get('available') and drift.get('skill_md_diff'):
+        lines.append('\nDiff vs live origin:')
+        lines.append(drift['skill_md_diff'])
     return '\n'.join(lines)
 
 

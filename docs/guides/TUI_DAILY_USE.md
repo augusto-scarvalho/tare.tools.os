@@ -324,12 +324,14 @@ nothing is lost, and sending any message continues the conversation with a new c
 - `/skills` previews immediate `skills/<name>/SKILL.md` and
   `.agents/skills/<name>/SKILL.md` files (**Add to draft** inserts an atomic
   hash-checked snapshot up to 16 KiB combined), captures local skill folders as
-  inert versioned snapshots outside active discovery (**Capture**), and manages
-  configurable skills with overlays, typed parameters, per-role access and role
-  policies (**Roles** — `explorer`, `researcher`, `vision`, and `heads_up`
-  disabled by default), explicit upstream diffs, per-runtime binding visibility,
-  and explicit **Activate / Deactivate** selection frozen per new session (see
-  [Managed skills](SKILLS.md)). Selecting, capturing,
+  inert versioned snapshots outside active discovery (**Capture**), discovers and
+  classifies local Claude/Codex/AGY skills read-only with SHA-256 deduplication
+  and 1-click **Import** (auto-hiding vendor-CLI-only and blocked-API skills), and
+  manages configurable skills with overlays, typed parameters, per-role access and
+  role policies (**Roles** — `explorer`, `researcher`, `vision`, and `heads_up`
+  disabled by default), explicit upstream and live origin-drift diffs, per-runtime
+  binding visibility, and explicit **Activate / Deactivate** selection frozen per
+  new session (see [Managed skills](SKILLS.md)). Selecting, capturing,
   or activating a skill never executes scripts or expands permissions.
 
 External MCP server management, remote skill marketplaces, conversation branching,

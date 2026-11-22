@@ -62,6 +62,8 @@ def disable_installed_flow_assessor(monkeypatch, tmp_path_factory, request):
     tools = state_dir('tools')
     monkeypatch.setattr('relay.storage.tool_roots', lambda: (tools, tools, tools))
     monkeypatch.setenv('TARE_STORAGE_AUTO', str(tools/'storage-auto.json'))
+    # Vendor skill catalog discovery reads ~/.claude, ~/.codex, ~/.gemini: keep tests isolated from host skills.
+    monkeypatch.setenv('TARE_VENDOR_SKILLS_HOME', str(state_dir('vendor-home')))
     # The sweep a TUI or tare serve starts on a thread would outlive the test that started it and read the next
     # one's folders. Tests of the sweep call it themselves (test_storage keeps the real starter).
     monkeypatch.setattr('relay.storage.sweep_in_background', lambda: None)
