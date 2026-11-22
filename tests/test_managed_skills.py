@@ -687,3 +687,52 @@ def test_empty_rendered_managed_skill_validates_on_child_delegation(tmp_path):
     assert len(child_slice) == 1 and child_slice[0]['text'] == ''
     validated = managed.validate_inherited_frozen_skills(child_slice, role='implementer')
     assert len(validated) == 1 and validated[0]['text'] == ''
+
+
+def test_skills_panel_close_and_add_buttons_dispatch_once_without_screen_stack_error(tmp_path, monkeypatch):
+    storage = tmp_path / 'state'
+    root = tmp_path / 'project'
+    skill = root / 'skills' / 'review' / 'SKILL.md'
+    skill.parent.mkdir(parents=True)
+    skill.write_text('---\nname: Review\ndescription: Check changes\n---\nRead the diff.', encoding='utf-8')
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(storage))
+
+    async def scenario():
+        app = WorkConsole(root, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(100, 32)) as pilot:
+            await app.workers.wait_for_complete()
+            app.action_skills()
+            await pilot.pause()
+            panel = app.screen
+            assert isinstance(panel, SkillsPanel)
+            # Clicking Close must not double-dispatch via WorkbenchPanel.on_button_pressed in Textual's MRO.
+            await pilot.click('#workbench-close')
+            await pilot.pause()
+            assert not isinstance(app.screen, SkillsPanel)
+            assert len(app.screen_stack) == 1
+            # Repeated close after dismissal must remain a safe no-op.
+            panel.action_close()
+            assert len(app.screen_stack) == 1
+
+            # Clicking Add to draft on a project skill must invoke submit exactly once and dismiss cleanly.
+            app.action_skills()
+            await pilot.pause()
+            panel2 = app.screen
+            assert isinstance(panel2, SkillsPanel)
+            calls = []
+            orig_submit = panel2.submit
+            def counted_submit(*args):
+                calls.append(args)
+                return orig_submit(*args)
+            panel2.submit = counted_submit
+            menu = panel2.query_one('#workbench-list', OptionList)
+            proj_idx = next(i for i, r in enumerate(panel2.rows) if r['row_kind'] == 'project')
+            menu.highlighted = proj_idx
+            await pilot.pause()
+            await pilot.click('#workbench-add')
+            await pilot.pause()
+            assert len(calls) == 1
+            assert not isinstance(app.screen, SkillsPanel)
+            assert len(app.screen_stack) == 1
+
+    asyncio.run(scenario())

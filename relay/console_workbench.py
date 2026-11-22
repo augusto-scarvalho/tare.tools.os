@@ -275,6 +275,9 @@ class WorkbenchPanel(SupportPanel):
 
     def on_button_pressed(self, event):
         event.stop()
+        self.handle_button_pressed(event)
+
+    def handle_button_pressed(self, event):
         if event.button.id == 'workbench-close':
             self.action_close()
         elif event.button.id == 'workbench-cancel':
@@ -292,10 +295,11 @@ class WorkbenchPanel(SupportPanel):
             except (OSError, ValueError) as exc:
                 self.query_one('#workbench-status', Static).update(plain(str(exc)))
                 return
-            self.dismiss(None)
+            self.action_close()
 
     def action_close(self):
-        self.dismiss(None)
+        if self.is_current:
+            self.dismiss(None)
 
 
 class DeliveryComparisonPanel(SupportPanel):
