@@ -322,3 +322,105 @@ def test_cli_dispatch_through_tare_ops_inspect_capture_list_show_diff(tmp_path, 
     assert diff['changed'] is True
     assert '-Version 1.' in diff['modified'][0]['unified_diff']
     assert '+Version 2.' in diff['modified'][0]['unified_diff']
+
+
+def test_rewritten_manifest_with_matching_new_hashes_is_rejected_under_original_id(tmp_path):
+    storage = tmp_path / 'storage'
+    src = tmp_path / 'demo'
+    _write(src, 'SKILL.md', '---\nname: Demo\n---\nOriginal.\n')
+    captured = bundles.capture_bundle(src, storage_root=storage)
+    snap_dir = Path(captured['snapshot_dir'])
+
+    new_bytes = b'---\nname: Demo\n---\nRewritten content.\n'
+    (snap_dir / 'files' / 'SKILL.md').write_bytes(new_bytes)
+    manifest = json.loads((snap_dir / 'manifest.json').read_text(encoding='utf-8'))
+    manifest['files'][0]['sha256'] = _digest(new_bytes)
+    manifest['files'][0]['size_bytes'] = len(new_bytes)
+    manifest['bundle_sha256'] = bundles._compute_bundle_sha256(
+        manifest['files'],
+        complete_directory=manifest['scope']['complete_directory'],
+        include=manifest['scope']['include'],
+        skipped=manifest['skipped'],
+        excluded_dirs=manifest['excluded_dirs'],
+        outside_filter=manifest['outside_filter'],
+    )
+    (snap_dir / 'manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+
+    with pytest.raises(ValueError, match='directory identity does not match'):
+        bundles.load_snapshot('demo', captured['snapshot_id'], storage_root=storage)
+
+
+def test_recapture_after_adding_oversized_file_updates_coverage_honestly(tmp_path):
+    storage = tmp_path / 'storage'
+    src = tmp_path / 'demo'
+    _write(src, 'SKILL.md', '---\nname: Demo\n---\nBody.\n')
+    first = bundles.capture_bundle(src, max_file_bytes=512, storage_root=storage)
+    assert first['scope']['complete_directory'] is True
+
+    _write(src, 'large.bin', b'x' * 2048)
+    second = bundles.capture_bundle(src, max_file_bytes=512, storage_root=storage)
+    assert second['already_captured'] is False
+    assert second['snapshot_id'] != first['snapshot_id']
+    assert second['scope']['complete_directory'] is False
+    assert second['skipped'] == [{'path': 'large.bin', 'kind': 'file', 'size_bytes': 2048, 'reason': 'exceeds_file_bytes'}]
+
+
+def test_reference_inside_depth_skipped_directory_is_not_inspected_not_missing(tmp_path):
+    src = tmp_path / 'deep'
+    _write(src, 'SKILL.md', '---\nname: Deep\n---\nSee [deep guide](a/b/guide.md).\n')
+    _write(src, 'a/b/guide.md', '# Deep guide\n')
+    report = bundles.inspect_bundle(src, max_depth=1)
+    assert any(s['path'] == 'a/b' and s['reason'] == 'exceeds_depth' for s in report['skipped'])
+    refs = {r['normalized']: (r['status'], r['reason']) for r in report['references']}
+    assert refs['a/b/guide.md'] == ('not_inspected', 'exceeds_depth')
+
+
+def test_storage_junction_or_symlink_cannot_redirect_capture_writes(tmp_path):
+    storage = tmp_path / 'storage'
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    target_parent = storage / 'serve' / 'skills' / 'snapshots'
+    target_parent.mkdir(parents=True)
+    link = target_parent / 'demo'
+    if os.name == 'nt':
+        res = subprocess.run(['cmd', '/c', 'mklink', '/J', str(link), str(outside)],
+                             capture_output=True, text=True, check=False)
+        if res.returncode:
+            pytest.skip(f'Junction creation unavailable: {res.stderr}')
+    else:
+        try:
+            link.symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f'Symlinks unavailable: {exc}')
+    src = tmp_path / 'demo'
+    _write(src, 'SKILL.md', '---\nname: Demo\n---\nHello.\n')
+    try:
+        with pytest.raises(ValueError, match='Linked|reparse'):
+            bundles.capture_bundle(src, storage_root=storage)
+        assert list(outside.iterdir()) == []
+    finally:
+        if os.name == 'nt':
+            link.rmdir()
+        else:
+            link.unlink()
+
+
+def test_diff_rereads_through_pinned_verified_handles(tmp_path, monkeypatch):
+    storage = tmp_path / 'storage'
+    src = tmp_path / 'demo'
+    _write(src, 'SKILL.md', '---\nname: Demo\n---\nV1.\n')
+    v1 = bundles.capture_bundle(src, storage_root=storage)
+    _write(src, 'SKILL.md', '---\nname: Demo\n---\nV2.\n')
+    v2 = bundles.capture_bundle(src, storage_root=storage)
+
+    calls = []
+    real_reader = bundles._read_verified_stored_file
+
+    def tracked_reader(files_root, entry, **kwargs):
+        calls.append(entry['path'])
+        return real_reader(files_root, entry, **kwargs)
+
+    monkeypatch.setattr(bundles, '_read_verified_stored_file', tracked_reader)
+    report = bundles.diff_snapshots('demo', v1['snapshot_id'], v2['snapshot_id'], storage_root=storage)
+    assert report['changed'] is True
+    assert calls.count('SKILL.md') >= 2

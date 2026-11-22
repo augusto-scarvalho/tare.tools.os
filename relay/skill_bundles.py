@@ -187,9 +187,29 @@ def _read_pinned_bytes(path: Path, limit_bytes: int) -> tuple[bytes | None, int]
         return data, len(data)
 
 
-def _compute_bundle_sha256(file_entries: list[dict]) -> str:
-    canonical = [{'path': item['path'], 'sha256': item['sha256'], 'size_bytes': item['size_bytes']}
-                 for item in sorted(file_entries, key=lambda x: x['path'])]
+def _compute_bundle_sha256(
+    file_entries: list[dict],
+    *,
+    complete_directory: bool,
+    include: list[str] | None,
+    skipped: list[dict],
+    excluded_dirs: list[str],
+    outside_filter: list[str],
+) -> str:
+    canonical = {
+        'files': [
+            {'path': item['path'], 'sha256': item['sha256'], 'size_bytes': item['size_bytes']}
+            for item in sorted(file_entries, key=lambda x: x['path'])
+        ],
+        'complete_directory': bool(complete_directory),
+        'include': sorted(include) if include else None,
+        'skipped': [
+            {'path': s['path'], 'kind': s.get('kind'), 'size_bytes': s.get('size_bytes'), 'reason': s.get('reason')}
+            for s in sorted(skipped, key=lambda x: x['path'])
+        ],
+        'excluded_dirs': sorted(excluded_dirs),
+        'outside_filter': sorted(outside_filter),
+    }
     payload = json.dumps(canonical, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
     return hashlib.sha256(payload).hexdigest()
 
@@ -246,6 +266,7 @@ def _extract_references(
     refs: list[dict] = []
     excluded_set = set(excluded_dirs)
     outside_filter_set = set(outside_filter)
+    skipped_dir_map = {p: s['reason'] for p, s in skipped_map.items() if s.get('kind') == 'dir'}
 
     def _under_any(rel_path: str, prefixes: set[str]) -> str | None:
         for pref in prefixes:
@@ -295,6 +316,9 @@ def _extract_references(
             elif resolved_path in skipped_map:
                 refs.append({'source_file': source_path, 'target': raw, 'normalized': resolved_path,
                              'status': 'not_inspected', 'reason': skipped_map[resolved_path]['reason']})
+            elif (skipped_dir := _under_any(resolved_path, set(skipped_dir_map))) is not None:
+                refs.append({'source_file': source_path, 'target': raw, 'normalized': resolved_path,
+                             'status': 'not_inspected', 'reason': skipped_dir_map[skipped_dir]})
             elif _under_any(resolved_path, excluded_set):
                 refs.append({'source_file': source_path, 'target': raw, 'normalized': resolved_path,
                              'status': 'outside_scope', 'reason': 'excluded_dir'})
@@ -590,7 +614,14 @@ def _scan_bundle(
         )
 
     complete_directory = not (excluded_found or skipped or truncated or include_filter or outside_filter_found)
-    bundle_sha256 = _compute_bundle_sha256(captured_files)
+    bundle_sha256 = _compute_bundle_sha256(
+        captured_files,
+        complete_directory=complete_directory,
+        include=list(include_filter) if include_filter else None,
+        skipped=skipped,
+        excluded_dirs=excluded_found,
+        outside_filter=outside_filter_found,
+    )
     snapshot_id = bundle_sha256[:16]
 
     manifest = {
@@ -673,11 +704,51 @@ def _snapshot_dir(bundle_id: str, snapshot_id: str, *, storage_root=None) -> Pat
     return snapshots_root(storage_root) / bid / sid
 
 
+def _ensure_confined_dir(path: Path) -> Path:
+    """Create directories component by component without traversing symlinks or Windows reparse points."""
+    raw = Path(path)
+    if '..' in raw.parts:
+        raise ValueError('Parent traversal is not allowed in snapshot storage path')
+    abs_path = raw.absolute()
+    if abs_path.anchor.startswith('\\\\') or abs_path.anchor.startswith('//'):
+        raise ValueError('Network roots are not allowed for snapshot storage')
+    current = Path(abs_path.anchor)
+    for part in abs_path.parts[1:]:
+        current = current / part
+        if current.exists() or os.path.lexists(current):
+            if _is_link_or_reparse(current):
+                raise ValueError(f'Linked or reparse-point storage component is refused: {current}')
+            if not current.is_dir():
+                raise ValueError(f'Non-directory storage component is refused: {current}')
+        else:
+            current.mkdir(exist_ok=False)
+    with _resources._pinned(abs_path, directory=True):
+        pass
+    return abs_path
+
+
+def _read_verified_stored_file(files_root: Path, entry: dict, *, max_bytes: int = HARD_MAX_FILE_BYTES) -> bytes:
+    """Read a stored snapshot file through pinned handles and verify its exact size and SHA-256."""
+    rel = entry['path']
+    parts = _validate_rel_path(rel)
+    target = files_root.joinpath(*parts)
+    data, _ = _read_pinned_bytes(target, max_bytes)
+    if data is None:
+        raise ValueError(f'Stored snapshot file exceeds limit: {rel}')
+    if len(data) != entry['size_bytes']:
+        raise ValueError(f'Stored snapshot size mismatch for {rel}')
+    if hashlib.sha256(data).hexdigest() != entry['sha256']:
+        raise ValueError(f'Stored snapshot hash mismatch for {rel}')
+    return data
+
+
 def verify_snapshot_dir(directory: Path) -> dict:
-    """Verify a stored snapshot's manifest and exact stored file bytes; fail closed on any tampering."""
+    """Verify a stored snapshot's manifest, directory identity binding, and exact stored file bytes; fail closed."""
     abs_dir = Path(directory).absolute()
     with _resources._pinned(abs_dir, directory=True):
         pass
+    dir_snapshot_id = _validate_snapshot_id(abs_dir.name)
+    dir_bundle_id = _validate_bundle_id(abs_dir.parent.name)
     manifest_path = abs_dir / 'manifest.json'
     manifest_bytes, _ = _read_pinned_bytes(manifest_path, 4 * 1024 * 1024)
     if manifest_bytes is None:
@@ -693,9 +764,29 @@ def verify_snapshot_dir(directory: Path) -> dict:
     if not isinstance(files_list, list) or not files_list:
         raise ValueError('Snapshot manifest has no files')
 
-    expected_sha = _compute_bundle_sha256(files_list)
+    scope = manifest.get('scope')
+    if not isinstance(scope, dict) or not isinstance(scope.get('complete_directory'), bool):
+        raise ValueError('Snapshot manifest has invalid scope metadata')
+    skipped_list = manifest.get('skipped', [])
+    excluded_list = manifest.get('excluded_dirs', [])
+    outside_list = manifest.get('outside_filter', [])
+    if not all(isinstance(v, list) for v in (skipped_list, excluded_list, outside_list)):
+        raise ValueError('Snapshot manifest has invalid coverage lists')
+
+    expected_sha = _compute_bundle_sha256(
+        files_list,
+        complete_directory=scope['complete_directory'],
+        include=scope.get('include'),
+        skipped=skipped_list,
+        excluded_dirs=excluded_list,
+        outside_filter=outside_list,
+    )
     if manifest.get('bundle_sha256') != expected_sha:
-        raise ValueError('Snapshot bundle_sha256 does not match manifest files')
+        raise ValueError('Snapshot bundle_sha256 does not match manifest files and coverage')
+    if manifest.get('bundle_id') != dir_bundle_id:
+        raise ValueError('Snapshot bundle_id does not match storage directory')
+    if manifest.get('snapshot_id') != dir_snapshot_id or not expected_sha.startswith(dir_snapshot_id):
+        raise ValueError('Snapshot directory identity does not match bundle_sha256')
 
     files_root = abs_dir / 'files'
     with _resources._pinned(files_root, directory=True):
@@ -704,16 +795,9 @@ def verify_snapshot_dir(directory: Path) -> dict:
     expected_paths: set[str] = set()
     for entry in files_list:
         rel = entry['path']
-        parts = _validate_rel_path(rel)
+        _validate_rel_path(rel)
         expected_paths.add(rel)
-        target = files_root.joinpath(*parts)
-        data, _ = _read_pinned_bytes(target, HARD_MAX_FILE_BYTES)
-        if data is None:
-            raise ValueError(f'Stored snapshot file exceeds limit: {rel}')
-        if len(data) != entry['size_bytes']:
-            raise ValueError(f'Stored snapshot size mismatch for {rel}')
-        if hashlib.sha256(data).hexdigest() != entry['sha256']:
-            raise ValueError(f'Stored snapshot hash mismatch for {rel}')
+        _read_verified_stored_file(files_root, entry)
 
     # Ensure no unexpected extra files or links exist inside files/.
     actual_paths: set[str] = set()
@@ -762,16 +846,17 @@ def capture_bundle(
     )
     bundle_id = manifest['bundle_id']
     bundle_sha = manifest['bundle_sha256']
-    bundle_dir = snapshots_root(storage_root) / bundle_id
-    bundle_dir.mkdir(parents=True, exist_ok=True)
+    bundle_dir = _ensure_confined_dir(snapshots_root(storage_root) / bundle_id)
 
     # Guarantee strictly increasing capture ordering within a bundle even under coarse OS clocks.
     max_existing_ns = 0
     for existing_dir in bundle_dir.iterdir():
+        if _is_link_or_reparse(existing_dir):
+            continue
         if not existing_dir.is_dir() or not SNAPSHOT_ID_RE.match(existing_dir.name):
             continue
         mpath = existing_dir / 'manifest.json'
-        if mpath.is_file():
+        if mpath.is_file() and not _is_link_or_reparse(mpath):
             try:
                 old_meta = json.loads(mpath.read_text(encoding='utf-8'))
                 if isinstance(old_meta.get('captured_ns'), int):
@@ -783,7 +868,7 @@ def capture_bundle(
 
     snapshot_id = manifest['snapshot_id']
     target_dir = bundle_dir / snapshot_id
-    if target_dir.exists():
+    if target_dir.exists() or os.path.lexists(target_dir):
         existing = verify_snapshot_dir(target_dir)
         if existing['bundle_sha256'] == bundle_sha:
             return {**existing, 'stored': True, 'already_captured': True, 'snapshot_dir': str(target_dir)}
@@ -791,19 +876,18 @@ def capture_bundle(
         snapshot_id = bundle_sha
         manifest['snapshot_id'] = snapshot_id
         target_dir = bundle_dir / snapshot_id
-        if target_dir.exists():
+        if target_dir.exists() or os.path.lexists(target_dir):
             existing = verify_snapshot_dir(target_dir)
             if existing['bundle_sha256'] == bundle_sha:
                 return {**existing, 'stored': True, 'already_captured': True, 'snapshot_dir': str(target_dir)}
 
     tmp_dir = bundle_dir / f'.tmp-{uuid.uuid4().hex[:12]}'
     try:
-        files_dir = tmp_dir / 'files'
-        files_dir.mkdir(parents=True, exist_ok=False)
+        files_dir = _ensure_confined_dir(tmp_dir / 'files')
         for rel_path, data in captured_bytes.items():
             parts = _validate_rel_path(rel_path)
             dest = files_dir.joinpath(*parts)
-            dest.parent.mkdir(parents=True, exist_ok=True)
+            _ensure_confined_dir(dest.parent)
             dest.write_bytes(data)
         (tmp_dir / 'manifest.json').write_text(
             json.dumps(manifest, indent=2, ensure_ascii=False) + '\n',
@@ -981,7 +1065,7 @@ def diff_snapshots(
             item = {'path': rel, 'new_sha256': new_f['sha256'], 'new_size_bytes': new_f['size_bytes'],
                     'kind': new_f['kind'], 'binary': not new_f['utf8']}
             if new_f['utf8'] and new_f['size_bytes'] <= MAX_DIFF_BYTES:
-                new_text = new_root.joinpath(*_validate_rel_path(rel)).read_bytes().decode('utf-8')
+                new_text = _read_verified_stored_file(new_root, new_f, max_bytes=MAX_DIFF_BYTES).decode('utf-8')
                 diff_text, diff_trunc = _bounded_unified_diff('', new_text, rel, old_manifest['snapshot_id'], new_manifest['snapshot_id'])
                 item['unified_diff'] = diff_text
                 item['diff_truncated'] = diff_trunc
@@ -990,7 +1074,7 @@ def diff_snapshots(
             item = {'path': rel, 'old_sha256': old_f['sha256'], 'old_size_bytes': old_f['size_bytes'],
                     'kind': old_f['kind'], 'binary': not old_f['utf8']}
             if old_f['utf8'] and old_f['size_bytes'] <= MAX_DIFF_BYTES:
-                old_text = old_root.joinpath(*_validate_rel_path(rel)).read_bytes().decode('utf-8')
+                old_text = _read_verified_stored_file(old_root, old_f, max_bytes=MAX_DIFF_BYTES).decode('utf-8')
                 diff_text, diff_trunc = _bounded_unified_diff(old_text, '', rel, old_manifest['snapshot_id'], new_manifest['snapshot_id'])
                 item['unified_diff'] = diff_text
                 item['diff_truncated'] = diff_trunc
@@ -1009,8 +1093,8 @@ def diff_snapshots(
                 'binary': binary,
             }
             if not binary and max(old_f['size_bytes'], new_f['size_bytes']) <= MAX_DIFF_BYTES:
-                old_text = old_root.joinpath(*_validate_rel_path(rel)).read_bytes().decode('utf-8')
-                new_text = new_root.joinpath(*_validate_rel_path(rel)).read_bytes().decode('utf-8')
+                old_text = _read_verified_stored_file(old_root, old_f, max_bytes=MAX_DIFF_BYTES).decode('utf-8')
+                new_text = _read_verified_stored_file(new_root, new_f, max_bytes=MAX_DIFF_BYTES).decode('utf-8')
                 diff_text, diff_trunc = _bounded_unified_diff(old_text, new_text, rel, old_manifest['snapshot_id'], new_manifest['snapshot_id'])
                 item['unified_diff'] = diff_text
                 item['diff_truncated'] = diff_trunc
