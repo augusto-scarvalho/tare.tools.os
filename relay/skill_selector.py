@@ -264,7 +264,9 @@ def select_skills(
 
     for sid in sorted(store['skills']):
         try:
-            view = _managed.effective_view(sid, project=project, role=role, storage_root=storage_root)
+            view = _managed.effective_view(
+                sid, project=project, role=role, include_status=False, storage_root=storage_root,
+            )
         except (OSError, ValueError) as exc:
             if safe:
                 return _error_receipt(f'Failed to resolve managed skill {sid!r}: {exc}')

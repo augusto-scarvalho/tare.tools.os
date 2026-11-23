@@ -918,7 +918,7 @@ def capture_bundle(
     return {**verified, 'stored': True, 'already_captured': False, 'snapshot_dir': str(target_dir)}
 
 
-def list_snapshots(*, bundle_id: str | None = None, storage_root=None) -> list[dict]:
+def list_snapshots(*, bundle_id: str | None = None, verify: bool = True, storage_root=None) -> list[dict]:
     """List captured inert skill snapshots sorted by bundle_id then captured_at."""
     root = snapshots_root(storage_root)
     if not root.is_dir():
@@ -943,23 +943,39 @@ def list_snapshots(*, bundle_id: str | None = None, storage_root=None) -> list[d
             if not manifest_path.is_file():
                 continue
             try:
-                manifest = verify_snapshot_dir(sdir)
-            except (OSError, ValueError):
+                if verify:
+                    manifest = verify_snapshot_dir(sdir)
+                else:
+                    if _is_link_or_reparse(sdir) or _is_link_or_reparse(manifest_path):
+                        continue
+                    raw, _ = _read_pinned_bytes(manifest_path, 4 * 1024 * 1024)
+                    if raw is None:
+                        continue
+                    manifest = json.loads(raw.decode('utf-8'))
+                    if (
+                        not isinstance(manifest, dict)
+                        or manifest.get('schema') != SCHEMA
+                        or manifest.get('bundle_id') != bdir.name
+                        or manifest.get('snapshot_id') != sdir.name
+                    ):
+                        continue
+                row = {
+                    'bundle_id': manifest['bundle_id'],
+                    'snapshot_id': manifest['snapshot_id'],
+                    'bundle_sha256': manifest['bundle_sha256'],
+                    'captured_at': manifest['captured_at'],
+                    'captured_ns': manifest.get('captured_ns', 0),
+                    'skill_name': manifest['source']['skill_name'],
+                    'description': manifest['source']['description'],
+                    'origin_path': manifest['source']['origin_path'],
+                    'complete_directory': manifest['scope']['complete_directory'],
+                    'file_count': manifest['summary']['file_count'],
+                    'total_bytes': manifest['summary']['total_bytes'],
+                    'snapshot_dir': str(sdir),
+                }
+            except (OSError, ValueError, UnicodeError, KeyError, TypeError):
                 continue
-            results.append({
-                'bundle_id': manifest['bundle_id'],
-                'snapshot_id': manifest['snapshot_id'],
-                'bundle_sha256': manifest['bundle_sha256'],
-                'captured_at': manifest['captured_at'],
-                'captured_ns': manifest.get('captured_ns', 0),
-                'skill_name': manifest['source']['skill_name'],
-                'description': manifest['source']['description'],
-                'origin_path': manifest['source']['origin_path'],
-                'complete_directory': manifest['scope']['complete_directory'],
-                'file_count': manifest['summary']['file_count'],
-                'total_bytes': manifest['summary']['total_bytes'],
-                'snapshot_dir': str(sdir),
-            })
+            results.append(row)
     results.sort(key=lambda item: (item['bundle_id'], item['captured_ns'], item['captured_at'], item['snapshot_id']))
     return results
 
