@@ -203,4 +203,3 @@ def test_fresh_continuation_after_output_or_provider_stop_tells_coordinator_to_i
         dispatched.append(True), {'verdict': 'APPLIED', 'applied': True, 'files': ['a.py'], 'checks_after': 'ok'})[1])
     res = tools.execute(effect('implement', {}, key='dispatch-implement'), execution)
     assert res.status == 'succeeded' and dispatched == [True]
-
