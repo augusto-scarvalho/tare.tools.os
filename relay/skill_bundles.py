@@ -1286,6 +1286,8 @@ def main(argv=None) -> int:
     p_adopt.add_argument('--roles', help='Comma-separated allowed roles (defaults to coordinator,implementer,planner,plan-auditor,auditor)')
     p_adopt.add_argument('--min-model-class', choices=('cheap', 'middling', 'frontier'),
                          help='Minimum recommended model class floor for delegated implementer units')
+    p_adopt.add_argument('--skip-plan-review', action='store_true', default=None,
+                         help='Skip independent plan review for non-critical, non-code plans when this skill is active')
     p_adopt.add_argument('--json', action='store_true', dest='as_json')
 
     p_managed = sub.add_parser('managed', help='List managed skills with origin, roles, overlay, and update status')
@@ -1370,6 +1372,8 @@ def main(argv=None) -> int:
     p_import.add_argument('--roles', help='Comma-separated allowed roles (defaults to classifier suggestion)')
     p_import.add_argument('--min-model-class', choices=('cheap', 'middling', 'frontier'),
                           help='Minimum recommended model class floor for delegated implementer units')
+    p_import.add_argument('--skip-plan-review', action='store_true', default=None,
+                          help='Skip independent plan review for non-critical, non-code plans when this skill is active')
     p_import.add_argument('--all', action='store_true', dest='allow_hidden',
                           help='Allow importing a hidden cli_internal/blocked_capability skill explicitly')
     p_import.add_argument('--json', action='store_true', dest='as_json')
@@ -1383,6 +1387,15 @@ def main(argv=None) -> int:
     mc_mode.add_argument('--reset', action='store_true', help='Reset global model class to unset or clear project override')
     p_mclass.add_argument('--project', type=Path, help='Scope model class floor to one project folder')
     p_mclass.add_argument('--json', action='store_true', dest='as_json')
+
+    p_prev = sub.add_parser('plan-review', help='Show or configure whether a managed skill opts non-critical, non-code plans out of independent plan review')
+    p_prev.add_argument('skill_id', help='Managed skill id')
+    pr_mode = p_prev.add_mutually_exclusive_group()
+    pr_mode.add_argument('--skip', action='store_true', help='Skip independent plan review for non-critical, non-code plans when active')
+    pr_mode.add_argument('--require', action='store_true', help='Require standard plan review behavior (override global skip in a project)')
+    pr_mode.add_argument('--reset', action='store_true', help='Reset global setting to default or clear project override')
+    p_prev.add_argument('--project', type=Path, help='Scope plan review preference to one project folder')
+    p_prev.add_argument('--json', action='store_true', dest='as_json')
 
     p_triggers = sub.add_parser('triggers', help='Show or set explicit lexical trigger phrases for a managed skill')
     p_triggers.add_argument('skill_id', help='Managed skill id')
@@ -1454,6 +1467,7 @@ def main(argv=None) -> int:
             view = managed.adopt_snapshot(
                 args.bundle, args.snapshot, skill_id=args.skill_id,
                 allowed_roles=roles, min_model_class=args.min_model_class,
+                skip_plan_review=args.skip_plan_review,
             )
             print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))
             return 0
@@ -1473,6 +1487,8 @@ def main(argv=None) -> int:
                     flags = [r['text_source'], f"roles={managed.format_role_tags(r['effective_roles'])}"]
                     if r.get('min_model_class'):
                         flags.append(f"tier={r['min_model_class']}")
+                    if r.get('skip_plan_review'):
+                        flags.append('no-plan-audit')
                     if r['parameter_count']:
                         flags.append(f"{r['parameter_count']} params")
                     if r['upstream_update_available']:
@@ -1588,6 +1604,7 @@ def main(argv=None) -> int:
                 skill_id=args.skill_id,
                 allowed_roles=roles,
                 min_model_class=args.min_model_class,
+                skip_plan_review=args.skip_plan_review,
                 allow_hidden=args.allow_hidden,
             )
             print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))
@@ -1599,6 +1616,17 @@ def main(argv=None) -> int:
                 view = managed.set_model_class(args.skill_id, None, project=args.project)
             elif args.model_class is not None:
                 view = managed.set_model_class(args.skill_id, args.model_class, project=args.project)
+            else:
+                view = managed.effective_view(args.skill_id, project=args.project)
+            print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))
+            return 0
+        if args.action == 'plan-review':
+            if args.reset:
+                view = managed.set_skip_plan_review(args.skill_id, None, project=args.project)
+            elif args.skip:
+                view = managed.set_skip_plan_review(args.skill_id, True, project=args.project)
+            elif args.require:
+                view = managed.set_skip_plan_review(args.skill_id, False, project=args.project)
             else:
                 view = managed.effective_view(args.skill_id, project=args.project)
             print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))

@@ -24,6 +24,7 @@ class SkillRolesDialog(SupportPanel):
     SkillRolesDialog #roles-list { height: 1fr; }
     SkillRolesDialog #roles-status { height: auto; max-height: 2; margin-top: 1; }
     SkillRolesDialog .panel-actions Button { min-width: 6; padding: 0 1; margin-left: 1; margin-right: 0; }
+    SkillRolesDialog.narrow .panel-actions Button { min-width: 4; padding: 0; margin-left: 1; margin-right: 0; }
     '''
 
     def __init__(self, root: Path, *, skill_id: str | None = None):
@@ -50,6 +51,7 @@ class SkillRolesDialog(SupportPanel):
             with Horizontal(classes='panel-actions'):
                 yield Button('Toggle', id='roles-toggle', classes='panel-primary')
                 yield Button('Tier: any', id='roles-tier', disabled=self.skill_id is None)
+                yield Button('Audit: auto', id='roles-plan-audit', disabled=self.skill_id is None)
                 yield Button('Scope: Global', id='roles-scope')
                 yield Button('Role policy', id='roles-mode', disabled=self.skill_id is None)
                 yield Button('Reset', id='roles-reset')
@@ -79,12 +81,15 @@ class SkillRolesDialog(SupportPanel):
         mode_btn.disabled = self.skill_id is None
         _set_button_label(mode_btn, 'Role policy' if self.mode == 'skill' else 'Skill roles')
         tier_btn = self.query_one('#roles-tier', Button)
+        audit_btn = self.query_one('#roles-plan-audit', Button)
 
         options = []
         if self.mode == 'skill' and self.skill_id:
             view = managed.effective_view(self.skill_id, project=self._target_project())
             tier_btn.disabled = False
             _set_button_label(tier_btn, f"Tier: {view['min_model_class'] or 'any'}")
+            audit_btn.disabled = False
+            _set_button_label(audit_btn, 'Audit: skip' if view.get('skip_plan_review') else 'Audit: auto')
             policy_detail = managed.get_role_policy(project=self._target_project())
             title = f"Skill roles · {self.skill_id} ({scope_word})"
             for role in managed.SKILL_ROLES:
@@ -99,15 +104,18 @@ class SkillRolesDialog(SupportPanel):
                     note = ''
                 options.append(Text(plain(f"{mark} {managed.ROLE_LABELS[role]} ({role}){note}")))
             tier_note = f" Min model: {view['min_model_class']} ({view['min_model_class_source']})." if view.get('min_model_class') else ''
+            audit_note = f" Plan audit: skipped ({view['skip_plan_review_source']})." if view.get('skip_plan_review') else ''
             default_status = (
                 f"Effective roles ({view['roles_source']}): "
                 + (', '.join(view['effective_roles']) if view['effective_roles'] else '(none)')
-                + f'.{tier_note} Applies to new conversations and their delegated roles.'
+                + f'.{tier_note}{audit_note} Applies to new conversations and their delegated roles.'
             )
         else:
             self.mode = 'policy'
             tier_btn.disabled = True
             _set_button_label(tier_btn, 'Tier: any')
+            audit_btn.disabled = True
+            _set_button_label(audit_btn, 'Audit: auto')
             policy_detail = managed.get_role_policy(project=self._target_project())
             title = f"Role policy · all skills ({scope_word})"
             for role in managed.SKILL_ROLES:
@@ -197,6 +205,30 @@ class SkillRolesDialog(SupportPanel):
                         msg = f"{self.skill_id}: minimum model class cleared ({scope_word})."
                 else:
                     msg = f"{self.skill_id}: minimum model class set to {next_cls} ({scope_word})."
+                self._render_roles(status=msg)
+            elif bid == 'roles-plan-audit' and self.mode == 'skill' and self.skill_id:
+                target = self._target_project()
+                cur_view = managed.effective_view(self.skill_id, project=target)
+                scope_word = 'project' if target else 'global'
+                if target is None:
+                    next_skip = None if cur_view.get('skip_plan_review') else True
+                else:
+                    cycle = (None, True, False)
+                    cur_scoped = (
+                        cur_view.get('skip_plan_review')
+                        if cur_view.get('skip_plan_review_source') == 'project'
+                        else None
+                    )
+                    next_skip = cycle[(cycle.index(cur_scoped) + 1) % len(cycle)]
+                updated = managed.set_skip_plan_review(self.skill_id, next_skip, project=target)
+                if next_skip is True:
+                    msg = f"{self.skill_id}: plan audit skipped for non-critical, non-code plans ({scope_word})."
+                elif next_skip is False:
+                    msg = f"{self.skill_id}: plan audit required ({scope_word})."
+                elif target and updated.get('skip_plan_review'):
+                    msg = f"{self.skill_id}: cleared project plan-audit override (inherits global skip)."
+                else:
+                    msg = f"{self.skill_id}: plan audit reset to automatic ({scope_word})."
                 self._render_roles(status=msg)
             elif bid == 'roles-scope':
                 self.project_scope = not self.project_scope
@@ -350,6 +382,8 @@ class SkillsPanel(WorkbenchPanel):
             tags.append(managed.format_role_tags(m['effective_roles']))
             if m.get('min_model_class'):
                 tags.append(f"tier={m['min_model_class']}")
+            if m.get('skip_plan_review'):
+                tags.append('no-plan-audit')
             if m['has_overlay']:
                 tags.append('edited')
             if m['parameter_count']:
@@ -545,8 +579,9 @@ class SkillsPanel(WorkbenchPanel):
                 )
                 role_note = f"Roles: {managed.format_role_tags(view['effective_roles'])}. "
                 tier_note = f"Min model: {view['min_model_class']}. " if view.get('min_model_class') else ''
+                audit_note = 'Plan audit: skipped. ' if view.get('skip_plan_review') else ''
                 message = (
-                    f"{active_note}{update_note}{role_note}{tier_note}Origin: {view['origin']['bundle_id']}@{view['origin']['snapshot_id'][:8]} "
+                    f"{active_note}{update_note}{role_note}{tier_note}{audit_note}Origin: {view['origin']['bundle_id']}@{view['origin']['snapshot_id'][:8]} "
                     f"({view['text_source']}). Frozen per session; no effects authorized."
                 )
                 valid = True

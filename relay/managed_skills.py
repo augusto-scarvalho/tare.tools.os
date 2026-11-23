@@ -122,6 +122,14 @@ def _validate_model_class(value) -> str | None:
     return value
 
 
+def _validate_skip_plan_review(value) -> bool | None:
+    if value is None:
+        return None
+    if type(value) is not bool:
+        raise ValueError('skip_plan_review must be a boolean or None')
+    return value
+
+
 def max_model_class(classes) -> str | None:
     """Return the highest model class floor along MODEL_CLASSES (cheap < middling < frontier), or None."""
     best_idx = -1
@@ -141,6 +149,11 @@ def skills_min_model_class(skills) -> str | None:
     )
 
 
+def skills_skip_plan_review(skills) -> bool:
+    """Return True when any frozen managed skill explicitly marks plans as not needing independent plan review."""
+    return any(item.get('skip_plan_review') is True for item in (skills or ()) if isinstance(item, dict))
+
+
 def _project_override_empty(proj_entry: dict) -> bool:
     return (
         proj_entry.get('overlay_text') is None
@@ -148,6 +161,7 @@ def _project_override_empty(proj_entry: dict) -> bool:
         and proj_entry.get('allowed_roles') is None
         and proj_entry.get('triggers') is None
         and proj_entry.get('min_model_class') is None
+        and proj_entry.get('skip_plan_review') is None
     )
 
 
@@ -284,6 +298,7 @@ def adopt_snapshot(
     skill_id: str | None = None,
     allowed_roles=None,
     min_model_class: str | None = None,
+    skip_plan_review: bool | None = None,
     origin_vendor: str | None = None,
     origin_vendors: list[str] | None = None,
     storage_root=None,
@@ -298,6 +313,7 @@ def adopt_snapshot(
     sid = _bundles.normalize_bundle_id(skill_id) if skill_id is not None else manifest['bundle_id']
     roles = _validate_roles_list(allowed_roles) if allowed_roles is not None else list(DEFAULT_ENABLED_ROLES)
     validated_class = _validate_model_class(min_model_class)
+    validated_skip = _validate_skip_plan_review(skip_plan_review)
     store = load_store(storage_root=storage_root)
     if sid in store['skills']:
         raise ValueError(f'Managed skill {sid!r} already exists; use update to advance its upstream snapshot')
@@ -317,6 +333,7 @@ def adopt_snapshot(
         'overlay_text': None,
         'allowed_roles': roles,
         'min_model_class': validated_class,
+        'skip_plan_review': validated_skip,
         'parameters': {},
         'project_overrides': {},
         'created_at': now,
@@ -621,6 +638,39 @@ def set_model_class(
     return effective_view(sid, project=project, storage_root=storage_root)
 
 
+def set_skip_plan_review(
+    skill_id: str,
+    skip_plan_review: bool | None,
+    *,
+    project=None,
+    storage_root=None,
+) -> dict:
+    """Set or clear whether a managed skill opts non-critical, non-code plans out of independent plan review."""
+    sid = _validate_skill_id(skill_id)
+    validated = _validate_skip_plan_review(skip_plan_review)
+    store = load_store(storage_root=storage_root)
+    entry = store['skills'].get(sid)
+    if entry is None:
+        raise ValueError(f'Managed skill {sid!r} not found')
+    proj_key = _normalize_project_key(project)
+    if proj_key is None:
+        entry['skip_plan_review'] = validated
+    else:
+        overrides = entry.setdefault('project_overrides', {})
+        if validated is None:
+            proj_entry = overrides.get(proj_key)
+            if proj_entry is not None:
+                proj_entry.pop('skip_plan_review', None)
+                if _project_override_empty(proj_entry):
+                    overrides.pop(proj_key, None)
+        else:
+            proj_entry = overrides.setdefault(proj_key, {'overlay_text': None, 'parameters': {}})
+            proj_entry['skip_plan_review'] = validated
+    entry['updated_at'] = _now_iso()
+    _save_store(store, storage_root=storage_root)
+    return effective_view(sid, project=project, storage_root=storage_root)
+
+
 def catalog_index_fingerprint(*, project=None, storage_root=None) -> str:
     """Deterministic SHA-256 fingerprint of effective managed catalog metadata (invalidates stale selection receipts)."""
     store = load_store(storage_root=storage_root)
@@ -636,6 +686,7 @@ def catalog_index_fingerprint(*, project=None, storage_root=None) -> str:
             'effective_roles': view['effective_roles'],
             'triggers': view['triggers'],
             'min_model_class': view['min_model_class'],
+            'skip_plan_review': view['skip_plan_review'],
         })
     payload = json.dumps({'schema': SCHEMA, 'role_policy': policy, 'skills': rows}, sort_keys=True, separators=(',', ':'))
     return hashlib.sha256(payload.encode('utf-8')).hexdigest()
@@ -793,6 +844,17 @@ def effective_view(
         min_model_class = None
         min_model_class_source = 'none'
 
+    global_skip_review = _validate_skip_plan_review(entry.get('skip_plan_review'))
+    if proj_override and proj_override.get('skip_plan_review') is not None:
+        skip_plan_review = bool(_validate_skip_plan_review(proj_override['skip_plan_review']))
+        skip_plan_review_source = 'project'
+    elif global_skip_review is not None:
+        skip_plan_review = bool(global_skip_review)
+        skip_plan_review_source = 'global'
+    else:
+        skip_plan_review = False
+        skip_plan_review_source = 'default'
+
     merged_params = {}
     fill_values = {}
     for pname, spec in sorted((entry.get('parameters') or {}).items()):
@@ -865,6 +927,8 @@ def effective_view(
         'triggers_source': triggers_source,
         'min_model_class': min_model_class,
         'min_model_class_source': min_model_class_source,
+        'skip_plan_review': skip_plan_review,
+        'skip_plan_review_source': skip_plan_review_source,
         'parameters': merged_params,
         'base_text': entry['base_text'],
         'raw_text': raw_text,
@@ -917,6 +981,7 @@ def list_managed(*, project=None, role: str | None = None, storage_root=None) ->
             'disabled_by_policy_roles': view['disabled_by_policy_roles'],
             'triggers': view['triggers'],
             'min_model_class': view['min_model_class'],
+            'skip_plan_review': view['skip_plan_review'],
             'parameter_count': len(view['parameters']),
             'origin_vendor': view['origin'].get('origin_vendor'),
             'origin_vendors': list(view['origin'].get('origin_vendors') or ()),
@@ -1028,6 +1093,7 @@ def freeze_session_pool(skill_ids, *, project=None, storage_root=None) -> dict:
             'roles_source': view['roles_source'],
             'effective_roles': list(view['effective_roles']),
             'min_model_class': view['min_model_class'],
+            'skip_plan_review': view['skip_plan_review'],
             'parameters': {k: v['value'] for k, v in view['parameters'].items()},
             'effective_sha256': view['effective_sha256'],
             'text': view['effective_text'],
@@ -1115,6 +1181,7 @@ def validate_inherited_frozen_skills(skills, *, role: str) -> list[dict]:
         if target_role not in eff_roles:
             raise ValueError(f'Inherited managed skill {sid!r} is not authorized for role {target_role!r}')
         _validate_model_class(item.get('min_model_class'))
+        _validate_skip_plan_review(item.get('skip_plan_review'))
         validated.append(deepcopy(item))
     return validated
 
@@ -1202,6 +1269,8 @@ def format_effective(view: dict) -> str:
         lines.append(f"Triggers ({view['triggers_source']}): {', '.join(view['triggers'])}")
     if view.get('min_model_class'):
         lines.append(f"Minimum model class ({view['min_model_class_source']}): {view['min_model_class']}")
+    if view.get('skip_plan_review'):
+        lines.append(f"Plan review ({view['skip_plan_review_source']}): skipped for non-critical, non-code plans")
     if view['parameters']:
         lines.append('Parameters:')
         for pname, spec in view['parameters'].items():

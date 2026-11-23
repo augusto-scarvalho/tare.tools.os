@@ -452,3 +452,90 @@ def test_the_flows_selector_takes_the_demands_types_for_the_plan_reviewer(monkey
     assert chosen is None and route['reason'] == 'NO_ELIGIBLE_NATIVE_ROLE' and seen == [('plan-auditor', ['coding'])]
     native_plan.select_route('auto', 'plan-auditor', 'WHY', {'id': 'p'})
     assert seen[-1] == ('plan-auditor', None)  # /plan passes none: unchanged
+
+
+def test_agy_cli_planner_enables_compaction_while_non_agy_keeps_zero(planner, monkeypatch):
+    from dataclasses import replace
+    import sys
+    from relay import execution_scope
+    parent, state, candidate = planner
+    state['conversation_flow'] = True
+    agy = deepcopy(candidate)
+    agy.pop('native_counter_endpoint', None)
+    agy['native_counter_protocol'] = 'utf8-envelope-estimate-v1'
+    agy['native_cli'] = {'executable': str(Path(sys.executable).resolve()), 'version': '1.2.7'}
+    agy['native_profile'] = {**agy['native_profile'], 'protocol': 'vendor-cli', 'endpoint': 'cli://agy'}
+    state['planning']['routes']['worker'] = deepcopy(agy)
+    stub = Stub(monkeypatch, agy, plan_of(kind='art'))
+    control = execution(); tool = wrap(parent, state, control)
+    conversation_tasks.ConversationTools(tool, parent, state, 'turn').understand({
+        'intent': 'deliver', 'relation': 'new', 'objective': 'Draw a potion.', 'criteria': ['PNG rendered.'],
+        'kinds': ['art']})
+    res1 = tool.execute(request(effect='agy-default'), control)
+    assert res1.status == 'succeeded', res1.output_json
+    assert stub.sessions[0][0]['context_policy'] == {'max_compactions': 1}
+    # Under --unlimited compactions, cli://agy lifts 1 -> None while non-AGY still stays 0.
+    scope = replace(execution_scope.current(), unlimited=('compactions',))
+    monkeypatch.setattr(execution_scope, 'current', lambda: scope)
+    res2 = tool.execute(request({'instruction': 'Plan a second sprite.'}, effect='agy-unlimited'), control)
+    assert res2.status == 'succeeded', res2.output_json
+    assert stub.sessions[1][0]['context_policy'] == {'max_compactions': None}
+    state['planning']['routes']['worker'] = deepcopy(candidate)
+    stub_http = Stub(monkeypatch, candidate, plan_of(kind='art'))
+    res3 = tool.execute(request({'instruction': 'Plan a third sprite.'}, effect='http-unlimited'), control)
+    assert res3.status == 'succeeded', res3.output_json
+    assert stub_http.sessions[0][0]['context_policy'] == {'max_compactions': 0}
+
+
+@pytest.mark.parametrize('demand_kinds,task_hints,is_local,skill_skip,expected_reviewed,expected_reason', [
+    (['art'], {'kind': 'art'}, False, False, False, 'CREATIVE_WORK'),
+    (['audio'], {'kind': 'audio'}, False, False, False, 'CREATIVE_WORK'),
+    (['3d', 'writing'], {}, False, False, False, 'CREATIVE_WORK'),
+    ([], {'kind': 'art'}, False, False, False, 'CREATIVE_WORK'),
+    (['art'], {'kind': 'art', 'critical': True}, False, False, True, None),          # critical still reviewed
+    (['art'], {'kind': 'art'}, True, False, True, None),                              # local planner still reviewed
+    (['coding', 'art'], {'kind': 'art'}, False, True, True, None),                    # code + art still reviewed
+    (['art'], {'kind': 'coding'}, False, True, True, None),                           # code task still reviewed
+    ([], {}, False, True, False, 'SKILL_OPT_OUT'),                                    # skill opt-out on untyped non-code
+    (['coding'], {}, False, True, True, None),                                        # skill opt-out never skips coding
+    ([], {}, True, True, True, None),                                                 # skill opt-out never skips local
+    ([], {'critical': True}, False, True, True, None),                                # skill opt-out never skips critical
+])
+def test_creative_non_critical_plans_and_skill_opt_out_skip_critic_while_local_code_critical_keep_it(
+    planner, monkeypatch, demand_kinds, task_hints, is_local, skill_skip, expected_reviewed, expected_reason
+):
+    from relay import challenger
+    parent, state, candidate = planner
+    state['conversation_flow'] = True
+    if skill_skip:
+        text = 'Generate crisp pixel art.'
+        state['managed_skills_pool'] = {
+            'schema': 'tare.tools/managed-skills/1',
+            'role_policy': {'coordinator': True, 'implementer': True, 'planner': True, 'plan-auditor': True, 'auditor': True},
+            'skills': [{
+                'skill_id': 'pxl-art', 'skill_name': 'PXL Art', 'bundle_id': 'pxl-art', 'snapshot_id': 'snap-1',
+                'bundle_sha256': 'a' * 64, 'base_sha256': hashlib.sha256(text.encode()).hexdigest(),
+                'origin_path': '/tmp/pxl', 'text_source': 'base',
+                'allowed_roles': ['implementer', 'planner'], 'roles_source': 'global',
+                'effective_roles': ['implementer', 'planner'], 'min_model_class': 'frontier',
+                'skip_plan_review': True, 'parameters': {},
+                'effective_sha256': hashlib.sha256(text.encode()).hexdigest(), 'text': text,
+                'authority': 'NONE', 'effects_authorized': False,
+            }],
+        }
+    monkeypatch.setattr(challenger, 'local', lambda dep: is_local)
+    stub = Stub(monkeypatch, candidate, plan_of(**task_hints))
+    stub.verdict = {'verdict': 'ACCEPT', 'summary': 'Sound.', 'findings': [], 'remaining': [], 'sources': []}
+    control = execution(); tool = wrap(parent, state, control)
+    conversation_tasks.ConversationTools(tool, parent, state, 'turn').understand({
+        'intent': 'deliver', 'relation': 'new', 'objective': 'Deliver asset.', 'criteria': ['Asset exists.'],
+        **({'kinds': demand_kinds} if demand_kinds else {})})
+    value = json.loads(tool.execute(request(), control).output_json)
+    assert value['status'] == 'PLANNED'
+    if expected_reviewed:
+        assert value['review']['status'] == 'REVIEWED' and stub.roles() == ['planner', 'plan-auditor']
+    else:
+        assert value['review'] == {'status': 'SKIPPED', 'route': None, 'model_calls': 0, 'reason': expected_reason}
+        assert stub.roles() == ['planner'] and stub.picked == []
+        assert tool.calls_committed() == 2 and not any((parent/'planning').glob('*/review'))
+        assert dialog(parent).startswith('Plan.')  # skipped review renders no review banner

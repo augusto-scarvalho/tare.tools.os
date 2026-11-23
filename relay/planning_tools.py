@@ -35,6 +35,30 @@ CRITIC_REVISION = ('A frugal critic reviewed the previous plan against the reque
                    'Deliver the complete revised plan.')
 PREVIOUS_PLAN = ('The attached prior plan is advisory. Reuse valid work; inspect only changed scope and missing evidence. '
                  'Preserve all current criteria and retain the previous candidate where its paths remain authorized.')
+# Creative/asset work types (task_types.json) whose verification is the produced artifact itself, not a code plan audit.
+CREATIVE_PLAN_KINDS = frozenset({'art', 'audio', '3d', 'writing'})
+# Code/infrastructure work types that always keep independent plan review even when a creative skill is also active.
+CODE_REVIEW_KINDS = frozenset({'coding', 'web', 'security', 'engineering', 'games'})
+
+
+def plan_review_skip_reason(active, plan, deployment, skills=()):
+    """Return a skip reason when a conversation plan needs no independent critic, else None.
+    Local planners, critical tasks, and code/infrastructure work are always reviewed (owner, 2026-11-17 / 2026-11-23)."""
+    from .challenger import local
+    from .managed_skills import skills_skip_plan_review
+    tasks = plan.get('tasks') or []
+    if not tasks or local(deployment) or any(t.get('critical') for t in tasks):
+        return None
+    demand_kinds = set((active or {}).get('kinds') or ())
+    task_kinds = {t['kind'] for t in tasks if t.get('kind')}
+    all_kinds = demand_kinds | task_kinds
+    if all_kinds & CODE_REVIEW_KINDS:
+        return None
+    if all_kinds and all_kinds <= CREATIVE_PLAN_KINDS:
+        return 'CREATIVE_WORK'
+    if skills_skip_plan_review(skills):
+        return 'SKILL_OPT_OUT'
+    return None
 
 
 def handoff(artifact, plan):
@@ -566,11 +590,17 @@ class PlanningTools:
             row.update(status='FINISHED', result=result)
             save_json(receipt_path, row)
             return result
+        from . import execution_resources as resources
+        profile = deployment.get('native_profile') or {}
+        agy_cli = profile.get('protocol') == 'vendor-cli' and profile.get('endpoint') == 'cli://agy'
+        # Non-AGY planners keep exact history (max_compactions=0); cli://agy has a 160 KiB wire cap below its model
+        # window, so enable compaction at model_context_policy's trigger_limit to avoid CLI_INPUT_BYTE_LIMIT_EXCEEDED.
+        planner_context = resources.context({'max_compactions': 1}) if agy_cli else {'max_compactions': 0}
         config = {k: deepcopy(v) for k, v in self.state['config'].items()
                   if k in {'repositories', 'folder_access', 'project_admission'}}
         config.update(schema='tare.tools/native-agent-config/1', role='planner', writable={}, verifiers={},
                       capabilities=['read', 'list', 'search'], typed_output=True, specgraph_edit_context=False,
-                      context_policy={'max_compactions': 0})
+                      context_policy=planner_context)
         if previous_input:config['input_artifacts']=[previous_input]
         task_contract = ('Produce the smallest useful executable tasks, with literal target_paths, criteria, '
                          'Include every file that must be edited, regenerated or staged in target_paths. '
@@ -578,6 +608,8 @@ class PlanningTools:
                          'test_paths for existing relevant tests, and named verifiers when provided. '
                          'Put tasks in dependency order; they will be executed together as one bounded change. '
                          'Read relevant project files and cite their observed hashes. '
+                         'When an active skill already documents its CLI or workflow, rely on the skill instructions '
+                         'instead of exhaustively reading the tool\'s internal source code. '
                          'Task criteria describe the eventual product behavior. Keep phase limits such as '
                          'plan-only or no implementation in the plan narrative, not task criteria; the host '
                          'enforces when implementation is authorized. '
@@ -647,28 +679,33 @@ class PlanningTools:
             artifact = regular(job/'session/artifact.json')
             plan = read_json(artifact, 65536)['payload']
             result = handoff(artifact,plan)
-            # Every conversation plan with tasks, whatever `needs` or `critical` it states: a planner that underrates
-            # its own task (a weak local one rated every task cheap in 2 of 15 plans, both with the defect) must not
-            # excuse its review (owner, 2026-11-17).
+            # Every conversation plan with tasks is reviewed unless it is non-critical, non-code creative/asset work
+            # (or an active skill opts out) planned by a non-local model: a weak local planner or any critical/code
+            # plan never excuses its review (owner, 2026-11-17 / 2026-11-23).
             if self.state.get('conversation_flow') and plan.get('tasks'):
-                # The planner's own result is saved before any review is dispatched: a restart then keeps a valid
-                # plan (`settled` reconciles what finished) and never dispatches the review or revision again.
-                row['result'] = {**result, 'route': name, 'model_calls': planner_calls}
-                row['critic'] = {'stage': 'review'}
-                save_json(receipt_path, row)
-                review = self.critic(row, receipt_path, job, active, deployment, plan, control)
-                result['review'] = review
-                if review.get('findings'):
-                    result['next'] += CRITIC_NEXT
-                    if review['verdict'] == 'REVISE':  # once, and the revision is not reviewed again
-                        row['result'] = {**row['result'], 'review': deepcopy(review), 'next': result['next']}
-                        row['critic']['stage'] = 'revision'
-                        save_json(receipt_path, row)
-                        revised = self.revise(row, receipt_path, job, deployment, config, compose, mission, artifact, review, control)
-                        if revised:
-                            artifact, plan = revised
-                            result = {**handoff(artifact, plan), 'review': review}
-                            result['next'] += CRITIC_REVISED_NEXT
+                review_skills = [*planner_skills, *frozen_skills_for_role(self.state, 'implementer')]
+                skip_reason = plan_review_skip_reason(active, plan, deployment, review_skills)
+                if skip_reason is not None:
+                    result['review'] = {'status': 'SKIPPED', 'route': None, 'model_calls': 0, 'reason': skip_reason}
+                else:
+                    # The planner's own result is saved before any review is dispatched: a restart then keeps a valid
+                    # plan (`settled` reconciles what finished) and never dispatches the review or revision again.
+                    row['result'] = {**result, 'route': name, 'model_calls': planner_calls}
+                    row['critic'] = {'stage': 'review'}
+                    save_json(receipt_path, row)
+                    review = self.critic(row, receipt_path, job, active, deployment, plan, control)
+                    result['review'] = review
+                    if review.get('findings'):
+                        result['next'] += CRITIC_NEXT
+                        if review['verdict'] == 'REVISE':  # once, and the revision is not reviewed again
+                            row['result'] = {**row['result'], 'review': deepcopy(review), 'next': result['next']}
+                            row['critic']['stage'] = 'revision'
+                            save_json(receipt_path, row)
+                            revised = self.revise(row, receipt_path, job, deployment, config, compose, mission, artifact, review, control)
+                            if revised:
+                                artifact, plan = revised
+                                result = {**handoff(artifact, plan), 'review': review}
+                                result['next'] += CRITIC_REVISED_NEXT
         else:
             result = {'status': outcome['status'], 'reason': outcome.get('reason'),
                       'failure_code': outcome.get('failure_code'),
