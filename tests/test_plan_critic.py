@@ -492,9 +492,14 @@ def test_agy_cli_planner_enables_compaction_while_non_agy_keeps_zero(planner, mo
     (['audio'], {'kind': 'audio'}, False, False, False, 'CREATIVE_WORK'),
     (['3d', 'writing'], {}, False, False, False, 'CREATIVE_WORK'),
     ([], {'kind': 'art'}, False, False, False, 'CREATIVE_WORK'),
-    (['art'], {'kind': 'art', 'critical': True}, False, False, True, None),          # critical still reviewed
+    (['coding', 'art'], {'kind': 'art'}, False, False, False, 'CREATIVE_WORK'),       # "art made by code" with all tasks creative
+    (['coding', 'art'], {'kind': 'art'}, False, True, False, 'CREATIVE_WORK'),
+    (['coding'], {'kind': 'art'}, False, True, False, 'SKILL_OPT_OUT'),               # skill opt-out + explicit creative task
+    (['coding'], {'kind': 'art'}, False, False, True, None),                          # pure coding demand without opt-out skill
+    (['coding', 'art'], {}, False, True, True, None),                                 # untyped task under coding demand still reviewed
+    (['security', 'art'], {'kind': 'art'}, False, True, True, None),                  # security demand still reviewed
+    (['art'], {'kind': 'art', 'critical': True}, False, False, True, None),           # critical still reviewed
     (['art'], {'kind': 'art'}, True, False, True, None),                              # local planner still reviewed
-    (['coding', 'art'], {'kind': 'art'}, False, True, True, None),                    # code + art still reviewed
     (['art'], {'kind': 'coding'}, False, True, True, None),                           # code task still reviewed
     ([], {}, False, True, False, 'SKILL_OPT_OUT'),                                    # skill opt-out on untyped non-code
     (['coding'], {}, False, True, True, None),                                        # skill opt-out never skips coding
@@ -539,3 +544,21 @@ def test_creative_non_critical_plans_and_skill_opt_out_skip_critic_while_local_c
         assert stub.roles() == ['planner'] and stub.picked == []
         assert tool.calls_committed() == 2 and not any((parent/'planning').glob('*/review'))
         assert dialog(parent).startswith('Plan.')  # skipped review renders no review banner
+
+
+def test_mixed_creative_and_coding_tasks_still_run_plan_critic(planner, monkeypatch):
+    parent, state, candidate = planner
+    state['conversation_flow'] = True
+    mixed = {**PLAN, 'tasks': [
+        dict(TASK, key='art', kind='art', target_paths=['assets/coin.px.js']),
+        dict(TASK, key='code', kind='coding', target_paths=['app.py']),
+    ]}
+    stub = Stub(monkeypatch, candidate, mixed)
+    stub.verdict = {'verdict': 'ACCEPT', 'summary': 'Sound.', 'findings': [], 'remaining': [], 'sources': []}
+    control = execution(); tool = wrap(parent, state, control)
+    conversation_tasks.ConversationTools(tool, parent, state, 'turn').understand({
+        'intent': 'deliver', 'relation': 'new', 'objective': 'Add coin and sprite.', 'criteria': ['Both done.'],
+        'kinds': ['coding', 'art']})
+    value = json.loads(tool.execute(request(), control).output_json)
+    assert value['status'] == 'PLANNED' and value['review']['status'] == 'REVIEWED'
+    assert stub.roles() == ['planner', 'plan-auditor']

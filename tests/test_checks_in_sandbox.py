@@ -647,3 +647,54 @@ def test_windows_mxc_dll_init_exit_with_empty_output_is_reported_as_sandbox_bloc
     assert blocked is not None and '0xC0000142' in blocked[0] and 'STATUS_DLL_INIT_FAILED' in blocked[1]
     assert protection.sandbox_blocked({**win_value, 'output': 'some test output'}) is None
     assert protection.sandbox_blocked({**win_value, 'process': {'confinement': {'backend': 'linux-bwrap'}}}) is None
+
+
+def test_windows_mxc_probe_maps_python_parenthesized_dll_init_error_to_dll_init_failed(tmp_path, monkeypatch):
+    from pathlib import Path
+    win_root = tmp_path / 'Windows'
+    win_root.mkdir()
+    monkeypatch.setenv('SystemRoot', str(win_root))
+    monkeypatch.setattr(protection, 'MxcPolicy', lambda *a, **kw: SimpleNamespace())
+    monkeypatch.setattr(protection, 'isolated_child_environment', lambda extra=None: dict(extra or {}))
+    monkeypatch.setattr('compute_plane.windows_mxc.WindowsMxcProfile', lambda *a, **kw: object())
+
+    def fake_run(argv, *, cwd, dest, **kw):
+        (Path(dest) / 'stderr.txt').write_text(
+            'ImportError: DLL load failed while importing _ctypes: A dynamic link library (DLL) initialization routine failed.\n',
+            encoding='utf-8',
+        )
+        return {'exit_code': 1, 'cancelled': False, 'timeout': False, 'output_limit': False}
+
+    monkeypatch.setattr('compute_plane.managed_process.run_process', fake_run)
+    with pytest.raises(OSError, match='^mxc_dll_init_failed:'):
+        protection._probe_windows_mxc_launch()
+
+
+def test_command_capability_admits_host_node_runtime_read_only_and_names_it(host, tmp_path, monkeypatch):
+    node_dir = tmp_path / 'nodejs'
+    node_dir.mkdir()
+    node_exe = node_dir / 'node.exe'
+    node_exe.write_bytes(b'owned offline node fixture')
+    monkeypatch.setattr('compute_plane.managed_process.host_executable',
+                        lambda name: str(node_exe) if name == 'node' else None)
+    bound, isolation = [], protection.windows_isolation_factory
+    monkeypatch.setattr(protection, 'windows_isolation_factory', lambda **kw: bound.append(kw) or isolation(**kw))
+
+    # Without `command` capability (checks_only), node is not added to read_only.
+    del host.config['command_protection']
+    protection.factory(host.config, {}, host.custody, 'ctx', 'inv-no-cmd', checks_only=True)(
+        session_id='s1', binding=host.binding, control=host.control, config=host.config,
+        custody=host.custody, scratch=host.custody / 'scratch1', capabilities=host.capabilities).close()
+    assert str(node_dir.resolve()) not in bound[-1]['policy'].read_only
+
+    # With `command` capability under command protection, node's folder is read-only (never writable) and named in spec.
+    host.config['command_protection'] = protection.prepare({'review': 'codex', 'max_reviews': 1}, host.deployment)
+    host.capabilities.names = ('read', 'command')
+    host.capabilities._specs = {'command': {'description': 'Run a protected command.'}}
+    protection.factory(host.config, host.deployment, host.custody, 'ctx', 'inv-cmd')(
+        session_id='s2', binding=host.binding, control=host.control, config=host.config,
+        custody=host.custody, scratch=host.custody / 'scratch2', capabilities=host.capabilities).close()
+    policy = bound[-1]['policy']
+    assert str(node_dir.resolve()) in policy.read_only
+    assert str(node_dir.resolve()) not in policy.read_write
+    assert f'Node executable: {node_exe.resolve()}.' in host.capabilities._specs['command']['description']
