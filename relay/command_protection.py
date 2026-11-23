@@ -42,13 +42,50 @@ BLOCKED_DURING = 'ISOLATION_BLOCKED_DURING'  # a red check during which the sand
 
 
 LINUX_SANDBOX_GUIDE = 'https://github.com/augusto-scarvalho/tare.tools.os/blob/main/docs/guides/LINUX_SANDBOX.md'
-no_sandbox_error = None  # why probe_sandbox answered no on Linux: the Kernel's require_support() error, for the user
+no_sandbox_error = None  # why probe_sandbox answered no (Linux require_support() or Windows MXC launch probe)
+DLL_INIT_FAILED = 0xC0000142  # 3221225794: STATUS_DLL_INIT_FAILED
+
+
+def _probe_windows_mxc_launch():
+    """Run one minimal MXC child that loads USER32.dll (via ctypes) to confirm the current Windows desktop/session
+    can actually initialize sandboxed binaries such as git or node, not merely create a PSEC handle."""
+    import tempfile
+    from compute_plane.managed_process import run_process
+    from compute_plane.windows_mxc import WindowsMxcProfile
+    root = os.environ['SystemRoot']
+    exe = str(Path(sys.executable).resolve(strict=True))
+    ro = tuple(dict.fromkeys([
+        str(Path(root).resolve(strict=True)),
+        str(Path(sys.base_prefix).resolve(strict=True)),
+        str(Path(sys.prefix).resolve(strict=True)),
+    ]))
+    with tempfile.TemporaryDirectory(prefix='tare-mxc-probe-') as directory:
+        base = Path(directory).resolve(strict=True)
+        tmp = base / 'tmp'
+        dest = base / 'out'
+        tmp.mkdir()
+        dest.mkdir()
+        policy = MxcPolicy(ro, (str(tmp),), (ntpath.join(root, 'tare-sandbox-probe'),))
+        env = isolated_child_environment({'PATH': os.pathsep.join([os.path.join(root, 'System32'), root])})
+        profile = WindowsMxcProfile(policy, cwd=str(tmp), environment=env)
+        result = run_process([exe, '-S', '-c', 'import ctypes; ctypes.WinDLL("user32")'],
+                             cwd=str(tmp), dest=str(dest), timeout=10, env=env, max_output=65536,
+                             process_factory=profile)
+        code = result.get('exit_code')
+        if code == 0 and not any(result.get(k) for k in ('cancelled', 'timeout', 'output_limit')):
+            return
+        stderr = (dest / 'stderr.txt').read_text(encoding='utf-8', errors='replace').strip()
+        if code == DLL_INIT_FAILED or 'DLL initialization routine failed' in stderr:
+            raise OSError(f'mxc_dll_init_failed: exit {code} (0xC0000142 / STATUS_DLL_INIT_FAILED)')
+        detail = f'exit {code}' + (f': {stderr.splitlines()[-1][:200]}' if stderr else '')
+        raise OSError(f'mxc_launch_failed: {detail}')
 
 
 def probe_sandbox():
     """Whether this host has the sandbox checks run in, asked of the Kernel's own support query: on Windows
-    MxcEnvironment (QueryProcessSecurityEnvironmentSupport), deny support included: checks deny secrets; on Linux
-    linux_bwrap.require_support(), one real launch of its bubblewrap profile, masks and filter included."""
+    MxcEnvironment (QueryProcessSecurityEnvironmentSupport), deny support included, plus one real MXC child launch
+    confirming DLL initialization in the current desktop/session; on Linux linux_bwrap.require_support(), one real
+    launch of its bubblewrap profile, masks and filter included."""
     global no_sandbox_error
     no_sandbox_error = None
     if sys.platform == 'linux':
@@ -65,8 +102,17 @@ def probe_sandbox():
     try:
         root = os.environ['SystemRoot']
         MxcEnvironment(MxcPolicy((root,), (), (ntpath.join(root, 'tare-sandbox-probe'),))).close()
-        return True
     except Exception:  # no processmodel.dll, no PSEC, no deny support: the same answer, no sandbox
+        return False
+    try:
+        _probe_windows_mxc_launch()
+        return True
+    except Exception as error:
+        detail = str(error) or type(error).__name__
+        no_sandbox_error = (
+            detail if detail.startswith(('mxc_dll_init_failed:', 'mxc_launch_failed:'))
+            else f'mxc_launch_failed: {detail}'
+        )
         return False
 
 
@@ -74,10 +120,16 @@ sandbox_available = cache(probe_sandbox)  # once per process
 
 
 def no_sandbox_why():
-    """Why probe_sandbox found no sandbox on this Linux host, in plain words for the user; '' when it was not told."""
+    """Why probe_sandbox found no sandbox on this host, in plain words for the user; '' when it was not told."""
     if not no_sandbox_error:
         return ''
     code, _, detail = no_sandbox_error.partition(':')
+    if code == 'mxc_dll_init_failed':
+        return ('The Windows sandbox (MXC/PSEC) could not initialize system DLLs '
+                '(STATUS_DLL_INIT_FAILED / 0xC0000142) in this session or desktop. '
+                'Run tare from a standard interactive Windows desktop session so sandboxed commands can start.')
+    if code == 'mxc_launch_failed':
+        return f'The Windows sandbox (MXC/PSEC) could not start a probe process ({detail.strip() or no_sandbox_error}).'
     install = ' Install the packages bubblewrap (0.8 or newer) and util-linux (for prlimit).'
     # The Kernel lists every user-namespace setting it found; only these values refuse them.
     refusing = re.findall(r'kernel\.apparmor_restrict_unprivileged_userns=1|kernel\.unprivileged_userns_clone=0'
@@ -1030,6 +1082,9 @@ def sandbox_blocked(value, readable=()):
     if not value.get('returncode') or backend not in ('windows-mxc', 'linux-bwrap'):
         return None
     linux = backend == 'linux-bwrap'
+    if not linux and value.get('returncode') == DLL_INIT_FAILED and not output.strip():
+        return ('DLL initialization in the Windows sandbox (STATUS_DLL_INIT_FAILED / 0xC0000142)',
+                'exit 3221225794 (0xC0000142, STATUS_DLL_INIT_FAILED) with no output')
     if linux:
         scopes = [posixpath.normpath(str(p)) for p in readable]
     else:

@@ -606,3 +606,44 @@ def test_an_argument_longer_than_a_file_name_is_no_command_input(tmp_path):
     assert protection.names_file(SimpleNamespace(is_file=lambda: stat(errno.ENAMETOOLONG))) is False
     with pytest.raises(PermissionError):
         protection.names_file(SimpleNamespace(is_file=lambda: stat(errno.EACCES)))
+
+
+def test_windows_probe_sandbox_verifies_real_mxc_launch_and_explains_dll_init_failure(monkeypatch):
+    class FakeEnv:
+        def __init__(self, policy): pass
+        def close(self): pass
+    monkeypatch.setattr('compute_plane.windows_mxc.MxcEnvironment', FakeEnv)
+    monkeypatch.setattr(protection, 'sys', SimpleNamespace(platform='win32', executable=sys.executable,
+                                                           prefix=sys.prefix, base_prefix=sys.base_prefix))
+    monkeypatch.setattr(protection, 'os', SimpleNamespace(environ={'SystemRoot': 'C:\\Windows'}))
+    monkeypatch.setattr(protection, '_probe_windows_mxc_launch', lambda: None)
+    assert protection.probe_sandbox() is True and protection.no_sandbox_why() == ''
+
+    def dll_fail():
+        raise OSError('mxc_dll_init_failed: exit 3221225794 (0xC0000142 / STATUS_DLL_INIT_FAILED)')
+    monkeypatch.setattr(protection, '_probe_windows_mxc_launch', dll_fail)
+    assert protection.probe_sandbox() is False and protection.no_sandbox_error.startswith('mxc_dll_init_failed:')
+    why = protection.no_sandbox_why()
+    assert 'STATUS_DLL_INIT_FAILED' in why and '0xC0000142' in why and 'bubblewrap' not in why
+
+    def other_fail():
+        raise OSError('mxc_launch_failed: exit 5')
+    monkeypatch.setattr(protection, '_probe_windows_mxc_launch', other_fail)
+    assert protection.probe_sandbox() is False
+    why2 = protection.no_sandbox_why()
+    assert 'Windows sandbox (MXC/PSEC)' in why2 and 'exit 5' in why2 and 'bubblewrap' not in why2
+
+    def raw_winerror():
+        raise PermissionError('[WinError 5] Access is denied')
+    monkeypatch.setattr(protection, '_probe_windows_mxc_launch', raw_winerror)
+    assert protection.probe_sandbox() is False and protection.no_sandbox_error.startswith('mxc_launch_failed:')
+    why3 = protection.no_sandbox_why()
+    assert 'Windows sandbox (MXC/PSEC)' in why3 and 'Access is denied' in why3 and 'bubblewrap' not in why3
+
+
+def test_windows_mxc_dll_init_exit_with_empty_output_is_reported_as_sandbox_blocked():
+    win_value = {'returncode': 3221225794, 'output': '', 'process': {'confinement': {'backend': 'windows-mxc'}}}
+    blocked = protection.sandbox_blocked(win_value)
+    assert blocked is not None and '0xC0000142' in blocked[0] and 'STATUS_DLL_INIT_FAILED' in blocked[1]
+    assert protection.sandbox_blocked({**win_value, 'output': 'some test output'}) is None
+    assert protection.sandbox_blocked({**win_value, 'process': {'confinement': {'backend': 'linux-bwrap'}}}) is None

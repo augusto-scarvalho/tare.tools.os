@@ -1033,3 +1033,65 @@ def test_session_system_block_surfaces_skill_directory_and_tui_enter_toggles_fas
             assert app.auto_skills is True
 
     asyncio.run(scenario())
+
+
+def test_managed_skill_skip_plan_review_lifecycle_cli_and_tui(tmp_path, monkeypatch, capsys):
+    storage = tmp_path / 'storage'
+    proj = tmp_path / 'proj'
+    proj.mkdir()
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(storage))
+
+    src = tmp_path / 'tune-audio'
+    _write(src, 'SKILL.md', '---\nname: Tune Audio\n---\nSynthesize SFX.\n')
+    bundles.capture_bundle(src, name='tune-audio', storage_root=storage)
+
+    assert tare_ops.main(['skills', 'adopt', 'tune-audio', '--skip-plan-review', '--json']) == 0
+    v1 = json.loads(capsys.readouterr().out)
+    assert v1['skip_plan_review'] is True and v1['skip_plan_review_source'] == 'global'
+
+    assert tare_ops.main(['skills', 'managed']) == 0
+    assert 'no-plan-audit' in capsys.readouterr().out
+
+    # Per-project override can require plan review while global stays skipped; --reset restores inheritance.
+    assert tare_ops.main(['skills', 'plan-review', 'tune-audio', '--require', '--project', str(proj), '--json']) == 0
+    v_proj = json.loads(capsys.readouterr().out)
+    assert v_proj['skip_plan_review'] is False and v_proj['skip_plan_review_source'] == 'project'
+    assert managed.effective_view('tune-audio', storage_root=storage)['skip_plan_review'] is True
+
+    assert tare_ops.main(['skills', 'plan-review', 'tune-audio', '--reset', '--project', str(proj), '--json']) == 0
+    v_reset = json.loads(capsys.readouterr().out)
+    assert v_reset['skip_plan_review'] is True and v_reset['skip_plan_review_source'] == 'global'
+
+    pool = managed.freeze_session_pool(['tune-audio'], storage_root=storage)
+    assert managed.skills_skip_plan_review(pool['skills']) is True
+    assert managed.validate_inherited_frozen_skills(
+        managed.frozen_for_role({'managed_skills_pool': pool}, 'planner'), role='planner',
+    )[0]['skip_plan_review'] is True
+
+    # TUI button toggles global skip_plan_review and updates the managed list tag.
+    async def scenario():
+        app = WorkConsole(proj, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.action_skills()
+            await pilot.pause()
+            panel = app.screen
+            assert isinstance(panel, SkillsPanel)
+            assert 'no-plan-audit' in panel.current['label']
+            await pilot.click('#skills-roles')
+            await pilot.pause()
+            dialog = app.screen
+            assert isinstance(dialog, SkillRolesDialog)
+            assert str(dialog.query_one('#roles-plan-audit', Button).label) == 'Audit: skip'
+            await pilot.click('#roles-plan-audit')
+            await pilot.pause(.4)
+            assert str(dialog.query_one('#roles-plan-audit', Button).label) == 'Audit: auto'
+            assert managed.effective_view('tune-audio', storage_root=storage)['skip_plan_review'] is False
+            await pilot.click('#roles-plan-audit')
+            await pilot.pause(.4)
+            assert str(dialog.query_one('#roles-plan-audit', Button).label) == 'Audit: skip'
+            assert managed.effective_view('tune-audio', storage_root=storage)['skip_plan_review'] is True
+            await pilot.press('escape')
+            await pilot.pause()
+
+    asyncio.run(scenario())
