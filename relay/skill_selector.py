@@ -48,6 +48,10 @@ _STOPWORDS = frozenset({
 
 _TOKEN_RE = re.compile(r'[a-z0-9]{2,}')
 _HEADING_RE = re.compile(r'^#{1,3}\s+(.+)$', re.MULTILINE)
+_NEG_DESC_CLAUSE_RE = re.compile(
+    r'(?:^|[.;\n])\s*(?:not\s+for\b|do\s+not\s+use\b|don\'?t\s+use\b|never\s+use\b|nao\s+usar\b|nao\s+serve\s+para\b).*$',
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def _fold(text: str) -> str:
@@ -85,7 +89,8 @@ def _build_lightweight_record(view: dict) -> dict:
     sid = view['skill_id']
     slug_tokens = set(_tokenize(sid.replace('-', ' ').replace('_', ' ')))
     name_tokens = set(_tokenize(view.get('skill_name', '')))
-    desc_tokens = set(_tokenize(view.get('description', '')))
+    desc_positive = _NEG_DESC_CLAUSE_RE.sub('', _fold(view.get('description', '')))
+    desc_tokens = set(_tokenize(desc_positive))
     headings = _extract_headings(view.get('effective_text', ''))
     heading_tokens = set(_tokenize(' '.join(headings)))
     triggers = [_fold(t).strip() for t in (view.get('triggers') or ()) if isinstance(t, str) and t.strip()]
