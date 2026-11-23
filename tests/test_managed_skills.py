@@ -999,10 +999,16 @@ def test_session_system_block_surfaces_skill_directory_and_tui_enter_toggles_fas
     assert f'directory={src.resolve()}' in block
     assert 'request_folder_access' in block
 
-    # 2. Fast metadata paths (include_status=False, list_snapshots(verify=False)) work cleanly.
+    # 2. Fast metadata paths (include_status=False, list_snapshots(verify=False)) work cleanly and skip malformed manifests.
     v_fast = managed.effective_view('pxl-dir', include_status=False, storage_root=storage)
     assert v_fast['effective_sha256'] == managed.effective_view('pxl-dir', storage_root=storage)['effective_sha256']
-    assert len(bundles.list_snapshots(verify=False, storage_root=storage)) == 1
+    bad_snap = bundles.snapshots_root(storage) / 'broken-bundle' / 'abcdef1234567890'
+    bad_snap.mkdir(parents=True)
+    (bad_snap / 'manifest.json').write_text(
+        json.dumps({'schema': bundles.SCHEMA, 'bundle_id': 'broken-bundle', 'snapshot_id': 'abcdef1234567890'}),
+        encoding='utf-8',
+    )
+    assert [s['bundle_id'] for s in bundles.list_snapshots(verify=False, storage_root=storage)] == ['pxl-dir']
 
     # 3. Pressing Enter directly on #workbench-list toggles managed Activate and Auto-select without Tabbing.
     async def scenario():

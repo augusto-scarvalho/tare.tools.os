@@ -4531,8 +4531,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 80657,
-      "sha256": "704dd317384b94fc066cb7b97024d5e3afc39528726564dcdd48e73d8fe56886"
+      "size_bytes": 80756,
+      "sha256": "4bf53608c0c0a5367daa34cf9fdbf480239fa68ca202ee7a5eb39f98efb4cd17"
     },
     {
       "name": "managed_skills.py",

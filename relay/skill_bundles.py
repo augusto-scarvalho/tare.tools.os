@@ -959,22 +959,23 @@ def list_snapshots(*, bundle_id: str | None = None, verify: bool = True, storage
                         or manifest.get('snapshot_id') != sdir.name
                     ):
                         continue
-            except (OSError, ValueError, UnicodeError):
+                row = {
+                    'bundle_id': manifest['bundle_id'],
+                    'snapshot_id': manifest['snapshot_id'],
+                    'bundle_sha256': manifest['bundle_sha256'],
+                    'captured_at': manifest['captured_at'],
+                    'captured_ns': manifest.get('captured_ns', 0),
+                    'skill_name': manifest['source']['skill_name'],
+                    'description': manifest['source']['description'],
+                    'origin_path': manifest['source']['origin_path'],
+                    'complete_directory': manifest['scope']['complete_directory'],
+                    'file_count': manifest['summary']['file_count'],
+                    'total_bytes': manifest['summary']['total_bytes'],
+                    'snapshot_dir': str(sdir),
+                }
+            except (OSError, ValueError, UnicodeError, KeyError, TypeError):
                 continue
-            results.append({
-                'bundle_id': manifest['bundle_id'],
-                'snapshot_id': manifest['snapshot_id'],
-                'bundle_sha256': manifest['bundle_sha256'],
-                'captured_at': manifest['captured_at'],
-                'captured_ns': manifest.get('captured_ns', 0),
-                'skill_name': manifest['source']['skill_name'],
-                'description': manifest['source']['description'],
-                'origin_path': manifest['source']['origin_path'],
-                'complete_directory': manifest['scope']['complete_directory'],
-                'file_count': manifest['summary']['file_count'],
-                'total_bytes': manifest['summary']['total_bytes'],
-                'snapshot_dir': str(sdir),
-            })
+            results.append(row)
     results.sort(key=lambda item: (item['bundle_id'], item['captured_ns'], item['captured_at'], item['snapshot_id']))
     return results
 
