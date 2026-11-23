@@ -51,12 +51,24 @@ def plan_review_skip_reason(active, plan, deployment, skills=()):
         return None
     demand_kinds = set((active or {}).get('kinds') or ())
     task_kinds = {t['kind'] for t in tasks if t.get('kind')}
+    skill_opt_out = skills_skip_plan_review(skills)
+    if task_kinds & CODE_REVIEW_KINDS:
+        return None
+    # When every planned task is explicitly creative (art/audio/3d/writing), honor the plan even if the
+    # pre-plan demand also included 'coding' (e.g. pxl/tune "art/audio made by code"), provided the demand
+    # itself named a creative kind or an opt-out skill is active and no security/web/engineering/games kind applies.
+    all_tasks_creative = all(t.get('kind') in CREATIVE_PLAN_KINDS for t in tasks)
+    if all_tasks_creative and not (demand_kinds & (CODE_REVIEW_KINDS - {'coding'})):
+        if demand_kinds & CREATIVE_PLAN_KINDS:
+            return 'CREATIVE_WORK'
+        if skill_opt_out:
+            return 'SKILL_OPT_OUT'
     all_kinds = demand_kinds | task_kinds
     if all_kinds & CODE_REVIEW_KINDS:
         return None
     if all_kinds and all_kinds <= CREATIVE_PLAN_KINDS:
         return 'CREATIVE_WORK'
-    if skills_skip_plan_review(skills):
+    if skill_opt_out:
         return 'SKILL_OPT_OUT'
     return None
 

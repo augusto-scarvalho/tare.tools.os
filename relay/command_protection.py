@@ -75,7 +75,9 @@ def _probe_windows_mxc_launch():
         if code == 0 and not any(result.get(k) for k in ('cancelled', 'timeout', 'output_limit')):
             return
         stderr = (dest / 'stderr.txt').read_text(encoding='utf-8', errors='replace').strip()
-        if code == DLL_INIT_FAILED or 'DLL initialization routine failed' in stderr:
+        if (code == DLL_INIT_FAILED
+                or 'DLL) initialization routine failed' in stderr
+                or 'DLL initialization routine failed' in stderr):
             raise OSError(f'mxc_dll_init_failed: exit {code} (0xC0000142 / STATUS_DLL_INIT_FAILED)')
         detail = f'exit {code}' + (f': {stderr.splitlines()[-1][:200]}' if stderr else '')
         raise OSError(f'mxc_launch_failed: {detail}')
@@ -401,6 +403,9 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
         search_executable=host_executable('rg') if 'search' in capabilities.names else None
         if search_executable:
             runtime_roots.update(map(str, verifier_runtime(search_executable)))
+        node_executable=host_executable('node') if 'command' in capabilities.names else None
+        if node_executable:
+            runtime_roots.update(map(str, verifier_runtime(node_executable)))
         if not windows:
             from compute_plane import linux_bwrap
         # Linux: the system folders bubblewrap binds are named in the policy, so its digest names everything bound.
@@ -781,6 +786,8 @@ def factory(config,deployment,custody,public_context,invocation_id,activity=None
             **cli_options)(**session)
         if 'command' in capabilities.names:
             capabilities._specs['command']['description']+=' Python executable: '+str(Path(sys.executable).resolve())+'.'
+            if node_executable:
+                capabilities._specs['command']['description']+=' Node executable: '+program(node_executable)+'.'
         return mediator
     return bind
 
