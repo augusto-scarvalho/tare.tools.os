@@ -980,3 +980,50 @@ def test_tui_roles_dialog_tier_button_cycles_min_model_class_compact_and_wide(tm
             assert 'tier=frontier' in app.screen.current['label']
 
     asyncio.run(scenario())
+
+
+def test_session_system_block_surfaces_skill_directory_and_tui_enter_toggles_fast(tmp_path, monkeypatch):
+    storage = tmp_path / 'state'
+    root = tmp_path / 'project'
+    root.mkdir()
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(storage))
+    src = tmp_path / 'local-pxl-dir'
+    _write(src, 'SKILL.md', '---\nname: PXL Dir\n---\nRun node <this skill\'s directory>/bin/pxl.js.\n')
+    bundles.capture_bundle(src, name='pxl-dir', storage_root=storage)
+    managed.adopt_snapshot('pxl-dir', allowed_roles=['implementer', 'planner'], storage_root=storage)
+
+    # 1. session_system_block includes directory=<origin_path> and request_folder_access guidance (PA-04 intact).
+    pool = managed.freeze_session_pool(['pxl-dir'], storage_root=storage)
+    impl_skills = managed.frozen_for_role({'managed_skills_pool': pool}, 'implementer')
+    block = managed.session_system_block(impl_skills)
+    assert f'directory={src.resolve()}' in block
+    assert 'request_folder_access' in block
+
+    # 2. Fast metadata paths (include_status=False, list_snapshots(verify=False)) work cleanly.
+    v_fast = managed.effective_view('pxl-dir', include_status=False, storage_root=storage)
+    assert v_fast['effective_sha256'] == managed.effective_view('pxl-dir', storage_root=storage)['effective_sha256']
+    assert len(bundles.list_snapshots(verify=False, storage_root=storage)) == 1
+
+    # 3. Pressing Enter directly on #workbench-list toggles managed Activate and Auto-select without Tabbing.
+    async def scenario():
+        app = WorkConsole(root, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.action_skills()
+            await pilot.pause()
+            panel = app.screen
+            assert isinstance(panel, SkillsPanel)
+            menu = panel.query_one('#workbench-list', OptionList)
+            assert app.focused is menu
+            # Row 0 is managed pxl-dir -> Enter activates it immediately.
+            await pilot.press('enter')
+            await pilot.pause(.2)
+            assert app.selected_managed_skills == ['pxl-dir']
+            # Row 1 is auto_skills_toggle -> Down + Enter enables Auto-select immediately.
+            await pilot.press('down')
+            await pilot.pause(.1)
+            await pilot.press('enter')
+            await pilot.pause(.2)
+            assert app.auto_skills is True
+
+    asyncio.run(scenario())

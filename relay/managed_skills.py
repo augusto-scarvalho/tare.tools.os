@@ -628,7 +628,7 @@ def catalog_index_fingerprint(*, project=None, storage_root=None) -> str:
     policy = {r: info['enabled'] for r, info in _resolve_role_policy_detail(store, proj_key).items()}
     rows = []
     for sid in sorted(store['skills']):
-        view = effective_view(sid, project=project, storage_root=storage_root)
+        view = effective_view(sid, project=project, include_status=False, storage_root=storage_root)
         rows.append({
             'skill_id': sid,
             'effective_sha256': view['effective_sha256'],
@@ -665,6 +665,19 @@ def _unified(before: str, after: str, from_label: str, to_label: str) -> str:
 
 def _upstream_status(entry: dict, *, storage_root=None) -> dict:
     """Check whether a newer verified inert snapshot of the same bundle exists."""
+    bdir = _bundles.snapshots_root(storage_root) / entry['bundle_id']
+    if not bdir.is_dir():
+        return {'available': False, 'reason': 'no_snapshots_in_storage'}
+    snap_dirs = [
+        child for child in bdir.iterdir()
+        if child.is_dir() and _bundles.SNAPSHOT_ID_RE.match(child.name) and (child / 'manifest.json').is_file()
+    ]
+    if not snap_dirs:
+        return {'available': False, 'reason': 'no_snapshots_in_storage'}
+    # Fast path: when only the already-adopted snapshot exists on disk, no newer upstream snapshot can exist.
+    # Full cryptographic verification still runs unconditionally on selection, freezing, and update.
+    if len(snap_dirs) == 1 and snap_dirs[0].name == entry['snapshot_id']:
+        return {'available': False, 'latest_snapshot_id': entry['snapshot_id']}
     snaps = _bundles.list_snapshots(bundle_id=entry['bundle_id'], storage_root=storage_root)
     if not snaps:
         return {'available': False, 'reason': 'no_snapshots_in_storage'}
@@ -727,7 +740,14 @@ def apply_upstream_update(
     return effective_view(sid, storage_root=storage_root)
 
 
-def effective_view(skill_id: str, *, project=None, role: str | None = None, storage_root=None) -> dict:
+def effective_view(
+    skill_id: str,
+    *,
+    project=None,
+    role: str | None = None,
+    include_status: bool = True,
+    storage_root=None,
+) -> dict:
     """Resolve effective content, typed parameters, role access, provenance, overlay diff, and upstream update status."""
     sid = _validate_skill_id(skill_id)
     if role is not None:
@@ -809,9 +829,13 @@ def effective_view(skill_id: str, *, project=None, role: str | None = None, stor
         _unified(entry['base_text'], rendered, f"base ({entry['snapshot_id']})", 'effective')
         if rendered != entry['base_text'] else ''
     )
-    upstream = _upstream_status(entry, storage_root=storage_root)
-    from .vendor_skills import check_origin_drift
-    origin_drift = check_origin_drift(entry.get('origin_path'), entry['base_sha256'], entry['base_text'])
+    if include_status:
+        upstream = _upstream_status(entry, storage_root=storage_root)
+        from .vendor_skills import check_origin_drift
+        origin_drift = check_origin_drift(entry.get('origin_path'), entry['base_sha256'], entry['base_text'])
+    else:
+        upstream = {'available': False, 'latest_snapshot_id': entry['snapshot_id']}
+        origin_drift = {'available': False}
 
     view = {
         'schema': SCHEMA,
@@ -1111,13 +1135,15 @@ def session_system_block(frozen_skills, *, delegated_pool: dict | None = None, r
         parts.append(
             '\n\nExplicitly selected tare managed skills (portable guidance frozen at session start; '
             'distinct from permanent /guidance; auxiliary files, scripts, and external bindings remain inert data '
-            'and are neither executed nor granted permissions by these skills):'
+            'and are neither executed nor granted permissions by these skills; if a skill references local tools '
+            'or docs under its directory outside the project, request read access with request_folder_access first):'
         )
         for skill in frozen_skills:
+            dir_tag = f", directory={skill['origin_path']}" if skill.get('origin_path') else ''
             parts.append(
                 f"\n--- Skill: {skill['skill_id']} ({skill['skill_name']}) "
                 f"[snapshot={skill['snapshot_id']}, sha256={skill['effective_sha256'][:12]}, "
-                f"source={skill['text_source']}] ---\n{skill['text']}"
+                f"source={skill['text_source']}{dir_tag}] ---\n{skill['text']}"
             )
     if role == 'coordinator' and isinstance(delegated_pool, dict):
         child_only = []

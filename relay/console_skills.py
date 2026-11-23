@@ -282,6 +282,50 @@ class SkillsPanel(WorkbenchPanel):
             event.stop()
             self._capture_from_input()
 
+    def _toggle_auto_skills_row(self):
+        if self.on_toggle_auto_skills is not None:
+            self.auto_skills = bool(self.on_toggle_auto_skills())
+            self._reload_and_select(
+                'auto-skills-toggle',
+                (
+                    'Opt-in auto-select skills ENABLED (deterministic shortlist + abstention for new conversations).'
+                    if self.auto_skills else
+                    'Auto-select skills DISABLED (manual Activate / --skill only).'
+                ),
+            )
+
+    def _toggle_hidden_vendor_row(self):
+        self.show_hidden_vendor = not self.show_hidden_vendor
+        self._reload_and_select(
+            'vendor-hidden-toggle',
+            'Showing auto-hidden vendor skills.' if self.show_hidden_vendor else 'Auto-hidden vendor skills collapsed.',
+        )
+
+    def _toggle_managed_row(self, sid: str):
+        self.selected_managed = list(self.on_toggle_managed(sid))
+        now_on = sid in self.selected_managed
+        self._reload_and_select(
+            'managed:' + sid,
+            f"Skill {sid} {'activated' if now_on else 'deactivated'} for new sessions. "
+            "Running and saved sessions keep their frozen skills.",
+        )
+
+    def on_option_list_option_selected(self, event):
+        if event.option_list.id != 'workbench-list' or not self.current:
+            return
+        event.stop()
+        self._pending_status = None
+        kind = self.current['row_kind']
+        try:
+            if kind == 'auto_skills_toggle':
+                self._toggle_auto_skills_row()
+            elif kind == 'vendor_hidden_toggle':
+                self._toggle_hidden_vendor_row()
+            elif kind == 'managed':
+                self._toggle_managed_row(self.current['skill_id'])
+        except (OSError, ValueError, UnicodeError) as exc:
+            self.query_one('#workbench-status', Static).update(plain(str(exc)))
+
     def _load_rows(self):
         from .console_resources import discover_skills
         from . import managed_skills as managed
@@ -331,9 +375,9 @@ class SkillsPanel(WorkbenchPanel):
                 'label': f'[selector] Auto-select skills: {mode_tag}',
             })
 
-        # Show latest inert snapshot per bundle (especially useful for newly captured bundles not yet managed).
+        # Show latest inert snapshot per bundle (fast manifest scan; preview/adopt still verify full files).
         latest_by_bundle = {}
-        for s in bundles.list_snapshots():
+        for s in bundles.list_snapshots(verify=False):
             latest_by_bundle[s['bundle_id']] = s
         for bid in sorted(latest_by_bundle):
             s = latest_by_bundle[bid]
@@ -644,31 +688,11 @@ class SkillsPanel(WorkbenchPanel):
                     f"(roles={managed.format_role_tags(view['effective_roles'])}; no code executed).",
                 )
             elif bid == 'skills-manage' and self.current and self.current['row_kind'] == 'auto_skills_toggle':
-                if self.on_toggle_auto_skills is not None:
-                    self.auto_skills = bool(self.on_toggle_auto_skills())
-                    self._reload_and_select(
-                        'auto-skills-toggle',
-                        (
-                            'Opt-in auto-select skills ENABLED (deterministic shortlist + abstention for new conversations).'
-                            if self.auto_skills else
-                            'Auto-select skills DISABLED (manual Activate / --skill only).'
-                        ),
-                    )
+                self._toggle_auto_skills_row()
             elif bid == 'skills-manage' and self.current and self.current['row_kind'] == 'vendor_hidden_toggle':
-                self.show_hidden_vendor = not self.show_hidden_vendor
-                self._reload_and_select(
-                    'vendor-hidden-toggle',
-                    'Showing auto-hidden vendor skills.' if self.show_hidden_vendor else 'Auto-hidden vendor skills collapsed.',
-                )
+                self._toggle_hidden_vendor_row()
             elif bid == 'skills-toggle' and self.current and self.current['row_kind'] == 'managed':
-                sid = self.current['skill_id']
-                self.selected_managed = list(self.on_toggle_managed(sid))
-                now_on = sid in self.selected_managed
-                self._reload_and_select(
-                    'managed:' + sid,
-                    f"Skill {sid} {'activated' if now_on else 'deactivated'} for new sessions. "
-                    "Running and saved sessions keep their frozen skills.",
-                )
+                self._toggle_managed_row(self.current['skill_id'])
             elif bid == 'skills-save' and self.current and self.current['row_kind'] == 'managed':
                 sid = self.current['skill_id']
                 preview = self.query_one('#workbench-preview', TextArea)
