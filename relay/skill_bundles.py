@@ -1268,6 +1268,8 @@ def main(argv=None) -> int:
     p_adopt.add_argument('snapshot', nargs='?', default='latest', help='Snapshot ref (default: latest)')
     p_adopt.add_argument('--as', dest='skill_id', help='Explicit managed skill id')
     p_adopt.add_argument('--roles', help='Comma-separated allowed roles (defaults to coordinator,implementer,planner,plan-auditor,auditor)')
+    p_adopt.add_argument('--min-model-class', choices=('cheap', 'middling', 'frontier'),
+                         help='Minimum recommended model class floor for delegated implementer units')
     p_adopt.add_argument('--json', action='store_true', dest='as_json')
 
     p_managed = sub.add_parser('managed', help='List managed skills with origin, roles, overlay, and update status')
@@ -1350,9 +1352,21 @@ def main(argv=None) -> int:
     p_import.add_argument('--vendor', choices=('claude', 'codex', 'agy'), help='Disambiguate by vendor')
     p_import.add_argument('--as', dest='skill_id', help='Explicit managed skill id')
     p_import.add_argument('--roles', help='Comma-separated allowed roles (defaults to classifier suggestion)')
+    p_import.add_argument('--min-model-class', choices=('cheap', 'middling', 'frontier'),
+                          help='Minimum recommended model class floor for delegated implementer units')
     p_import.add_argument('--all', action='store_true', dest='allow_hidden',
                           help='Allow importing a hidden cli_internal/blocked_capability skill explicitly')
     p_import.add_argument('--json', action='store_true', dest='as_json')
+
+    p_mclass = sub.add_parser('model-class', help='Show or configure minimum recommended model class (cheap|middling|frontier) for a managed skill')
+    p_mclass.add_argument('skill_id', help='Managed skill id')
+    p_mclass.add_argument('model_class', nargs='?', choices=('cheap', 'middling', 'frontier'),
+                          help='Minimum model class floor (omit to inspect current setting)')
+    mc_mode = p_mclass.add_mutually_exclusive_group()
+    mc_mode.add_argument('--clear', action='store_true', help='Clear minimum model class (or clear project override)')
+    mc_mode.add_argument('--reset', action='store_true', help='Reset global model class to unset or clear project override')
+    p_mclass.add_argument('--project', type=Path, help='Scope model class floor to one project folder')
+    p_mclass.add_argument('--json', action='store_true', dest='as_json')
 
     p_triggers = sub.add_parser('triggers', help='Show or set explicit lexical trigger phrases for a managed skill')
     p_triggers.add_argument('skill_id', help='Managed skill id')
@@ -1421,7 +1435,10 @@ def main(argv=None) -> int:
         from . import managed_skills as managed
         if args.action == 'adopt':
             roles = [r.strip() for r in args.roles.split(',') if r.strip()] if args.roles is not None else None
-            view = managed.adopt_snapshot(args.bundle, args.snapshot, skill_id=args.skill_id, allowed_roles=roles)
+            view = managed.adopt_snapshot(
+                args.bundle, args.snapshot, skill_id=args.skill_id,
+                allowed_roles=roles, min_model_class=args.min_model_class,
+            )
             print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))
             return 0
         if args.action == 'managed':
@@ -1438,6 +1455,8 @@ def main(argv=None) -> int:
             else:
                 for r in rows:
                     flags = [r['text_source'], f"roles={managed.format_role_tags(r['effective_roles'])}"]
+                    if r.get('min_model_class'):
+                        flags.append(f"tier={r['min_model_class']}")
                     if r['parameter_count']:
                         flags.append(f"{r['parameter_count']} params")
                     if r['upstream_update_available']:
@@ -1552,8 +1571,20 @@ def main(argv=None) -> int:
                 vendor=args.vendor,
                 skill_id=args.skill_id,
                 allowed_roles=roles,
+                min_model_class=args.min_model_class,
                 allow_hidden=args.allow_hidden,
             )
+            print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))
+            return 0
+        if args.action == 'model-class':
+            if args.clear or args.reset:
+                if args.model_class is not None:
+                    raise ValueError('Do not pass a model class together with --clear or --reset')
+                view = managed.set_model_class(args.skill_id, None, project=args.project)
+            elif args.model_class is not None:
+                view = managed.set_model_class(args.skill_id, args.model_class, project=args.project)
+            else:
+                view = managed.effective_view(args.skill_id, project=args.project)
             print(json.dumps(view, indent=2, ensure_ascii=False) if args.as_json else managed.format_effective(view))
             return 0
         if args.action == 'triggers':

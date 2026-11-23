@@ -822,3 +822,147 @@ def test_skills_panel_dogfood_focus_new_conversation_status_and_button_widths(tm
             assert app.selection().auto_skills is True
 
     asyncio.run(scenario())
+
+
+def test_managed_skill_min_model_class_lifecycle_freezing_cli_and_work_unit_routing(tmp_path, monkeypatch, capsys):
+    storage = tmp_path / 'storage'
+    proj = tmp_path / 'proj'
+    proj.mkdir()
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(storage))
+
+    src_art = tmp_path / 'pxl-art'
+    _write(src_art, 'SKILL.md', '---\nname: PXL Art\n---\nDraw crisp sprites.\n')
+    bundles.capture_bundle(src_art, name='pxl-art', storage_root=storage)
+
+    # CLI adopt with --min-model-class and model-class subcommand (global + project override + clear).
+    assert tare_ops.main(['skills', 'adopt', 'pxl-art', '--roles', 'implementer,planner,auditor',
+                          '--min-model-class', 'middling', '--json']) == 0
+    v1 = json.loads(capsys.readouterr().out)
+    assert v1['min_model_class'] == 'middling' and v1['min_model_class_source'] == 'global'
+
+    fp1 = managed.catalog_index_fingerprint(storage_root=storage)
+    assert tare_ops.main(['skills', 'model-class', 'pxl-art', 'frontier', '--json']) == 0
+    v2 = json.loads(capsys.readouterr().out)
+    assert v2['min_model_class'] == 'frontier' and v2['min_model_class_source'] == 'global'
+    assert managed.catalog_index_fingerprint(storage_root=storage) != fp1
+
+    assert tare_ops.main(['skills', 'managed']) == 0
+    assert 'tier=frontier' in capsys.readouterr().out
+
+    # Per-project override takes precedence on that project only, and clearing it falls back to global.
+    assert tare_ops.main(['skills', 'model-class', 'pxl-art', 'cheap', '--project', str(proj), '--json']) == 0
+    assert json.loads(capsys.readouterr().out)['min_model_class'] == 'cheap'
+    assert managed.effective_view('pxl-art', storage_root=storage)['min_model_class'] == 'frontier'
+    assert tare_ops.main(['skills', 'model-class', 'pxl-art', '--reset', '--project', str(proj), '--json']) == 0
+    v_reset = json.loads(capsys.readouterr().out)
+    assert v_reset['min_model_class'] == 'frontier' and v_reset['min_model_class_source'] == 'global'
+
+    with pytest.raises(ValueError, match='Unknown model class'):
+        managed.set_model_class('pxl-art', 'ultra', storage_root=storage)
+
+    # Coordinator-only frontier skill must NOT elevate implementer routing.
+    src_coord = tmp_path / 'coord-only'
+    _write(src_coord, 'SKILL.md', '---\nname: Coord Only\n---\nCoordinate.\n')
+    bundles.capture_bundle(src_coord, name='coord-only', storage_root=storage)
+    managed.adopt_snapshot('coord-only', allowed_roles=['coordinator'], min_model_class='frontier', storage_root=storage)
+
+    pool_art = managed.freeze_session_pool(['pxl-art'], storage_root=storage)
+    assert pool_art['skills'][0]['min_model_class'] == 'frontier'
+    coord_block = managed.session_system_block([], delegated_pool=pool_art, role='coordinator')
+    assert '[tier=frontier]' in coord_block
+
+    # Fail-closed validation rejects tampered min_model_class on inherited skills.
+    tampered = [dict(pool_art['skills'][0], min_model_class='invalid')]
+    with pytest.raises(ValueError, match='Unknown model class'):
+        managed.validate_inherited_frozen_skills(tampered, role='implementer')
+
+    # End-to-end work_units.effective_unit_routing + work_units.routes verification.
+    import copy
+    from relay import execution_scope, model_signals, native_catalog, turn_engine, work_units
+
+    cheap_dep = {
+        'id': 'local-cheap',
+        'native_profile': {'endpoint': 'http://127.0.0.1:8080/v1', 'model': 'qwen-local', 'protocol': 'openai-chat'},
+    }
+    frontier_dep = {
+        'id': 'claude-fable-5-2',
+        'native_profile': {'endpoint': 'cli://claude', 'model': 'claude-fable-5-2', 'protocol': 'vendor-cli'},
+    }
+    catalog = {'local-cheap': cheap_dep, 'claude-fable-5-2': frontier_dep}
+    monkeypatch.setattr(native_catalog, 'select', lambda name: copy.deepcopy(catalog[name]))
+    monkeypatch.setattr(turn_engine, 'policy', lambda: {'implementer': [['local-cheap'], ['claude-fable-5-2']]})
+    monkeypatch.setattr(turn_engine, 'local_gpu_busy', lambda dep: None)
+    monkeypatch.setattr(turn_engine, 'avoid_local_gpu', lambda: False)
+    monkeypatch.setattr(model_signals, 'judged', lambda dep, kind=None, kept=None: {
+        'class': 'frontier' if dep['id'] == 'claude-fable-5-2' else 'cheap',
+        'source': 'fixture',
+    })
+
+    unit_simple = {'needs': 'cheap', 'kind': 'coding'}
+    state_art = {'managed_skills_pool': pool_art}
+    eff_needs, eff_parts, floor, class_unit = work_units.effective_unit_routing(unit_simple, state_art)
+    assert floor == 'frontier' and eff_needs == 'frontier' and eff_parts is None
+    assert unit_simple['needs'] == 'cheap'  # original unit is not mutated
+    assert class_unit['needs'] == 'frontier'
+
+    # Multi-part units also elevate every part's floor.
+    unit_parts = {'needs': 'cheap', 'parts': [{'needs': 'cheap', 'kind': 'coding'}, {'kind': 'web'}]}
+    p_needs, p_parts, p_floor, _ = work_units.effective_unit_routing(unit_parts, state_art)
+    assert p_floor == 'frontier' and p_needs == 'frontier'
+    assert [p['needs'] for p in p_parts] == ['frontier', 'frontier']
+
+    with execution_scope.activated(execution_scope.Scope()):
+        # Without skill floor, cheap runs first; with frontier skill floor, frontier runs first.
+        assert [n for n, _ in work_units.routes(cheap_dep, needs='cheap')] == ['local-cheap', 'claude-fable-5-2']
+        assert [n for n, _ in work_units.routes(cheap_dep, needs=eff_needs)] == ['claude-fable-5-2', 'local-cheap']
+        assert [n for n, _ in work_units.routes(cheap_dep, needs=p_needs, parts=p_parts)] == ['claude-fable-5-2', 'local-cheap']
+
+    # Coordinator-only frontier skill does NOT elevate implementer floor.
+    pool_coord = managed.freeze_session_pool(['coord-only'], storage_root=storage)
+    c_needs, _, c_floor, _ = work_units.effective_unit_routing(unit_simple, {'managed_skills_pool': pool_coord})
+    assert c_floor is None and c_needs == 'cheap'
+
+    # --local_only still strictly restricts routes even when a skill declares min_model_class='frontier'.
+    with execution_scope.activated(execution_scope.Scope(only='local')):
+        assert [n for n, _ in work_units.routes(cheap_dep, needs=eff_needs)] == ['local-cheap']
+
+
+@pytest.mark.parametrize('size', [(80, 24), (130, 44)])
+def test_tui_roles_dialog_tier_button_cycles_min_model_class_compact_and_wide(tmp_path, monkeypatch, size):
+    storage = tmp_path / 'state'
+    root = tmp_path / 'project'
+    root.mkdir()
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(storage))
+    src = tmp_path / 'pxl-tier'
+    _write(src, 'SKILL.md', '---\nname: PXL Tier\n---\nSprites.\n')
+    bundles.capture_bundle(src, name='pxl-tier', storage_root=storage)
+    managed.adopt_snapshot('pxl-tier', storage_root=storage)
+
+    async def scenario():
+        app = WorkConsole(root, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=size) as pilot:
+            await app.workers.wait_for_complete()
+            app.action_skills()
+            await pilot.pause()
+            await pilot.click('#skills-roles')
+            await pilot.pause()
+            dialog = app.screen
+            assert isinstance(dialog, SkillRolesDialog)
+            tier_btn = dialog.query_one('#roles-tier', Button)
+            assert dialog.region.contains_region(tier_btn.region)
+            assert str(tier_btn.label) == 'Tier: any'
+
+            # Cycle any -> cheap -> middling -> frontier.
+            for expected in ('cheap', 'middling', 'frontier'):
+                await pilot.click('#roles-tier')
+                await pilot.pause(.4)
+                assert str(tier_btn.label) == f'Tier: {expected}'
+            assert tier_btn.content_region.width >= len('Tier: frontier') + 2
+            assert managed.effective_view('pxl-tier', storage_root=storage)['min_model_class'] == 'frontier'
+
+            await pilot.press('escape')
+            await pilot.pause()
+            assert isinstance(app.screen, SkillsPanel)
+            assert 'tier=frontier' in app.screen.current['label']
+
+    asyncio.run(scenario())

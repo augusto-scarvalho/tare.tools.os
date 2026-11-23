@@ -687,6 +687,23 @@ def class_row(unit, deployment):
     return {**row, **critical}
 
 
+def effective_unit_routing(unit: dict, state: dict | None):
+    """Raise a unit's effective needs/parts floor from frozen implementer managed skills without mutating unit."""
+    from .managed_skills import frozen_for_role as frozen_skills_for_role, max_model_class, skills_min_model_class
+    skill_floor = skills_min_model_class(frozen_skills_for_role(state, 'implementer'))
+    effective_needs = max_model_class((unit.get('needs'), skill_floor))
+    raw_parts = unit.get('parts')
+    effective_parts = (
+        [{**p, 'needs': max_model_class((p.get('needs'), skill_floor))} for p in raw_parts]
+        if skill_floor and raw_parts else raw_parts
+    )
+    class_unit = (
+        {**unit, 'needs': effective_needs, **({'parts': effective_parts} if effective_parts is not None else {})}
+        if skill_floor else unit
+    )
+    return effective_needs, effective_parts, skill_floor, class_unit
+
+
 def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None, needs=None, work_type=None,
            critical=False, unit_effort=None, parts=None):
     """The implementer routes to try, whichever account the conversation runs on (owner, 2026-11-14): the routes of
@@ -1306,9 +1323,12 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
     result = {'verdict': 'INCONCLUSIVE', 'reason': 'no implementer route is available'}
     producer=candidate_producer(custody,candidate['producer']) if candidate and candidate.get('review_only') else None
     refused = []  # why the routing profile refused the coordinator's chosen route or the session's own model
+    effective_needs, effective_parts, skill_floor, class_unit = effective_unit_routing(unit, state)
+    if skill_floor:
+        receipt['skill_min_model_class'] = skill_floor
     choices = [(worker['route'], worker['producer'])] if worker else [(producer['id'], producer)] if producer else routes(
-        state.get('deployment') or {}, args.get('route'), args.get('effort'), refused=refused, needs=unit.get('needs'), work_type=unit.get('kind'),
-        critical=bool(unit.get('critical')), unit_effort=unit.get('effort'), parts=unit.get('parts'),
+        state.get('deployment') or {}, args.get('route'), args.get('effort'), refused=refused, needs=effective_needs, work_type=unit.get('kind'),
+        critical=bool(unit.get('critical')), unit_effort=unit.get('effort'), parts=effective_parts,
         **({'allow_parent': True} if state.get('conversation_flow') else {}))
     visited = []  # rungs actually reached, for executed_decision only; selection is unchanged
     for rung, (name, deployment) in enumerate(choices):
@@ -1325,7 +1345,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                         and callable(getattr(review,'resume_tree',None)) else None)
         tree = waiting[0] if waiting else resumed_view or storage_root()/'wt'/uuid.uuid4().hex[:8]  # short: Windows paths stop at 260 characters
         row = {'route': name}
-        row.update(class_row(unit, deployment))
+        row.update(class_row(class_unit, deployment))
         check_token = None
         keep_tree = bool(waiting)
         try:
