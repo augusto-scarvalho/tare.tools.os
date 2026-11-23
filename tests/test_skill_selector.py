@@ -192,6 +192,22 @@ def test_selector_isolates_compound_slugs_and_shared_prefix_skill_families(tmp_p
     assert r_plain['status'] == 'no_skill'
     assert r_plain['selected_ids'] == []
 
+    # Negative exclusion clauses in SKILL.md description ("Not for ... or pixel art.") must never act as positive matches.
+    _adopt(
+        tmp_path, storage, 'pxl-real', 'PXL Real',
+        'Creates pixel art sprites and game icons.', '# PXL\nSprites.',
+        triggers=['pixel art', 'icone 16x16'],
+    )
+    _adopt(
+        tmp_path, storage, 'tune-real', 'Tune Real',
+        'Makes game audio SFX and jingles. Not for editing recordings, DAW production, or pixel art.',
+        '# Tune\nAudio.',
+        triggers=['sound effect', 'sfx'],
+    )
+    r_pxl = selector.select_skills('Cria um ícone 16x16 em pixel art para a poção de cura', storage_root=storage)
+    assert r_pxl['status'] == 'selected'
+    assert r_pxl['selected_ids'] == ['pxl-real']
+
 
 def test_session_auto_skills_opt_in_freezes_receipt_isolates_roles_and_continues(setup, tmp_path, monkeypatch):
     config, custody, root = setup

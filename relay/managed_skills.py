@@ -27,6 +27,7 @@ MAX_TRIGGERS = 32
 MAX_TRIGGER_LEN = 64
 PARAM_NAME_RE = re.compile(r'^[A-Za-z][A-Za-z0-9 _.-]{0,39}$')
 PARAM_TYPES = ('string', 'int', 'float', 'bool', 'choice')
+MODEL_CLASSES = ('cheap', 'middling', 'frontier')  # ascending, matching model_signals.ORDER
 
 SKILL_ROLES = (
     'coordinator',
@@ -113,12 +114,40 @@ def _validate_triggers_list(triggers) -> list[str]:
     return out
 
 
+def _validate_model_class(value) -> str | None:
+    if value is None or value == '':
+        return None
+    if not isinstance(value, str) or value not in MODEL_CLASSES:
+        raise ValueError(f'Unknown model class {value!r}; use one of: {", ".join(MODEL_CLASSES)}')
+    return value
+
+
+def max_model_class(classes) -> str | None:
+    """Return the highest model class floor along MODEL_CLASSES (cheap < middling < frontier), or None."""
+    best_idx = -1
+    for raw in classes or ():
+        cls = _validate_model_class(raw)
+        if cls is not None:
+            idx = MODEL_CLASSES.index(cls)
+            if idx > best_idx:
+                best_idx = idx
+    return MODEL_CLASSES[best_idx] if best_idx >= 0 else None
+
+
+def skills_min_model_class(skills) -> str | None:
+    """Return the highest frozen min_model_class declared across a slice of managed skills, or None."""
+    return max_model_class(
+        item.get('min_model_class') for item in (skills or ()) if isinstance(item, dict)
+    )
+
+
 def _project_override_empty(proj_entry: dict) -> bool:
     return (
         proj_entry.get('overlay_text') is None
         and not proj_entry.get('parameters')
         and proj_entry.get('allowed_roles') is None
         and proj_entry.get('triggers') is None
+        and proj_entry.get('min_model_class') is None
     )
 
 
@@ -254,6 +283,7 @@ def adopt_snapshot(
     *,
     skill_id: str | None = None,
     allowed_roles=None,
+    min_model_class: str | None = None,
     origin_vendor: str | None = None,
     origin_vendors: list[str] | None = None,
     storage_root=None,
@@ -267,6 +297,7 @@ def adopt_snapshot(
         raise ValueError(f'SKILL.md exceeds {MAX_SKILL_TEXT_BYTES} bytes')
     sid = _bundles.normalize_bundle_id(skill_id) if skill_id is not None else manifest['bundle_id']
     roles = _validate_roles_list(allowed_roles) if allowed_roles is not None else list(DEFAULT_ENABLED_ROLES)
+    validated_class = _validate_model_class(min_model_class)
     store = load_store(storage_root=storage_root)
     if sid in store['skills']:
         raise ValueError(f'Managed skill {sid!r} already exists; use update to advance its upstream snapshot')
@@ -285,6 +316,7 @@ def adopt_snapshot(
         'base_text': base_text,
         'overlay_text': None,
         'allowed_roles': roles,
+        'min_model_class': validated_class,
         'parameters': {},
         'project_overrides': {},
         'created_at': now,
@@ -556,6 +588,39 @@ def set_triggers(
     return effective_view(sid, project=project, storage_root=storage_root)
 
 
+def set_model_class(
+    skill_id: str,
+    model_class: str | None,
+    *,
+    project=None,
+    storage_root=None,
+) -> dict:
+    """Set or clear the minimum recommended model class (cheap, middling, frontier) for one managed skill."""
+    sid = _validate_skill_id(skill_id)
+    validated = _validate_model_class(model_class)
+    store = load_store(storage_root=storage_root)
+    entry = store['skills'].get(sid)
+    if entry is None:
+        raise ValueError(f'Managed skill {sid!r} not found')
+    proj_key = _normalize_project_key(project)
+    if proj_key is None:
+        entry['min_model_class'] = validated
+    else:
+        overrides = entry.setdefault('project_overrides', {})
+        if validated is None:
+            proj_entry = overrides.get(proj_key)
+            if proj_entry is not None:
+                proj_entry.pop('min_model_class', None)
+                if _project_override_empty(proj_entry):
+                    overrides.pop(proj_key, None)
+        else:
+            proj_entry = overrides.setdefault(proj_key, {'overlay_text': None, 'parameters': {}})
+            proj_entry['min_model_class'] = validated
+    entry['updated_at'] = _now_iso()
+    _save_store(store, storage_root=storage_root)
+    return effective_view(sid, project=project, storage_root=storage_root)
+
+
 def catalog_index_fingerprint(*, project=None, storage_root=None) -> str:
     """Deterministic SHA-256 fingerprint of effective managed catalog metadata (invalidates stale selection receipts)."""
     store = load_store(storage_root=storage_root)
@@ -570,6 +635,7 @@ def catalog_index_fingerprint(*, project=None, storage_root=None) -> str:
             'allowed_roles': view['allowed_roles'],
             'effective_roles': view['effective_roles'],
             'triggers': view['triggers'],
+            'min_model_class': view['min_model_class'],
         })
     payload = json.dumps({'schema': SCHEMA, 'role_policy': policy, 'skills': rows}, sort_keys=True, separators=(',', ':'))
     return hashlib.sha256(payload.encode('utf-8')).hexdigest()
@@ -696,6 +762,17 @@ def effective_view(skill_id: str, *, project=None, role: str | None = None, stor
         triggers = global_triggers
         triggers_source = 'global'
 
+    global_model_class = _validate_model_class(entry.get('min_model_class'))
+    if proj_override and proj_override.get('min_model_class') is not None:
+        min_model_class = _validate_model_class(proj_override['min_model_class'])
+        min_model_class_source = 'project'
+    elif global_model_class is not None:
+        min_model_class = global_model_class
+        min_model_class_source = 'global'
+    else:
+        min_model_class = None
+        min_model_class_source = 'none'
+
     merged_params = {}
     fill_values = {}
     for pname, spec in sorted((entry.get('parameters') or {}).items()):
@@ -762,6 +839,8 @@ def effective_view(skill_id: str, *, project=None, role: str | None = None, stor
         'disabled_by_policy_roles': disabled_by_policy_roles,
         'triggers': triggers,
         'triggers_source': triggers_source,
+        'min_model_class': min_model_class,
+        'min_model_class_source': min_model_class_source,
         'parameters': merged_params,
         'base_text': entry['base_text'],
         'raw_text': raw_text,
@@ -813,6 +892,7 @@ def list_managed(*, project=None, role: str | None = None, storage_root=None) ->
             'effective_roles': view['effective_roles'],
             'disabled_by_policy_roles': view['disabled_by_policy_roles'],
             'triggers': view['triggers'],
+            'min_model_class': view['min_model_class'],
             'parameter_count': len(view['parameters']),
             'origin_vendor': view['origin'].get('origin_vendor'),
             'origin_vendors': list(view['origin'].get('origin_vendors') or ()),
@@ -923,6 +1003,7 @@ def freeze_session_pool(skill_ids, *, project=None, storage_root=None) -> dict:
             'allowed_roles': list(view['allowed_roles']),
             'roles_source': view['roles_source'],
             'effective_roles': list(view['effective_roles']),
+            'min_model_class': view['min_model_class'],
             'parameters': {k: v['value'] for k, v in view['parameters'].items()},
             'effective_sha256': view['effective_sha256'],
             'text': view['effective_text'],
@@ -1009,6 +1090,7 @@ def validate_inherited_frozen_skills(skills, *, role: str) -> list[dict]:
         eff_roles = _validate_roles_list(item.get('effective_roles'))
         if target_role not in eff_roles:
             raise ValueError(f'Inherited managed skill {sid!r} is not authorized for role {target_role!r}')
+        _validate_model_class(item.get('min_model_class'))
         validated.append(deepcopy(item))
     return validated
 
@@ -1042,7 +1124,8 @@ def session_system_block(frozen_skills, *, delegated_pool: dict | None = None, r
         for skill in delegated_pool.get('skills') or ():
             eff_roles = [r for r in (skill.get('effective_roles') or ()) if r != 'coordinator']
             if eff_roles and 'coordinator' not in (skill.get('effective_roles') or ()):
-                child_only.append(f"{skill['skill_id']} -> {', '.join(eff_roles)}")
+                tier_tag = f" [tier={skill['min_model_class']}]" if skill.get('min_model_class') else ''
+                child_only.append(f"{skill['skill_id']} -> {', '.join(eff_roles)}{tier_tag}")
         if child_only:
             parts.append(
                 '\n\nDelegated role skills frozen for child roles (not loaded into coordinator prompt): '
@@ -1091,6 +1174,8 @@ def format_effective(view: dict) -> str:
         lines.append(f"Role check ({ra['role']}): allowed={ra['allowed']} ({ra['reason']})")
     if view.get('triggers'):
         lines.append(f"Triggers ({view['triggers_source']}): {', '.join(view['triggers'])}")
+    if view.get('min_model_class'):
+        lines.append(f"Minimum model class ({view['min_model_class_source']}): {view['min_model_class']}")
     if view['parameters']:
         lines.append('Parameters:')
         for pname, spec in view['parameters'].items():

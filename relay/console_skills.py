@@ -49,6 +49,7 @@ class SkillRolesDialog(SupportPanel):
             yield Static('', id='roles-status', markup=False)
             with Horizontal(classes='panel-actions'):
                 yield Button('Toggle', id='roles-toggle', classes='panel-primary')
+                yield Button('Tier: any', id='roles-tier', disabled=self.skill_id is None)
                 yield Button('Scope: Global', id='roles-scope')
                 yield Button('Role policy', id='roles-mode', disabled=self.skill_id is None)
                 yield Button('Reset', id='roles-reset')
@@ -77,10 +78,13 @@ class SkillRolesDialog(SupportPanel):
         mode_btn = self.query_one('#roles-mode', Button)
         mode_btn.disabled = self.skill_id is None
         _set_button_label(mode_btn, 'Role policy' if self.mode == 'skill' else 'Skill roles')
+        tier_btn = self.query_one('#roles-tier', Button)
 
         options = []
         if self.mode == 'skill' and self.skill_id:
             view = managed.effective_view(self.skill_id, project=self._target_project())
+            tier_btn.disabled = False
+            _set_button_label(tier_btn, f"Tier: {view['min_model_class'] or 'any'}")
             policy_detail = managed.get_role_policy(project=self._target_project())
             title = f"Skill roles · {self.skill_id} ({scope_word})"
             for role in managed.SKILL_ROLES:
@@ -94,13 +98,16 @@ class SkillRolesDialog(SupportPanel):
                 else:
                     note = ''
                 options.append(Text(plain(f"{mark} {managed.ROLE_LABELS[role]} ({role}){note}")))
+            tier_note = f" Min model: {view['min_model_class']} ({view['min_model_class_source']})." if view.get('min_model_class') else ''
             default_status = (
                 f"Effective roles ({view['roles_source']}): "
                 + (', '.join(view['effective_roles']) if view['effective_roles'] else '(none)')
-                + '. Applies to new conversations and their delegated roles.'
+                + f'.{tier_note} Applies to new conversations and their delegated roles.'
             )
         else:
             self.mode = 'policy'
+            tier_btn.disabled = True
+            _set_button_label(tier_btn, 'Tier: any')
             policy_detail = managed.get_role_policy(project=self._target_project())
             title = f"Role policy · all skills ({scope_word})"
             for role in managed.SKILL_ROLES:
@@ -168,6 +175,29 @@ class SkillRolesDialog(SupportPanel):
         try:
             if bid == 'roles-toggle':
                 self._toggle_highlighted()
+            elif bid == 'roles-tier' and self.mode == 'skill' and self.skill_id:
+                target = self._target_project()
+                cur_view = managed.effective_view(self.skill_id, project=target)
+                cycle = (None, *managed.MODEL_CLASSES)
+                cur_scoped = (
+                    cur_view.get('min_model_class')
+                    if (target is None or cur_view.get('min_model_class_source') == 'project')
+                    else None
+                )
+                next_cls = cycle[(cycle.index(cur_scoped) + 1) % len(cycle)]
+                updated = managed.set_model_class(self.skill_id, next_cls, project=target)
+                scope_word = 'project' if target else 'global'
+                if next_cls is None:
+                    if target and updated.get('min_model_class'):
+                        msg = (
+                            f"{self.skill_id}: cleared project model-class override "
+                            f"(inherits global {updated['min_model_class']})."
+                        )
+                    else:
+                        msg = f"{self.skill_id}: minimum model class cleared ({scope_word})."
+                else:
+                    msg = f"{self.skill_id}: minimum model class set to {next_cls} ({scope_word})."
+                self._render_roles(status=msg)
             elif bid == 'roles-scope':
                 self.project_scope = not self.project_scope
                 self._render_roles()
@@ -274,6 +304,8 @@ class SkillsPanel(WorkbenchPanel):
             if m['skill_id'] in self.selected_managed:
                 tags.append('ACTIVE')
             tags.append(managed.format_role_tags(m['effective_roles']))
+            if m.get('min_model_class'):
+                tags.append(f"tier={m['min_model_class']}")
             if m['has_overlay']:
                 tags.append('edited')
             if m['parameter_count']:
@@ -468,8 +500,9 @@ class SkillsPanel(WorkbenchPanel):
                     if up_avail else ''
                 )
                 role_note = f"Roles: {managed.format_role_tags(view['effective_roles'])}. "
+                tier_note = f"Min model: {view['min_model_class']}. " if view.get('min_model_class') else ''
                 message = (
-                    f"{active_note}{update_note}{role_note}Origin: {view['origin']['bundle_id']}@{view['origin']['snapshot_id'][:8]} "
+                    f"{active_note}{update_note}{role_note}{tier_note}Origin: {view['origin']['bundle_id']}@{view['origin']['snapshot_id'][:8]} "
                     f"({view['text_source']}). Frozen per session; no effects authorized."
                 )
                 valid = True

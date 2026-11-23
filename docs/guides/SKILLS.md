@@ -25,13 +25,14 @@ Create a managed skill from a verified inert snapshot, configure typed parameter
 
 ```powershell
 tare skills catalog [--vendor claude|codex|agy] [--class CLASS] [--all]
-tare skills import <slug-or-id> [--vendor claude|codex|agy] [--as skill-id] [--roles r1,r2] [--all]
-tare skills adopt <bundle> [snapshot] [--as skill-id] [--roles r1,r2]
+tare skills import <slug-or-id> [--vendor claude|codex|agy] [--as skill-id] [--roles r1,r2] [--min-model-class cheap|middling|frontier] [--all]
+tare skills adopt <bundle> [snapshot] [--as skill-id] [--roles r1,r2] [--min-model-class cheap|middling|frontier]
 tare skills managed [--project PATH] [--role ROLE]
 tare skills param <skill-id> <name> <value> [--type string|int|float|bool|choice] [--choices a,b] [--project PATH]
 tare skills edit <skill-id> (--text "..." | --file PATH | --clear) [--project PATH]
 tare skills roles <skill-id> [ROLE ...] [--none | --reset] [--project PATH]
 tare skills role-policy [ROLE] [--enable | --disable | --reset] [--project PATH]
+tare skills model-class <skill-id> [cheap|middling|frontier] [--clear | --reset] [--project PATH]
 tare skills triggers <skill-id> [PHRASE ...] [--clear | --reset] [--project PATH]
 tare skills select "<prompt>" [--role ROLE] [--project PATH] [--max-shortlist 5]
 tare skills effective <skill-id> [--project PATH] [--role ROLE] [--text-only]
@@ -67,6 +68,7 @@ Managed skills use a two-gate intersection across the 9 OS roles (`coordinator`,
 A role receives a managed skill only when **both** the role policy is enabled **and** the role is listed on that skill.
 
 - **Frozen per-role propagation:** when a new conversation starts with selected `--skill` IDs, tare verifies the backing inert snapshots once and freezes the effective role policy and rendered skills into `native-agent.json` (`managed_skills_pool`).
+- **Minimum model class floor (`tare skills model-class`):** skills whose output quality scales strongly with model capability (such as creative pixel art or audio synthesis DSLs) can declare an optional `min_model_class` (`cheap`, `middling`, or `frontier`, global or per-project; also configurable via `/skills` → **Roles** → **Tier**). Frozen implementer skills lift a delegated unit's effective `needs` floor along `model_signals.ORDER` (`cheap < middling < frontier`) so enabled frontier routes are preferred ahead of local/cheap routes—without ever enabling routes switched off in `/routes`, overriding `--local_only` or explicit `--implementer` pins, or granting extra spend permissions.
 - Each role receives only its own frozen slice: the coordinator receives only coordinator-allowed skills (plus a 1-line summary of delegated child-role skills without loading their body), delegated `implementer`, `planner`, `plan-auditor`, `auditor`, and `explorer` workers inherit only their allowed slice from the parent's frozen pool, and disabled roles always receive zero skills.
 - Editing `managed.json`, changing role policies, or deleting a skill mid-conversation never mutates running conversations, delegated child workers, `--resume`, or provider continuations.
 
