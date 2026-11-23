@@ -1038,6 +1038,37 @@ class ConversationTools:
                         'next': 'The host proved cited plan facts changed after a fresh user continuation. '
                             'Use delegate_plan for one bounded repair with the attached prior plan and complete original goal. '
                             'Earlier calls remain charged and dispatch still checks shared budget; no automatic allowance reset.'}
+        plan = task.get('plan') or {}
+        stop = (recovery.get('implementation_stop') or {}).get('provider_stop_reason') if recovery else None
+        if (recovery and stop in {'length', 'max_tokens', 'error'}
+                and not question and not planning_recovery and intent == 'deliver'
+                and relation in {'continue', 'correct'} and plan.get('unit')
+                and task.get('attempt_input') != self.input_id()
+                and task.get('delivery_invocation') != self.invocation_id
+                and task.get('permission_denied_input') != self.input_id()
+                and task.get('plan_change') != {'input': self.input_id(), 'plan': plan.get('sha256')}
+                and recovery.get('verdict') == 'INCONCLUSIVE' and not recovery.get('applied')
+                and not recovery.get('files') and not recovery.get('candidate_preserved')
+                and not recovery.get('already_red') and not recovery.get('missing_target_paths')
+                and not recovery.get('context_requalification_available')
+                and not recovery.get('coverage_continuation_available')
+                and (recovery.get('audit') or {}).get('verdict') != 'INCONCLUSIVE'):
+            # delivery_view() writes next for the immediate return of a failed implement() turn;
+            # on a fresh user continuation, tell the coordinator to dispatch implement now instead of re-asking.
+            if stop == 'error':
+                recovery['next'] = (
+                    'This fresh user continuation authorizes retrying the saved plan after the earlier provider error. '
+                    'Call implement now with the saved plan (select another available implementer route when known, '
+                    'or omit route to use the current implementer routing; do not pin the same failed route unchanged). '
+                    'Preserve the same plan, prior calls and charges; do not start a new demand or merely explain the '
+                    'previous failure and ask the user again.')
+            else:
+                recovery['next'] = (
+                    'This fresh user continuation authorizes retrying the saved plan after the earlier route '
+                    'output-limit stop. Call implement now with the saved plan (omit route to use the current '
+                    'implementer routing, or pass another available implementer route if the user requested one). '
+                    'Do not split the plan, drop criteria, start a new demand, or merely explain the previous stop '
+                    'and ask the user again.')
         return {'task': task, 'continue_arguments': {'intent': task['intent'], 'relation': 'continue'},
                 **({'delivery': recovery} if recovery else {}),
                 **({'planning_requalification': planning_recovery} if planning_recovery else {}),

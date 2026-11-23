@@ -3,6 +3,7 @@ import hashlib
 import json
 
 from relay import native_agent, output_limit_recovery
+from test_conversation_tasks import host  # noqa: F401 (fixture)
 from test_native_agent import Client, deployment, response, setup  # noqa: F401 (fixture)
 
 EDIT = ('edit', {'repository': 'repo', 'path': 'a.py', 'search': 'value = 1', 'replace': 'value = 2',
@@ -87,3 +88,119 @@ def test_only_a_cut_by_the_cap_is_recovered():
     assert output_limit_recovery.cut(Journal('content_filter')) is None  # a refusal is not a full allowance
     assert output_limit_recovery.cut(Journal(None)) is None
     assert 'Nothing in it was acted on' in output_limit_recovery.message({'text': 'half an answer'}, 8192)
+
+
+def test_fresh_continuation_after_output_or_provider_stop_tells_coordinator_to_implement_now(host, monkeypatch):
+    from relay import conversation_tasks as tasks, work_units
+    from test_conversation_tasks import effect, intake, planned, user_reply
+
+    tools, execution, *_ = host
+    intake(host)
+    planned(host)
+    for stop in ('length', 'max_tokens', 'error'):
+        value = tasks.load(tools.root)
+        task = tasks.current(value)
+        task['delivery'] = {
+            'verdict': 'INCONCLUSIVE',
+            'reason': 'the implementer changed nothing',
+            'files': [],
+            'route': 'claude-api-opus-5-5',
+            'implementation_stop': {'child_status': 'BLOCKED', 'reason': 'PARTIAL_REPLY', 'provider_stop_reason': stop},
+        }
+        task['attempt_input'] = tools.input_id()
+        task['delivery_invocation'] = tools.invocation_id
+        task.pop('permission_denied_input', None)
+        task.pop('plan_change', None)
+        tasks.save(tools.root, value)
+
+        # Same user turn must keep the immediate-stop explanation (no retry loop inside the same turn).
+        same_turn = json.loads(tools.execute(
+            effect('demand', {'intent': 'deliver', 'relation': 'continue'}, key='same-' + stop), execution).output_json)
+        assert 'Call implement now' not in same_turn['next']
+        assert same_turn['next'] == same_turn['delivery']['next']
+
+        # Resume (new invocation, same user input) is not a fresh user authorization.
+        saved_inv = tools.invocation_id
+        tools.invocation_id = 'resume-' + stop
+        resumed = json.loads(tools.execute(
+            effect('demand', {'intent': 'deliver', 'relation': 'continue'}, key='resume-' + stop), execution).output_json)
+        assert 'Call implement now' not in resumed['next']
+        tools.invocation_id = saved_inv
+
+        # Fresh user reply: intent=answer still explains without asking to call implement.
+        user_reply(host, 'what happened ' + stop)
+        tools.invocation_id = 'fresh-answer-' + stop
+        answered = json.loads(tools.execute(
+            effect('demand', {'intent': 'answer', 'relation': 'continue'}, key='answer-' + stop), execution).output_json)
+        assert 'Call implement now' not in answered['delivery']['next']
+
+        # Fresh user reply with a pending question does not instruct calling implement.
+        user_reply(host, 'try again ' + stop)
+        tools.invocation_id = 'fresh-ask-' + stop
+        asked = json.loads(tools.execute(
+            effect('demand', {'intent': 'deliver', 'relation': 'continue', 'question': 'Which route?'},
+                   key='ask-' + stop), execution).output_json)
+        assert asked['next'] == 'Ask the pending question.'
+        assert 'Call implement now' not in asked['delivery']['next']
+
+        # Fresh user reply clearing the question and continuing delivery directs immediate implement().
+        user_reply(host, 'go ahead ' + stop)
+        tools.invocation_id = 'fresh-go-' + stop
+        continued = json.loads(tools.execute(
+            effect('demand', {'intent': 'deliver', 'relation': 'continue'}, key='go-' + stop), execution).output_json)
+        assert 'Call implement now' in continued['next']
+        assert continued['next'] == continued['delivery']['next']
+        assert 'Tell the user' not in continued['next']
+        if stop == 'error':
+            assert 'provider error' in continued['next'] and 'do not pin the same failed route unchanged' in continued['next']
+        else:
+            assert 'output-limit stop' in continued['next'] and 'Do not split the plan' in continued['next']
+
+        # relation=correct on a fresh user reply also directs immediate implement().
+        corrected = json.loads(tools.execute(
+            effect('demand', {'intent': 'deliver', 'relation': 'correct'}, key='corr-' + stop), execution).output_json)
+        assert 'Call implement now' in corrected['next']
+
+        # If the user denied execution in this same turn, demand(continue) must not re-instruct implement().
+        value = tasks.load(tools.root)
+        tasks.current(value)['permission_denied_input'] = tools.input_id()
+        tasks.save(tools.root, value)
+        denied = json.loads(tools.execute(
+            effect('demand', {'intent': 'deliver', 'relation': 'continue'}, key='denied-' + stop), execution).output_json)
+        assert 'Call implement now' not in denied['next']
+
+        # Same if the user requested a plan change in this same turn.
+        value = tasks.load(tools.root)
+        cur = tasks.current(value)
+        cur.pop('permission_denied_input', None)
+        cur['plan_change'] = {'input': tools.input_id(), 'plan': cur['plan']['sha256']}
+        tasks.save(tools.root, value)
+        plan_change = json.loads(tools.execute(
+            effect('demand', {'intent': 'deliver', 'relation': 'continue'}, key='plan-chg-' + stop), execution).output_json)
+        assert 'Call implement now' not in plan_change['next']
+
+    # End-to-end: after fresh demand(continue), calling implement() actually dispatches run_unit.
+    value = tasks.load(tools.root)
+    cur = tasks.current(value)
+    cur.pop('plan_change', None)
+    cur['delivery'] = {
+        'verdict': 'INCONCLUSIVE',
+        'reason': 'the implementer changed nothing',
+        'files': [],
+        'route': 'claude-api-opus-5-5',
+        'implementation_stop': {'child_status': 'BLOCKED', 'reason': 'PARTIAL_REPLY', 'provider_stop_reason': 'length'},
+    }
+    cur['attempt_input'] = 'older-input'
+    cur['delivery_invocation'] = 'older-inv'
+    tasks.save(tools.root, value)
+    user_reply(host, 'bora tentar novamente')
+    tools.invocation_id = 'fresh-dispatch'
+    cont = json.loads(tools.execute(
+        effect('demand', {'intent': 'deliver', 'relation': 'continue'}, key='dispatch-demand'), execution).output_json)
+    assert 'Call implement now' in cont['next']
+    dispatched = []
+    monkeypatch.setattr(work_units, 'run_unit', lambda *a, **kw: (
+        dispatched.append(True), {'verdict': 'APPLIED', 'applied': True, 'files': ['a.py'], 'checks_after': 'ok'})[1])
+    res = tools.execute(effect('implement', {}, key='dispatch-implement'), execution)
+    assert res.status == 'succeeded' and dispatched == [True]
+
