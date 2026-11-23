@@ -179,8 +179,12 @@ class SkillRolesDialog(SupportPanel):
                 target = self._target_project()
                 cur_view = managed.effective_view(self.skill_id, project=target)
                 cycle = (None, *managed.MODEL_CLASSES)
-                cur_cls = cur_view.get('min_model_class')
-                next_cls = cycle[(cycle.index(cur_cls) + 1) % len(cycle)]
+                cur_scoped = (
+                    cur_view.get('min_model_class')
+                    if (target is None or cur_view.get('min_model_class_source') == 'project')
+                    else None
+                )
+                next_cls = cycle[(cycle.index(cur_scoped) + 1) % len(cycle)]
                 updated = managed.set_model_class(self.skill_id, next_cls, project=target)
                 scope_word = 'project' if target else 'global'
                 if next_cls is None:

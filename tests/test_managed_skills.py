@@ -960,6 +960,20 @@ def test_tui_roles_dialog_tier_button_cycles_min_model_class_compact_and_wide(tm
             assert tier_btn.content_region.width >= len('Tier: frontier') + 2
             assert managed.effective_view('pxl-tier', storage_root=storage)['min_model_class'] == 'frontier'
 
+            # Switching to Project scope while global is 'frontier' must still cycle to cheap -> middling -> frontier -> inherit.
+            await pilot.click('#roles-scope')
+            await pilot.pause(.4)
+            await pilot.click('#roles-tier')
+            await pilot.pause(.4)
+            assert str(tier_btn.label) == 'Tier: cheap'
+            assert managed.effective_view('pxl-tier', project=root, storage_root=storage)['min_model_class'] == 'cheap'
+            assert managed.effective_view('pxl-tier', storage_root=storage)['min_model_class'] == 'frontier'
+            for expected in ('middling', 'frontier', 'frontier'):
+                await pilot.click('#roles-tier')
+                await pilot.pause(.4)
+                assert str(tier_btn.label) == f'Tier: {expected}'
+            assert managed.effective_view('pxl-tier', project=root, storage_root=storage)['min_model_class_source'] == 'global'
+
             await pilot.press('escape')
             await pilot.pause()
             assert isinstance(app.screen, SkillsPanel)
