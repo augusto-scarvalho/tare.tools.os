@@ -55,6 +55,22 @@ def test_preference_falls_back_when_the_preferred_connection_is_unavailable(plan
         assert tool.choose({})[1]['id']==local['id']
 
 
+def test_temporary_policy_honors_explicit_allowed_planner_route_and_refuses_excluded_route(planner,choices):
+    root,state,_=planner
+    second_sub=deepcopy(choices['subscription']);second_sub['id']='subscription-two'
+    second_sub['native_profile'].update(endpoint='cli://claude',model='claude-fable-5-2')
+    choices['subscription-two']=second_sub
+    state['planning']['routes'].update(subscription=deepcopy(choices['subscription']),
+                                       **{'subscription-two':deepcopy(second_sub),'api':deepcopy(choices['api'])})
+    state['planning']['route_order']=['subscription','subscription-two','api','worker']
+    tool=wrap(root,state,execution())
+    with scope.activated(scope.Scope(only='subscription')):
+        assert tool.choose({})[0]=='subscription'
+        assert tool.choose({'route':'subscription-two'})[0]=='subscription-two'
+        with pytest.raises(ValueError,match='--subscription_only'):
+            tool.choose({'route':'api'})
+
+
 @pytest.mark.parametrize('selected_scope',[scope.Scope(prefer='subscription'),scope.Scope(only='subscription')])
 def test_configured_available_auditor_is_preserved_inside_the_selected_provider_family(choices,selected_scope,monkeypatch):
     from relay import work_audit

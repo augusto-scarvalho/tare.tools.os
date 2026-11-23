@@ -421,6 +421,13 @@ class PlanningTools:
         candidates=planner_candidates(self.planning)
         if not scope.changes('planner'):
             candidates=[(chosen,routes[chosen])] if chosen else [(n,routes[n]) for n in self.route_names()]
+        elif chosen:
+            matched=[(n,d) for n,d in candidates if n==chosen]
+            if not matched:
+                _,reason=scope.allows(routes[chosen],'planner')
+                raise ValueError((reason or 'Requested route is excluded by the temporary execution policy.')
+                                 +' Choose an allowed planner route or omit route.')
+            candidates=matched
         mode = 'TEMPORARY_POLICY' if scope.changes('planner') else ('CONFIGURED' if chosen else 'AUTOMATIC')
         if mode == 'AUTOMATIC' and kinds and not policy().get('planner'):
             # The session's routes in the order the role table ranks them now for the demand's types: a route that

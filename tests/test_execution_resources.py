@@ -219,3 +219,18 @@ def test_planner_inherits_unlimited_without_losing_its_plan(planner, monkeypatch
         result = wrap(parent, state, context).execute(plan_request(), context)
     assert result.status == 'succeeded', result.output_json
     assert seen and seen[0][-1]['limits']['max_model_calls'] is None and seen[0][-1]['limits']['max_seconds'] is None
+
+
+def test_unlimited_compactions_preserves_explicit_compaction_disabled(setup):
+    """max_compactions=0 explicitly disables compaction (e.g. delegated planner) and must not be turned on."""
+    with scope.activated(scope.Scope(unlimited=('compactions',))):
+        assert resources.context({'max_compactions': 0}) == {'max_compactions': 0}
+        assert resources.context({'max_compactions': 1}) == {'max_compactions': None}
+        assert resources.context({}) == {'max_compactions': None}
+    config, custody, _ = setup
+    config['context_policy'] = {'max_compactions': 0}
+    client = Client(steps=[('tare_deliver', {'summary': 'done'})])
+    with scope.activated(scope.Scope(unlimited=resources.RESOURCES)):
+        native_agent.run_session(config, deployment(), custody, 'Bounded work', client=client, local_counter=client)
+    state = json.loads((custody/'native-agent.json').read_text())
+    assert state['config']['context_policy']['max_compactions'] == 0
