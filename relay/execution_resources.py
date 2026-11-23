@@ -146,6 +146,8 @@ def child_seconds(default, remaining=math.inf, *, reserve=0):
 
 
 def context(policy):
+    if type(policy.get('max_compactions')) is int and policy['max_compactions'] == 0:
+        return dict(policy)
     return {**policy, **({'max_compactions': None} if selected('compactions') else {})}
 
 

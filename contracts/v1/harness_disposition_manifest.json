@@ -4091,8 +4091,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 63086,
-      "sha256": "86fb93a87d3d02e1f25d5fd05f08f63918f857eeed6b74672a0e947f3eedf8d1"
+      "size_bytes": 63488,
+      "sha256": "84e2c687ce8ebaa5406868a78fd366380450335a17418df064dd151035f7ebcf"
     },
     {
       "name": "conversation_tasks.py",
@@ -4301,8 +4301,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 7378,
-      "sha256": "22c212101a2ceb58389afd7e01a1d21ab01a20db049536db942412e0f716b29b"
+      "size_bytes": 7492,
+      "sha256": "b5afcf4153d5135239fd485d581195c462e47a302711eaa373c0a94cc53f0505"
     },
     {
       "name": "openrouter.py",
