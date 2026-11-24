@@ -65,6 +65,7 @@ COMMANDS = (('/new', '', 'Save this conversation and start a new one'),
             ('/permissions', '', 'Inspect scope and project defaults for new conversations'),
             ('/backlog', '', 'Bind and inspect this project’s backlog graph'),
             ('/terminal', '', 'Inspect processes in this session'),
+            ('/bg', '', 'Move the active turn to background or manage background runs'),
             ('/files', '', 'Show what the agents read and edit, this turn or this session'),
             ('/session', 'TASK', 'Direct task; may edit the project'),
             ('/explore', 'QUESTION', 'Read-only investigation of the project'),
@@ -75,7 +76,7 @@ COMMANDS = (('/new', '', 'Save this conversation and start a new one'),
             ('/status', '', 'Show the last result'),
             ('/attach', '[PATH]', 'Preview and attach a file or image'),
             ('/help', '', 'Show command help'))
-CONVERSATION_COMMANDS = {'/new', '/model', '/reasoning', '/diff', '/sessions', '/project', '/permissions', '/backlog', '/terminal', '/files', '/resume', '/attach', '/delivery'}
+CONVERSATION_COMMANDS = {'/new', '/model', '/reasoning', '/diff', '/sessions', '/project', '/permissions', '/backlog', '/terminal', '/bg', '/files', '/resume', '/attach', '/delivery'}
 CONVERSATION_COMMANDS |= {'/artifacts', '/tasks', '/team', '/usage', '/tools', '/skills', '/challenger', '/storage', '/delegation', '/routes', '/guidance', '/fleet', '/quota', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up', '/missed'}
 COMMAND_SHORTCUTS = {'/diff': 'F3', '/sessions': 'F1', '/terminal': 'F4', '/project': 'F5', '/files': 'F8'}
 
@@ -106,6 +107,7 @@ HELP = ('Conversation sends ordinary messages directly to the assistant, with wo
         '/new saves the current conversation and starts another; /model opens model preferences for a new conversation. '
         '/reasoning opens the supported reasoning levels for a new conversation. '
         '/diff opens changes; /sessions opens saved conversations; /terminal opens existing session processes. '
+        '/bg moves the active turn to background (Ctrl+B) or opens background runs to answer, open, or stop them. '
         '/files opens the pane of files the agents read and edit (F8). '
         '/heads-up puts the last heads-up note in the composer as a question to the agent. '
         '/missed, with what the last reply should have told you, records on this machine that it needed a heads-up note '

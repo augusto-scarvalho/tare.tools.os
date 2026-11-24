@@ -21,7 +21,7 @@ from .worker_wait import waiting_for_user
 
 SCHEMA = 'tare.tools/execution-permission/1'
 GRANT = ('session', 'task', 'plan', 'project', 'paths', 'checks', 'tests')
-CHOICES = {'once', 'project', 'deny', 'change', 'outside', 'aside'}  # outside: the stall question's; aside: red_baseline's
+CHOICES = {'once', 'project', 'deny', 'change', 'outside', 'aside', 'background'}  # outside/background: stall; aside: red_baseline
 
 
 class PlanChangeRequested(PermissionError):
@@ -135,8 +135,9 @@ def answer(root, request_id, choice, *, project, directory, control_root, change
         if request.get('kind') == 'audit' and choice not in ('once', 'deny'):
             raise ValueError('Apply the change or do not apply it. Nothing was authorized.')
         stall = request.get('kind') == 'stall'
-        if (stall and choice not in ('once', 'deny', 'outside')
-                or choice == 'outside' and not (stall and request['stall'].get('outside'))):
+        if (stall and choice not in ('once', 'deny', 'outside', 'background')
+                or choice == 'outside' and not (stall and request['stall'].get('outside'))
+                or choice == 'background' and not stall):
             raise ValueError('Keep waiting or stop it. Nothing was stopped or authorized.')
         baseline = request.get('kind') == 'baseline'
         if (baseline and choice not in ('once', 'deny', 'aside')
@@ -368,16 +369,30 @@ def stall_question(root, state, task, effect_id, project, control, directory):
     folder = regular(Path(root)/'execution-permission')
 
     def ask(name, argv, sample, outside=False):
+        from .work_units import STALL_SECONDS
         folder.mkdir(exist_ok=True)
+        active = sample['idle_ms'] < STALL_SECONDS * 1000 and sample.get('output_idle_ms', 0) > 0
+        label = f'The check {name}' if name else 'The command'
+        objective = (
+            f'{label} has run for {duration(sample["elapsed_ms"]/1000)} and has produced no new output for the last '
+            f'{duration(sample["output_idle_ms"]/1000)}, while still using CPU '
+            f'({duration(sample.get("cpu_ms", 0)/1000)} total). tare has not stopped it.'
+            if active else
+            f'{label} has run for {duration(sample["elapsed_ms"]/1000)} and has shown no activity for the last '
+            f'{duration(sample["idle_ms"]/1000)}: in that time it wrote no output and used no CPU time. '
+            'tare has not stopped it.')
+        tail = str(sample.get('output_tail') or '').strip()
+        if tail:
+            tail = '\n'.join(tail.splitlines()[-15:])[-1500:]
+        stall_info = {'check': name or '', 'outside': bool(outside)}
+        if active:
+            stall_info['reason'] = 'quiet_output'
+        if tail:
+            stall_info['output_tail'] = tail
         request = {'schema': SCHEMA, 'kind': 'stall', 'session': state['session_id'], 'effect': effect_id,
             'task': (task or {}).get('id', ''), 'plan': ((task or {}).get('plan') or {}).get('sha256', ''),
             'project': str(Path(project).resolve()), 'paths': [], 'checks': {name or 'command': list(argv)},
-            'tests': [], 'status': 'WAITING',
-            'objective': (f'The check {name}' if name else 'The command')+f' has run for '
-                f'{duration(sample["elapsed_ms"]/1000)} and has shown no activity for the last '
-                f'{duration(sample["idle_ms"]/1000)}: in that time it wrote no output and used no CPU time. '
-                'tare has not stopped it.',
-            'stall': {'check': name or '', 'outside': bool(outside)}}
+            'tests': [], 'status': 'WAITING', 'objective': objective, 'stall': stall_info}
         value = wait_for_answer(folder, request, control)
         return value and value['choice']
     return ask

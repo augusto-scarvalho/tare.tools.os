@@ -279,3 +279,110 @@ def test_a_resumed_session_keeps_the_ceilings_it_lifted_and_nothing_more(tmp_pat
     from relay.execution_resources import selected
     lifted = execution_scope.session_role(lambda *a, **kw: selected('time'))
     assert lifted(None, None, tmp_path, resume=True)  # what work_units.child_limits and run_checks read in the turn
+
+
+def test_a_busy_check_silent_past_quiet_output_window_asks_with_live_tail_and_stops_honestly(monkeypatch):
+    monkeypatch.setattr(work_units, 'STALL_SECONDS', 5)
+    monkeypatch.setattr(work_units, 'QUIET_OUTPUT_SECONDS', 2)
+    busy_after_line = [
+        sys.executable, '-B', '-c',
+        'import time\nprint("BEFORE_HANG_LINE", flush=True)\n'
+        'end = time.monotonic() + 30\nwhile time.monotonic() < end: pass',
+    ]
+    ask = Asker('once', 'deny')
+    state, receipt, seconds = checks({'busy': busy_after_line}, ask)
+    assert state == 'inconclusive' and seconds < 15
+    assert 'busy: Check stopped: it produced no new output while using CPU and was stopped after ' in receipt
+    assert len(ask.asked) == 2
+    first, second = ask.asked
+    assert second['at'] - first['at'] >= 2 - .1
+    assert first['idle_ms'] < 5000 and first['output_idle_ms'] >= 2000
+    assert 'BEFORE_HANG_LINE' in first.get('output_tail', '')
+
+
+def test_stall_watch_keeps_running_on_background_answer(monkeypatch):
+    monkeypatch.setattr(work_units, 'STALL_SECONDS', 300)
+    monkeypatch.setattr(work_units, 'QUIET_OUTPUT_SECONDS', 600)
+    now = [0.0]
+    asked = []
+
+    def ask(name, argv, sample, outside):
+        asked.append((now[0], name, sample))
+        return 'background'
+
+    watch = work_units.StallWatch(ask, clock=lambda: now[0])
+    watch.watch('e1', 'tests', ['godot'])
+    now[0] = 10.0
+    assert watch('e1', {'elapsed_ms': 10_000, 'idle_ms': 0, 'cpu_ms': 9_000, 'output_bytes': 120}) is False
+    now[0] = 609.0
+    assert watch('e1', {'elapsed_ms': 609_000, 'idle_ms': 0, 'cpu_ms': 600_000, 'output_bytes': 120}) is False
+    assert asked == []
+    now[0] = 610.0
+    assert watch('e1', {'elapsed_ms': 610_000, 'idle_ms': 0, 'cpu_ms': 601_000, 'output_bytes': 120}) is False
+    assert len(asked) == 1 and asked[0][2]['output_idle_ms'] >= 600_000
+    # After choosing 'background', another full QUIET_OUTPUT_SECONDS passes before asking again.
+    now[0] = 1209.0
+    assert watch('e1', {'elapsed_ms': 1_209_000, 'idle_ms': 0, 'cpu_ms': 1_200_000, 'output_bytes': 120}) is False
+    assert len(asked) == 1
+    now[0] = 1210.0
+    assert watch('e1', {'elapsed_ms': 1_210_000, 'idle_ms': 0, 'cpu_ms': 1_201_000, 'output_bytes': 120}) is False
+    assert len(asked) == 2
+
+
+def test_quiet_output_stall_question_includes_tail_and_validates_background_choice(tmp_path):
+    from tare_tools_agent_runtime import BindingRef, CancellationToken, ExecutionControl
+    from relay import relay_mesh
+    from textual.app import App
+    from relay.execution_permission_panel import ExecutionPermissionPanel
+
+    root, project = tmp_path / 'session', tmp_path / 'project'
+    root.mkdir(); project.mkdir()
+    control = ExecutionControl(BindingRef('work', 'binding', 'operator', 1, 'opaque'), CancellationToken(),
+                               time.monotonic() + 60)
+    ask = permissions.stall_question(root, {'session_id': 's'}, None, 'effect', project, control, tmp_path / 'console')
+    seen = []
+
+    def user():
+        while permissions.pending(root) is None:
+            time.sleep(.01)
+        req = permissions.pending(root)
+        seen.append(req)
+        permissions.answer(root, req['id'], 'background', project=project, directory=tmp_path / 'console',
+                           control_root=relay_mesh.RELAY_ROOT)
+
+    thread = threading.Thread(target=user, daemon=True)
+    thread.start()
+    choice = ask('tests', BUSY, {
+        'elapsed_ms': 612_000, 'idle_ms': 0, 'cpu_ms': 605_000, 'output_bytes': 2044,
+        'output_idle_ms': 601_000, 'output_tail': 'round 0 ok\nround 1 ok',
+    }, False)
+    thread.join(5)
+    assert choice == 'background' and len(seen) == 1
+    req = seen[0]
+    assert 'no new output for the last 10 min 1 s' in req['objective']
+    assert 'while still using CPU' in req['objective']
+    assert req['stall'] == {'check': 'tests', 'outside': False, 'reason': 'quiet_output',
+                            'output_tail': 'round 0 ok\nround 1 ok'}
+
+    # Non-stall requests must reject 'background'.
+    sandbox_req = {'schema': permissions.SCHEMA, 'kind': 'sandbox', 'session': 's', 'effect': 'e', 'task': '',
+                   'plan': '', 'project': str(project.resolve()), 'paths': [], 'checks': {'tests': SILENT},
+                   'tests': [], 'objective': 'q', 'status': 'WAITING',
+                   'sandbox': {'code': 'ISOLATION_NETWORK_DENIED', 'check': 'tests'}}
+    sandbox_req['id'] = permissions.identity(sandbox_req)
+    (root / 'execution-permission' / 'request.json').write_text(json.dumps(sandbox_req))
+    with pytest.raises(ValueError, match='Keep waiting or stop it'):
+        permissions.answer(root, sandbox_req['id'], 'background', project=project, directory=tmp_path / 'console',
+                           control_root=relay_mesh.RELAY_ROOT)
+
+    # Panel renders recent output and exposes the Continue in background button.
+    async def scenario():
+        app, answers = App(), []
+        async with app.run_test(size=(120, 40)) as pilot:
+            app.push_screen(ExecutionPermissionPanel(req), answers.append)
+            await pilot.pause()
+            assert app.screen.query('#permission-background')
+            await pilot.click('#permission-background')
+            await pilot.pause()
+        assert answers == ['background']
+    asyncio.run(scenario())
