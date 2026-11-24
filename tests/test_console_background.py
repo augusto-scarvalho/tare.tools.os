@@ -61,6 +61,19 @@ def _write_stall_request(session_dir, project_root):
     return req
 
 
+async def _click(pilot, app, selector):
+    for _ in range(30):
+        try:
+            widget = app.screen.query_one(selector)
+            if widget.is_mounted and widget.visible and widget.region.width > 0 and widget.region.height > 0:
+                break
+        except Exception:
+            pass
+        await pilot.pause(.05)
+    await pilot.pause(.05)
+    assert await pilot.click(selector), f'click missed {selector} on {app.screen}'
+
+
 def test_ctrl_b_moves_turn_to_background_unlocks_tui_notifies_on_permission_and_completion(tmp_path, monkeypatch):
     project = tmp_path / 'project'
     project.mkdir()
@@ -118,10 +131,10 @@ def test_ctrl_b_moves_turn_to_background_unlocks_tui_notifies_on_permission_and_
             await pilot.pause(.1)
             assert isinstance(app.screen, BackgroundPanel)
             assert not app.screen.query_one('#bg-answer', Button).disabled
-            await pilot.click('#bg-answer')
+            await _click(pilot, app, '#bg-answer')
             await pilot.pause(.1)
             assert isinstance(app.screen, ExecutionPermissionPanel)
-            await pilot.click('#permission-once')
+            await _click(pilot, app, '#permission-once')
             await pilot.pause(.1)
             answer_data = json.loads((Path(session_path) / 'execution-permission' / 'answer.json').read_text())
             assert answer_data == {'id': req['id'], 'choice': 'once'}
@@ -163,7 +176,7 @@ def test_stall_dialog_continue_in_background_answers_and_detaches_and_quit_cance
                 if isinstance(app.screen, ExecutionPermissionPanel):
                     break
             assert isinstance(app.screen, ExecutionPermissionPanel)
-            await pilot.click('#permission-background')
+            await _click(pilot, app, '#permission-background')
             for _ in range(20):
                 await pilot.pause(.05)
                 if not app.busy and session_path in app.background_runs:
@@ -174,7 +187,10 @@ def test_stall_dialog_continue_in_background_answers_and_detaches_and_quit_cance
 
             # Quitting while a background run is active cancels it cleanly (no orphan child).
             app.action_quit()
-            await pilot.pause(.2)
+            for _ in range(20):
+                await pilot.pause(.05)
+                if backend.cancelled >= 1 and backend.processes[0].cancelled:
+                    break
             assert backend.cancelled >= 1 and backend.processes[0].cancelled is True
 
     asyncio.run(scenario())
@@ -247,7 +263,7 @@ def test_background_guards_resume_command_approval_direct_session_and_draft_pres
             app.answer_background_permission(run)
             await pilot.pause(.1)
             assert isinstance(app.screen, ExecutionPermissionPanel)
-            await pilot.click('#permission-once')
+            await _click(pilot, app, '#permission-once')
             await pilot.pause(.1)
             cmd_ans = json.loads((req_dir / 'answer.json').read_text(encoding='utf-8'))
             assert cmd_ans == {'id': req_id, 'choice': 'once'}

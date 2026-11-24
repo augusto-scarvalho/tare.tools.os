@@ -11,11 +11,21 @@ from test_native_agent import Client, deployment, setup, steps
 
 @pytest.fixture
 def growing_context(monkeypatch):
+    limit = {'late': 7000}
+
     class GrowingAdapter(NativeModelAdapter):
         def count(self, request, control):
             value = super().count(request, control)
-            turns = sum(e['kind'] == 'model_returned' for e in request.context.events())
-            return value | {'input_tokens': 7000 if request.purpose == 'model' and turns >= 2 else 80}
+            events = request.context.events()
+            turns = sum(e['kind'] == 'model_returned' for e in events)
+            activated = any(e['kind'] == 'context_activated' for e in events)
+            if request.purpose != 'model' or turns < 2:
+                tokens = 80
+            elif activated:
+                tokens = limit['late']
+            else:
+                tokens = 7000
+            return value | {'input_tokens': tokens}
 
         def generate(self, request, control):
             if request.purpose == 'summary':
@@ -23,15 +33,18 @@ def growing_context(monkeypatch):
             return super().generate(request, control)
 
     monkeypatch.setattr('compute_plane.native_models.NativeModelAdapter', GrowingAdapter)
+    return limit
 
 
-@pytest.mark.parametrize('calls,cap,reason,summaries', [
-    (6, None, None, 2),
-    (5, None, None, 1),  # The final call fits the hard window; another summary would strand delivery.
-    (6, 1, 'COMPACTION_BUDGET', 1),
+@pytest.mark.parametrize('calls,cap,late_tokens,reason,summaries,expected_calls', [
+    (6, None, 7000, None, 2, 6),
+    (5, None, 7000, None, 1, 5),  # The final call fits the hard window; another summary would strand delivery.
+    (6, 1, 7000, None, 1, 5),  # Cap reached, but turn still fits hard_limit: admit without blocking.
+    (6, 1, 7500, 'COMPACTION_BUDGET', 1, 4),  # Cap reached and turn exceeds hard_limit: still blocks.
 ])
 def test_edit_verify_delivery_survives_two_compactions_with_original_limits(
-        setup, growing_context, calls, cap, reason, summaries):
+        setup, growing_context, calls, cap, late_tokens, reason, summaries, expected_calls):
+    growing_context['late'] = late_tokens
     config, custody, root = setup
     config['capabilities'] = ['read', 'edit', 'verify']
     if cap is not None:
@@ -43,7 +56,7 @@ def test_edit_verify_delivery_survives_two_compactions_with_original_limits(
     assert result['status'] == ('PROPOSED' if reason is None else 'BLOCKED')
     if reason is not None:
         assert result['reason'] == reason
-    assert result['model_calls'] == (calls if reason is None else 4)
+    assert result['model_calls'] == expected_calls
     events = [json.loads(row)['event'] for row in (custody/'journal.jsonl').read_text().splitlines()]
     assert sum(e['kind'] == 'context_activated' for e in events) == summaries
     assert any(e['kind'] == 'effect_returned' and json.loads(e['result']['output_json']).get('returncode') == 0

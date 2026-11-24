@@ -176,6 +176,7 @@ def test_the_start_up_reading_needs_the_choice_and_a_last_attempt_over_12_hours_
 
 def test_tare_quota_sync_runs_one_reading_and_prints_it(monkeypatch, capsys):
     stub_read(monkeypatch)
+    monkeypatch.setattr(console_credit.time, 'time', lambda: NOW)
     monkeypatch.setattr(provider_quota, 'refresh', lambda now=None: {'observed_at': NOW, 'accounts': []})
     assert provider_quota.main(['--sync']) == 0
     said = capsys.readouterr()

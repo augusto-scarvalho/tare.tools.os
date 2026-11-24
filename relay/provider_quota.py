@@ -414,7 +414,7 @@ def refresh(now=None):
                              'US$ {:.2f} in 30 days.'.format(*used) if used[2] else
                              "tare's own sessions recorded no allowance use in the last 30 days."]})
     for variable, (account, name) in UNREPORTED.items():
-        credit = provider_spend.remaining(account)
+        credit = provider_spend.remaining(account, now)
         reading = {'account': account, 'name': name, 'kind': 'credit', 'observed_at': now}
         if credit:
             accounts.append({**reading, 'status': 'DECLARED', 'credit': credit,
