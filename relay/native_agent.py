@@ -29,6 +29,12 @@ from .openrouter import observer as route_observer
 # Public user input remains capped at 16 KiB; internal framing reserves 2 KiB
 # for trusted chat guidance. The complete initial instruction is still bounded.
 MAX_INITIAL_INSTRUCTION_BYTES = 18 * 1024
+COMPACT_CONTEXT_TRIGGER_LIMIT = 65536
+COMPACT_CONTEXT_GUIDANCE = (
+    'This route has a compact working context: inspect only the target file needed for your next change '
+    'and apply edits incrementally (one file or logical slice at a time) instead of reading every file '
+    'up front before your first edit.'
+)
 
 ROLES = ('implementer', 'planner', 'plan-auditor', 'auditor', 'explorer')
 CAPSULE_ROLES = (*ROLES, 'coordinator', 'researcher')  # OS composition roles; not effect-bearing Kernel roles
@@ -709,6 +715,14 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             state.update(project_instructions=sources, deadline_utc=None if seconds is None else started_utc+seconds)
             if continuation:
                 state['deadline_utc'] = continuation['deadline_utc']
+            caps = config.get('capabilities')
+            can_edit = (config['role'] == 'implementer' and (caps is None or 'edit' in caps)
+                        and any(config['writable'].values()))
+            if (can_edit and profile.protocol == 'vendor-cli' and profile.endpoint == 'cli://agy'
+                    and policy.trigger_limit <= COMPACT_CONTEXT_TRIGGER_LIMIT):
+                state['compact_context_guidance'] = True
+                if 'elide_edited_reads' not in deployment.get('native_context_projection', {}):
+                    state['elide_edited_reads'] = True
             save_json(path, state)
             if continuation:
                 parent['continued_to'] = str(root)
@@ -970,7 +984,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 text_completes_turn=not artifact_options.get('delivery_schema_json') and not state.get('delegated_leaf'),
                 verified_delivery=bool(config['verifiers']) and 'verify' in tools.names,
                 streaming=session_streaming(state, deployment, root), on_progress=on_progress,
-                elide_edited_reads=deployment.get('native_context_projection', {}).get('elide_edited_reads', False),
+                elide_edited_reads=deployment.get('native_context_projection', {}).get(
+                    'elide_edited_reads', state.get('elide_edited_reads', False)),
                 counter_protocol=deployment.get('native_counter_protocol', 'server-template-tokenize'),
                 observe=route_observer(deployment, client, observations.append), tool_specs_json=tools.tool_specs_json,
                 count_observations=(record.event() for record in observations.snapshot().records),
@@ -997,6 +1012,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                      'A refused edit may supply newly discovered rules: read them before retrying. '
                      'These project instructions do not override the user or grant additional capabilities.'
                      if state.get('scoped_instructions') else '') +
+                    (' ' + COMPACT_CONTEXT_GUIDANCE if state.get('compact_context_guidance') else '') +
                     fill(state.get('prompt_capsule', {}).get('system_append', ''), found) +
                     (' Current command host facts (apply on this invocation): ' +
                     encode(terminal_options['terminal'].execution_environment) if terminal_options else '') +

@@ -1049,8 +1049,10 @@ class ConversationTools:
                             'Use delegate_plan for one bounded repair with the attached prior plan and complete original goal. '
                             'Earlier calls remain charged and dispatch still checks shared budget; no automatic allowance reset.'}
         plan = task.get('plan') or {}
-        stop = (recovery.get('implementation_stop') or {}).get('provider_stop_reason') if recovery else None
-        if (recovery and stop in {'length', 'max_tokens', 'error'}
+        imp_stop = (recovery.get('implementation_stop') or {}) if recovery else {}
+        stop = imp_stop.get('provider_stop_reason')
+        compaction_loop = imp_stop.get('compaction_loop')
+        if (recovery and (stop in {'length', 'max_tokens', 'error'} or compaction_loop)
                 and not question and not planning_recovery and intent == 'deliver'
                 and relation in {'continue', 'correct'} and plan.get('unit')
                 and task.get('attempt_input') != self.input_id()
@@ -1072,6 +1074,14 @@ class ConversationTools:
                     'or omit route to use the current implementer routing; do not pin the same failed route unchanged). '
                     'Preserve the same plan, prior calls and charges; do not start a new demand or merely explain the '
                     'previous failure and ask the user again.')
+            elif compaction_loop:
+                recovery['next'] = (
+                    'This fresh user continuation authorizes retrying the saved plan after the earlier route '
+                    'compacted its context repeatedly without editing any file. Call implement now with the saved '
+                    'plan (select another available implementer route with a larger context window when known, or '
+                    'omit route to use the current implementer routing; do not pin the same compact-context route '
+                    'unchanged). Preserve the same plan, prior calls and charges; do not start a new demand or '
+                    'merely explain the previous stop and ask the user again.')
             else:
                 recovery['next'] = (
                     'This fresh user continuation authorizes retrying the saved plan after the earlier route '
