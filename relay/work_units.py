@@ -1254,6 +1254,15 @@ def interruption_feedback(session, row):
             if stop in {'error','length','content_filter','malformed_function_call','max_tokens','other'}:
                 result['provider_stop_reason']=stop
         tools={e['effect_id']:e['tool_call']['name'] for e in events if e['kind']=='effect_requested'}
+        compactions=sum(e['kind']=='context_activated' for e in events)
+        if compactions>=2 and result.get('reason')=='NO_PROGRESS':
+            mutated=any(
+                e['kind']=='effect_returned' and e['result']['status']=='succeeded'
+                and tools.get(e['result']['effect_id']) in {'edit','rename','command','terminal_write','terminal_run','write','delete'}
+                for e in events
+            )
+            if not mutated:
+                result['compaction_loop']=compactions
         for event in reversed(events):
             if event['kind']!='effect_returned' or event['result']['status']=='succeeded':continue
             value=json.loads(event['result']['output_json'])

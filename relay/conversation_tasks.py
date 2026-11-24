@@ -371,6 +371,16 @@ def delivery_view(value, *, config=None, unit=None):
             'allowance on this route before writing anything. That is a limit of the route, not proof that the '
             'task is too large: do not split the plan or drop criteria on your own. Preserve the same plan, prior '
             'calls and charges; a fresh authorized continuation can run it on another implementer route.')
+    elif (value.get('verdict')=='INCONCLUSIVE' and not value.get('files')
+            and (value.get('implementation_stop') or {}).get('compaction_loop')):
+        compactions=value['implementation_stop']['compaction_loop']
+        result['reason']=(f'The implementer compacted its context {compactions} times without changing any file '
+                          'and was stopped for no progress.')
+        result['next']=('Tell the user, in the language of their request, that the implementer compacted its '
+            "context repeatedly without applying an edit (usually because the route's working context is too "
+            'small for all inspected files at once, or the unit needs smaller steps). Do not repeat the same '
+            'route and plan unchanged; offer to retry on another implementer route or split the plan into '
+            'smaller steps.')
     from .conversation_permissions import paths_allowed
     missing = [p for p in value.get('scope_needed') or []
                if not value.get('applied') and not (unit and paths_allowed([p], unit['target_paths']))]
