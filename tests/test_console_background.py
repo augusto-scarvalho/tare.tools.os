@@ -3,6 +3,7 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
 from textual.widgets import Button, TextArea
 
 from relay import conversation_permissions as permissions
@@ -320,5 +321,177 @@ def test_direct_non_conversation_session_cannot_detach_to_background(tmp_path, m
                 await pilot.pause(.05)
                 if not app.busy:
                     break
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('background', [False, True])
+def test_tare_auto_recoverable_failure_escalates_equally_in_foreground_and_background(tmp_path, monkeypatch, background):
+    """Same recoverable tare auto failure (BLOCKED on tier 0) escalates to tier 1 in both foreground and /bg."""
+    from relay import turn_engine
+
+    project = tmp_path / 'project'
+    project.mkdir()
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path / 'storage'))
+    monkeypatch.setattr('relay.native_agent.session_root', lambda: tmp_path / 'sessions')
+    monkeypatch.setattr(turn_engine, 'policy', lambda: {'implementer': [['local'], ['cheap-a']]})
+    monkeypatch.setattr(turn_engine, 'available', lambda name: (
+        {'id': name, 'native_profile': {'protocol': 'openai-chat', 'model': name}}, None))
+    monkeypatch.setattr('relay.native_continuity.preview', lambda *a, **kw: {
+        'schema': 'tare.tools/native-continuity-preview/1', 'text': 'BRIEF', 'user_context': 'BRIEF',
+        'source': a[0], 'project': str(project.resolve()), 'source_sha256': '0' * 64,
+        'config': {'role': 'implementer', 'repositories': {'project': str(project)}},
+        'session_id': 'src-id', 'records': 1, 'terminal_connection': None,
+    })
+    first_dep = turn_engine.resolve_auto({'native_auto_routes': 'coordinator'}, role='coordinator')
+    assert first_dep['id'] == 'local'
+
+    class EscalationBackend(ControlledBackend):
+        async def launch(self, args, root):
+            self.launches.append(list(args))
+            session_dir = Path(args[args.index('--session') + 1])
+            session_dir.mkdir(parents=True, exist_ok=True)
+            if len(self.launches) == 1:
+                (session_dir / 'native-agent.json').write_text(json.dumps({
+                    'session_id': 's1', 'conversation_flow': True, 'deployment': first_dep,
+                    'config': {'role': 'implementer', 'repositories': {'project': str(project)}},
+                }), encoding='utf-8')
+                proc = ControlledProcess({'status': 'BLOCKED', 'reason': 'PROVIDER_UNAVAILABLE', 'output': 'Route failed.'})
+                orig_comm = proc.communicate
+
+                async def fail_comm():
+                    out, err = await orig_comm()
+                    proc.returncode = 1
+                    return out, err
+
+                proc.communicate = fail_comm
+            else:
+                proc = ControlledProcess({'status': 'PROPOSED', 'output': 'Recovered on fallback route.', 'model_calls': 1})
+                proc.done.set()
+            self.processes.append(proc)
+            return proc
+
+        def continuity_terminal(self, source):
+            return None
+
+    backend = EscalationBackend()
+
+    async def scenario():
+        app = WorkConsole(project, backend=backend, initial_mode='assistant',
+                          storage_preferred=tmp_path / 'storage', storage_fallback=tmp_path / 'storage')
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(.2)
+            app.query_one('#prompt', TextArea).load_text('Solve with tare auto')
+            app.action_start()
+            for _ in range(30):
+                await pilot.pause(.05)
+                if app.busy and app.process is not None:
+                    break
+            first_session = app.assistant_session
+            assert first_session and len(backend.processes) == 1
+
+            if background:
+                app.action_background()
+                for _ in range(20):
+                    await pilot.pause(.05)
+                    if not app.busy:
+                        break
+                assert not app.busy and first_session in app.background_runs
+                # Switch to another conversation in foreground while background escalates.
+                assert app.new_conversation()
+                await pilot.pause(.05)
+                assert app.assistant_session is None
+
+            # Trigger the recoverable BLOCKED stop on tier 0.
+            backend.processes[0].done.set()
+            for _ in range(60):
+                await pilot.pause(.05)
+                if len(backend.launches) == 2:
+                    if background:
+                        runs = list(app.background_runs.values())
+                        if runs and runs[0].status == 'done':
+                            break
+                    elif not app.busy and (app.last_result or {}).get('status') == 'PROPOSED':
+                        break
+
+            assert len(backend.launches) == 2
+            second_args = backend.launches[1]
+            assert '--continue-provider' in second_args
+            second_session = second_args[second_args.index('--session') + 1]
+            cont = json.loads((Path(second_session) / 'continuation.json').read_text(encoding='utf-8'))
+            assert cont['deployment']['id'] == 'cheap-a'
+
+            if background:
+                assert app.assistant_session is None  # foreground conversation stayed undisturbed
+                assert first_session not in app.background_runs
+                assert second_session in app.background_runs
+                run = app.background_runs[second_session]
+                assert run.status == 'done' and run.result['output'] == 'Recovered on fallback route.'
+                from relay import console_demand, relay_mesh
+                saved_demand = console_demand.read(run.demand_id, project, relay_mesh.RELAY_ROOT)
+                assert saved_demand['events'][-1]['selection']['mode'] == 'session'
+                assert saved_demand['events'][-1]['selection']['session'] == second_session
+                # Opening the escalated background run via /bg loads the new escalated session.
+                app.open_background_run(run)
+                await pilot.pause(.1)
+                assert app.assistant_session == second_session
+                assert (app.last_result or {}).get('output') == 'Recovered on fallback route.'
+            else:
+                assert (app.last_result or {}).get('output') == 'Recovered on fallback route.'
+
+    asyncio.run(scenario())
+
+
+def test_tare_auto_exhausted_in_background_respects_budget_cap_without_escalating(tmp_path, monkeypatch):
+    from relay import turn_engine
+
+    project = tmp_path / 'project'
+    project.mkdir()
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path / 'storage'))
+    monkeypatch.setattr('relay.native_agent.session_root', lambda: tmp_path / 'sessions')
+    monkeypatch.setattr(turn_engine, 'policy', lambda: {'implementer': [['local'], ['cheap-a']]})
+    monkeypatch.setattr(turn_engine, 'available', lambda name: (
+        {'id': name, 'native_profile': {'protocol': 'openai-chat', 'model': name}}, None))
+    first_dep = turn_engine.resolve_auto({'native_auto_routes': 'coordinator'}, role='coordinator')
+
+    class ExhaustedBackend(ControlledBackend):
+        async def launch(self, args, root):
+            self.launches.append(list(args))
+            session_dir = Path(args[args.index('--session') + 1])
+            session_dir.mkdir(parents=True, exist_ok=True)
+            (session_dir / 'native-agent.json').write_text(json.dumps({
+                'session_id': 's-ex', 'conversation_flow': True, 'deployment': first_dep,
+                'config': {'role': 'implementer', 'repositories': {'project': str(project)}},
+            }), encoding='utf-8')
+            proc = ControlledProcess({'status': 'EXHAUSTED', 'reason': 'MODEL_CALL_BUDGET'})
+            self.processes.append(proc)
+            return proc
+
+    backend = ExhaustedBackend()
+
+    async def scenario():
+        app = WorkConsole(project, backend=backend, initial_mode='assistant',
+                          storage_preferred=tmp_path / 'storage', storage_fallback=tmp_path / 'storage')
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(.2)
+            app.query_one('#prompt', TextArea).load_text('Budget-capped task')
+            app.action_start()
+            for _ in range(30):
+                await pilot.pause(.05)
+                if app.busy and app.process is not None:
+                    break
+            session_path = app.assistant_session
+            app.action_background()
+            for _ in range(20):
+                await pilot.pause(.05)
+                if not app.busy:
+                    break
+            backend.processes[0].done.set()
+            for _ in range(30):
+                await pilot.pause(.05)
+                if app.background_runs[session_path].status == 'failed':
+                    break
+            assert len(backend.launches) == 1
+            assert app.background_runs[session_path].status == 'failed'
 
     asyncio.run(scenario())

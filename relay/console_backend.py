@@ -559,12 +559,14 @@ class Backend:
             env['TARE_FLOW'] = args[0]  # the flow its sessions ran in, for the shadow of session turns (work_forms)
         from .execution_scope import current, ENV
         policy = current()
+        approval_root = ''
         if policy.active:
             env[ENV] = json.dumps(asdict(policy), sort_keys=True, separators=(',', ':'))
             from .turn_engine import project_permission_mode
             from .native_installation import storage_root
-            self.action_approval_root=str(storage_root()/'tui-approvals'/uuid4().hex)
-            env.update(TARE_ACTION_APPROVAL_ROOT=self.action_approval_root,
+            approval_root = str(storage_root()/'tui-approvals'/uuid4().hex)
+            self.action_approval_root = approval_root
+            env.update(TARE_ACTION_APPROVAL_ROOT=approval_root,
                 TARE_ACTION_APPROVAL_PROJECT=str(Path(root).resolve()),
                 TARE_SESSION_OPERATOR_MODE=project_permission_mode(root) or 'read')
         # An empty PYTHONPATH entry means the current directory, the project: the same shadowing -P prevents.
@@ -599,6 +601,7 @@ class Backend:
             cwd=root, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, **options)
         self.contain(process)
+        process.action_approval_root = approval_root
         return process
 
     def contain(self, process):
