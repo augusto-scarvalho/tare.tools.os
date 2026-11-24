@@ -41,6 +41,32 @@ def test_stopped_implementer_exposes_only_known_provider_stop_without_transcript
         assert 'Do not repeat' in result['next'] and 'same plan' in result['next']
 
 
+def test_no_progress_after_compactions_without_edits_reports_compaction_loop(tmp_path):
+    from compute_plane.native_journal import NativeJournal
+    journal=NativeJournal(tmp_path/'journal.jsonl')
+    journal.append({'kind':'effect_requested','effect_id':'s/effect/1','tool_call':{
+        'call_id':'c1','name':'read','arguments_json':'{"path":"hub.gd"}'}})
+    journal.append({'kind':'effect_returned','result':{
+        'effect_id':'s/effect/1','status':'succeeded','output_json':'{}','progressed':True}})
+    for n in (1,2,3):
+        journal.append({'kind':'context_activated','call_id':f's/summary/{n}','summary':'private summary'})
+    feedback=work_units.interruption_feedback(tmp_path,{'child_status':'BLOCKED','child_reason':'NO_PROGRESS','model_calls':18})
+    assert feedback['compaction_loop']==3
+    assert 'private summary' not in json.dumps(feedback)
+    view=tasks.delivery_view({'verdict':'INCONCLUSIVE','files':[],
+        'reason':'the implementer changed nothing','implementation_stop':feedback})
+    assert 'compacted its context 3 times without changing any file' in view['reason']
+    assert 'another implementer route' in view['next'] and 'smaller steps' in view['next']
+
+    # Once a succeeded edit exists in the journal, NO_PROGRESS is not tagged as a zero-edit compaction_loop.
+    journal.append({'kind':'effect_requested','effect_id':'s/effect/2','tool_call':{
+        'call_id':'c2','name':'edit','arguments_json':'{"path":"hub.gd"}'}})
+    journal.append({'kind':'effect_returned','result':{
+        'effect_id':'s/effect/2','status':'succeeded','output_json':'{}','progressed':True}})
+    after_edit=work_units.interruption_feedback(tmp_path,{'child_status':'BLOCKED','child_reason':'NO_PROGRESS','model_calls':20})
+    assert 'compaction_loop' not in after_edit
+
+
 def test_bounded_check_output_keeps_first_diagnostic_and_final_summary(tmp_path):
     from types import SimpleNamespace
     output='FIRST concrete failure\n'+'x'*5000+'\nFINAL 30 failed'
