@@ -24,8 +24,11 @@ import uuid
 from .work_forms import LEDGER, MAX_UNITS, lint, literal
 
 # A check or command is judged by its activity (owner, 2026-11-14): one with no output and no CPU time for
-# STALL_SECONDS is stalled; with nobody to ask it also stops at UNATTENDED_SECONDS, unless --unlimited time.
+# STALL_SECONDS is stalled; one still using CPU with no new output for QUIET_OUTPUT_SECONDS also asks the user
+# (catching busy-loops like a headless runner that never quits, while leaving shorter quiet builds undisturbed).
+# With nobody to ask it stops at STALL_SECONDS (idle) or UNATTENDED_SECONDS (active), unless --unlimited time.
 STALL_SECONDS = 300
+QUIET_OUTPUT_SECONDS = 600
 UNATTENDED_SECONDS = 7200
 MAX_RUNGS = 3                  # routes tried for one unit, cheapest first
 MAX_FAILURES = 2                # NOT_VERIFIED runs of the same unit before tare refuses a third (R3)
@@ -460,31 +463,66 @@ class Progress:
 
 class StallWatch:
     """The Kernel's on_progress(effect_id, sample) for runs someone can be asked about. A run silent for STALL_SECONDS
-    is asked about (`ask(name, argv, sample, outside)`); 'once' keeps it running and it is asked again only after
-    another full window of silence; any other answer stops it (True). `choices` keeps each effect's last answer.
+    (no output and no CPU time), or still using CPU with no new output for QUIET_OUTPUT_SECONDS, is asked about
+    (`ask(name, argv, sample, outside)`); 'once' and 'background' keep it running and it is asked again only after
+    another full window; any other answer stops it (True). `choices` keeps each effect's last answer.
     It also hands each sample to the conversation's Progress, which is read here: samples arrive on another thread."""
 
-    def __init__(self, ask):
-        self.ask, self.runs, self.choices, self.progress = ask, {}, {}, PROGRESS.get()
+    def __init__(self, ask, clock=time.monotonic):
+        self.ask, self.clock, self.runs, self.choices, self.progress = ask, clock, {}, {}, PROGRESS.get()
 
     def watch(self, effect_id, name, argv, outside=False):
-        self.runs.setdefault(effect_id, [name, list(argv), outside, float('-inf')])  # the first caller names it
+        self.runs.setdefault(effect_id, {
+            'name': name, 'argv': list(argv), 'outside': outside,
+            'asked_at': float('-inf'), 'output_bytes': None, 'output_at': None,
+        })  # the first caller names it
 
     def __call__(self, effect_id, sample):
         if self.progress is not None:
             self.progress.sample(sample)
         run = self.runs.get(effect_id)
-        if (run is None or sample['idle_ms'] < STALL_SECONDS*1000
-                or time.monotonic() - run[3] < STALL_SECONDS):
+        if run is None:
             return False
-        self.choices[effect_id] = choice = self.ask(run[0], run[1], sample, run[2])
-        run[3] = time.monotonic()
-        return choice != 'once'
+        now = self.clock()
+        out = sample.get('output_bytes', 0)
+        if run['output_bytes'] is None:
+            run['output_bytes'] = out
+            run['output_at'] = now if out > 0 else now - sample.get('elapsed_ms', 0) / 1000
+        elif out > run['output_bytes']:
+            run['output_bytes'] = out
+            run['output_at'] = now
+        output_idle_ms = max(0.0, (now - run['output_at']) * 1000)
+        idle_stall = sample['idle_ms'] >= STALL_SECONDS * 1000
+        quiet_busy = not idle_stall and output_idle_ms >= QUIET_OUTPUT_SECONDS * 1000
+        if not (idle_stall or quiet_busy):
+            return False
+        window = STALL_SECONDS if idle_stall else QUIET_OUTPUT_SECONDS
+        if now - run['asked_at'] < window:
+            return False
+        tail = ''
+        try:
+            from compute_plane import managed_process
+            reader = getattr(managed_process, 'current_output_tail', None)
+            if callable(reader):
+                tail = reader(2048).strip()
+        except Exception:
+            tail = ''
+        asked_sample = dict(sample)
+        if quiet_busy:
+            asked_sample['output_idle_ms'] = output_idle_ms
+        if tail:
+            asked_sample['output_tail'] = tail
+        self.choices[effect_id] = choice = self.ask(run['name'], run['argv'], asked_sample, run['outside'])
+        run['asked_at'] = self.clock()
+        return choice not in {'once', 'background'}
 
 
 def stop_reason(process):
     """Why the Kernel stopped a check or command, from its process receipt, or None."""
     if process.get('stalled'):
+        if process.get('stopped_by_observer') and process.get('idle_ms', 0) < STALL_SECONDS * 1000:
+            return (f'it produced no new output while using CPU and was stopped after '
+                    f'{round(process.get("wall_ms", 0) / 1000)} seconds')
         return (f'it showed no activity (no output, no CPU time) for {round(process.get("idle_ms", 0) / 1000)} seconds '
                 'and was stopped')
     if process.get('timeout'):

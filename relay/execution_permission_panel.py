@@ -55,18 +55,27 @@ class ExecutionPermissionPanel(SupportPanel):
                 if plan is not None:
                     yield Static(plan+'\n', markup=False)
                 if stall is not None:
-                    from .work_units import STALL_SECONDS
+                    from .work_units import QUIET_OUTPUT_SECONDS, STALL_SECONDS
                     from .conversation_permissions import duration
                     name,argv=next(iter(value['checks'].items()))
+                    quiet=stall.get('reason')=='quiet_output'
+                    tail=str(stall.get('output_tail') or '').strip()
                     yield Static('Project: '+value['project']+('\nCheck: '+name if stall['check'] else '')+
                         '\n\nExact command:\n'+repr(argv)+'\n\nKeep waiting: it keeps running, and tare asks again '
-                        'only after another '+duration(STALL_SECONDS)+' without activity. Stop it: '+
-                        ('the check stays unjudged.' if stall['check'] else 'the implementer is told it showed no '
-                         'activity and was stopped.')+
+                        'only after another '+duration(QUIET_OUTPUT_SECONDS if quiet else STALL_SECONDS)+
+                        (' without new output. ' if quiet else ' without activity. ')+
+                        'Continue in background: keeps it running and frees this screen for other conversations '
+                        '(/bg to inspect, answer, or stop). Stop it: '+
+                        ('the check stays unjudged.' if stall['check'] else
+                         'the implementer is told it produced no new output while using CPU and was stopped.' if quiet
+                         else 'the implementer is told it showed no activity and was stopped.')+
                         ('\n\nStop it and run it outside the sandbox: outside, this program runs as you: it can use '
-                         'the network and read your files, secret files included. A test that waits for a connection '
-                         'the sandbox refused can wait silently like this; nothing here shows that this is the cause.'
-                         if stall['outside'] else ''), markup=False)
+                         'the network and read your files, secret files included. '+
+                         ('A program retrying something the sandbox refused can also run without output like this; '
+                          if quiet else 'A test that waits for a connection the sandbox refused can wait silently '
+                          'like this; ')+'nothing here shows that this is the cause.'
+                         if stall['outside'] else '')+
+                        ('\n\nRecent output:\n'+tail if tail else ''), markup=False)
                 elif baseline is not None:
                     them='it' if one else 'them'
                     yield Static('Project: '+value['project']+'\n\nFailing before any change:\n'+
@@ -122,6 +131,7 @@ class ExecutionPermissionPanel(SupportPanel):
             with Horizontal(classes='permission-buttons'):
                 if stall is not None:
                     yield Button('Keep waiting', id='permission-once')
+                    yield Button('Continue in background', id='permission-background')
                     yield Button('Stop it', id='permission-deny')
                     if stall['outside']:
                         yield Button('Stop it and run it outside the sandbox', id='permission-outside')
@@ -169,7 +179,7 @@ class ExecutionPermissionPanel(SupportPanel):
 
     def on_button_pressed(self, event):
         if event.button.id in {'permission-once', 'permission-project', 'permission-change', 'permission-deny',
-                               'permission-outside', 'permission-aside'}:
+                               'permission-outside', 'permission-aside', 'permission-background'}:
             event.stop()
             if event.button.id == 'permission-change':
                 self.changes = self.query_one('#permission-changes', Input).value

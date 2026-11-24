@@ -93,8 +93,8 @@ tare.tools.os/
 ├── docs/                                     # Guias, decisões (ADRs) e especificações
 ├── node/                                     # Serviço do nó de GPU: gateway de modelos, lease da GPU (Linux)
 ├── satellites/
-│   ├── tare.tools.kernel/        (@ 0fccce0) # Fronteiras de execução, journals, sessões de terminal
-│   ├── tare.tools.agent-runtime/ (@ d40cd45) # Loop de agente com limites
+│   ├── tare.tools.kernel/        (@ ac1ee0e) # Fronteiras de execução, journals, sessões de terminal
+│   ├── tare.tools.agent-runtime/ (@ 03baa03) # Loop de agente com limites
 │   ├── tare.tools.specgraph/     (@ cce9edd) # Grafo de especificação e código do projeto
 │   ├── tare.tools.backlog-graph/ (@ 086f02e) # Grafo de tarefas com atualização compare-and-swap
 │   └── tare.tools.library/       (@ 6e9639e) # Biblioteca técnica e registros de conhecimento

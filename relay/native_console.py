@@ -36,6 +36,7 @@ from .console_permissions import ProjectPermissions
 from .console_graph import ProjectGraph
 from .console_models import ConversationModels
 from .console_workbench import ConversationWorkbench, WorkbenchPanel
+from .console_background import BackgroundExecution, BackgroundPanel
 
 
 from .console_panels import SupportPanel
@@ -130,13 +131,25 @@ def session_has_terminal(selection):
         return False
 
 
-class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, ProjectPermissions, ProjectNavigation, ConversationHeader, ComposerAttachments, ConversationNavigation, FileContext, OrderConsole, DemandConsole, App):
+def session_is_conversation_flow(selection, args):
+    """Whether this session runs host-owned conversation_flow (checks + independent audit inside implement())."""
+    if '--conversation' in args:
+        return True
+    try:
+        from .native_agent import read_json
+        return bool(read_json(Path(selection.session)/'native-agent.json', 1024*1024).get('conversation_flow'))
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError):
+        return False
+
+
+class WorkConsole(BackgroundExecution, ConversationWorkbench, ConversationModels, ProjectGraph, ProjectPermissions, ProjectNavigation, ConversationHeader, ComposerAttachments, ConversationNavigation, FileContext, OrderConsole, DemandConsole, App):
     def get_driver_class(self):
         from .console_windows_input import unicode_windows_driver
         return unicode_windows_driver(super().get_driver_class())
 
     TITLE = 'tare · assistant'
     BINDINGS = [('ctrl+r', 'reload', 'Reload'), Binding('ctrl+x', 'cancel', 'Cancel run', priority=True),
+                Binding('ctrl+b', 'background', 'Background', priority=True),
                 ('ctrl+q', 'quit', 'Quit'), ('f1', 'conversations', 'Conversations'), ('f2', 'workspace', 'Settings'),
                 Binding('f3','changes','Changes',priority=True),
                 Binding('f4','processes','Processes',priority=True),
@@ -363,6 +376,9 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         self.backend = backend or Backend()
         self.process = None
         self.busy = False
+        self.background_runs = {}
+        self._active_run_state = None
+        self._detached_session = None
         self.presence_timer = None
         self.presence_step = 0
         self.presence_kind = None
@@ -953,6 +969,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         from .project_picker import ProjectPicker
         from .permissions_panel import PermissionsPanel
         from .project_graph_panel import ProjectGraphPanel
+        if self.is_running and isinstance(self.screen, BackgroundPanel):
+            return action in {'background', 'quit'}
         if self.is_running and isinstance(self.screen, (PermissionsPanel, ProjectGraphPanel)):
             return action in {'quit'}
         if self.is_running and isinstance(self.screen, ProjectPicker):
@@ -973,8 +991,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                 and action == 'start'):
             return False
         from textual.screen import ModalScreen
-        if self.is_running and action in {'files', 'next_step'} and isinstance(self.screen, ModalScreen):
-            return False  # F6 and F8 act on the main screen only
+        if self.is_running and action in {'files', 'next_step', 'background'} and isinstance(self.screen, ModalScreen):
+            return False  # F6, F8 and Ctrl+B act on the main screen only
         if action == 'cancel':
             # A busy composer must not consume Cancel as TextArea's cut. Idle
             # and direct terminal/modal bindings retain their normal handling.
@@ -2015,6 +2033,10 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             if assistant:
                 self.active = replace(self.active, mode='session',
                                       session=self.assistant_session or '', guide_next=False)
+            if self.active.mode == 'session' and self.active.session:
+                bg = self.background_run_for_session(self.active.session)
+                if bg is not None and bg.is_active:
+                    raise ValueError('This conversation is running in the background. Use /new or F1 for another chat, or /bg to answer/stop it.')
             if not resume and self.active.mode == 'session' and not continuation:
                 self.validate_pending_permissions(self.active.root)
                 self.validate_pending_graph(self.active.root)
@@ -2143,6 +2165,9 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         # Replies are journaled unchanged; the isolated host judge settles consent.
         self.folder_note = ''
         session = self.assistant_session
+        bg = self.background_run_for_session(session)
+        if bg is not None and bg.is_active:
+            self.set_status('This conversation is running in the background. Use /new or F1 for another chat, or /bg to answer/stop it.'); return
         if session and not any((Path(session)/name).exists() for name in ('native-agent.json', 'continuation.json')):
             # The first turn failed before its session existed: the next message starts it instead of
             # resuming nothing ("No such file …native-agent.json" kept the message unsent, 2026-11-03).
@@ -2235,7 +2260,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         finally:
             self.entry_cancel = None
             self.controls(False)
-            if self.close_after_run:
+            if self.close_after_run and not self.has_active_background_runs():
                 self.exit()
 
     def start_suggested(self):
@@ -2269,6 +2294,8 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         started = clock()
         succeeded = False
         completion = None
+        wait_detach = None
+        detached = False
         start_tree = None
         snapshot_gap = None
         launch_attempted = False
@@ -2293,13 +2320,29 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             if self.cancel_requested:
                 self.backend.cancel(self.process)
             output = self.query_one('#output', Transcript)
-            completion = asyncio.create_task(observe_process(self.process, self.assistant_activity, self.say))
-            while not completion.done():
-                await asyncio.wait({completion}, timeout=1)
+            sink = [self.assistant_activity, self.say]
+            completion = asyncio.create_task(observe_process(
+                self.process, lambda ev: sink[0](ev), lambda text: sink[1](text)))
+            detach_event = asyncio.Event()
+            wait_detach = asyncio.create_task(detach_event.wait())
+            self._active_run_state = {
+                'process': self.process, 'completion': completion, 'selection': selection,
+                'clock': clock, 'started': started, 'invocation_id': getattr(self, 'active_invocation', None),
+                'sink': sink, 'detach_event': detach_event,
+                'command_approval_root': getattr(self.backend, 'action_approval_root', ''),
+                'conversation_flow': (selection.mode == 'session' and start_tree is None
+                                      and session_is_conversation_flow(selection, args)),
+            }
+            while not completion.done() and self._detached_session != selection.session:
+                await asyncio.wait({completion, wait_detach}, timeout=1, return_when=asyncio.FIRST_COMPLETED)
+                if self._detached_session == selection.session:
+                    break
                 await self.refresh_messages(force=False)
                 self.refresh_command_permission()
                 if selection.mode == 'session' and self.selection().mode == 'assistant':
                     self.refresh_execution_permission(selection)
+                if self._detached_session == selection.session:
+                    break
                 if any(getattr(self, name, None) is not None
                        for name in ('_execution_permission_panel', '_command_permission_panel')):
                     clock.pause()
@@ -2320,6 +2363,9 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                         # carry recorded operations without repeated progress cards.
                     except (OSError, ValueError, KeyError):
                         self.set_status('Running; progress observation unavailable.')
+            if self._detached_session == selection.session:
+                detached = True
+                return
             stdout, stderr = await completion
             clock.resume()
             output.finish_stream()
@@ -2365,26 +2411,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                     self.assistant_result(result, exit_code=self.process.returncode)
                 else:
                     self.say(render_result(result), literal=True)
-                request = result.get('folder_access_request')
-                self.folder_request = {**request, 'session': result.get('session')} if request else None
-                if request:
-                    from .folder_access import presented_question
-                    self.say(presented_question(request, self.selection().folder_grants, result['session']))
-                    if request.get('question_id'):
-                        from .consent_decisions import present
-                        present(result['session'], request['question_id'])
-                from .consent_decisions import pending as consent_pending
-                from .native_agent import read_json
-                custody = result.get('session')
-                if custody and (Path(custody)/'native-agent.json').exists():
-                    identity = read_json(Path(custody)/'native-agent.json', 1024*1024)['session_id']
-                    questions = consent_pending(custody, identity)
-                    if questions:
-                        q = questions[0]
-                        workspace = self.selection().root
-                        def decided(choice, custody=custody, identity=identity, q=q, workspace=workspace):
-                            self.consent_decided(choice, custody, identity, q['question_id'], workspace)
-                        self.push_screen(ConsentPanel(q['question']), decided)
+                self.present_session_consent(result)
             else:
                 from .work_console import render
                 self.say(render('run', result), literal=True)
@@ -2407,6 +2434,16 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             self.set_status('Execution unavailable: '+str(exc))
             self.say(str(exc))
         finally:
+            self._active_run_state = None
+            if wait_detach is not None and not wait_detach.done():
+                wait_detach.cancel()
+                await asyncio.gather(wait_detach, return_exceptions=True)
+            if detached:
+                self._detached_session = None
+                self.process = None
+                self.cancel_requested = False
+                self.controls(False)
+                return
             preflight_refused = (self.last_result or {}).get('execution') == 'agent_not_started'
             if (not launch_attempted or preflight_refused) and selection.mode == 'session' and selection.session:
                 # A reserved path is not a saved session. Preserve any existing custody.
@@ -2491,10 +2528,33 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
                                   (self.last_result or {}).get('output'))
             if ids:  # a finished turn: what the reply left unsaid, beside its audit (relay/heads_up.py)
                 self.heads_up(selection.session, ids, selection.prompt.strip() or opened)  # earlier: the journal's
-            if self.close_after_run:
+            if self.close_after_run and not self.has_active_background_runs():
                 self.exit()
             elif succeeded and not self.cancel_requested and self.selection().mode != 'assistant':
                 self.follow_demand()
+
+    def present_session_consent(self, result):
+        """Present any folder-access or pending consent question returned with a completed session result."""
+        request = result.get('folder_access_request')
+        self.folder_request = {**request, 'session': result.get('session')} if request else None
+        if request:
+            from .folder_access import presented_question
+            self.say(presented_question(request, self.selection().folder_grants, result['session']))
+            if request.get('question_id'):
+                from .consent_decisions import present
+                present(result['session'], request['question_id'])
+        from .consent_decisions import pending as consent_pending
+        from .native_agent import read_json
+        custody = result.get('session')
+        if custody and (Path(custody)/'native-agent.json').exists():
+            identity = read_json(Path(custody)/'native-agent.json', 1024*1024)['session_id']
+            questions = consent_pending(custody, identity)
+            if questions:
+                q = questions[0]
+                workspace = self.selection().root
+                def decided(choice, custody=custody, identity=identity, q=q, workspace=workspace):
+                    self.consent_decided(choice, custody, identity, q['question_id'], workspace)
+                self.push_screen(ConsentPanel(q['question']), decided)
 
     async def refresh_session(self, path):
         try:
@@ -2674,7 +2734,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             self.set_status('Application unavailable; inspect the saved proposal and graph before retrying: '+str(exc))
         finally:
             self.controls(False)
-            if self.close_after_run:
+            if self.close_after_run and not self.has_active_background_runs():
                 self.exit()
             elif completed and not self.cancel_requested:
                 self.follow_demand()
@@ -2801,7 +2861,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             self.set_status('Preparation could not be confirmed: '+str(exc))
         finally:
             self.controls(False)
-            if self.close_after_run:
+            if self.close_after_run and not self.has_active_background_runs():
                 self.exit()
             elif completed and not self.cancel_requested:
                 self.follow_demand()
@@ -2971,7 +3031,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             self.set_status('Decision refused: '+str(exc))
         finally:
             self.controls(False)
-            if self.close_after_run:
+            if self.close_after_run and not self.has_active_background_runs():
                 self.exit()
 
     @staticmethod
@@ -3048,7 +3108,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             self.set_status('Findings not attached: '+str(exc))
         finally:
             self.controls(False)
-            if self.close_after_run:
+            if self.close_after_run and not self.has_active_background_runs():
                 self.exit()
             elif attached and not self.cancel_requested:
                 if start_plan:
@@ -3060,10 +3120,16 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
         if self.busy:
             self.close_after_run = True
             self.action_cancel()
+            self.cancel_background_runs()
         else:
             if (self.demand_id or self.has_draft()) and not self.save_demand():
                 return
             self.stop_heads_up()
+            if self.has_active_background_runs():
+                self.close_after_run = True
+                self.cancel_background_runs()
+                self.set_status('Stopping background runs before quitting…')
+                return
             self.exit()
 
     @staticmethod
@@ -3118,7 +3184,7 @@ class WorkConsole(ConversationWorkbench, ConversationModels, ProjectGraph, Proje
             self.set_status('Revision refused: '+str(exc))
         finally:
             self.controls(False)
-            if self.close_after_run:
+            if self.close_after_run and not self.has_active_background_runs():
                 self.exit()
 
 

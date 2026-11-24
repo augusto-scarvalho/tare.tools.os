@@ -411,7 +411,7 @@ class DemandConsole:
                 finally:
                     self.entry_cancel = None
                     self.controls(False)
-                    if self.close_after_run:
+                    if self.close_after_run and not self.has_active_background_runs():
                         self.exit()
                 if (cancellation.is_cancelled() or stopped() or selected != self.selection()
                         or (identity, revision) != (self.demand_id, self.demand_revision)):
@@ -599,7 +599,7 @@ class DemandConsole:
         finally:
             self.reviewed_sequence_revision = None
             self.controls(False)
-            if self.close_after_run:
+            if self.close_after_run and not self.has_active_background_runs():
                 self.exit()
 
     def open_demand_stage(self):

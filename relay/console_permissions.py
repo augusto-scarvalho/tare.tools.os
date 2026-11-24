@@ -81,10 +81,14 @@ class ProjectPermissions:
                     directory=self.permissions_directory(selected.root), control_root=relay_mesh.RELAY_ROOT,
                     changes=panel.changes)
                 if request.get('kind') == 'stall':
-                    self.set_status('Kept running · asked again only after another silent stretch' if choice == 'once'
-                                    else 'Stopping it to run it outside the sandbox' if choice == 'outside'
-                                    else 'Stopping it · the check stays unjudged' if request['stall']['check']
-                                    else 'Stopping it')
+                    if choice == 'background':
+                        if not self.detach_active_to_background():
+                            self.set_status('Kept running · asked again only after another silent stretch')
+                    else:
+                        self.set_status('Kept running · asked again only after another silent stretch' if choice == 'once'
+                                        else 'Stopping it to run it outside the sandbox' if choice == 'outside'
+                                        else 'Stopping it · the check stays unjudged' if request['stall']['check']
+                                        else 'Stopping it')
                 elif request.get('kind') == 'sandbox':
                     self.set_status('Not run outside the sandbox · the check stays unjudged' if choice in (None, 'deny')
                                     else 'Running the check outside the sandbox'+(' · saved for this project'

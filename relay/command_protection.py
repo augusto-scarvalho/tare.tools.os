@@ -961,7 +961,7 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
             process = value.get('process') or {}
             why = stop_reason(process)
             if why:  # unjudged, as a check that did not finish; reaching a limit shows no sandbox block
-                done = subprocess.CompletedProcess(argv, 1, '', '')
+                done = subprocess.CompletedProcess(argv, 1, value.get('partial_output') or '', '')
                 done.execution_limitation = 'Check stopped: '+why+'.'
                 done.sandbox_blocked = None
                 done.stalled_outside = why if stall is not None and stall.choices.get(effect_id) == 'outside' else None

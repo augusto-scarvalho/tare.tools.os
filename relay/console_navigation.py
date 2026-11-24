@@ -394,12 +394,12 @@ class ConversationNavigation:
     def dispatch_conversation_command(self, name, arguments):
         """Handle UI commands without passing them to the model or flow router."""
         workbench = {'/artifacts', '/tasks', '/team', '/usage', '/tools', '/skills'}
-        if name not in {'/new', '/model', '/reasoning', '/diff', '/sessions', '/terminal', '/files', '/project', '/permissions', '/backlog', '/delivery', '/challenger', '/storage', '/delegation', '/routes', '/guidance', '/fleet', '/quota', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up', '/missed'} | workbench:
+        if name not in {'/new', '/model', '/reasoning', '/diff', '/sessions', '/terminal', '/files', '/bg', '/project', '/permissions', '/backlog', '/delivery', '/challenger', '/storage', '/delegation', '/routes', '/guidance', '/fleet', '/quota', '/setup', '/recheck', '/retry_delivery', '/repair_plan', '/heads-up', '/missed'} | workbench:
             return False
         if arguments and name != '/missed':  # /missed takes the words the reply should have said
             self.set_status(name+' takes no arguments. Your draft has been kept.')
             return True
-        if (self.sending_message or self.busy) and name not in {'/terminal', '/files', '/tasks', '/team', '/usage', '/quota', '/challenger', '/storage', '/missed'}:
+        if (self.sending_message or self.busy) and name not in {'/terminal', '/files', '/bg', '/tasks', '/team', '/usage', '/quota', '/challenger', '/storage', '/missed'}:
             self.set_status('Wait for the current operation before using '+name+'.')
             return True
         if Path(self.selection().root).resolve() != Path(self.workspace_root).resolve():
@@ -445,6 +445,9 @@ class ConversationNavigation:
             prompt.clear()
             if not self.files_open:
                 self.action_files()
+        elif name == '/bg':
+            prompt.clear()
+            self.action_background()
         elif name == '/delegation':
             prompt.clear()
             self.action_delegation()
@@ -574,7 +577,10 @@ class ConversationNavigation:
         for row in self.navigation_shown:
             title = plain(row['title']).replace('\n', ' ').replace('\t', ' ')
             label = Text(title)
-            label.append('\n'+('Current · ' if row['id'] == self.demand_id else '')
+            bg = self.background_run_for_demand(row['id'])
+            bg_tag = ('Needs answer · ' if bg and bg.status == 'needs_answer'
+                      else 'Running · ' if bg and bg.is_active else '')
+            label.append('\n'+bg_tag+('Current · ' if row['id'] == self.demand_id else '')
                          +row['updated_at'][:10]+' · '+row['id'][:6]+'\n', style='dim')
             labels.append(label)
         menu.set_options(labels)
