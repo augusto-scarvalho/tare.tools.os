@@ -32,7 +32,8 @@ class ProjectPermissions:
     def refresh_command_permission(self):
         from .command_permission import pending,answer
         from .execution_permission_panel import ExecutionPermissionPanel
-        root=getattr(self.backend,'action_approval_root','')
+        state=getattr(self,'_active_run_state',None)
+        root=(state.get('command_approval_root') if state else '') or getattr(self.backend,'action_approval_root','')
         try:request=pending(root)
         except (ValueError,OSError):return
         panel=getattr(self,'_command_permission_panel',None)

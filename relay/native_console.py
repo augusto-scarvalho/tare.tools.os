@@ -2329,7 +2329,7 @@ class WorkConsole(BackgroundExecution, ConversationWorkbench, ConversationModels
                 'process': self.process, 'completion': completion, 'selection': selection,
                 'clock': clock, 'started': started, 'invocation_id': getattr(self, 'active_invocation', None),
                 'sink': sink, 'detach_event': detach_event,
-                'command_approval_root': getattr(self.backend, 'action_approval_root', ''),
+                'command_approval_root': getattr(self.process, 'action_approval_root', '') or getattr(self.backend, 'action_approval_root', ''),
                 'conversation_flow': (selection.mode == 'session' and start_tree is None
                                       and session_is_conversation_flow(selection, args)),
             }

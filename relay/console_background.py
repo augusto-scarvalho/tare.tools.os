@@ -1,9 +1,10 @@
 """Supervised background execution of active conversation turns inside the TUI."""
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import json
 from pathlib import Path
 import time
+from uuid import uuid4
 
 from rich.text import Text
 from textual.binding import Binding
@@ -256,63 +257,68 @@ class BackgroundExecution:
         from . import command_permission
         from .conversation_permissions import pending as permission_pending
         try:
-            while not run.completion.done():
-                await asyncio.wait({run.completion}, timeout=1)
-                if run.completion.done():
-                    break
-                req = kind = None
-                try:
-                    req = permission_pending(run.session)
-                    if req:
-                        kind = 'execution'
-                except (OSError, ValueError):
-                    req = None
-                if req is None and run.command_approval_root:
+            while True:
+                while not run.completion.done():
+                    await asyncio.wait({run.completion}, timeout=1)
+                    if run.completion.done():
+                        break
+                    req = kind = None
                     try:
-                        req = command_permission.pending(run.command_approval_root)
+                        req = permission_pending(run.session)
                         if req:
-                            kind = 'command'
+                            kind = 'execution'
                     except (OSError, ValueError):
                         req = None
-                if req:
-                    run.status = 'needs_answer'
-                    run.pending_kind = kind
-                    run.pending_request_id = req['id']
-                    run.detail = (req.get('objective') or 'Waiting for command approval'
-                                  if kind == 'command' else req.get('objective') or 'Waiting for your answer')[:140]
-                    if run.notified_request_id != req['id']:
-                        run.notified_request_id = req['id']
-                        self.notify(f'Background run needs your answer: {run.title} · open /bg to respond.',
-                                    severity='warning')
+                    if req is None and run.command_approval_root:
+                        try:
+                            req = command_permission.pending(run.command_approval_root)
+                            if req:
+                                kind = 'command'
+                        except (OSError, ValueError):
+                            req = None
+                    if req:
+                        run.status = 'needs_answer'
+                        run.pending_kind = kind
+                        run.pending_request_id = req['id']
+                        run.detail = (req.get('objective') or 'Waiting for command approval'
+                                      if kind == 'command' else req.get('objective') or 'Waiting for your answer')[:140]
+                        if run.notified_request_id != req['id']:
+                            run.notified_request_id = req['id']
+                            self.notify(f'Background run needs your answer: {run.title} · open /bg to respond.',
+                                        severity='warning')
+                            self._refresh_background_panel()
+                    elif run.status == 'needs_answer':
+                        run.status = 'running'
+                        run.pending_kind = None
+                        run.pending_request_id = None
+                        run.detail = ''
                         self._refresh_background_panel()
-                elif run.status == 'needs_answer':
-                    run.status = 'running'
-                    run.pending_kind = None
-                    run.pending_request_id = None
-                    run.detail = ''
-                    self._refresh_background_panel()
-            stdout, stderr = await run.completion
-            run.clock.resume()
-            run.exit_code = run.process.returncode
-            run.stderr_text = stderr.decode('utf-8', errors='replace') if stderr else ''
-            try:
-                run.result = json.loads(stdout)
-            except (ValueError, UnicodeError):
-                run.result = None
-            run.ended_at = run.clock()
-            run.pending_kind = None
-            run.pending_request_id = None
-            if run.cancel_requested:
-                run.status = 'cancelled'
-                run.detail = 'Cancelled'
-            elif (run.result is not None and run.exit_code == 0
-                  and run.result.get('status') in {'PROPOSED', 'REVIEWED', 'COMPLETED', 'SETTLED'}):
-                run.status = 'done'
-                run.detail = str(run.result.get('status'))
-            else:
-                run.status = 'failed'
-                run.detail = str((run.result or {}).get('status') or f'exit {run.exit_code}')
-            self._deliver_background_completion(run)
+                stdout, stderr = await run.completion
+                run.clock.resume()
+                run.exit_code = run.process.returncode
+                run.stderr_text = stderr.decode('utf-8', errors='replace') if stderr else ''
+                try:
+                    run.result = json.loads(stdout)
+                except (ValueError, UnicodeError):
+                    run.result = None
+                run.pending_kind = None
+                run.pending_request_id = None
+                if (not run.cancel_requested and not self.close_after_run
+                        and await self._try_background_auto_escalate(run)):
+                    continue
+                run.ended_at = run.clock()
+                if run.cancel_requested:
+                    run.status = 'cancelled'
+                    run.detail = 'Cancelled'
+                elif (run.result is not None and run.exit_code == 0
+                      and run.result.get('status') in {'PROPOSED', 'REVIEWED', 'COMPLETED', 'SETTLED'}):
+                    run.status = 'done'
+                    run.detail = str(run.result.get('status'))
+                else:
+                    run.status = 'failed'
+                    run.detail = str((run.result or {}).get('status') or f'exit {run.exit_code}')
+                self._deliver_background_completion(run)
+                break
         except asyncio.CancelledError:
             pass
         except Exception as exc:
@@ -323,6 +329,127 @@ class BackgroundExecution:
             self._refresh_background_panel()
             if self.close_after_run and not self.busy and not self.has_active_background_runs():
                 self.exit()
+
+    async def _try_background_auto_escalate(self, run):
+        """Mirror foreground tare auto route escalation when a detached background turn stops recoverably."""
+        from .native_agent import read_json, session_root
+        from .native_continuity import preview, save_request
+        from .turn_engine import STOPPED, local_models, next_auto, successor
+        status = (run.result or {}).get('status')
+        if run.selection.mode != 'session' or not run.session or status not in STOPPED:
+            return False
+        try:
+            state = read_json(Path(run.session) / 'native-agent.json', 1024 * 1024)
+            saved = state['deployment']
+            if not saved.get('native_auto_selection'):
+                return False
+            role = 'coordinator' if state.get('conversation_flow') else state.get('config', {}).get('role', 'implementer')
+            if successor(status, per_message_limits=False) == 'stop':
+                run.sink[1](
+                    f"tare auto: this conversation spent the budget you set, so it stays on "
+                    f"{saved['native_auto_selection']['route']}. Raise the limit, or start a new conversation, "
+                    f"to continue on a stronger route."
+                )
+                return False
+            with local_models(run.selection.local_models):
+                deployment = next_auto(saved, role=role)
+            if deployment is None:
+                run.sink[1]('tare auto: no further route is available.')
+                return False
+            terminal_conn = getattr(self.backend, 'continuity_terminal', lambda _s: None)(run.session)
+            value = await asyncio.to_thread(preview, run.session, run.root, terminal_connection=terminal_conn)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            self.notify('tare auto: ' + str(exc), severity='error')
+            return False
+        if run.cancel_requested or self.close_after_run:
+            return False
+        if deployment['native_profile']['protocol'] != 'vendor-cli':
+            deployment = {**deployment, 'native_streaming': run.selection.streaming}
+        route = deployment['native_auto_selection']['route']
+        brief = value['text'] + '\nContinue the task from the brief and history.'
+        new_session = str(session_root() / uuid4().hex)
+        save_request(new_session, value, brief, deployment, chosen=False)
+        invocation_id = uuid4().hex
+        args = ['agent', '--invocation-id', invocation_id, '--continue-provider', '--session', new_session,
+                '--format', 'json', '--activity-events']
+        if run.stderr_text:
+            run.sink[1](run.stderr_text)
+        run.sink[1](f"tare auto: {saved['native_auto_selection']['route']} stopped; continuing on {route}.")
+        from .execution_scope import for_coordinator
+        prev_approval = getattr(self.backend, 'action_approval_root', None)
+        coordinator = (getattr(run.selection, 'execution_policy', None) or {}).get('coordinator', '')
+        try:
+            with for_coordinator(coordinator):
+                process = await self.backend.launch(args, run.root)
+            launched_approval = getattr(process, 'action_approval_root', None)
+            if launched_approval is None:
+                current_approval = getattr(self.backend, 'action_approval_root', '')
+                launched_approval = current_approval if current_approval != prev_approval else ''
+        finally:
+            if self.busy and prev_approval is not None:
+                self.backend.action_approval_root = prev_approval
+        if run.cancel_requested or self.close_after_run:
+            try:
+                self.backend.cancel(process)
+            except (OSError, ProcessLookupError):
+                pass
+            try:
+                await process.communicate()
+            except Exception:
+                pass
+            return False
+        old_session = run.session
+        run.session = new_session
+        run.selection = replace(run.selection, session=new_session, prompt='')
+        run.process = process
+        run.invocation_id = invocation_id
+        run.command_approval_root = launched_approval
+        run.status = 'running'
+        run.detail = f'Escalated to {route}'
+        run.result = None
+        run.exit_code = None
+        run.stderr_text = ''
+        run.ended_at = None
+        run.notified_request_id = None
+        self.background_runs.pop(old_session, None)
+        self.background_runs[new_session] = run
+        self._record_background_escalation_demand(run, old_session, new_session, invocation_id, len(brief.encode()))
+        from .console_output import observe_process
+        run.completion = asyncio.create_task(observe_process(
+            process, lambda ev: run.sink[0](ev), lambda text: run.sink[1](text)))
+        self.notify(f'Background run escalated to {route}: {run.title}.')
+        self._refresh_background_panel()
+        return True
+
+    def _record_background_escalation_demand(self, run, old_session, new_session, invocation_id, brief_bytes):
+        """Point the saved conversation demand (and open view if still on it) at the escalated continuity session."""
+        notice = f'Provider changed explicitly. Continuity brief: {brief_bytes} bytes. Previous history kept locally.'
+        if self.assistant_session == old_session and not self.busy:
+            self.assistant_session = new_session
+            self.remember_message(notice)
+        if not run.demand_id:
+            return
+        from . import console_demand
+        try:
+            saved_demand = console_demand.read(run.demand_id, run.root, relay_mesh.RELAY_ROOT)
+            snapshot = dict(saved_demand['snapshot'])
+            snapshot['assistant_session'] = new_session
+            snapshot['selection'] = {**(snapshot.get('selection') or {}), 'mode': 'session', 'session': new_session, 'prompt': ''}
+            history = list(snapshot.get('assistant_history') or [])
+            if not history or history[-1] != notice:
+                history.append(notice)
+            snapshot['assistant_history'] = history
+            updated = console_demand.save(
+                run.demand_id, saved_demand['revision'], run.root, relay_mesh.RELAY_ROOT,
+                'execution_requested', snapshot,
+                {'resume': False, 'replan': False, 'operator': '', 'invocation_id': invocation_id,
+                 'context_root': '', 'context_paths': [], 'attachments': [], 'demand_sequence': False},
+            )
+            if self.demand_id == run.demand_id:
+                self.demand_revision = updated['revision']
+                self.demand_state = updated
+        except Exception:
+            pass
 
     def _flush_background_run_to_view(self, run):
         """Render buffered events and final result when the run's conversation is open."""
@@ -455,25 +582,27 @@ class BackgroundExecution:
             self._flush_background_run_to_view(run)
 
     def stop_background_run(self, run):
-        if not run.is_active or run.process is None or run.process.returncode is not None:
+        if not run.is_active:
             return
         run.cancel_requested = True
         run.detail = 'Cancellation requested'
-        try:
-            self.backend.cancel(run.process)
-            self.notify(f'Stopping background run: {run.title}.')
-        except (OSError, ProcessLookupError) as exc:
-            self.notify(f'Could not stop background run: {exc}', severity='error')
+        if run.process is not None and run.process.returncode is None:
+            try:
+                self.backend.cancel(run.process)
+                self.notify(f'Stopping background run: {run.title}.')
+            except (OSError, ProcessLookupError) as exc:
+                self.notify(f'Could not stop background run: {exc}', severity='error')
         self._refresh_background_panel()
 
     def cancel_background_runs(self):
         for run in list(self.background_runs.values()):
-            if run.is_active and run.process is not None and run.process.returncode is None:
+            if run.is_active:
                 run.cancel_requested = True
-                try:
-                    self.backend.cancel(run.process)
-                except (OSError, ProcessLookupError):
-                    pass
+                if run.process is not None and run.process.returncode is None:
+                    try:
+                        self.backend.cancel(run.process)
+                    except (OSError, ProcessLookupError):
+                        pass
 
     def open_background_panel(self):
         if isinstance(self.screen, BackgroundPanel):

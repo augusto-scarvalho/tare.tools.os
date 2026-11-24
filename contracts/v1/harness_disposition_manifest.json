@@ -2661,8 +2661,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 43674,
-      "sha256": "7d8d714ded5cbf3fe495ac5b28be0f9752d3715f34b82c50ea4101c819f27b4c"
+      "size_bytes": 43786,
+      "sha256": "23730bd1e9cc00ef9ac43396875be2dbf4c34133b839b8bcf8db8df1333cff07"
     },
     {
       "name": "human_wait.py",
@@ -2681,8 +2681,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 191287,
-      "sha256": "2094c59e04bed7afd77c8d472b1cc510afacefeea179d841afd05983f22a309e"
+      "size_bytes": 191340,
+      "sha256": "9235e911f0391bc1c4a75b3e270fa9cf057d87a57ae88ff7b6919c80a66bc173"
     },
     {
       "name": "native_display.py",
@@ -3267,8 +3267,8 @@
     {
       "name": "console_permissions.py",
       "path": "tare.tools.os/relay/console_permissions.py",
-      "size_bytes": 13066,
-      "sha256": "9cbfad82c6855673bb2cc2460a8b606bec3a3dfce35d17342c6c1b878f58d324",
+      "size_bytes": 13176,
+      "sha256": "5b062fb4c26452acdbf3e13848a537ca9a9d7a2c2339d5ae6133f1140dacdd33",
       "summary": "Compose project permission defaults with new-session controls.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
@@ -4581,8 +4581,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 22072,
-      "sha256": "3a3257e427d99a3f3262f4cd4830728808fc6c3e2d0c5329feaa6d1d733dbf9b"
+      "size_bytes": 29337,
+      "sha256": "5fc93bf17a713be8e98d3b353063fdd76890f2735efbe3c11bed77e522bb0f98"
     }
   ]
 }
