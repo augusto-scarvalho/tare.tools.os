@@ -1310,6 +1310,21 @@ def verification_evidence(session):
     return rows
 
 
+def _effective_trigger_limit(deployment):
+    from tare_tools_agent_runtime import ContextPolicy
+    from .native_generation import model_context_policy
+    profile = (deployment or {}).get('native_profile') or {}
+    window, output_tokens = profile.get('context_window'), profile.get('output_tokens')
+    if (type(window) is not int or type(output_tokens) is not int
+            or window <= output_tokens + 128):
+        return None
+    try:
+        fractions = model_context_policy(deployment)
+        return ContextPolicy(window=window, output_reserve=output_tokens, margin=128, **fractions).trigger_limit
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
 def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=None, worker=None, control=None, spend_model=None, review_effect=None,
              outside=None, check_control=None, red_baseline=None):
     """Run one unit up the route ladder until VERIFIED or out of rungs; apply a VERIFIED change. The receipt and
@@ -1378,12 +1393,29 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
         critical=bool(unit.get('critical')), unit_effort=unit.get('effort'), parts=effective_parts,
         **({'allow_parent': True} if state.get('conversation_flow') else {}))
     visited = []  # rungs actually reached, for executed_decision only; selection is unchanged
-    for rung, (name, deployment) in enumerate(choices):
-        if rung >= MAX_RUNGS or stop():
+    skipped_reasons = []
+    executed_rungs = 0
+    compaction_escalated = False
+    min_trigger_limit = None
+    prior_compaction_result = None
+    for name, deployment in choices:
+        if executed_rungs >= MAX_RUNGS or stop():
             break
+        if min_trigger_limit is not None:
+            candidate_trigger = _effective_trigger_limit(deployment)
+            if candidate_trigger is None or candidate_trigger <= min_trigger_limit:
+                visited.append(name)
+                skipped_reasons.append((name, 'CONTEXT_WINDOW_NOT_LARGER'))
+                continue
         if review is not None and hasattr(review, 'preflight') and not review.preflight(deployment):
+            if compaction_escalated:
+                visited.append(name)
+                skipped_reasons.append((name, 'NO_INDEPENDENT_AUDITOR'))
+                continue
             result = {'verdict': 'NOT_REVIEWED', 'reason': 'No independent auditor is available; implementation has not started.'}
             break
+        rung = executed_rungs
+        executed_rungs += 1
         visited.append(name)
         progress = PROGRESS.get()
         if progress is not None:
@@ -1628,8 +1660,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     trace_mode = ('RESUME_SAVED_ROUTE' if waiting else
                                   'EXACT_TEMPORARY_PIN' if implementer_pin and pin_matches(implementer_pin, deployment) else
                                   'CONFIGURED' if args.get('route') else 'AUTOMATIC')
-                    row['executed_decision'] = executed_decision(trace_mode, name, visited,
-                        [(earlier, 'EARLIER_RUNG_ENDED') for earlier in visited[:-1]])
+                    row['executed_decision'] = executed_decision(trace_mode, name, visited, skipped_reasons)
                     attempt = executed_attempt(deployment, {'status': 'DISPATCHING'})
                     if waiting:
                         attempt['resume'] = True
@@ -1841,7 +1872,25 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 break
             result['patch'] = row.get('patch')
             if state.get('conversation_flow'):
+                from .execution_scope import current as current_scope
+                can_escalate = (
+                    not compaction_escalated
+                    and not args.get('route')
+                    and not current_scope().pin('implementer')
+                    and not waiting and not candidate
+                    and verdict_ == 'INCONCLUSIVE' and not changed and not stop()
+                    and bool((result.get('implementation_stop') or {}).get('compaction_loop'))
+                )
+                if can_escalate:
+                    trigger = _effective_trigger_limit(deployment)
+                    if trigger is not None:
+                        compaction_escalated = True
+                        min_trigger_limit = trigger
+                        prior_compaction_result = result
+                        skipped_reasons.append((name, 'COMPACTION_LOOP_ESCALATED'))
+                        continue
                 break  # a completed failed unit needs diagnosis, not another alias or larger model
+            skipped_reasons.append((name, 'EARLIER_RUNG_ENDED'))
         except CheckCleanupUnknown as exc:
             keep_tree=True
             row.update(verdict='INCONCLUSIVE',reason=str(exc)[:300])
@@ -1850,12 +1899,16 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
             break
         except (ValueError, OSError, KeyError, subprocess.SubprocessError) as exc:
             row.update(verdict='INCONCLUSIVE', reason=str(exc)[:300])
+            if compaction_escalated and prior_compaction_result is not None and not row.get('attempts'):
+                result = prior_compaction_result
+                break
             result = {'verdict': 'INCONCLUSIVE', 'reason': row['reason'], 'route': name,
                       **{k: row[k] for k in ('needs', 'route_class', 'kind', 'class_source', 'kinds', 'critical', 'effort', 'effort_from') if k in row}}
             if keep_tree and worker:
                 result['worker']={**worker,'producer':producer_reference(Path(worker['session']).parent,worker['producer'])}
             if state.get('conversation_flow') or 'R0' in row['reason'] or 'R5' in row['reason'] or candidate is not None:
                 break
+            skipped_reasons.append((name, 'EARLIER_RUNG_ENDED'))
         finally:
             if check_token is not None:
                 check_runner=CHECK_PORT.get()
