@@ -505,8 +505,11 @@ def confirm_checks(root, state, *, project, proposal, from_role, summary, reason
     fail-closed without writing.
     """
     from .agent_signals import ADVISORY_AUTHORITY, prepare_checks_proposal
+    from .conversation_tasks import _uses_detected_checks, detected_checks
     from .turn_engine import write_project_checks_doc
 
+    config = state.get('config') or {}
+    active_now = _uses_detected_checks(config)
     prepared = prepare_checks_proposal(project, proposal)
     base = {
         'path': '.tare/checks.json',
@@ -547,6 +550,7 @@ def confirm_checks(root, state, *, project, proposal, from_role, summary, reason
         'checks_proposal': {
             'from_role': from_role,
             'existed': prepared['existed'],
+            'active_now': active_now,
             'summary': str(summary)[:300],
             'reason': str(reason)[:1000],
             'added': prepared['added'],
@@ -569,11 +573,24 @@ def confirm_checks(root, state, *, project, proposal, from_role, summary, reason
         return {**base, 'status': 'DENIED', 'saved': False,
                 'reason': 'The user chose not to save .tare/checks.json. Do not propose this again in this turn.'}
     _, _, parsed = write_project_checks_doc(project, prepared['document'], expected_sha256=prepared['existing_sha256'])
+    if active_now:
+        resolved_project = Path(project).resolve()
+        repos = config.get('repositories') or {}
+        matching_repos = {repo for repo, root_path in repos.items() if Path(root_path).resolve() == resolved_project}
+        catalog = detected_checks(config) if matching_repos else {}
+        registered = sorted(name for name, entry in catalog.items() if entry.get('repository') in matching_repos)
+        active_checks = registered if matching_repos else sorted(parsed['verifiers'])
+        next_msg = '.tare/checks.json was saved and is active immediately for this conversation.'
+    else:
+        active_checks = []
+        next_msg = ('.tare/checks.json was saved, but this conversation uses explicit scoped verifiers that take '
+                    'precedence; it will take effect in new conversations without explicit verifiers.')
     return {
         **base,
         'status': 'SAVED',
         'saved': True,
-        'active_checks': sorted(parsed['verifiers']),
+        'active_in_conversation': active_now,
+        'active_checks': active_checks,
         'manual_checks': sorted(parsed['manual']),
-        'next': '.tare/checks.json was saved and is active immediately for this conversation.',
+        'next': next_msg,
     }
