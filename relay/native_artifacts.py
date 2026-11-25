@@ -23,10 +23,52 @@ class Source(Record):
     sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
 
 
+class CheckProposalEntry(Record):
+    name: str = Field(min_length=1, max_length=64)
+    remove: bool | None = None
+    mode: Literal['headless', 'manual', 'gui'] | None = None
+    argv: list[str] | None = Field(default=None, max_length=32)
+    timeout_seconds: int | None = Field(default=None, ge=5, le=3600)
+    description: str | None = Field(default=None, max_length=240)
+    paths: list[str] | None = Field(default=None, max_length=16)
+
+
+class ProposeChecksPayload(Record):
+    checks: list[CheckProposalEntry] = Field(max_length=16)
+    replace: bool | None = None
+    repository: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class GoalDriftPayload(Record):
+    expected: str = Field(min_length=1, max_length=1000)
+    discovered: str = Field(min_length=1, max_length=1000)
+    proposed_objective: str | None = Field(default=None, min_length=1, max_length=1000)
+    options: list[str] | None = Field(default=None, min_length=1, max_length=6)
+
+
+class OutOfScopeBlockerPayload(Record):
+    symptom: str = Field(min_length=1, max_length=1000)
+    paths: list[str] | None = Field(default=None, max_length=16)
+    suggested_follow_up: str | None = Field(default=None, min_length=1, max_length=500)
+
+
+class Signal(Record):
+    kind: Literal['propose_checks', 'goal_drift', 'out_of_scope_blocker']
+    summary: str = Field(min_length=1, max_length=300)
+    reason: str = Field(min_length=1, max_length=1000)
+    payload: ProposeChecksPayload | GoalDriftPayload | OutOfScopeBlockerPayload
+
+
 class Proposal(Record):
     summary: str = Field(min_length=1)
     sources: list[Source]
     remaining: list[str]
+    signals: list[Signal] = Field(default_factory=list, max_length=3, description=(
+        'Optional structured advisory signals for the host/user (at most 3). '
+        'Kinds: propose_checks (propose .tare/checks.json updates; never auditor), '
+        'goal_drift (report mismatch between requested goal and repository facts), '
+        'out_of_scope_blocker (report a pre-existing failure/flake outside task scope). '
+        'Omit unless needed.'))
 
 
 class Location(Record):
@@ -160,6 +202,11 @@ def validate(role, value):
     if len(encode(value).encode()) > 32768:
         raise ValueError('native_artifact_over_budget')
     result = MODELS[role].model_validate(value).model_dump()
+    if 'signals' not in value:
+        result.pop('signals')  # Preserve existing artifact bytes/digests when signals are unused.
+    else:
+        from .agent_signals import validate_artifact_signals
+        result['signals'] = validate_artifact_signals(role, result['signals'])
     if role == 'planner' and 'tasks' not in value:
         result.pop('tasks')  # Preserve existing handoff bytes when graph planning is unused.
     elif role == 'planner':

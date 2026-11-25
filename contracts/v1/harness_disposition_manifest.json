@@ -2,7 +2,7 @@
   "$schema": "https://tare.tools/schemas/v1/disposition-manifest.json",
   "version": "1.0.0",
   "generated_at": "2026-10-04T03:10:28.054735+00:00",
-  "total_modules": 458,
+  "total_modules": 459,
   "modules": [
     {
       "name": "consent_decisions.py",
@@ -2161,8 +2161,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 19948,
-      "sha256": "60f53d1db3f68cb8d358161fa8a12399a813a296e17e2f7c4ff3af7bfc285ba9"
+      "size_bytes": 22192,
+      "sha256": "9e4eef9eeac0cda3611618374365cceff3a55a69500615f58cdb11452eaf34c8"
     },
     {
       "name": "native_attempt.py",
@@ -2481,8 +2481,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns the product turn coordination shared by its frontends; the agent loop stays in the runtime.",
-      "size_bytes": 114469,
-      "sha256": "90eff28545f99de8654ab92a2e0375b3841d8dd9ea825cd18e2b4dd6f43038d7"
+      "size_bytes": 124174,
+      "sha256": "2abeb7a5c015c9b65d70cf4d2b65889715b920a9014c4cc206525bf4bc96dd72"
     },
     {
       "name": "audit_report.py",
@@ -3267,8 +3267,8 @@
     {
       "name": "console_permissions.py",
       "path": "tare.tools.os/relay/console_permissions.py",
-      "size_bytes": 13176,
-      "sha256": "5b062fb4c26452acdbf3e13848a537ca9a9d7a2c2339d5ae6133f1140dacdd33",
+      "size_bytes": 13443,
+      "sha256": "231fc0d5edf0b3bbe701df4ae5e3b0cad4b2179435c9faa112a10807e284e483",
       "summary": "Compose project permission defaults with new-session controls.",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
@@ -3731,8 +3731,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 86772,
-      "sha256": "3722d89558e32bbcc61b2cc40705b860a549c32b45804343ea564adf92befac5"
+      "size_bytes": 87538,
+      "sha256": "52f2d1176aa72820b39e49728083b83d2c3de70f2ccd9cd16bfdb252c211863a"
     },
     {
       "name": "audit_delivery.py",
@@ -4091,8 +4091,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 71410,
-      "sha256": "dc397e5c8b308737066ae2ee4b7314ed116e768436661e0ab217b65ffaf54578"
+      "size_bytes": 72384,
+      "sha256": "9323fb0309f8f3b380daed0e9b184250d0d8da9df8c049ae196621054745e8ea"
     },
     {
       "name": "conversation_tasks.py",
@@ -4101,8 +4101,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 127847,
-      "sha256": "806c2ed0b4d0328f7d2eeceb66026f5fb56ed2eeed2549ec9bf10f33db88e26d"
+      "size_bytes": 139104,
+      "sha256": "950ad713c25c796088a9f0e848a426d93fb982c0bffd189d507c7069c5b9ff49"
     },
     {
       "name": "conversation_review.py",
@@ -4131,8 +4131,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 29867,
-      "sha256": "c6991617e0f42d9a20bbf7120cd40eba3b075c0448ada2c6dc785fb48c15f5ed"
+      "size_bytes": 34052,
+      "sha256": "24141e8fb9a5cfb91a613239b45a4bd70a6a84dd8b6d3d3fdc78639de078430e"
     },
     {
       "name": "execution_permission_panel.py",
@@ -4141,8 +4141,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 14486,
-      "sha256": "7a7a8a8baf46f8e4d310c85d30bb6d77e506028a38d418fb79a7e7ef28b5eefb"
+      "size_bytes": 15909,
+      "sha256": "e819fb2c099b56bb3e240047edf68f418f67d4a1dbdef5877745758ca31731c2"
     },
     {
       "name": "web_research.py",
@@ -4583,6 +4583,16 @@
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
       "size_bytes": 29337,
       "sha256": "5fc93bf17a713be8e98d3b353063fdd76890f2735efbe3c11bed77e522bb0f98"
+    },
+    {
+      "name": "agent_signals.py",
+      "path": "tare.tools.os/relay/agent_signals.py",
+      "summary": "Host-mediated typed agent signal bus, catalog, validators and checks proposal diffing.",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
+      "size_bytes": 15426,
+      "sha256": "ee9e53311273d67ec54371df1d94e37d477797c0977b22b2438570220309cf0b"
     }
   ]
 }

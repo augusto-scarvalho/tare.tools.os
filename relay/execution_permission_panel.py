@@ -34,6 +34,7 @@ class ExecutionPermissionPanel(SupportPanel):
         value = self.request
         command=value.get('kind')=='command'
         audit=value.get('kind')=='audit'  # local-only: apply a change whose audit was not independent?
+        checks_proposal=value.get('checks_proposal') if value.get('kind')=='checks' else None
         sandbox=value.get('kind')=='sandbox'  # a check the sandbox blocked: run it outside?
         stall=value.get('stall') if value.get('kind')=='stall' else None  # a check or command with no activity
         baseline=value.get('baseline') if value.get('kind')=='baseline' else None  # checks red before any change
@@ -43,6 +44,8 @@ class ExecutionPermissionPanel(SupportPanel):
         with Vertical(classes='support-body'):
             yield Static('Run commands without review this turn?' if turn else
                          'Run this command?' if command else 'Apply this change?' if audit else
+                         ('Update .tare/checks.json?' if checks_proposal.get('existed') else 'Create .tare/checks.json?')
+                         if checks_proposal is not None else
                          'Run this check outside the sandbox?' if sandbox else
                          ('Implement with a check that already fails?' if one else
                           'Implement with checks that already fail?') if baseline is not None else
@@ -109,6 +112,17 @@ class ExecutionPermissionPanel(SupportPanel):
                          (f'({hidden} more in the audit receipt)\n' if hidden>0 else ''))+
                         ('\n'+review['summary'] if review.get('summary') else '')+
                         '\n\nThe checks passed. Not applying keeps the candidate unapplied.', markup=False)
+                elif checks_proposal is not None:
+                    removed = checks_proposal.get('removed') or []
+                    yield Static(
+                        'Project: ' + value['project'] + '\nFile: .tare/checks.json\n'
+                        'Proposed by: ' + str(checks_proposal.get('from_role') or 'agent') + ' (advisory only)'
+                        + ('\n\nReason:\n' + str(checks_proposal['reason']) if checks_proposal.get('reason') else '')
+                        + ('\n\nWARNING — checks removed: ' + ', '.join(removed) if removed else '')
+                        + '\n\nExact changes:\n' + str(checks_proposal.get('diff') or '')
+                        + '\n\nSaving updates .tare/checks.json immediately for this conversation. '
+                        'Choosing Do not save leaves the project unchanged.',
+                        markup=False)
                 elif command:
                     yield Static('Project: '+value['project']+'\nWorking folder: '+value['cwd']+
                         '\n\nExact command:\n'+repr(value['argv'])+'\n\nSandbox and execution limits still apply.',markup=False)
@@ -120,7 +134,7 @@ class ExecutionPermissionPanel(SupportPanel):
                 checks = '\n'.join('Validate Backlog Graph format' if n == BACKLOG_CHECK else n+': '+repr(argv)
                                    for n, argv in value.get('checks',{}).items())
                 from .execution_scope import current
-                if not command and not audit and not sandbox and stall is None and baseline is None:yield Static('Checks: '+(checks or 'host diff check; any tests named in the plan')+
+                if not command and not audit and checks_proposal is None and not sandbox and stall is None and baseline is None:yield Static('Checks: '+(checks or 'host diff check; any tests named in the plan')+
                     ('\nTest targets: '+', '.join(value['tests']) if value.get('tests') else '')+
                     ('\nThe candidate is checked and audited before applying; an audit by the same model family is '
                      'not independent, so tare asks you before applying it.' if current().only == 'local' else
@@ -129,6 +143,10 @@ class ExecutionPermissionPanel(SupportPanel):
                 yield Input(placeholder='What should change? (optional, sent with Change the plan)',
                             max_length=480, id='permission-changes')
             with Horizontal(classes='permission-buttons'):
+                if checks_proposal is not None:
+                    yield Button('Save .tare/checks.json', id='permission-once')
+                    yield Button('Do not save', id='permission-deny')
+                    return
                 if stall is not None:
                     yield Button('Keep waiting', id='permission-once')
                     yield Button('Continue in background', id='permission-background')
@@ -169,7 +187,7 @@ class ExecutionPermissionPanel(SupportPanel):
         # nothing) start on the safe answer; a process with no activity starts on keeping it running, and failing
         # tests the plan itself names start on Continue (a bug fix: the change is meant to make them pass).
         unaccepted=self.request.get('kind')=='audit' and self.request['audit']['verdict']!='ACCEPT'
-        safe=unaccepted or self.request.get('kind')=='sandbox' or (
+        safe=unaccepted or self.request.get('kind') in {'sandbox', 'checks'} or (
             self.request.get('kind')=='baseline' and not self.request['baseline'].get('named'))
         self.query_one('#permission-deny' if safe else '#permission-once', Button).focus()
 
