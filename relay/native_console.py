@@ -13,10 +13,11 @@ import time
 from uuid import uuid4
 
 from rich.text import Text
-from textual import work
-from textual.app import App, ComposeResult, SystemCommand
+from textual import events, work
+from textual.app import App, ComposeResult, ScreenStackError, SystemCommand
 from textual.binding import Binding
 from textual.css.query import NoMatches
+from textual.screen import Screen
 from textual.theme import Theme
 from textual.containers import Horizontal, HorizontalScroll, Vertical, VerticalScroll
 from textual.widgets import (Button, Checkbox, Collapsible, Footer, Header, Input, Label, OptionList,
@@ -1384,6 +1385,29 @@ class WorkConsole(BackgroundExecution, ConversationWorkbench, ConversationModels
             context_root=self.context_root, context_paths=list(self.context_paths),
             attachments=[dict(row) for row in self.attachments], attachment_root=self.attachment_root,
             attachment_project=self.attachment_project, attachments_enabled=self.attachment_support)
+
+    async def on_event(self, event):
+        if (
+            isinstance(event, (events.MouseDown, events.MouseMove))
+            and not event.is_forwarded
+            and not self.mouse_captured
+        ):
+            try:
+                widget, offset = self.screen.get_widget_and_offset_at(event.x, event.y)
+            except ScreenStackError:
+                widget = offset = None
+            if (
+                widget is not None
+                and offset is not None
+                and not isinstance(widget, Screen)
+                and widget.parent is None
+            ):
+                # Guard Textual's stale-compositor selection crash when a widget (such as a
+                # dismissing Toast notification) has already detached before the next repaint.
+                if isinstance(event, events.MouseDown):
+                    self._mouse_down_widget = None
+                return
+        await super().on_event(event)
 
     async def on_unmount(self):
         self.connection_closing = True
