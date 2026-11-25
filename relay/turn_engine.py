@@ -1189,23 +1189,37 @@ PROJECT_CHECKS_FILE = '.tare/checks.json'
 PROJECT_CHECKS_MAX_BYTES = 32768
 PROJECT_CHECKS_MAX_COUNT = 16
 PROJECT_CHECK_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$')
-PROJECT_CHECK_RESERVED = frozenset({'conversation-diff', 'backlog-graph'})
+PROJECT_CHECK_RESERVED = frozenset({'conversation-diff', 'backlog-graph', 'tare-backlog-validate'})
 PROJECT_CHECK_MODES = frozenset({'headless', 'manual', 'gui'})
+_UNSET = object()
+
+
+def _valid_project_check_command_syntax(cmd):
+    if not isinstance(cmd, str) or not cmd or len(cmd) > 1024 or '\0' in cmd:
+        return False
+    if ':' in cmd or cmd.startswith(('/', '\\')):
+        return False
+    if '/' not in cmd and '\\' not in cmd:
+        return True
+    from pathlib import PurePosixPath
+    candidate = Path(cmd)
+    if candidate.is_absolute() or candidate.drive or candidate.root:
+        return False
+    parts = PurePosixPath(cmd.replace('\\', '/')).parts
+    return bool(parts) and '..' not in parts and '.git' not in parts
 
 
 def _resolve_project_check_executable(root, cmd):
     """Resolve argv[0] for a project check from PATH, project venv, or a regular file inside root."""
-    if not isinstance(cmd, str) or not cmd or '\0' in cmd:
+    if not _valid_project_check_command_syntax(cmd):
         return None
     if cmd == 'python':
         return project_python(root)
     if cmd == 'godot':
         return shutil.which('godot_console') or shutil.which('godot')
-    if '/' not in cmd and '\\' not in cmd and ':' not in cmd:
+    if '/' not in cmd and '\\' not in cmd:
         return shutil.which(cmd)
     candidate = Path(cmd)
-    if candidate.is_absolute() or '..' in candidate.parts:
-        return None
     base = Path(root).resolve()
     current = base
     for part in candidate.parts:
@@ -1221,6 +1235,225 @@ def _resolve_project_check_executable(root, cmd):
     return str(resolved)
 
 
+def validate_project_checks_data(root, data, *, strict=False, check_executables=True):
+    """Single source of truth for validating .tare/checks.json data.
+
+    Returns (normalized_portable_doc, {'verifiers': ..., 'timeouts': ..., 'manual': ...}).
+    When `strict=False` (reading hand-edited .tare/checks.json), malformed entries are skipped fail-closed.
+    When `strict=True` (validating proposals or before writing), any invalid field raises ValueError.
+    """
+    from pathlib import PurePosixPath
+    empty_doc = {'checks': {}}
+    empty_parsed = {'verifiers': {}, 'timeouts': {}, 'manual': {}}
+    if not isinstance(data, dict):
+        if strict:
+            raise ValueError('checks.json must be a JSON object.')
+        return empty_doc, empty_parsed
+    if strict and set(data) != {'checks'}:
+        raise ValueError('checks.json may only contain the top-level "checks" object.')
+    checks = data.get('checks')
+    if not isinstance(checks, dict):
+        if strict:
+            raise ValueError('checks.json "checks" must be an object.')
+        return empty_doc, empty_parsed
+    if len(checks) > PROJECT_CHECKS_MAX_COUNT:
+        if strict:
+            raise ValueError(f'At most {PROJECT_CHECKS_MAX_COUNT} project checks are allowed.')
+        return empty_doc, empty_parsed
+    norm_checks, verifiers, timeouts, manual = {}, {}, {}, {}
+    for name, entry in checks.items():
+        if (not isinstance(name, str) or not PROJECT_CHECK_NAME.fullmatch(name)
+                or name in PROJECT_CHECK_RESERVED or not isinstance(entry, dict)):
+            if strict:
+                raise ValueError(f'Invalid or reserved check name/entry: {name!r}.')
+            continue
+        unknown = set(entry) - {'argv', 'mode', 'timeout_seconds', 'description', 'paths'}
+        if unknown:
+            if strict:
+                raise ValueError(f'Check {name!r} has unsupported fields: {", ".join(sorted(unknown))}.')
+            continue
+        mode = entry.get('mode', 'headless')
+        if not isinstance(mode, str) or mode not in PROJECT_CHECK_MODES:
+            if strict:
+                raise ValueError(f'Check {name!r} has invalid mode: {mode!r}.')
+            continue
+        if mode in ('manual', 'gui'):
+            if strict and ({'argv', 'timeout_seconds'} & set(entry)):
+                raise ValueError(f'Check {name!r} with mode={mode!r} cannot specify argv or timeout_seconds.')
+            row = {'mode': mode}
+            if 'description' in entry and entry['description'] is not None:
+                desc = entry['description']
+                if not isinstance(desc, str) or not desc.strip() or len(desc.strip()) > 240:
+                    if strict:
+                        raise ValueError(f'Check {name!r} description must be 1..240 characters.')
+                else:
+                    row['description'] = desc.strip()[:240]
+            if 'paths' in entry and entry['paths'] is not None:
+                paths = entry['paths']
+                if not isinstance(paths, list) or len(paths) > 16 or (strict and not paths):
+                    if strict:
+                        raise ValueError(f'Check {name!r} paths must be a list of 1..16 relative paths.')
+                else:
+                    clean = []
+                    for raw in paths:
+                        if (not isinstance(raw, str) or not raw.strip() or len(raw) > 256 or '\0' in raw
+                                or ':' in raw or (strict and '\\' in raw)):
+                            if strict:
+                                raise ValueError(f'Check {name!r} has invalid path: {raw!r}.')
+                            continue
+                        norm = raw.strip().replace('\\', '/')
+                        while norm.startswith('./'):
+                            norm = norm[2:]
+                        posix = PurePosixPath(norm)
+                        if (not norm or norm.startswith('/') or posix.is_absolute()
+                                or '..' in posix.parts or '.git' in posix.parts):
+                            if strict:
+                                raise ValueError(f'Check {name!r} has unsafe path: {raw!r}.')
+                            continue
+                        if norm not in clean:
+                            clean.append(norm)
+                    if clean:
+                        row['paths'] = clean
+            manual[name] = row
+            norm_checks[name] = deepcopy(row)
+            continue
+        if strict and 'paths' in entry:
+            raise ValueError(f'Check {name!r} with mode="headless" cannot specify paths.')
+        argv = entry.get('argv')
+        if (not isinstance(argv, list) or not 1 <= len(argv) <= 32
+                or any(not isinstance(a, str) or not a or len(a) > 1024 or '\0' in a for a in argv)):
+            if strict:
+                raise ValueError(f'Check {name!r} argv must be 1..32 non-empty strings.')
+            continue
+        if not _valid_project_check_command_syntax(argv[0]):
+            if strict:
+                raise ValueError(f'Check {name!r} executable {argv[0]!r} must be a bare command name or safe relative path.')
+            continue
+        timeout = entry.get('timeout_seconds')
+        if timeout is not None and (type(timeout) is not int or not 5 <= timeout <= 3600):
+            if strict:
+                raise ValueError(f'Check {name!r} timeout_seconds must be an integer between 5 and 3600.')
+            continue
+        desc_norm = None
+        if 'description' in entry and entry['description'] is not None:
+            desc = entry['description']
+            if not isinstance(desc, str) or not desc.strip() or len(desc.strip()) > 240:
+                if strict:
+                    raise ValueError(f'Check {name!r} description must be 1..240 characters.')
+            else:
+                desc_norm = desc.strip()[:240]
+        if check_executables:
+            exe = _resolve_project_check_executable(root, argv[0])
+            if not exe:
+                if strict:
+                    raise ValueError(f'Check {name!r} executable {argv[0]!r} could not be resolved safely.')
+                continue
+            verifiers[name] = {'repository': 'workspace', 'argv': [exe, *argv[1:]]}
+        if timeout is not None:
+            timeouts[name] = timeout
+        norm_entry = {'argv': list(argv)}
+        if timeout is not None:
+            norm_entry['timeout_seconds'] = timeout
+        if desc_norm is not None:
+            norm_entry['description'] = desc_norm
+        norm_checks[name] = norm_entry
+    normalized_doc = {'checks': norm_checks}
+    if strict and len((json.dumps(normalized_doc, indent=2, ensure_ascii=False) + '\n').encode('utf-8')) > PROJECT_CHECKS_MAX_BYTES:
+        raise ValueError(f'.tare/checks.json exceeds maximum size of {PROJECT_CHECKS_MAX_BYTES} bytes.')
+    return normalized_doc, {'verifiers': verifiers, 'timeouts': timeouts, 'manual': manual}
+
+
+def read_project_checks_doc(root):
+    """Safely read existing `<root>/.tare/checks.json` as `(doc, sha256)` or `(None, None)` when absent.
+
+    Refuses symlinks/reparse points, paths escaping `root`, oversized files, or malformed JSON.
+    """
+    from compute_plane.native_journal import regular
+    root = Path(root)
+    base = root.resolve()
+    tare_dir = root / '.tare'
+    path = tare_dir / 'checks.json'
+    if tare_dir.is_symlink() or path.is_symlink():
+        raise ValueError('.tare/checks.json cannot be or traverse a symlink.')
+    if not tare_dir.exists():
+        return None, None
+    regular(tare_dir)
+    if not tare_dir.is_dir() or not tare_dir.resolve().is_relative_to(base):
+        raise ValueError('.tare must be a regular directory inside the project.')
+    if not path.exists():
+        return None, None
+    regular(path)
+    resolved = path.resolve()
+    if not resolved.is_relative_to(base) or not resolved.is_file():
+        raise ValueError('.tare/checks.json must be a regular file inside the project.')
+    if resolved.stat().st_size > PROJECT_CHECKS_MAX_BYTES:
+        raise ValueError(f'Existing .tare/checks.json exceeds {PROJECT_CHECKS_MAX_BYTES} bytes.')
+    raw = resolved.read_bytes()
+    try:
+        data = json.loads(raw.decode('utf-8'))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise ValueError('Existing .tare/checks.json is malformed JSON; inspect it before updating.') from exc
+    if not isinstance(data, dict) or not isinstance(data.get('checks'), dict):
+        raise ValueError('Existing .tare/checks.json must contain a top-level "checks" object.')
+    return data, hashlib.sha256(raw).hexdigest()
+
+
+def write_project_checks_doc(root, data, *, expected_sha256=_UNSET):
+    """Validate strictly and atomically write `<root>/.tare/checks.json`, refusing symlinks/junctions and TOCTOU races."""
+    from .conversation_permissions import decision_lock
+    from .native_installation import storage_root
+    from compute_plane.native_journal import regular
+    root = Path(root)
+    if not root.is_dir():
+        raise ValueError('Project root directory does not exist.')
+    normalized_doc, parsed = validate_project_checks_data(root, data, strict=True, check_executables=True)
+    base = root.resolve()
+    lock_dir = storage_root() / 'checks-locks' / hashlib.sha256(str(base).encode('utf-8')).hexdigest()[:16]
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    with decision_lock(lock_dir):
+        if expected_sha256 is not _UNSET:
+            _, current_sha256 = read_project_checks_doc(root)
+            if current_sha256 != expected_sha256:
+                raise ValueError('.tare/checks.json changed on disk while waiting for confirmation; nothing was written.')
+        tare_dir = root / '.tare'
+        path = tare_dir / 'checks.json'
+        if tare_dir.is_symlink():
+            raise ValueError('.tare cannot be a symlink.')
+        if tare_dir.exists():
+            regular(tare_dir)
+            if not tare_dir.is_dir() or not tare_dir.resolve().is_relative_to(base):
+                raise ValueError('.tare must be a regular directory inside the project.')
+        else:
+            tare_dir.mkdir(exist_ok=False)
+        regular(tare_dir)
+        if tare_dir.is_symlink() or not tare_dir.resolve().is_relative_to(base):
+            raise ValueError('.tare must be a regular directory inside the project.')
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            raise ValueError('.tare/checks.json must be a regular file.')
+        regular(path)
+        payload_bytes = (json.dumps(normalized_doc, indent=2, ensure_ascii=False) + '\n').encode('utf-8')
+        if len(payload_bytes) > PROJECT_CHECKS_MAX_BYTES:
+            raise ValueError(f'.tare/checks.json exceeds maximum size of {PROJECT_CHECKS_MAX_BYTES} bytes.')
+        tmp = tare_dir / f'.checks.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp'
+        try:
+            regular(tare_dir)
+            if not tare_dir.resolve().is_relative_to(base):
+                raise ValueError('.tare must be a regular directory inside the project.')
+            tmp.write_bytes(payload_bytes)
+            regular(tare_dir)
+            regular(path)
+            if tare_dir.is_symlink() or path.is_symlink() or not tare_dir.resolve().is_relative_to(base):
+                raise ValueError('.tare/checks.json cannot be or traverse a symlink or junction.')
+            os.replace(tmp, path)
+        except Exception:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+    return path, normalized_doc, parsed
+
+
 def project_checks(root):
     """Read optional .tare/checks.json from trusted workspace `root` (never a candidate tree).
 
@@ -1230,62 +1463,14 @@ def project_checks(root):
     Malformed or symlinked files fail closed to empty dicts.
     """
     empty = {'verifiers': {}, 'timeouts': {}, 'manual': {}}
-    root = Path(root)
-    tare_dir = root / '.tare'
-    path = tare_dir / 'checks.json'
     try:
-        if tare_dir.is_symlink() or path.is_symlink() or not path.is_file():
-            return empty
-        base = root.resolve()
-        resolved = path.resolve()
-        if not resolved.is_relative_to(base) or resolved.stat().st_size > PROJECT_CHECKS_MAX_BYTES:
-            return empty
-        data = json.loads(resolved.read_text(encoding='utf-8'))
+        data, _ = read_project_checks_doc(root)
     except (OSError, ValueError):
         return empty
-    if not isinstance(data, dict) or not isinstance(data.get('checks'), dict):
+    if data is None:
         return empty
-    checks = data['checks']
-    if len(checks) > PROJECT_CHECKS_MAX_COUNT:
-        return empty
-    verifiers, timeouts, manual = {}, {}, {}
-    for name, entry in checks.items():
-        if (not isinstance(name, str) or not PROJECT_CHECK_NAME.fullmatch(name)
-                or name in PROJECT_CHECK_RESERVED or not isinstance(entry, dict)):
-            continue
-        if set(entry) - {'argv', 'mode', 'timeout_seconds', 'description', 'paths'}:
-            continue
-        mode = entry.get('mode', 'headless')
-        if not isinstance(mode, str) or mode not in PROJECT_CHECK_MODES:
-            continue
-        if mode in ('manual', 'gui'):
-            row = {'mode': mode}
-            desc = entry.get('description')
-            if isinstance(desc, str) and desc.strip():
-                row['description'] = desc.strip()[:240]
-            paths = entry.get('paths')
-            if isinstance(paths, list) and len(paths) <= 16:
-                clean = [p.replace('\\', '/').lstrip('./') for p in paths
-                         if isinstance(p, str) and p.strip() and '\0' not in p
-                         and not Path(p).is_absolute() and '..' not in Path(p).parts]
-                if clean:
-                    row['paths'] = clean
-            manual[name] = row
-            continue
-        argv = entry.get('argv')
-        if (not isinstance(argv, list) or not 1 <= len(argv) <= 32
-                or any(not isinstance(a, str) or not a or len(a) > 1024 or '\0' in a for a in argv)):
-            continue
-        timeout = entry.get('timeout_seconds')
-        if timeout is not None and (type(timeout) is not int or not 5 <= timeout <= 3600):
-            continue
-        exe = _resolve_project_check_executable(root, argv[0])
-        if not exe:
-            continue
-        verifiers[name] = {'repository': 'workspace', 'argv': [exe, *argv[1:]]}
-        if timeout is not None:
-            timeouts[name] = timeout
-    return {'verifiers': verifiers, 'timeouts': timeouts, 'manual': manual}
+    _, parsed = validate_project_checks_data(root, data, strict=False, check_executables=True)
+    return parsed
 
 
 def config_for(root, mode='accept-edits'):

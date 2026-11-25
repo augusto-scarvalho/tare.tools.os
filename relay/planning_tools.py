@@ -84,6 +84,9 @@ def handoff(artifact, plan):
         result.update(plan_reference={'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw)},
                       summary=plan['summary'][:1000],summary_truncated=len(plan['summary'])>1000)
         result['next']='The complete plan is in the referenced artifact; the host compiles all tasks and criteria from it. '+result['next']
+    if plan.get('signals'):
+        from .agent_signals import stamp_signals
+        result['agent_signals'] = stamp_signals('planner', plan['signals'], source_id=str(artifact))
     return result
 SPEC = {'delegate_plan': {
     'description': 'Ask a separate read-only planner for a bounded plan, then continue here. Give the specific '
@@ -232,9 +235,13 @@ def review_of(out, payload, independent):
     """The critic's verdict as the coordinator reads it: at most five findings, each a claim and the files to change."""
     if payload.get('verdict') not in ('ACCEPT', 'REVISE', 'INCONCLUSIVE'):
         return {**out, 'status': 'FAILED', 'reason': 'INVALID_VERDICT'}
-    return {**out, 'status': 'REVIEWED', 'verdict': payload['verdict'], 'independent': independent,
-            'findings': [{'claim': f['claim'][:1500], 'paths': list(f.get('paths') or [])[:10]}
-                         for f in payload.get('findings') or []][:5]}
+    result = {**out, 'status': 'REVIEWED', 'verdict': payload['verdict'], 'independent': independent,
+              'findings': [{'claim': f['claim'][:1500], 'paths': list(f.get('paths') or [])[:10]}
+                           for f in payload.get('findings') or []][:5]}
+    if payload.get('signals'):
+        from .agent_signals import stamp_signals
+        result['agent_signals'] = stamp_signals('plan-auditor', payload['signals'], source_id=str(out.get('route') or 'plan-auditor'))
+    return result
 
 
 def settled(row, job):
@@ -745,7 +752,12 @@ class PlanningTools:
                               'Ground automated task criteria in available_verifiers and runnable test_paths; '
                               'record checks requiring unavailable environments (such as manual_checks, a GUI/GPU '
                               'renderer, external hardware, or manual visual inspection) in remaining rather than '
-                              'freezing them as automated task criteria. ')
+                              'freezing them as automated task criteria. '
+                              'Optionally use signals[] (at most 3) when needed: emit propose_checks to propose '
+                              '.tare/checks.json updates (headless runners, timeouts, or mode="gui"/"manual" exclusions) '
+                              'for user confirmation; emit goal_drift if repository facts contradict the requested goal '
+                              'and need user clarification before implementing; emit out_of_scope_blocker for pre-existing '
+                              'defects/flakes outside this task scope. ')
             if BACKLOG_CHECK in args['instruction']+' '+args.get('context', ''):
                 from .conversation_tasks import backlog_authoring_contract
                 mission['host_contracts'] = {BACKLOG_CHECK: backlog_authoring_contract()}

@@ -134,6 +134,8 @@ def answer(root, request_id, choice, *, project, directory, control_root, change
             raise ValueError('This request shows no plan to change. Nothing was authorized.')
         if request.get('kind') == 'audit' and choice not in ('once', 'deny'):
             raise ValueError('Apply the change or do not apply it. Nothing was authorized.')
+        if request.get('kind') == 'checks' and choice not in ('once', 'deny'):
+            raise ValueError('Save .tare/checks.json or do not save it. Nothing was changed.')
         stall = request.get('kind') == 'stall'
         if (stall and choice not in ('once', 'deny', 'outside', 'background')
                 or choice == 'outside' and not (stall and request['stall'].get('outside'))
@@ -493,3 +495,84 @@ def red_baseline(root, state, task, effect_id, project, control, directory, invo
         save_json(saved, {**turn, 'choice': value['choice']})
         return value['choice']
     return ask
+
+
+def confirm_checks(root, state, *, project, proposal, from_role, summary, reason,
+                   effect_id, control, directory, task=None):
+    """Validate a `propose_checks` payload, show an exact diff in the TUI, and write `<project>/.tare/checks.json`
+    atomically only on explicit user approval (`choice == 'once'`). Headless (`directory is None`) always refuses
+    fail-closed without writing.
+    """
+    from .agent_signals import ADVISORY_AUTHORITY, prepare_checks_proposal
+    from .turn_engine import write_project_checks_doc
+
+    prepared = prepare_checks_proposal(project, proposal)
+    base = {
+        'path': '.tare/checks.json',
+        'from_role': from_role,
+        'authority': ADVISORY_AUTHORITY,
+        'summary': str(summary)[:300],
+        'reason': str(reason)[:1000],
+        'added': prepared['added'],
+        'modified': prepared['modified'],
+        'removed': prepared['removed'],
+    }
+    if not prepared['has_changes']:
+        return {**base, 'status': 'UNCHANGED', 'saved': False,
+                'next': '.tare/checks.json already matches the proposed checks; nothing changed.'}
+    if directory is None:
+        return {**base, 'status': 'CONSENT_REQUIRED', 'saved': False,
+                'diff': prepared['diff_text'][:4000],
+                'next': 'No interactive TUI is connected, so .tare/checks.json was not written. '
+                        'Show the proposed diff to the user so they can review or edit .tare/checks.json directly.'}
+    folder = regular(Path(root)/'execution-permission')
+    folder.mkdir(exist_ok=True)
+    changed_names = set(prepared['added']) | set(prepared['modified'])
+    doc_sha256 = hashlib.sha256(encode(prepared['document']).encode('utf-8')).hexdigest()
+    request = {
+        'schema': SCHEMA,
+        'kind': 'checks',
+        'session': state['session_id'],
+        'effect': effect_id,
+        'task': (task or {}).get('id', ''),
+        'plan': doc_sha256,
+        'project': str(Path(project).resolve()),
+        'paths': ['.tare/checks.json'],
+        'checks': {n: list(entry['argv']) for n, entry in prepared['after'].items()
+                   if n in changed_names and 'argv' in entry},
+        'tests': [],
+        'objective': f'Proposed by {from_role}: {summary}'[:2000],
+        'status': 'WAITING',
+        'checks_proposal': {
+            'from_role': from_role,
+            'existed': prepared['existed'],
+            'summary': str(summary)[:300],
+            'reason': str(reason)[:1000],
+            'added': prepared['added'],
+            'modified': prepared['modified'],
+            'removed': prepared['removed'],
+            'unchanged_count': len(prepared['unchanged']),
+            'diff': prepared['diff_text'],
+        },
+    }
+    # Fail closed rather than truncating: the user must see 100% of every check change before approving.
+    if len(json.dumps(request, ensure_ascii=False).encode('utf-8')) > 30000:
+        raise ValueError(
+            'Proposed .tare/checks.json diff is too large to display completely for approval; '
+            'split the proposal into smaller changes or edit .tare/checks.json directly.')
+    value = wait_for_answer(folder, request, control)
+    if not value:
+        return {**base, 'status': 'CANCELLED', 'saved': False,
+                'reason': 'No decision was recorded before cancellation or timeout. .tare/checks.json was not changed.'}
+    if value['choice'] != 'once':
+        return {**base, 'status': 'DENIED', 'saved': False,
+                'reason': 'The user chose not to save .tare/checks.json. Do not propose this again in this turn.'}
+    _, _, parsed = write_project_checks_doc(project, prepared['document'], expected_sha256=prepared['existing_sha256'])
+    return {
+        **base,
+        'status': 'SAVED',
+        'saved': True,
+        'active_checks': sorted(parsed['verifiers']),
+        'manual_checks': sorted(parsed['manual']),
+        'next': '.tare/checks.json was saved and is active immediately for this conversation.',
+    }

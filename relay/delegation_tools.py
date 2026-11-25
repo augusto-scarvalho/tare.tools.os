@@ -188,6 +188,16 @@ class ExplorationTools:
         merged = merge_locations(row.get('report', {}).get('locations', []) for row in rows)
         if merged:
             value['locations'] = merged
+        stamped_signals = []
+        for row in rows:
+            if row.get('status') == 'COMPLETED' and (row.get('report') or {}).get('signals'):
+                from .agent_signals import stamp_signals
+                for sig in stamp_signals('explorer', row['report']['signals'], source_id=str(row.get('id') or '')):
+                    if audit and sig['kind'] != 'out_of_scope_blocker':
+                        continue
+                    stamped_signals.append(sig)
+        if stamped_signals:
+            value['agent_signals'] = stamped_signals[:6]
         if shared:
             value['overlap'] = {'files': list(shared)[:20], 'note': 'Read by more than one explorer in this call: '
                                 'split later questions so they do not cover the same code.'}
@@ -873,7 +883,9 @@ def explorer_instruction(row, calls, brief, per_response=32):
         'gaps. When a budget notice arrives, deliver right away with what you have.\n'
         f'For every tool call, repository is {row["repository"]!r}; put filenames in path. Every delivery location '
         'must include its own repository, path, line and claim; never omit a repeated path.\n'
-        'Do not edit, execute commands, delegate or claim acceptance. Keep the report below 8 KiB.\n' +
+        'Do not edit, execute commands, delegate or claim acceptance. Keep the report below 8 KiB.\n'
+        'Optionally emit structured signals[] (propose_checks, goal_drift, out_of_scope_blocker) only if you observe '
+        'missing/broken project checks, a goal conflict, or an out-of-scope blocker.\n' +
         ('Give each location a status: supported when the line you read shows the claim, hypothesis when the claim '
          'goes beyond what you read; and set conclusion: answered, partial, or inconclusive when what you read '
          'does not settle the question (not the same as finding nothing).\n' if brief.get('location_status') else '') +

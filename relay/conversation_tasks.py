@@ -140,6 +140,21 @@ SPEC = {
         'parameters': {'type': 'object', 'properties': {
             'names': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'maxItems': 16},
         }, 'required': ['names'], 'additionalProperties': False}},
+    'propose_checks': {
+        'description': 'Propose creating or updating <project>/.tare/checks.json for project verification checks '
+            '(headless commands, timeouts, or marking gui/manual checks so they are not run headlessly). '
+            'Validates strictly and asks the user directly in the TUI with an exact diff before writing. '
+            'Never writes without user confirmation (refuses in headless mode). '
+            'Set a check value to null when replace=false to remove an existing check.',
+        'parameters': {'type': 'object', 'properties': {
+            'summary': {'type': 'string', 'minLength': 1, 'maxLength': 300},
+            'reason': {'type': 'string', 'minLength': 1, 'maxLength': 1000},
+            'checks': {'type': 'object', 'description': 'Mapping of check name to check definition '
+                '({argv, mode, timeout_seconds, description, paths}) or null to remove an existing check.'},
+            'replace': {'type': 'boolean', 'description': 'false (default): merge into existing .tare/checks.json; '
+                'true: replace all checks.'},
+            'repository': {'type': 'string', 'description': 'Repository key when multiple repositories are configured.'},
+        }, 'required': ['summary', 'reason', 'checks'], 'additionalProperties': False}},
 }
 
 
@@ -909,6 +924,11 @@ class ConversationTools:
         if not isinstance(kinds, list) or len(kinds) > 6 or any(k not in ids for k in kinds) or len(set(kinds)) < len(kinds):
             raise ValueError('Give kinds as up to 6 different ids of: '+', '.join(ids)+'.')
         value = load(self.root); task = current(value)
+        if (((value.get('goal_drift') or {}).get('input') == self.input_id()
+             or (task and (task.get('goal_drift') or {}).get('input') == self.input_id()))
+                and relation in {'new', 'revise'} and intent != 'answer'):
+            raise ValueError('An agent reported a goal drift in this turn. Present the discrepancy and options '
+                'to the user and wait for their reply before revising or replacing the goal.')
         if (relation == 'new' and task and task.get('delivery') and task['stage'] != 'DELIVERED'
                 and task.get('intent_input') == self.input_id()):
             raise ValueError('The current demand has an unresolved execution under this user input. '
@@ -1177,6 +1197,69 @@ class ConversationTools:
             'only when the user requested a change. Then delegate planning or exploration as needed. '
             'This routing boundary does not require more user permissions.'}
 
+    def _resolve_checks_repository(self, repo_name=None):
+        repos = self.state['config'].get('repositories') or {}
+        if repo_name is not None:
+            if not isinstance(repo_name, str) or repo_name not in repos:
+                raise ValueError('Choose one of the configured project repositories: ' + ', '.join(sorted(repos)) + '.')
+            return repo_name, repos[repo_name]
+        if len(repos) == 1:
+            return next(iter(repos.items()))
+        raise ValueError('Specify repository when multiple repositories are configured.')
+
+    def _route_agent_signals(self, output, signals, *, request, control, value, task=None):
+        """Route host-stamped advisory signals from planner/explorer/implementer/auditor.
+
+        - propose_checks -> immediate TUI modal (fail-closed headless, max 1 per call, denied-once guard per turn)
+        - goal_drift -> STOP_FOR_CHAT (locks same-turn implement/revise until a fresh user message arrives)
+        - out_of_scope_blocker -> SURFACE_TO_OPERATOR (highlighted cleanly with zero automatic side effects)
+        """
+        from .conversation_permissions import confirm_checks
+        if not signals:
+            return {'goal_drift': [], 'blockers': [], 'checks': None}
+        checks_outcome = None
+        goal_drifts = []
+        blockers = []
+        for sig in signals:
+            kind = sig.get('kind')
+            if kind == 'propose_checks' and checks_outcome is None:
+                if value.get('checks_denied_input') == self.input_id():
+                    checks_outcome = {
+                        'status': 'DENIED_THIS_TURN', 'saved': False, 'path': '.tare/checks.json',
+                        'from_role': sig.get('from_role'),
+                        'reason': 'The user already declined saving .tare/checks.json in this turn; not asking again.'}
+                    continue
+                try:
+                    _, project = self._resolve_checks_repository(sig['payload'].get('repository'))
+                    checks_outcome = confirm_checks(
+                        self.root, self.state, project=project, proposal=sig['payload'],
+                        from_role=sig['from_role'], summary=sig['summary'], reason=sig['reason'],
+                        effect_id=request.effect_id, control=control,
+                        directory=self.permission_directory, task=task)
+                except (ValueError, OSError) as exc:
+                    checks_outcome = {
+                        'status': 'INVALID', 'saved': False, 'path': '.tare/checks.json',
+                        'from_role': sig.get('from_role'), 'error': str(exc)[:500]}
+                if checks_outcome.get('status') == 'DENIED':
+                    value['checks_denied_input'] = self.input_id()
+                    save(self.root, value)
+            elif kind == 'goal_drift':
+                goal_drifts.append(sig)
+            elif kind == 'out_of_scope_blocker':
+                blockers.append(sig)
+        if checks_outcome is not None:
+            output['checks_proposal_outcome'] = checks_outcome
+        if goal_drifts:
+            output['goal_drift'] = goal_drifts
+            drift_record = {'input': self.input_id(), 'signals': goal_drifts}
+            value['goal_drift'] = drift_record
+            if task is not None:
+                task['goal_drift'] = drift_record
+            save(self.root, value)
+        if blockers:
+            output['out_of_scope_blockers'] = blockers
+        return {'goal_drift': goal_drifts, 'blockers': blockers, 'checks': checks_outcome}
+
     def execute(self, request, control):
         from tare_tools_agent_runtime import EffectResult
         def refused(reason, *, context=False, **details):
@@ -1247,6 +1330,29 @@ class ConversationTools:
                     'project read/list/search never accept absolute external paths.')
             elif name == 'demand':
                 output = self.understand(args, request.effect_id)
+            elif name == 'propose_checks':
+                if set(args) - {'summary', 'reason', 'checks', 'replace', 'repository'}:
+                    raise ValueError('Use only summary, reason, checks, replace, and repository for propose_checks.')
+                value = load(self.root); task = current(value)
+                if value.get('checks_denied_input') == self.input_id():
+                    raise ValueError('The user declined saving .tare/checks.json in this turn. Do not propose it again until they reply.')
+                from .agent_signals import validate_signal
+                validated = validate_signal('coordinator', {
+                    'kind': 'propose_checks',
+                    'summary': args.get('summary'),
+                    'reason': args.get('reason'),
+                    'payload': {k: args[k] for k in ('checks', 'replace', 'repository') if k in args},
+                })
+                _, project = self._resolve_checks_repository(validated['payload'].get('repository'))
+                from .conversation_permissions import confirm_checks
+                output = confirm_checks(
+                    self.root, self.state, project=project, proposal=validated['payload'],
+                    from_role='coordinator', summary=validated['summary'], reason=validated['reason'],
+                    effect_id=request.effect_id, control=control,
+                    directory=self.permission_directory, task=task)
+                if output.get('status') == 'DENIED':
+                    value['checks_denied_input'] = self.input_id()
+                    save(self.root, value)
             elif name == 'check':
                 # A closed verification request needs no planning ceremony. It
                 # never authorizes implementation or changes the saved goal.
@@ -1383,30 +1489,59 @@ class ConversationTools:
                 if result.status != 'succeeded': return result
                 output = object_json(result.output_json)
                 if output.get('status') == 'PLANNED':
-                    task_plan(self.root, self.state['config'], task, output)
-                    # Planner prose can name a validation step without registering
-                    # a tool. Return the compiled host identities in the result,
-                    # leaving the cached tool schema and planner artifact intact.
-                    names = list(task['plan']['unit']['verifiers'])
-                    output['execution_checks'] = {'names': names,
-                        'source': 'Host-compiled saved plan; descriptive planner labels are not check names.'}
-                    if names:
-                        output['execution_checks']['action'] = {'tool': 'check', 'arguments': {'names': names}}
-                    preserved = retained_candidate({key: task.get(key)
-                        for key in ('replan_candidate', 'delivery')})
-                    task.pop('replan_candidate', None)
-                    # Keep an unapplied attempt's provenance for the same-turn plan comparison;
-                    # an applied record never stands in for the new plan's delivery.
-                    kept = task.get('delivery') if not (task.get('delivery') or {}).get('applied') else None
-                    task['delivery'] = deepcopy(preserved or kept)
-                    task.pop('replan_from',None)
-                    save(self.root, value)
-                    output['next'] = 'Return this plan to the user.' if task['intent'] == 'plan' else 'Use implement to execute this saved plan.'
+                    all_signals = [*(output.get('agent_signals') or []),
+                                   *((output.get('review') or {}).get('agent_signals') or [])]
+                    routed = self._route_agent_signals(output, all_signals, request=request, control=control,
+                                                       value=value, task=task)
+                    if 'plan' in output:
+                        plan_tasks = (output.get('plan') or {}).get('tasks')
+                    else:
+                        from .native_agent import read_json
+                        plan_tasks = read_json(regular(Path(output['artifact'])), 65536)['payload'].get('tasks')
+                    if routed['goal_drift'] and not plan_tasks:
+                        # Planner halted for goal_drift without executable tasks: surface to user in chat.
+                        save(self.root, value)
+                        output['next'] = (
+                            'The planner reported a goal drift between the requested goal and repository facts. '
+                            'Present expected vs discovered and the options to the user in chat and wait for their '
+                            'reply before revising the goal or implementing.')
+                    else:
+                        task_plan(self.root, self.state['config'], task, output)
+                        # Planner prose can name a validation step without registering
+                        # a tool. Return the compiled host identities in the result,
+                        # leaving the cached tool schema and planner artifact intact.
+                        names = list(task['plan']['unit']['verifiers'])
+                        output['execution_checks'] = {'names': names,
+                            'source': 'Host-compiled saved plan; descriptive planner labels are not check names.'}
+                        if names:
+                            output['execution_checks']['action'] = {'tool': 'check', 'arguments': {'names': names}}
+                        preserved = retained_candidate({key: task.get(key)
+                            for key in ('replan_candidate', 'delivery')})
+                        task.pop('replan_candidate', None)
+                        # Keep an unapplied attempt's provenance for the same-turn plan comparison;
+                        # an applied record never stands in for the new plan's delivery.
+                        kept = task.get('delivery') if not (task.get('delivery') or {}).get('applied') else None
+                        task['delivery'] = deepcopy(preserved or kept)
+                        task.pop('replan_from',None)
+                        save(self.root, value)
+                        if routed['goal_drift']:
+                            output['next'] = (
+                                'The planner reported a goal drift between the requested goal and repository facts. '
+                                'Do NOT call implement or demand(relation=revise) yet. Present expected vs discovered '
+                                'and the options to the user in chat and wait for their reply.')
+                        else:
+                            output['next'] = 'Return this plan to the user.' if task['intent'] == 'plan' else 'Use implement to execute this saved plan.'
+                        if routed['blockers']:
+                            output['next'] += ' Also inform the user of the out-of-scope blocker(s) in out_of_scope_blockers.'
             elif name == 'implement':
                 value, task = self.active(delivery=True)
                 plan = task.get('plan') or {}
                 if not plan.get('unit'):
                     raise ValueError('A separate planner must produce an executable plan before implementation.')
+                if ((value.get('goal_drift') or {}).get('input') == self.input_id()
+                        or (task.get('goal_drift') or {}).get('input') == self.input_id()):
+                    raise ValueError('An agent reported a goal drift in this turn. Present the discrepancy and options '
+                        'to the user and wait for their reply before implementing.')
                 if task.get('permission_denied_input') == self.input_id():
                     raise ValueError('The user did not authorize this execution. Do not repeat the request in this turn.')
                 if task.get('plan_change') == {'input': self.input_id(), 'plan': plan['sha256']}:
@@ -1679,6 +1814,23 @@ class ConversationTools:
                         # is the consent, instead of a second question when the next correction is refused.
                         retry_decision(self.root, task, execution_unit, register=True)
                         output['next'] = str(stop)
+            elif name == 'explore':
+                result = self.tools.execute(request, control)
+                if result.status != 'succeeded':
+                    return self.argument_feedback(name, result)
+                output = object_json(result.output_json)
+                if output.get('agent_signals'):
+                    value = load(self.root); task = current(value)
+                    routed = self._route_agent_signals(output, output['agent_signals'], request=request,
+                                                       control=control, value=value, task=task)
+                    if routed['goal_drift']:
+                        output['next'] = (
+                            'An explorer reported a goal drift. Present expected vs discovered and the options '
+                            'to the user in chat and wait for their reply before revising the goal or implementing.')
+                    elif routed['blockers']:
+                        output['next'] = 'Inform the user of the out-of-scope blocker(s) reported in out_of_scope_blockers.'
+                    return replace(result, output_json=encode(output))
+                return result
             else:
                 return self.argument_feedback(name, self.tools.execute(request, control))
             return EffectResult(request.effect_id, 'succeeded', encode(output), True)
@@ -1716,10 +1868,10 @@ class ConversationTools:
         from compute_plane.native_effect_recovery import pending
         from tare_tools_agent_runtime import EffectResult
         request = pending(journal, self.session_id)
+        if request and request.tool_call.name in {'implement', 'propose_checks', 'delegate_plan', 'explore'}:
+            from .conversation_permissions import close_interrupted
+            close_interrupted(self.root, request.effect_id)
         if request and request.tool_call.name in SPEC:
-            if request.tool_call.name == 'implement':
-                from .conversation_permissions import close_interrupted
-                close_interrupted(self.root, request.effect_id)
             return request, EffectResult(request.effect_id, 'refused', encode({'reason':
                 'This operation was interrupted. Inspect demand and child receipts before continuing; it was not repeated.'}))
         return self.tools.recover_effect(journal)
