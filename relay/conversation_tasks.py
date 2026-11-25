@@ -372,6 +372,12 @@ def delivery_view(value, *, config=None, unit=None):
             'task is too large: do not split the plan or drop criteria on your own. Preserve the same plan, prior '
             'calls and charges; a fresh authorized continuation can run it on another implementer route.')
     elif (value.get('verdict')=='INCONCLUSIVE' and not value.get('files')
+            and value.get('reason')=='the implementer made no changes to the retained candidate'):
+        result['next']=('Tell the user, in the language of their request, that the implementer made no edits to the '
+            'retained candidate (so no re-check or duplicate audit ran). The prior candidate and review feedback '
+            'remain preserved; do not repeat the same route unchanged—offer to retry on another implementer route '
+            'or ask how to proceed.')
+    elif (value.get('verdict')=='INCONCLUSIVE' and not value.get('files')
             and (value.get('implementation_stop') or {}).get('compaction_loop')):
         compactions=value['implementation_stop']['compaction_loop']
         result['reason']=(f'The implementer compacted its context {compactions} times without changing any file '

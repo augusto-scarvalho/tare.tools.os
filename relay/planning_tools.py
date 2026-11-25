@@ -159,6 +159,75 @@ def snapshot():
     return {'routes': routes, 'route_order': surplus_first(list(routes)) if policy().get('planner') else list(routes)}
 
 
+def _operator_messages(root, *, max_bytes=32768):
+    """Verbatim operator messages from the parent journal, omitting host-injected notices.
+
+    Always preserves the initial request and newest follow-ups inside `max_bytes`.
+    Returns (messages, truncated).
+    """
+    path = Path(root)/'journal.jsonl'
+    if not path.is_file():
+        return [], False
+    try:
+        from compute_plane.native_journal import NativeJournal
+        records = NativeJournal(path).snapshot().records
+    except (OSError, ValueError, KeyError, TypeError):
+        return [], False
+    raw = []
+    marker = '\n\nOperator message:\n'
+    for record in records:
+        event = record.event()
+        kind = event.get('kind')
+        if kind == 'session_started':
+            instruction = event.get('instruction') or ''
+            if marker in instruction:
+                text = instruction.split(marker, 1)[1].strip()
+                if text:
+                    raw.append(text)
+        elif kind == 'user_message':
+            msg_id = str(event.get('message_id') or '')
+            text = (event.get('text') or '').strip()
+            if (not text or msg_id.startswith(('consent-decision-', 'folder-granted-', 'correction-'))
+                    or text.startswith('Host-observed changes to previously read files. Host dialog choice:')):
+                continue
+            raw.append(text)
+    if not raw or max_bytes <= 0:
+        return [], bool(raw)
+    if sum(len(m.encode('utf-8')) for m in raw) <= max_bytes:
+        return raw, False
+    # Keep the opening request and newest follow-ups within max_bytes.
+    def _clip_utf8(text, budget):
+        encoded = text.encode('utf-8')
+        if len(encoded) <= budget:
+            return text, False
+        return encoded[:budget].decode('utf-8', errors='ignore'), True
+
+    first_budget = min(max_bytes, max(max_bytes // 2, max_bytes - sum(len(m.encode('utf-8')) for m in raw[1:])))
+    first, first_cut = _clip_utf8(raw[0], first_budget)
+    used = len(first.encode('utf-8'))
+    tail = []
+    for msg in reversed(raw[1:]):
+        remaining = max_bytes - used
+        if remaining <= 0:
+            break
+        piece, cut = _clip_utf8(msg, remaining)
+        if piece:
+            tail.append(piece)
+            used += len(piece.encode('utf-8'))
+        if cut:
+            break
+    kept = [first, *reversed(tail)]
+    return kept, True
+
+
+def _check_label(check, prefix):
+    argv = check.get('argv') if isinstance(check, dict) else None
+    if isinstance(argv, list) and argv:
+        cmd = ' '.join(Path(argv[0]).name if i == 0 else str(a) for i, a in enumerate(argv))
+        return f'{prefix} ({cmd[:160]})'
+    return prefix
+
+
 def review_of(out, payload, independent):
     """The critic's verdict as the coordinator reads it: at most five findings, each a claim and the files to change."""
     if payload.get('verdict') not in ('ACCEPT', 'REVISE', 'INCONCLUSIVE'):
@@ -660,13 +729,17 @@ class PlanningTools:
                     'A private candidate or a plan is not an applied project change.')
             if previous_input:
                 mission['previous_plan'] = PREVIOUS_PLAN
-            mission['available_verifiers'] = {**{name: 'Declared delegated project check; host execution after authorization.'
-                for name in detected_checks(self.state['config'])},
-                **{name: 'Existing configured project check.'
-                for name in self.state['config']['verifiers']},
+            mission['available_verifiers'] = {**{name: _check_label(check, 'Declared delegated project check; host execution after authorization.')
+                for name, check in detected_checks(self.state['config']).items()},
+                **{name: _check_label(check, 'Existing configured project check.')
+                for name, check in self.state['config']['verifiers'].items()},
                 BACKLOG_CHECK: 'Host-owned validation of planned JSON graph files, without importing project code.'}
             task_contract += ('Use only available_verifiers keys as task.verifiers; a shell command is not a verifier name. '
-                              'Use an empty list when none applies. Preserve the recorded product criteria. ')
+                              'Use an empty list when none applies. Preserve the recorded product criteria. '
+                              'Ground automated task criteria in available_verifiers and runnable test_paths; '
+                              'record checks requiring unavailable environments (such as a GUI/GPU renderer, external '
+                              'hardware, or manual visual inspection) in remaining rather than freezing them as '
+                              'automated task criteria. ')
             if BACKLOG_CHECK in args['instruction']+' '+args.get('context', ''):
                 from .conversation_tasks import backlog_authoring_contract
                 mission['host_contracts'] = {BACKLOG_CHECK: backlog_authoring_contract()}
@@ -676,6 +749,17 @@ class PlanningTools:
                     'Read only missing source details needed for an honest plan. Return a concise plan with concrete '
                     'paths, dependencies, checks and uncertainties in steps/criteria/remaining; ' + task_contract +
                     'Do not implement or admit graph work.\n' + encode(mission))
+        if self.state.get('conversation_flow') and active:
+            from .native_agent import MAX_INITIAL_INSTRUCTION_BYTES
+            # Keep inline planner brief safely under MAX_INITIAL_INSTRUCTION_BYTES while surfacing verbatim requests.
+            headroom = MAX_INITIAL_INSTRUCTION_BYTES - len(compose(mission).encode('utf-8')) - 512
+            if headroom > 256:
+                operator_msgs, operator_cut = _operator_messages(self.root, max_bytes=min(4096, headroom))
+                if operator_msgs:
+                    candidate_mission = {**mission, 'operator_messages': operator_msgs,
+                                         **({'operator_messages_truncated': True} if operator_cut else {})}
+                    if len(compose(candidate_mission).encode('utf-8')) <= MAX_INITIAL_INSTRUCTION_BYTES:
+                        mission = candidate_mission
         brief = compose(mission)
         from .managed_skills import frozen_for_role as frozen_skills_for_role
         planner_skills = frozen_skills_for_role(self.state, 'planner')
@@ -807,8 +891,13 @@ class PlanningTools:
             save_json(receipt_path, row)  # an interruption from here on is reconciled by `settled`, not repeated
             proposal.mkdir(parents=True)
             (proposal/'plan.json').write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding='utf-8')
-            (proposal/'request.json').write_text(json.dumps({k: (active or {}).get(k) for k in ('objective', 'criteria', 'kinds')},
-                indent=2, ensure_ascii=False), encoding='utf-8')
+            request_doc = {k: (active or {}).get(k) for k in ('objective', 'criteria', 'kinds')}
+            operator_msgs, operator_cut = _operator_messages(self.root)
+            if operator_msgs:
+                request_doc['operator_messages'] = operator_msgs
+                if operator_cut:
+                    request_doc['operator_messages_truncated'] = True
+            (proposal/'request.json').write_text(json.dumps(request_doc, indent=2, ensure_ascii=False), encoding='utf-8')
             # The planner's admission policy and folders, and the project as the one instruction source: `proposal` is
             # evidence only (an auditor's evidence root), so no instruction the parent would not load becomes active.
             parent = self.state['config']

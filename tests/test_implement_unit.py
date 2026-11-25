@@ -733,3 +733,52 @@ def test_a_verified_unit_that_names_a_type_and_no_need_counts_in_that_types_own_
     shutil.copytree(custody/'units', storage/'agent-sessions'/'s'/'units')  # where a storage keeps a session's units
     tally = model_signals.own_record(storage)[row['route']]
     assert (tally['ran'], tally['passed'], tally['kind', 'audio', 'ran'], tally['kind', 'audio', 'passed']) == (1, 1, 1, 1)
+
+
+def test_zero_edit_correction_on_retained_candidate_skips_recheck_and_duplicate_audit(setup, tmp_path, monkeypatch):
+    from pathlib import Path
+    config, custody, root = setup
+    repository(root)
+    config.update(conversation_flow=True, writable={'repo': ['docs/new.md']},
+        verifiers={'conversation-diff': {'repository': 'repo',
+            'argv': ['git', 'diff', '--check', 'HEAD', '--', 'docs/new.md']}})
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(tmp_path/'storage'))
+    monkeypatch.setattr(work_units, 'routes', lambda *a, **kw: iter([('worker', deployment())]))
+    state = {'config': config, 'conversation_flow': True, 'deployment': deployment(),
+             'limits': {'max_model_calls': 30}, 'deadline_utc': None}
+    unit_args = {'title': 'New document', 'target_paths': ['docs/new.md'],
+                 'criteria': ['Write the document'], 'verifiers': ['conversation-diff']}
+    review_calls = []
+
+    def review(*a):
+        review_calls.append(a)
+        return {'verdict': 'REVISE', 'summary': 'Needs fix.', 'findings': [{'claim': 'Missing detail.'}],
+                'sources': [], 'reference_sources': []}
+
+    def first_worker(child, *args, **kwargs):
+        target = Path(child['repositories']['repo'])/'docs/new.md'
+        target.parent.mkdir(); target.write_bytes(b'Initial draft.\n')
+        return {'status': 'PROPOSED', 'model_calls': 1}
+
+    monkeypatch.setattr(native_agent, 'run_session', first_worker)
+    first = work_units.run_unit(custody, state, unit_args, lambda: False, review=review)
+    assert first['verdict'] == 'NOT_REVIEWED' and first.get('candidate') and len(review_calls) == 1
+
+    check_runs = []
+    real_run_checks = work_units.run_checks
+
+    def spy_checks(tree, commands):
+        check_runs.append(list(commands))
+        return real_run_checks(tree, commands)
+
+    monkeypatch.setattr(work_units, 'run_checks', spy_checks)
+    monkeypatch.setattr(native_agent, 'run_session', lambda *a, **kw: {
+        'status': 'PROPOSED', 'model_calls': 1, 'output': 'Environment is read-only; no edits made.'})
+    second = work_units.run_unit(custody, state, unit_args, lambda: False, review=review,
+                                 candidate=first['candidate'])
+    assert second['verdict'] == 'INCONCLUSIVE'
+    assert second['reason'] == 'the implementer made no changes to the retained candidate'
+    assert second['files'] == [] and 'candidate' not in second and 'audit' not in second
+    assert len(review_calls) == 1  # no duplicate audit on the unchanged patch
+    assert len(check_runs) == 1    # only baseline before-check ran; checks_after skipped
+    assert 'made no changes' in second['checks_after']

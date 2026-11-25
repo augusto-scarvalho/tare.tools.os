@@ -562,3 +562,77 @@ def test_mixed_creative_and_coding_tasks_still_run_plan_critic(planner, monkeypa
     value = json.loads(tool.execute(request(), control).output_json)
     assert value['status'] == 'PLANNED' and value['review']['status'] == 'REVIEWED'
     assert stub.roles() == ['planner', 'plan-auditor']
+
+
+def test_plan_critic_receives_verbatim_operator_messages_and_planner_sees_verifier_commands(tmp_path, monkeypatch):
+    parent = tmp_path/'parent'
+    parent.mkdir()
+    journal = NativeJournal(parent/'journal.jsonl')
+    journal.append({'kind': 'session_started', 'session_id': 'parent',
+                    'instruction': 'TUI preamble.\n\nOperator message:\nKeep the 6 falling critters and check legibility.'})
+    journal.append({'kind': 'model_requested', 'call_id': 'parent/model/1'})
+    journal.append({'kind': 'user_message', 'message_id': 'u-2', 'text': 'Keep glitch subtle.'})
+    journal.append({'kind': 'user_message', 'message_id': 'consent-decision-1',
+                    'text': 'Host-observed changes to previously read files. Host dialog choice: Allow.'})
+    source = tmp_path/'project'; source.mkdir()
+    from test_native_agent import deployment
+    candidate = dict(deployment(), id='fixture-planner')
+    params = json.loads(candidate['native_profile']['parameters_json'])
+    params['chat_template_kwargs']['reasoning_effort'] = 'high'
+    candidate['native_profile']['parameters_json'] = json.dumps(params, sort_keys=True, separators=(',', ':'))
+    state = {'deployment': deployment(), 'planning': {'routes': {'worker': candidate}},
+             'limits': {'max_model_calls': 15}, 'deadline_utc': None, 'conversation_flow': True,
+             'config': {'repositories': {'repo': str(source)}, 'writable': {'repo': ['a.py']},
+                        'verifiers': {'tests': {'repository': 'repo', 'argv': ['/usr/bin/godot_console', '--headless', '-s', 'tests/smoke.gd']}},
+                        'capabilities': ['read', 'edit']}}
+    stub = Stub(monkeypatch, candidate, PLAN)
+    stub.verdict = {'verdict': 'ACCEPT', 'summary': 'Sound.', 'findings': [], 'remaining': [], 'sources': []}
+    control = execution(); tool = wrap(parent, state, control)
+    conversation_tasks.ConversationTools(tool, parent, state, 'turn').understand({
+        'intent': 'deliver', 'relation': 'new', 'objective': 'Animate HOME.', 'criteria': [], 'kinds': ['coding']})
+    value = json.loads(tool.execute(request(), control).output_json)
+    assert value['status'] == 'PLANNED' and stub.roles() == ['planner', 'plan-auditor']
+    planner_brief = stub.sessions[0][3]
+    assert 'Keep the 6 falling critters and check legibility.' in planner_brief
+    assert 'godot_console --headless -s tests/smoke.gd' in planner_brief
+    assert 'unavailable environments' in planner_brief
+    proposal = stub.sessions[1][2].parent/'proposal'
+    req = json.loads((proposal/'request.json').read_text(encoding='utf-8'))
+    assert req['operator_messages'] == ['Keep the 6 falling critters and check legibility.', 'Keep glitch subtle.']
+    assert 'operator_messages_truncated' not in req
+    assert all('Host dialog choice' not in m for m in req['operator_messages'])
+
+
+def test_long_operator_history_stays_under_planner_brief_limit_and_preserves_opening_request(tmp_path, monkeypatch):
+    parent = tmp_path/'parent'
+    parent.mkdir()
+    journal = NativeJournal(parent/'journal.jsonl')
+    journal.append({'kind': 'session_started', 'session_id': 'parent',
+                    'instruction': 'TUI.\n\nOperator message:\nOpening requirement: keep the 6 critters.'})
+    journal.append({'kind': 'model_requested', 'call_id': 'parent/model/1'})
+    for i in range(8):
+        journal.append({'kind': 'user_message', 'message_id': f'u-{i}', 'text': f'Follow-up {i}: ' + ('x' * 3500)})
+    source = tmp_path/'project'; source.mkdir()
+    from test_native_agent import deployment
+    candidate = dict(deployment(), id='fixture-planner')
+    params = json.loads(candidate['native_profile']['parameters_json'])
+    params['chat_template_kwargs']['reasoning_effort'] = 'high'
+    candidate['native_profile']['parameters_json'] = json.dumps(params, sort_keys=True, separators=(',', ':'))
+    state = {'deployment': deployment(), 'planning': {'routes': {'worker': candidate}},
+             'limits': {'max_model_calls': 15}, 'deadline_utc': None, 'conversation_flow': True,
+             'config': {'repositories': {'repo': str(source)}, 'writable': {'repo': ['a.py']},
+                        'verifiers': {}, 'capabilities': ['read', 'edit']}}
+    stub = Stub(monkeypatch, candidate, PLAN)
+    stub.verdict = {'verdict': 'ACCEPT', 'summary': 'Sound.', 'findings': [], 'remaining': [], 'sources': []}
+    control = execution(); tool = wrap(parent, state, control)
+    conversation_tasks.ConversationTools(tool, parent, state, 'turn').understand({
+        'intent': 'deliver', 'relation': 'new', 'objective': 'Animate HOME.', 'criteria': [], 'kinds': ['coding']})
+    value = json.loads(tool.execute(request(), control).output_json)
+    assert value['status'] == 'PLANNED'
+    planner_brief = stub.sessions[0][3]
+    assert len(planner_brief.encode('utf-8')) <= native_agent.MAX_INITIAL_INSTRUCTION_BYTES
+    assert 'Opening requirement: keep the 6 critters.' in planner_brief
+    proposal = stub.sessions[1][2].parent/'proposal'
+    req = json.loads((proposal/'request.json').read_text(encoding='utf-8'))
+    assert req['operator_messages'][0] == 'Opening requirement: keep the 6 critters.'
+    assert req['operator_messages'][-1].startswith('Follow-up 7:')
