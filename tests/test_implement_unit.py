@@ -774,7 +774,13 @@ def test_zero_edit_correction_on_retained_candidate_skips_recheck_and_duplicate_
     monkeypatch.setattr(work_units, 'run_checks', spy_checks)
     monkeypatch.setattr(native_agent, 'run_session', lambda *a, **kw: {
         'status': 'PROPOSED', 'model_calls': 1, 'output': 'Environment is read-only; no edits made.'})
-    second = work_units.run_unit(custody, state, unit_args, lambda: False, review=review,
+    ledger = json.loads((custody / work_units.LEDGER).read_text(encoding='utf-8')) if (custody / work_units.LEDGER).is_file() else {}
+    ledger['plan'] = {'units': [{
+        **unit_args, 'key': 'u-revise', 'repository': 'repo', 'depends_on': [],
+        'review_feedback': json.dumps({'verdict': 'REVISE', 'summary': 'Needs fix.',
+                                       'findings': [{'claim': 'Missing detail.'}]})}]}
+    (custody / work_units.LEDGER).write_text(json.dumps(ledger), encoding='utf-8')
+    second = work_units.run_unit(custody, state, {'unit': 'u-revise'}, lambda: False, review=review,
                                  candidate=first['candidate'])
     assert second['verdict'] == 'INCONCLUSIVE'
     assert second['reason'] == 'the implementer made no changes to the retained candidate'

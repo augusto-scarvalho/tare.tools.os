@@ -1325,6 +1325,16 @@ def _effective_trigger_limit(deployment):
         return None
 
 
+def _prior_audit_revised(unit):
+    raw = unit.get('review_feedback')
+    if isinstance(raw, str) and raw.strip():
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return False
+    return isinstance(raw, dict) and raw.get('verdict') == 'REVISE'
+
+
 def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=None, worker=None, control=None, spend_model=None, review_effect=None,
              outside=None, check_control=None, red_baseline=None):
     """Run one unit up the route ladder until VERIFIED or out of rungs; apply a VERIFIED change. The receipt and
@@ -1620,7 +1630,10 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 child['command_runtimes'] = command_runtimes
                 if 'command' in config.get('capabilities', []): child['capabilities'].append('command')
             session_path=None
-            before_worker = changed_files(tree, base) if (candidate and not candidate.get('review_only') and not waiting) else None
+            before_worker = (changed_files(tree, base)
+                             if (candidate and not candidate.get('review_only') and not waiting
+                                 and _prior_audit_revised(unit))
+                             else None)
             if candidate and candidate.get('review_only'):
                 outcome = {'status': 'PROPOSED', 'model_calls': 0}
                 row['reused_candidate'] = candidate['patch']
