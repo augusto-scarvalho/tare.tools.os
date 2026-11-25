@@ -70,10 +70,12 @@ def configuration(value):
             'schema', 'role', 'repositories', 'writable', 'verifiers', 'index_states',
             'context_policy', 'specgraph_edit_context', 'typed_output', 'input_artifacts', 'capabilities', 'terminal', 'project_graph',
             'folder_access', 'instruction_repositories', 'command_protection', 'command_context', 'command_runtimes', 'project_admission', 'shared_context', 'delegated_verifiers',
-            'same_family_audit', 'managed_skills', 'auto_skills'}):
+            'same_family_audit', 'managed_skills', 'auto_skills', 'agent_signals'}):
         raise ValueError('explicit_native_agent_configuration_required')
     if 'same_family_audit' in value and (value['same_family_audit'] is not True or value.get('role') != 'auditor'):
         raise ValueError('same_family_audit is set only by the local-only conversation review, for an auditor.')
+    if 'agent_signals' in value and (type(value['agent_signals']) is not bool or (value['agent_signals'] and value.get('role') != 'implementer')):
+        raise ValueError('agent_signals is admitted only for an implementer session.')
     access = value.get('folder_access')
     if access is not None and (not isinstance(access, dict) or set(access) != {'grants'}
                                or not isinstance(access['grants'], str) or not Path(access['grants']).is_absolute()):
@@ -494,6 +496,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 state['exploration_scope'] = exploration_scope
             if delegated_leaf:  # a child implementer (work_units): it neither delegates nor plans, depth 1 always
                 state['delegated_leaf'] = True
+            if config.get('agent_signals') and not delegated_leaf:
+                raise ValueError('agent_signals requires a delegated implementer session.')
             if conversation and not delegated_leaf and (not continuation or parent.get('conversation_flow')):
                 # New chats coordinate roles. Saved chats keep their frozen tools,
                 # model/profile and prompt prefix on resume.
@@ -882,6 +886,9 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             if config.get('folder_access'):
                 from .folder_access import FolderTools
                 tools = FolderTools(tools, config, root)
+            if config.get('agent_signals') and config['role'] == 'implementer' and state.get('delegated_leaf'):
+                from .agent_signals import SignalTools
+                tools = SignalTools(tools, root, role='implementer')
             if state.get('continuation'):
                 from .native_continuity import HistoryTools
                 tools = HistoryTools(tools, root, state['continuation'])
@@ -1421,6 +1428,11 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 request = pending(root)
                 if request:
                     result['folder_access_request'] = request  # the TUI asks the user
+            if config.get('agent_signals') and state.get('delegated_leaf'):
+                from .agent_signals import read_session_signals
+                emitted = read_session_signals(root, role=config['role'])
+                if emitted:
+                    result['agent_signals'] = emitted
             from .consent_decisions import pending as pending_consent_questions
             result['consent_questions'] = pending_consent_questions(root, session_id)
             if config.get('typed_output') and result['status'] == 'PROPOSED':

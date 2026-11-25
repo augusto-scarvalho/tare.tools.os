@@ -644,3 +644,231 @@ def test_explorer_signals_stamped_and_routed_without_side_effects_headless(tmp_p
     assert not (project / '.tare' / 'checks.json').exists()
     assert len(routed_body['out_of_scope_blockers']) == 1
     assert routed_body['out_of_scope_blockers'][0]['from_role'] == 'explorer'
+
+
+def test_signal_tools_schema_caps_isolation_and_custody_persistence(tmp_path):
+    from compute_plane.native_cli import cli_request
+    from relay import native_agent
+
+    # Strict Codex CLI schema compilation & local llama.cpp <=2000 maxLength check.
+    spec = agent_signals.REPORT_SIGNAL_SPEC['report_signal']
+    req = cli_request(dict(model='fixture', messages=[], tools=[{'function': {'name': 'report_signal', 'parameters': spec['parameters']}}]),
+                      structured=True, native_arguments=True)
+    assert 'report_signal' in req['prompt']
+
+    def max_lengths(obj):
+        if isinstance(obj, dict):
+            if isinstance(obj.get('maxLength'), int):
+                yield obj['maxLength']
+            for v in obj.values():
+                yield from max_lengths(v)
+        elif isinstance(obj, list):
+            for v in obj:
+                yield from max_lengths(v)
+
+    assert all(v <= 2000 for v in max_lengths(spec['parameters']))
+
+    # Only delegated implementers may configure agent_signals=True (never auditors/planners/explorers).
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    for role in ('auditor', 'plan-auditor', 'planner', 'explorer'):
+        with pytest.raises(ValueError, match='agent_signals is admitted only'):
+            native_agent.configuration({
+                'schema': 'tare.tools/native-agent-config/1', 'role': role,
+                'repositories': {'proj': str(repo)}, 'writable': {}, 'verifiers': {},
+                'agent_signals': True,
+            })
+
+    custody = tmp_path / 'worker-session'
+    custody.mkdir()
+    inner = SimpleNamespace(names=('read', 'edit'), tool_specs_json=encode({'read': {}, 'edit': {}}),
+                            session_id='sess-1', binding='test-binding')
+    sig_tools = agent_signals.SignalTools(inner, custody, role='implementer')
+    assert 'report_signal' in sig_tools.names
+
+    # Reject cross-kind field mixing (expected with propose_checks).
+    bad = sig_tools.execute(_effect('report_signal', {
+        'kind': 'propose_checks', 'summary': 'Bad mix', 'reason': 'Mixing fields.',
+        'checks': [{'name': 'unit', 'argv': ['python', '-m', 'pytest']}],
+        'expected': 'should not be allowed',
+    }, 's-bad'), _control())
+    assert bad.status == 'refused'
+    assert 'not allowed' in json.loads(bad.output_json)['reason'].lower()
+
+    # Record 1 propose_checks, 1 out_of_scope_blocker, 1 goal_drift (cap = 3).
+    r1 = sig_tools.execute(_effect('report_signal', {
+        'kind': 'propose_checks', 'summary': 'Add smoke check', 'reason': 'No checks.json.',
+        'checks': [{'name': 'smoke', 'argv': ['python', '-m', 'pytest', '-q'], 'timeout_seconds': 60}],
+    }, 's1'), _control())
+    assert r1.status == 'succeeded' and json.loads(r1.output_json)['remaining_signals'] == 2
+
+    # Idempotent replay on same effect_id does not consume quota.
+    r1_dup = sig_tools.execute(_effect('report_signal', {
+        'kind': 'propose_checks', 'summary': 'Add smoke check', 'reason': 'No checks.json.',
+        'checks': [{'name': 'smoke', 'argv': ['python', '-m', 'pytest', '-q'], 'timeout_seconds': 60}],
+    }, 's1'), _control())
+    assert r1_dup.status == 'succeeded' and json.loads(r1_dup.output_json)['reused'] is True
+
+    # Second distinct propose_checks in same session refused.
+    r1_second = sig_tools.execute(_effect('report_signal', {
+        'kind': 'propose_checks', 'summary': 'Another checks', 'reason': 'Duplicate.',
+        'checks': [{'name': 'unit', 'argv': ['python', '-m', 'pytest']}],
+    }, 's1b'), _control())
+    assert r1_second.status == 'refused'
+
+    r2 = sig_tools.execute(_effect('report_signal', {
+        'kind': 'out_of_scope_blocker', 'summary': 'Flaky smoke test', 'reason': 'Unrelated scene.',
+        'symptom': 'Random timeout in smoke.gd', 'paths': ['tests/smoke.gd'],
+        'suggested_follow_up': 'Fix smoke.gd separately.',
+    }, 's2'), _control())
+    assert r2.status == 'succeeded' and json.loads(r2.output_json)['remaining_signals'] == 1
+
+    r3 = sig_tools.execute(_effect('report_signal', {
+        'kind': 'goal_drift', 'summary': 'API v1 removed', 'reason': 'Only v2 exists.',
+        'expected': 'Update v1 endpoint', 'discovered': 'v1 was deleted; v2 is active',
+        'proposed_objective': 'Update v2 endpoint', 'options': ['Update v2', 'Keep v1'],
+    }, 's3'), _control())
+    assert r3.status == 'succeeded' and json.loads(r3.output_json)['remaining_signals'] == 0
+
+    # 4th signal rejected (max 3/session).
+    r4 = sig_tools.execute(_effect('report_signal', {
+        'kind': 'out_of_scope_blocker', 'summary': 'Fourth', 'reason': 'Over cap.',
+        'symptom': 'over limit',
+    }, 's4'), _control())
+    assert r4.status == 'refused'
+    assert 'at most 3' in json.loads(r4.output_json)['reason'].lower()
+
+    # Host re-stamps signals cleanly when reading custody store.
+    emitted = agent_signals.read_session_signals(custody, role='implementer')
+    assert [s['kind'] for s in emitted] == ['propose_checks', 'out_of_scope_blocker', 'goal_drift']
+    assert all(s['from_role'] == 'implementer' and s['authority'] == 'ADVISORY_ONLY' for s in emitted)
+
+    # Crash-consistent recover_effect: if signal was saved before journaling EffectResult, recover returns RECORDED.
+    from tare_tools_agent_runtime import ConversationLog
+    j_saved = ConversationLog()
+    j_saved.append({'kind': 'effect_requested', 'session_id': 'sess-1', 'effect_id': 's1',
+                    'tool_call': {'call_id': 's1', 'name': 'report_signal', 'arguments_json': '{}'}})
+    _, rec_saved = sig_tools.recover_effect(j_saved)
+    assert rec_saved.status == 'succeeded' and json.loads(rec_saved.output_json)['recovered'] is True
+
+    j_unsaved = ConversationLog()
+    j_unsaved.append({'kind': 'effect_requested', 'session_id': 'sess-1', 'effect_id': 's-missing',
+                      'tool_call': {'call_id': 's-missing', 'name': 'report_signal', 'arguments_json': '{}'}})
+    _, rec_unsaved = sig_tools.recover_effect(j_unsaved)
+    assert rec_unsaved.status == 'refused'
+
+
+def test_work_unit_implementer_signals_goal_drift_isolation_and_heads_up(tmp_path, monkeypatch):
+    import subprocess
+    from relay import heads_up, native_agent, work_forms, work_units
+
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    subprocess.run(['git', 'init', '-b', 'main'], cwd=repo, check=True, capture_output=True)
+    subprocess.run(['git', 'config', 'user.email', 'test@example.com'], cwd=repo, check=True, capture_output=True)
+    subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=repo, check=True, capture_output=True)
+    (repo / 'app.py').write_text('value = 1\n', encoding='utf-8')
+    subprocess.run(['git', 'add', 'app.py'], cwd=repo, check=True, capture_output=True)
+    subprocess.run(['git', 'commit', '-m', 'init'], cwd=repo, check=True, capture_output=True)
+
+    custody = tmp_path / 'custody'
+    custody.mkdir()
+    fake_dep = {'id': 'fake-imp', 'native_profile': {'model': 'm', 'protocol': 'openai-chat', 'context_window': 64000, 'output_tokens': 4000}}
+    monkeypatch.setattr(work_units, 'routes', lambda *a, **kw: iter([('fake-imp', fake_dep)]))
+    monkeypatch.setattr(work_units, 'local_slot', lambda *a, **kw: __import__('contextlib').nullcontext())
+
+    config = {
+        'schema': 'tare.tools/native-agent-config/1',
+        'role': 'implementer',
+        'conversation_flow': True,
+        'repositories': {'proj': str(repo)},
+        'writable': {'proj': ['app.py']},
+        'verifiers': {'conversation-diff': {'repository': 'proj', 'argv': [sys.executable, '-c', 'pass']}},
+    }
+    state = {'session_id': 'sess-1', 'conversation_flow': True, 'config': config,
+             'limits': {'max_model_calls': None, 'max_seconds': None},
+             'deployment': {'id': 'coord', 'native_profile': {'model': 'coord'}}}
+    unit = {'key': 'u1', 'title': 'Update app', 'repository': 'proj', 'target_paths': ['app.py'],
+            'criteria': ['value updated'], 'depends_on': [], 'verifiers': ['conversation-diff'], 'test_paths': []}
+    work_forms.record_plan(custody, config, {'units': [unit], 'criteria': ['value updated']})
+
+    # 1. Implementer emits goal_drift -> skips auditor & apply, preserves candidate, does NOT trip failure ledger.
+    auditor_called = []
+
+    def fake_worker_drift(child, dep, session_path, instruction, **kw):
+        assert child.get('agent_signals') is True
+        tree = Path(child['repositories']['proj'])
+        (tree / 'app.py').write_text('value = 2\n', encoding='utf-8')
+        return {
+            'status': 'PROPOSED', 'model_calls': 1, 'output': 'Found goal drift.',
+            'agent_signals': agent_signals.stamp_signals('implementer', [{
+                'kind': 'goal_drift', 'summary': 'v1 missing', 'reason': 'Codebase moved to v2.',
+                'payload': {'expected': 'Edit v1', 'discovered': 'Only v2 exists', 'options': ['Edit v2', 'Stop']},
+            }], source_id='w1'),
+        }
+
+    def spy_review(tree, producer, u, changed, checks):
+        auditor_called.append((u, checks))
+        return {'verdict': 'ACCEPT', 'summary': 'ok', 'findings': [], 'remaining': [], 'sources': []}
+
+    monkeypatch.setattr(native_agent, 'run_session', fake_worker_drift)
+    res_drift = work_units.run_unit(custody, state, {'unit': 'u1'}, lambda: False, review=spy_review)
+    assert res_drift['verdict'] == 'INCONCLUSIVE'
+    assert res_drift['applied'] is False
+    assert res_drift['goal_drift_stop'] is True
+    assert res_drift.get('candidate') is not None
+    assert auditor_called == []
+    assert (repo / 'app.py').read_text(encoding='utf-8') == 'value = 1\n'
+    # Must not trip check_failures guard.
+    work_units.check_failures(custody, unit, conversation=True)
+
+    # 2. Implementer emits out_of_scope_blocker + auditor emits out_of_scope_blocker; auditor never receives implementer signals.
+    def fake_worker_blocker(child, dep, session_path, instruction, **kw):
+        tree = Path(child['repositories']['proj'])
+        (tree / 'app.py').write_text('value = 2\n', encoding='utf-8')
+        return {
+            'status': 'PROPOSED', 'model_calls': 1, 'output': 'Updated value.',
+            'agent_signals': agent_signals.stamp_signals('implementer', [{
+                'kind': 'out_of_scope_blocker', 'summary': 'Unrelated smoke flake', 'reason': 'Fails on main.',
+                'payload': {'paths': ['tests/smoke.gd'], 'symptom': 'Flaky timeout'},
+            }], source_id='w2'),
+        }
+
+    def spy_review_with_signal(tree, producer, u, changed, checks):
+        auditor_called.append((u, checks))
+        # Strict Implementer <-> Auditor isolation: neither unit nor checks carries implementer agent_signals.
+        assert 'agent_signals' not in u and 'agent_signals' not in checks
+        return {
+            'verdict': 'ACCEPT', 'summary': 'Looks good.', 'findings': [], 'remaining': [], 'sources': [],
+            'agent_signals': agent_signals.stamp_signals('auditor', [{
+                'kind': 'out_of_scope_blocker', 'summary': 'CI lint warning elsewhere', 'reason': 'Pre-existing.',
+                'payload': {'symptom': 'Unused import in unrelated file'},
+            }], source_id='aud-1'),
+        }
+
+    monkeypatch.setattr(native_agent, 'run_session', fake_worker_blocker)
+    res_ok = work_units.run_unit(custody, state, {'unit': 'u1'}, lambda: False, review=spy_review_with_signal)
+    assert res_ok['applied'] is True
+    assert len(auditor_called) == 1
+    assert [s['from_role'] for s in res_ok['agent_signals']] == ['implementer', 'auditor']
+
+    # 3. delivery_view() and heads_up._detail() surface blockers, goal_drift, and checks_proposal_outcome cleanly
+    #    without triplicating signals into audit.agent_signals or top-level agent_signals.
+    view = tasks.delivery_view({
+        **res_drift,
+        'audit': {'verdict': 'ACCEPT', 'summary': 'ok', 'findings': [], 'remaining': [],
+                  'agent_signals': res_ok['agent_signals']},
+        'goal_drift': res_drift['agent_signals'],
+        'out_of_scope_blockers': res_ok['agent_signals'],
+        'checks_proposal_outcome': {'status': 'SAVED', 'saved': True},
+    }, config=config, unit=unit)
+    assert 'agent_signals' not in view
+    assert 'agent_signals' not in view['audit']
+    assert 'goal drift' in view['next'].lower()
+    assert 'out_of_scope_blockers' in view['next']
+    assert 'recheck_candidate=true' in view['next']
+
+    detail = heads_up._detail('implement', {'note': 'Fix app'}, view)
+    assert 'goal_drift (implementer): v1 missing' in detail
+    assert 'out_of_scope_blocker (implementer): Unrelated smoke flake' in detail
+    assert 'checks_proposal: SAVED' in detail

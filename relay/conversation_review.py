@@ -546,6 +546,9 @@ def audit_result(outcome, config, unit, changed, references, reference_roots, sa
             or ((deletions_only or not references[:-1]) and s==references[-1]) for s in payload.get('sources',[])):
         raise ValueError('An accepting auditor must cite an observed changed candidate file.')
     result={k:payload[k] for k in ('verdict','summary','findings','remaining')}
+    if payload.get('signals'):
+        from .agent_signals import stamp_signals
+        result['agent_signals'] = stamp_signals('auditor', payload['signals'], source_id=str(outcome.get('session_id') or 'auditor'))
     result['sources']=[{**s,'repository':unit.get('repository') or next(iter(config['repositories']))}
                        for s in payload.get('sources',[]) if s['repository']=='candidate']
     runtime = {r['alias']: r for r in (satellites['sources'] if satellites is not None

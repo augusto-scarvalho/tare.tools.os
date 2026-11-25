@@ -297,7 +297,8 @@ def delivery_view(value, *, config=None, unit=None):
     result = {k: value[k] for k in ('verdict', 'applied', 'application', 'application_files',
                                   'reason', 'files', 'route', 'checks', 'suite',
                                   'checks_before', 'checks_after', 'already_red', 'checks_set_aside', 'needs', 'route_class', 'kind', 'class_source', 'kinds', 'critical', 'effort', 'effort_from', 'review_edits', 'source_state', 'implementer_report',
-                                  'verification', 'summary', 'remaining', 'next', 'folder_access_request','last_attempt','implementation_stop') if k in value}
+                                  'verification', 'summary', 'remaining', 'next', 'folder_access_request','last_attempt','implementation_stop',
+                                  'checks_proposal_outcome', 'goal_drift', 'goal_drift_stop', 'out_of_scope_blockers') if k in value}
     if value.get('needs') and value.get('route_class'):
         from .model_signals import ORDER
         if ORDER.index(value['route_class']) < ORDER.index(value['needs']):
@@ -308,7 +309,7 @@ def delivery_view(value, *, config=None, unit=None):
     from .work_units import AUDIT_INCOMPLETE, AUDIT_REFUSED
     value = {**value, 'audit': labelled(value['audit'])} if value.get('audit') else value  # also a saved delivery
     if value.get('audit'):
-        result['audit'] = {k: v for k, v in value['audit'].items() if k != 'session'}
+        result['audit'] = {k: v for k, v in value['audit'].items() if k not in {'session', 'agent_signals'}}
         label = label_of(value['audit'])
         if label and result.get('reason') in (AUDIT_REFUSED, AUDIT_INCOMPLETE):
             # The saved reason stays the refusal counter's key (work_units.audit_refusal); only its wording changes.
@@ -420,6 +421,19 @@ def delivery_view(value, *, config=None, unit=None):
                 missing, label_of(value.get('audit')))}},
             next='Ask the separate planner now to add these files to the saved plan, then implement on the preserved '
                  'candidate; the user approves the new files when implementation starts. Do not open another task.')
+    if value.get('goal_drift') or value.get('goal_drift_stop'):
+        result['next'] = (
+            'The implementer reported a goal drift and stopped without applying changes (candidate preserved if any). '
+            'Present expected vs discovered, proposed_objective, and options clearly to the user in chat and wait for '
+            'their reply before calling demand(relation=revise) or implement.')
+    if value.get('out_of_scope_blockers'):
+        result['next'] = (result.get('next', '') +
+            ' Also report the out-of-scope blocker(s) in out_of_scope_blockers to the user and offer to open a '
+            'separate follow-up task if they want.').strip()
+    if (value.get('checks_proposal_outcome') or {}).get('saved') and not value.get('applied'):
+        result['next'] = (result.get('next', '') +
+            ' .tare/checks.json was saved by the user; if checks failed due to missing/wrong check config and the '
+            'candidate is preserved, you can reverify with implement(recheck_candidate=true).').strip()
     return result
 
 
@@ -536,7 +550,8 @@ def delivery_notice(root, invocation):
 def retained_delivery(output):
     result={k:output[k] for k in ('verdict','applied','files','reason','route','receipt','targets',
         'source_state','candidate','worker','folder_access_request','implementer_report','implementation_stop',
-        'scope_needed') if k in output}
+        'scope_needed','checks_proposal_outcome','goal_drift','goal_drift_stop',
+        'out_of_scope_blockers') if k in output}
     if output.get('audit'):
         # The labels are kept as well: confirm_apply's refusal has no review session to classify again (labelled).
         result['audit']={k:output['audit'][k] for k in ('verdict','route','session','reason','failure_code','budget','actor',
@@ -611,10 +626,18 @@ def recover_unapplied_delivery(root,state,value):
     candidate={**result['candidate'],'producer':producer_reference(path.parent,candidate_producer(root,result['candidate']['producer']))}
     # The receipt keeps the whole audit: files it requires outside the plan still gate the next plan.
     needed=audit_scope(result,plan)
+    raw_signals = list(result.get('agent_signals') or [])
+    drift_signals = [s for s in raw_signals if isinstance(s, dict) and s.get('kind') == 'goal_drift']
+    blocker_signals = [s for s in raw_signals if isinstance(s, dict) and s.get('kind') == 'out_of_scope_blocker']
     delivery=retained_delivery({**result,'candidate':candidate,'receipt':str(path),
-                                **({'scope_needed':needed} if needed else {})})
+                                **({'scope_needed':needed} if needed else {}),
+                                **({'goal_drift':drift_signals} if drift_signals else {}),
+                                **({'out_of_scope_blockers':blocker_signals} if blocker_signals else {})})
     if lost:delivery['last_attempt']=task['delivery']
     task.update(stage='PENDING',delivery=delivery)
+    if (result.get('goal_drift_stop') or drift_signals) and task.get('attempt_input'):
+        drift_record = {'input': task['attempt_input'], 'signals': drift_signals}
+        value['goal_drift'] = task['goal_drift'] = drift_record
     # Only the matching interrupted attempt can supply provenance. Lost-candidate
     # recovery restores older work, not the identity of the latest attempt.
     if not lost:
@@ -1653,8 +1676,9 @@ class ConversationTools:
                     execution_unit['verification_contract'] = contract
                     execution_unit['verification_contract_digest'] = hashlib.sha256(encode(contract).encode()).hexdigest()
                 candidate = previous.get('candidate')
-                if args.get('recheck_candidate') and (not candidate or candidate_revision or previous.get('applied')):
-                    raise ValueError('Rechecking requires an unapplied retained candidate with no required candidate revision.')
+                if args.get('recheck_candidate') and (not candidate or candidate_revision or previous.get('applied')
+                        or (previous.get('goal_drift_stop') and task.get('attempt_input') == self.input_id())):
+                    raise ValueError('Rechecking requires an unapplied retained candidate with no required candidate revision or unresolved goal drift.')
                 if candidate:
                     candidate = {**candidate, 'review_only': bool(args.get('recheck_candidate')) or (
                         prior_audit.get('verdict') == 'INCONCLUSIVE' and not candidate_revision)}
@@ -1797,6 +1821,9 @@ class ConversationTools:
                 finally:
                     STALL_ASK.reset(stall)
                     PROGRESS.reset(said)
+                if output.get('agent_signals'):
+                    self._route_agent_signals(output, output['agent_signals'], request=request,
+                                              control=control, value=value, task=task)
                 if output.get('applied'):
                     task['verification'] = {'status': 'green', 'checks': output.get('checks_after', ''), 'applied': True}
                     output['targets'] = proof_paths(config, plan['unit'], [*plan.get('sources', []),
