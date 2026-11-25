@@ -23,11 +23,40 @@ class Source(Record):
     sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
 
 
+class CheckProposalEntry(Record):
+    name: str = Field(min_length=1, max_length=64)
+    remove: bool | None = None
+    mode: Literal['headless', 'manual', 'gui'] | None = None
+    argv: list[str] | None = Field(default=None, max_length=32)
+    timeout_seconds: int | None = Field(default=None, ge=5, le=3600)
+    description: str | None = Field(default=None, max_length=240)
+    paths: list[str] | None = Field(default=None, max_length=16)
+
+
+class ProposeChecksPayload(Record):
+    checks: list[CheckProposalEntry] = Field(max_length=16)
+    replace: bool | None = None
+    repository: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class GoalDriftPayload(Record):
+    expected: str = Field(min_length=1, max_length=1000)
+    discovered: str = Field(min_length=1, max_length=1000)
+    proposed_objective: str | None = Field(default=None, min_length=1, max_length=1000)
+    options: list[str] | None = Field(default=None, min_length=1, max_length=6)
+
+
+class OutOfScopeBlockerPayload(Record):
+    symptom: str = Field(min_length=1, max_length=1000)
+    paths: list[str] | None = Field(default=None, max_length=16)
+    suggested_follow_up: str | None = Field(default=None, min_length=1, max_length=500)
+
+
 class Signal(Record):
     kind: Literal['propose_checks', 'goal_drift', 'out_of_scope_blocker']
     summary: str = Field(min_length=1, max_length=300)
     reason: str = Field(min_length=1, max_length=1000)
-    payload: dict[str, object]
+    payload: ProposeChecksPayload | GoalDriftPayload | OutOfScopeBlockerPayload
 
 
 class Proposal(Record):

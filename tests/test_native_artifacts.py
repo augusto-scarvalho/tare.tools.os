@@ -40,6 +40,7 @@ def test_codex_object_codec_preserves_actual_role_handoffs(setup,role,explicit_n
     before=json.dumps(owner_schema,sort_keys=True)
     value=payload(role,root)
     wire=json.loads(json.dumps(value))
+    wire['signals']=None
     if role=='planner':
         task=dict(key='change',title='Change source',summary='One change',cluster='fixture',
                   priority='P1',criteria=['Selected verifier passes'],target_paths=['a.py'],depends_on=[])

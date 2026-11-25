@@ -51,32 +51,53 @@ def _clean_rel_paths(paths, field, *, max_items=16):
     return cleaned
 
 
-def _validate_propose_checks_payload(payload):
-    from .turn_engine import PROJECT_CHECKS_MAX_COUNT, validate_project_checks_data
-    if not isinstance(payload, dict):
-        raise ValueError('agent_signal_invalid_payload')
-    if set(payload) - {'checks', 'replace', 'repository'}:
-        raise ValueError('agent_signal_unknown_payload_field')
-    replace = payload.get('replace', False)
-    if type(replace) is not bool:
-        raise ValueError('agent_signal_invalid_replace')
-    repository = payload.get('repository')
-    if repository is not None and (not isinstance(repository, str) or not repository.strip() or len(repository) > 128):
-        raise ValueError('agent_signal_invalid_repository')
-    checks = payload.get('checks')
-    if not isinstance(checks, dict) or len(checks) > PROJECT_CHECKS_MAX_COUNT:
+def _normalize_propose_checks_entries(checks, *, replace):
+    """Accept either the closed wire list `[{'name': ..., ...}]` or internal dict `{name: entry_or_None}`.
+
+    Returns `(canonical_dict, canonical_wire_list)` with strict validation on every field.
+    """
+    from .turn_engine import PROJECT_CHECK_NAME, PROJECT_CHECK_RESERVED, PROJECT_CHECKS_MAX_COUNT, validate_project_checks_data
+    raw_map = {}
+    if isinstance(checks, list):
+        if len(checks) > PROJECT_CHECKS_MAX_COUNT:
+            raise ValueError('agent_signal_invalid_checks')
+        if not checks and not replace:
+            raise ValueError('agent_signal_empty_checks')
+        for item in checks:
+            if not isinstance(item, dict):
+                raise ValueError('agent_signal_invalid_checks')
+            if set(item) - {'name', 'remove', 'mode', 'argv', 'timeout_seconds', 'description', 'paths'}:
+                raise ValueError('agent_signal_unknown_check_field')
+            name = item.get('name')
+            if not isinstance(name, str) or not name or name in raw_map:
+                raise ValueError('agent_signal_invalid_check_name')
+            remove = item.get('remove')
+            if remove is not None and type(remove) is not bool:
+                raise ValueError('agent_signal_invalid_remove')
+            body = {k: v for k, v in item.items() if k not in {'name', 'remove'} and v is not None}
+            if remove is True:
+                if body:
+                    raise ValueError('agent_signal_remove_with_fields')
+                raw_map[name] = None
+            else:
+                raw_map[name] = body
+    elif isinstance(checks, dict):
+        if len(checks) > PROJECT_CHECKS_MAX_COUNT:
+            raise ValueError('agent_signal_invalid_checks')
+        if not checks and not replace:
+            raise ValueError('agent_signal_empty_checks')
+        raw_map = checks
+    else:
         raise ValueError('agent_signal_invalid_checks')
-    if not checks and not replace:
-        raise ValueError('agent_signal_empty_checks')
+
     non_null = {}
     removals = []
-    for name, entry in checks.items():
+    for name, entry in raw_map.items():
         if not isinstance(name, str) or not name:
             raise ValueError('agent_signal_invalid_check_name')
         if entry is None:
             if replace:
                 raise ValueError('agent_signal_null_check_with_replace')
-            from .turn_engine import PROJECT_CHECK_NAME, PROJECT_CHECK_RESERVED
             if not PROJECT_CHECK_NAME.fullmatch(name) or name in PROJECT_CHECK_RESERVED:
                 raise ValueError('agent_signal_invalid_check_name')
             removals.append(name)
@@ -84,10 +105,33 @@ def _validate_propose_checks_payload(payload):
             non_null[name] = entry
     normalized_non_null, _ = validate_project_checks_data(
         None, {'checks': non_null}, strict=True, check_executables=False)
-    normalized_checks = dict(normalized_non_null['checks'])
+    normalized_map = dict(normalized_non_null['checks'])
     for name in removals:
-        normalized_checks[name] = None
-    out = {'checks': normalized_checks}
+        normalized_map[name] = None
+    wire_list = []
+    for name, entry in normalized_map.items():
+        if entry is None:
+            wire_list.append({'name': name, 'remove': True})
+        else:
+            wire_list.append({'name': name, **entry})
+    return normalized_map, wire_list
+
+
+def _validate_propose_checks_payload(payload):
+    if not isinstance(payload, dict):
+        raise ValueError('agent_signal_invalid_payload')
+    if set(payload) - {'checks', 'replace', 'repository'}:
+        raise ValueError('agent_signal_unknown_payload_field')
+    replace = payload.get('replace')
+    if replace is None:
+        replace = False
+    if type(replace) is not bool:
+        raise ValueError('agent_signal_invalid_replace')
+    repository = payload.get('repository')
+    if repository is not None and (not isinstance(repository, str) or not repository.strip() or len(repository) > 128):
+        raise ValueError('agent_signal_invalid_repository')
+    _, wire_list = _normalize_propose_checks_entries(payload.get('checks'), replace=replace)
+    out = {'checks': wire_list}
     if replace:
         out['replace'] = True
     if repository is not None:
@@ -224,13 +268,14 @@ def prepare_checks_proposal(root, payload):
     """
     from .turn_engine import PROJECT_CHECKS_MAX_COUNT, read_project_checks_doc, validate_project_checks_data
     clean_payload = _validate_propose_checks_payload(payload)
+    checks_map, _ = _normalize_propose_checks_entries(clean_payload['checks'], replace=bool(clean_payload.get('replace')))
     existing_doc, existing_sha256 = read_project_checks_doc(root)
     before = deepcopy((existing_doc or {}).get('checks') or {})
     if clean_payload.get('replace'):
-        merged = deepcopy(clean_payload['checks'])
+        merged = deepcopy(checks_map)
     else:
         merged = deepcopy(before)
-        for name, entry in clean_payload['checks'].items():
+        for name, entry in checks_map.items():
             if entry is None:
                 merged.pop(name, None)
             else:

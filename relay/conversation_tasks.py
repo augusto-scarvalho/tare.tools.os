@@ -145,12 +145,21 @@ SPEC = {
             '(headless commands, timeouts, or marking gui/manual checks so they are not run headlessly). '
             'Validates strictly and asks the user directly in the TUI with an exact diff before writing. '
             'Never writes without user confirmation (refuses in headless mode). '
-            'Set a check value to null when replace=false to remove an existing check.',
+            'Set remove=true on an entry when replace=false to remove an existing check.',
         'parameters': {'type': 'object', 'properties': {
             'summary': {'type': 'string', 'minLength': 1, 'maxLength': 300},
             'reason': {'type': 'string', 'minLength': 1, 'maxLength': 1000},
-            'checks': {'type': 'object', 'description': 'Mapping of check name to check definition '
-                '({argv, mode, timeout_seconds, description, paths}) or null to remove an existing check.'},
+            'checks': {'type': 'array', 'maxItems': 16,
+                'description': 'List of check definitions to add, update, or remove.',
+                'items': {'type': 'object', 'properties': {
+                    'name': {'type': 'string', 'minLength': 1, 'maxLength': 64},
+                    'remove': {'type': 'boolean', 'description': 'true to remove an existing check (replace=false only).'},
+                    'mode': {'type': 'string', 'enum': ['headless', 'manual', 'gui']},
+                    'argv': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'maxItems': 32},
+                    'timeout_seconds': {'type': 'integer', 'minimum': 5, 'maximum': 3600},
+                    'description': {'type': 'string', 'maxLength': 240},
+                    'paths': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': 16},
+                }, 'required': ['name'], 'additionalProperties': False}},
             'replace': {'type': 'boolean', 'description': 'false (default): merge into existing .tare/checks.json; '
                 'true: replace all checks.'},
             'repository': {'type': 'string', 'description': 'Repository key when multiple repositories are configured.'},

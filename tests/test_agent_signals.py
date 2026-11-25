@@ -163,16 +163,33 @@ def test_signal_caps_and_artifact_digest_preservation():
         agent_signals.validate_artifact_signals('planner', [p, p])
 
     # Auditor artifact cannot carry propose_checks.
+    p_wire = {
+        'kind': 'propose_checks',
+        'summary': 'One',
+        'reason': 'Reason.',
+        'payload': {'checks': [{'name': 'unit', 'argv': ['python', '-m', 'pytest']}]},
+    }
     bad_review = {
         'summary': 'Review summary.',
         'sources': [{'repository': 'proj', 'path': 'app.py', 'sha256': 'a' * 64}],
         'remaining': [],
         'verdict': 'ACCEPT',
         'findings': [],
-        'signals': [p],
+        'signals': [p_wire],
     }
     with pytest.raises(ValueError, match='agent_signal_emitter_not_allowed'):
         native_artifacts.validate('auditor', bad_review)
+
+    # Validate idempotency: validate(role, validate(role, payload)) succeeds for signals with list checks.
+    plan_with_signal = _base_plan(signals=[p_wire])
+    once = native_artifacts.validate('planner', plan_with_signal)
+    assert native_artifacts.validate('planner', once) == once
+
+    # Verify both native_artifacts schemas and conversation_tasks.SPEC['propose_checks'] satisfy strict Codex CLI codec.
+    from compute_plane.native_cli import cli_request
+    propose_tool = {'function': {'name': 'propose_checks', 'parameters': tasks.SPEC['propose_checks']['parameters']}}
+    req = cli_request(dict(model='fixture', messages=[], tools=[propose_tool]), structured=True, native_arguments=True)
+    assert 'propose_checks' in req['prompt']
 
 
 def test_prepare_and_write_checks_proposal_validation_merge_replace_and_toctou(tmp_path, monkeypatch):
@@ -433,7 +450,7 @@ def test_coordinator_propose_checks_denial_blocks_same_turn_repeat(tmp_path, mon
     args = {
         'summary': 'Add unit check',
         'reason': 'Run pytest.',
-        'checks': {'unit': {'argv': ['python', '-m', 'pytest']}},
+        'checks': [{'name': 'unit', 'argv': ['python', '-m', 'pytest']}],
     }
     first = tools.execute(_effect('propose_checks', args, 'e1'), _control())
     assert first.status == 'succeeded'
@@ -476,7 +493,7 @@ def test_planner_signals_apply_checks_before_task_plan_and_goal_drift_blocks_sam
             'kind': 'propose_checks',
             'summary': 'Register unit-py check',
             'reason': 'Project needs pytest verifier.',
-            'payload': {'checks': {'unit-py': {'argv': ['python', '-m', 'pytest', '-q']}}},
+            'payload': {'checks': [{'name': 'unit-py', 'argv': ['python', '-m', 'pytest', '-q']}]},
         }],
     )
     artifact = session / 'planning' / 'job1' / 'session' / 'artifact.json'
