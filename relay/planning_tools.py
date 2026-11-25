@@ -734,12 +734,18 @@ class PlanningTools:
                 **{name: _check_label(check, 'Existing configured project check.')
                 for name, check in self.state['config']['verifiers'].items()},
                 BACKLOG_CHECK: 'Host-owned validation of planned JSON graph files, without importing project code.'}
+            from .turn_engine import project_checks
+            manual_checks = {}
+            for repo_root in self.state['config'].get('repositories', {}).values():
+                manual_checks.update(project_checks(repo_root)['manual'])
+            if manual_checks:
+                mission['manual_checks'] = manual_checks
             task_contract += ('Use only available_verifiers keys as task.verifiers; a shell command is not a verifier name. '
                               'Use an empty list when none applies. Preserve the recorded product criteria. '
                               'Ground automated task criteria in available_verifiers and runnable test_paths; '
-                              'record checks requiring unavailable environments (such as a GUI/GPU renderer, external '
-                              'hardware, or manual visual inspection) in remaining rather than freezing them as '
-                              'automated task criteria. ')
+                              'record checks requiring unavailable environments (such as manual_checks, a GUI/GPU '
+                              'renderer, external hardware, or manual visual inspection) in remaining rather than '
+                              'freezing them as automated task criteria. ')
             if BACKLOG_CHECK in args['instruction']+' '+args.get('context', ''):
                 from .conversation_tasks import backlog_authoring_contract
                 mission['host_contracts'] = {BACKLOG_CHECK: backlog_authoring_contract()}

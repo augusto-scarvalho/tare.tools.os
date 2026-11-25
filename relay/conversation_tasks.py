@@ -305,8 +305,8 @@ def delivery_view(value, *, config=None, unit=None):
         result['next'] = 'Explain the concrete audit failure and stop. The candidate was not applied. '
         result['next'] += 'Name audit.actor.model as the selected auditor. A local call/context/time limit is not evidence of exhausted provider quota. '
         result['next'] += 'Do not repeat implementation or try reading host receipts with project tools.'
-        from .conversation_permissions import NOT_APPLIED_UNACCEPTED, NOT_CONFIRMED
-        if audit.get('reason') in (NOT_APPLIED_UNACCEPTED, NOT_CONFIRMED):
+        from .conversation_permissions import NOT_APPLIED_UNACCEPTED, NOT_APPLIED_UNACCEPTED_INDEPENDENT, NOT_CONFIRMED
+        if audit.get('reason') in (NOT_APPLIED_UNACCEPTED, NOT_APPLIED_UNACCEPTED_INDEPENDENT, NOT_CONFIRMED):
             # The user's own choice: a local coordinator told it as an audit failure, and an accepting one (2026-11-18).
             result['next'] = ('The user chose not to apply this change: say that first. Then give the audit as '
                 'audit.verdict states it (INCONCLUSIVE or REJECTED is not an approval) and its open items; the candidate '
@@ -1301,7 +1301,9 @@ class ConversationTools:
                                           if len(retry_names) == 1 else
                                           'These registered checks run exactly the requested test targets, not a broader suite. Retry them.'))
                     return refused(result.pop('reason'),**result)
-                if 'tests' in names and 'godot-import' in config['verifiers']:
+                from .work_units import _is_godot_script_argv
+                if ('godot-import' in config['verifiers']
+                        and ('tests' in names or any(_is_godot_script_argv(config['verifiers'][n]['argv']) for n in names))):
                     names = ['godot-import', *[n for n in names if n != 'godot-import']]
                 if value.get('turn', {}).get('invocation') != self.invocation_id:
                     value['turn'] = {'invocation': self.invocation_id, 'intent': 'investigate'}
@@ -1343,7 +1345,9 @@ class ConversationTools:
                                                          control, self.permission_directory, self.invocation_id,
                                                          local_producer=execution_scope.current().prefer == 'local'),
                               'read_only': (project_permission_mode(project) or 'read') == 'read'})))
-                    status, details = run_checks(tree, commands)
+                    from .turn_engine import project_checks
+                    check_timeouts = project_checks(project)['timeouts']
+                    status, details = run_checks(tree, commands, **({'timeouts': check_timeouts} if check_timeouts else {}))
                     output = {'status': status, 'checks': details, 'applied': False}
                     if BACKLOG_CHECK in names:
                         output['project_graph_binding'] = graph_binding(config)
@@ -1614,9 +1618,10 @@ class ConversationTools:
                     if progress is not None:
                         progress.audit()
                     result = review(self, task, tree, producer, unit, changed, checks, control)
-                    # The checks passed (run_unit reviews only then). A same-family ACCEPT, or a completed one that
-                    # left only open items, is the user's decision; findings take the ordinary correction path.
-                    if result.get('audit_label') and (result.get('verdict') == 'ACCEPT' or uncovered_review(result)):
+                    # The checks passed (run_unit reviews only then). A same-family ACCEPT (local-only), or any
+                    # completed INCONCLUSIVE audit with zero findings and explicit open items (in an interactive TUI),
+                    # asks the user; findings take the ordinary correction path.
+                    if (result.get('audit_label') and result.get('verdict') == 'ACCEPT') or uncovered_review(result):
                         from .conversation_permissions import confirm_apply
                         result = confirm_apply(self.root, self.state, task, changed, result, request.effect_id,
                                                control, self.permission_directory)
