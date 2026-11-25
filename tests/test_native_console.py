@@ -404,23 +404,35 @@ def test_mouse_events_on_detached_toast_do_not_crash_and_live_toast_still_dismis
         app = WorkConsole(tmp_path, backend=FakeBackend(), initial_mode='assistant')
         async with app.run_test(size=(130, 44), notifications=True) as pilot:
             await app.workers.wait_for_complete()
-            app.notify('Transient error', severity='error', timeout=5)
-            await pilot.pause(0.1)
             rack = app.screen.get_child_by_type(ToastRack)
-            toast = rack.query_one(Toast)
-            x, y = toast.region.x + 2, toast.region.y + 1
+
+            async def show_toast(message):
+                app.notify(message, severity='error', timeout=10)
+                for _ in range(40):
+                    await pilot.pause(0.05)
+                    toasts = list(rack.query(Toast))
+                    if toasts:
+                        toast = toasts[0]
+                        if toast.region.width > 2 and toast.region.height > 1:
+                            x, y = toast.region.x + 2, toast.region.y + 1
+                            hit, offset = app.screen.get_widget_and_offset_at(x, y)
+                            if hit is toast and offset is not None:
+                                return toast, x, y
+                raise AssertionError(f'Toast {message!r} did not paint into the compositor')
+
+            toast, x, y = await show_toast('Transient error')
             # A live notification still dismisses on a normal click.
             await app.on_event(mouse(events.MouseDown, None, x, y))
             await app.on_event(mouse(events.MouseUp, None, x, y))
-            await pilot.pause(0.1)
+            for _ in range(40):
+                await pilot.pause(0.05)
+                if not list(rack.query(Toast)):
+                    break
             assert list(rack.query(Toast)) == []
 
             # Reproduce Textual's prune/repaint race: the Toast detaches before the
             # screen compositor drops its stale hit-test entry.
-            app.notify('Expiring error', severity='error', timeout=5)
-            await pilot.pause(0.1)
-            toast = rack.query_one(Toast)
-            x, y = toast.region.x + 2, toast.region.y + 1
+            toast, x, y = await show_toast('Expiring error')
             holder = toast.parent
             assert holder is not None
             toast._parent = None
