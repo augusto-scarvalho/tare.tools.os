@@ -1185,25 +1185,138 @@ def python_tests(root):
     return None
 
 
+PROJECT_CHECKS_FILE = '.tare/checks.json'
+PROJECT_CHECKS_MAX_BYTES = 32768
+PROJECT_CHECKS_MAX_COUNT = 16
+PROJECT_CHECK_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$')
+PROJECT_CHECK_RESERVED = frozenset({'conversation-diff', 'backlog-graph'})
+PROJECT_CHECK_MODES = frozenset({'headless', 'manual', 'gui'})
+
+
+def _resolve_project_check_executable(root, cmd):
+    """Resolve argv[0] for a project check from PATH, project venv, or a regular file inside root."""
+    if not isinstance(cmd, str) or not cmd or '\0' in cmd:
+        return None
+    if cmd == 'python':
+        return project_python(root)
+    if cmd == 'godot':
+        return shutil.which('godot_console') or shutil.which('godot')
+    if '/' not in cmd and '\\' not in cmd and ':' not in cmd:
+        return shutil.which(cmd)
+    candidate = Path(cmd)
+    if candidate.is_absolute() or '..' in candidate.parts:
+        return None
+    base = Path(root).resolve()
+    current = base
+    for part in candidate.parts:
+        current = current / part
+        if current.is_symlink():
+            return None
+    try:
+        resolved = current.resolve()
+    except OSError:
+        return None
+    if not resolved.is_relative_to(base) or not resolved.is_file():
+        return None
+    return str(resolved)
+
+
+def project_checks(root):
+    """Read optional .tare/checks.json from trusted workspace `root` (never a candidate tree).
+
+    Returns {'verifiers': {name: {'repository': 'workspace', 'argv': [...]}},
+             'timeouts': {name: int},
+             'manual': {name: {'mode': 'manual'|'gui', ...}}}.
+    Malformed or symlinked files fail closed to empty dicts.
+    """
+    empty = {'verifiers': {}, 'timeouts': {}, 'manual': {}}
+    root = Path(root)
+    tare_dir = root / '.tare'
+    path = tare_dir / 'checks.json'
+    try:
+        if tare_dir.is_symlink() or path.is_symlink() or not path.is_file():
+            return empty
+        base = root.resolve()
+        resolved = path.resolve()
+        if not resolved.is_relative_to(base) or resolved.stat().st_size > PROJECT_CHECKS_MAX_BYTES:
+            return empty
+        data = json.loads(resolved.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return empty
+    if not isinstance(data, dict) or not isinstance(data.get('checks'), dict):
+        return empty
+    checks = data['checks']
+    if len(checks) > PROJECT_CHECKS_MAX_COUNT:
+        return empty
+    verifiers, timeouts, manual = {}, {}, {}
+    for name, entry in checks.items():
+        if (not isinstance(name, str) or not PROJECT_CHECK_NAME.fullmatch(name)
+                or name in PROJECT_CHECK_RESERVED or not isinstance(entry, dict)):
+            continue
+        if set(entry) - {'argv', 'mode', 'timeout_seconds', 'description', 'paths'}:
+            continue
+        mode = entry.get('mode', 'headless')
+        if not isinstance(mode, str) or mode not in PROJECT_CHECK_MODES:
+            continue
+        if mode in ('manual', 'gui'):
+            row = {'mode': mode}
+            desc = entry.get('description')
+            if isinstance(desc, str) and desc.strip():
+                row['description'] = desc.strip()[:240]
+            paths = entry.get('paths')
+            if isinstance(paths, list) and len(paths) <= 16:
+                clean = [p.replace('\\', '/').lstrip('./') for p in paths
+                         if isinstance(p, str) and p.strip() and '\0' not in p
+                         and not Path(p).is_absolute() and '..' not in Path(p).parts]
+                if clean:
+                    row['paths'] = clean
+            manual[name] = row
+            continue
+        argv = entry.get('argv')
+        if (not isinstance(argv, list) or not 1 <= len(argv) <= 32
+                or any(not isinstance(a, str) or not a or len(a) > 1024 or '\0' in a for a in argv)):
+            continue
+        timeout = entry.get('timeout_seconds')
+        if timeout is not None and (type(timeout) is not int or not 5 <= timeout <= 3600):
+            continue
+        exe = _resolve_project_check_executable(root, argv[0])
+        if not exe:
+            continue
+        verifiers[name] = {'repository': 'workspace', 'argv': [exe, *argv[1:]]}
+        if timeout is not None:
+            timeouts[name] = timeout
+    return {'verifiers': verifiers, 'timeouts': timeouts, 'manual': manual}
+
+
 def config_for(root, mode='accept-edits'):
     root = Path(root)
-    verifiers = {}
+    declared = project_checks(root)
+    verifiers = dict(declared['verifiers'])
     capabilities = ['read', 'list', 'search'] + ([] if mode == 'read-only' else ['edit'])
-    test_files = python_tests(root)
-    if test_files is not None:
-        # ponytail: a large suite gets no automatic verifier; add scoped verifiers if one is needed
-        if test_files <= VERIFY_MAX_TEST_FILES:
-            verifiers['tests'] = {'repository': 'workspace', 'argv': [project_python(root), '-m', 'pytest', '-q']}
-    else:
-        package_json = root/'package.json'
-        npm = shutil.which('npm')
-        if npm and package_json.is_file():
-            try:
-                if (json.loads(package_json.read_text(encoding='utf-8')).get('scripts') or {}).get('test'):
-                    verifiers['tests'] = {'repository': 'workspace', 'argv': [npm, 'test']}
-            except (ValueError, OSError):
-                pass
-    if not verifiers and (root/'project.godot').is_file() and (root/'tests/smoke.gd').is_file():
+    if verifiers and (root/'project.godot').is_file() and 'godot-import' not in verifiers:
+        if any(Path(v['argv'][0]).stem.lower().startswith('godot') and ('-s' in v['argv'][1:] or '--script' in v['argv'][1:])
+               for v in verifiers.values()):
+            godot = shutil.which('godot_console') or shutil.which('godot')
+            if godot:
+                verifiers = {'godot-import': {'repository': 'workspace',
+                    'argv': [godot, '--headless', '--path', '.', '--import', '--quiet']}, **verifiers}
+    if not verifiers:
+        test_files = python_tests(root)
+        if test_files is not None:
+            # ponytail: a large suite gets no automatic verifier; add scoped verifiers if one is needed
+            if test_files <= VERIFY_MAX_TEST_FILES:
+                verifiers['tests'] = {'repository': 'workspace', 'argv': [project_python(root), '-m', 'pytest', '-q']}
+        else:
+            package_json = root/'package.json'
+            npm = shutil.which('npm')
+            if npm and package_json.is_file():
+                try:
+                    if (json.loads(package_json.read_text(encoding='utf-8')).get('scripts') or {}).get('test'):
+                        verifiers['tests'] = {'repository': 'workspace', 'argv': [npm, 'test']}
+                except (ValueError, OSError):
+                    pass
+    manual_paths = {p for row in declared['manual'].values() for p in row.get('paths') or ()}
+    if not verifiers and (root/'project.godot').is_file() and (root/'tests/smoke.gd').is_file() and 'tests/smoke.gd' not in manual_paths:
         godot = shutil.which('godot_console') or shutil.which('godot')
         if godot:
             # Fresh private candidates have no imported-resource cache. Prepare

@@ -17,6 +17,9 @@ ECOSYSTEMS = (
     ('dotnet', ('*.sln', '*.csproj'), ('dotnet',), ['test'], 'dotnet test --filter <name>'),
     ('maven', ('pom.xml',), ('mvnw', 'mvn'), ['test'], 'mvn test -Dtest=<class>'),
     ('gradle', ('build.gradle', 'build.gradle.kts'), ('gradlew', 'gradle'), ['test'], 'gradle test --tests <class>'),
+    ('godot', ('project.godot',), ('godot_console', 'godot'),
+     ['--headless', '--fixed-fps', '60', '--path', '.', '-s', 'tests/smoke.gd'],
+     'godot --headless --fixed-fps 60 --path . -s <test.gd>'),
 )
 NODE_RUNNERS = ('jest', 'vitest', 'mocha')  # they take test files after `npm test --`
 

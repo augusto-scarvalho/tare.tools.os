@@ -6,6 +6,7 @@ import errno
 from functools import cache
 import hashlib
 import json
+import math
 import ntpath
 import os
 from pathlib import Path
@@ -954,8 +955,17 @@ def conversation_verifier(control, custody, config, deployment, tree, unit, comm
         effect_id, stall = 'verify-'+uuid4().hex, getattr(port, 'stall', None)
         if stall is not None:  # someone can be asked; "run it outside" only where the sandbox question could be
             stall.watch(effect_id, name, argv, outside=outside is not None and not protected)
+        run_control = control
+        req_timeout = kwargs.get('timeout')
+        if (isinstance(req_timeout, (int, float)) and not isinstance(req_timeout, bool)
+                and math.isfinite(req_timeout) and req_timeout > 0):
+            from tare_tools_agent_runtime import ExecutionControl
+            bound_deadline = min(control.deadline_monotonic, control.monotonic() + float(req_timeout))
+            run_control = ExecutionControl(control.binding, control.cancellation, bound_deadline,
+                                           monotonic=control.monotonic,
+                                           binding_is_current=control.binding_is_current)
         result = caps.execute(EffectRequest(session_id, effect_id,
-            ToolCall('verify', 'verify', json.dumps({'name': name}))), control)
+            ToolCall('verify', 'verify', json.dumps({'name': name}))), run_control)
         value = object_json(result.output_json)
         if result.status not in {'succeeded', 'failed'} or 'returncode' not in value:
             process = value.get('process') or {}

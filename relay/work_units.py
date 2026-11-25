@@ -169,12 +169,31 @@ PROSE = ('.md', '.rst', '.txt', '.adoc')
 
 
 SUFFIXES = {'pytest': ('.py',), 'npm': ('.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx'), 'cargo': ('.rs',),
-            'go': ('.go',), 'maven': ('.java', '.kt'), 'gradle': ('.java', '.kt', '.groovy'), 'dotnet': ('.cs', '.fs')}
+            'go': ('.go',), 'maven': ('.java', '.kt'), 'gradle': ('.java', '.kt', '.groovy'), 'dotnet': ('.cs', '.fs'),
+            'godot': ('.gd',)}
 
 
 def test_file(test):
     """The file of a test path, without the pytest node (file::test)."""
     return test.partition('::')[0]
+
+
+def _godot_script_target(argv):
+    """Return normalized POSIX script path when argv runs Godot with -s/--script, else None."""
+    if not isinstance(argv, list) or not argv:
+        return None
+    if not Path(str(argv[0])).stem.lower().startswith('godot'):
+        return None
+    for flag in ('-s', '--script'):
+        if flag in argv:
+            idx = argv.index(flag)
+            if idx + 1 < len(argv) and isinstance(argv[idx + 1], str):
+                return argv[idx + 1].replace('\\', '/').lstrip('./')
+    return None
+
+
+def _is_godot_script_argv(argv):
+    return _godot_script_target(argv) is not None
 
 
 def narrowed(name, runner, tests):
@@ -194,6 +213,8 @@ def narrowed(name, runner, tests):
         return [runner, 'test', *(a for s in stems for a in ('--tests', s))]
     if name == 'dotnet':
         return [runner, 'test', '--filter', '|'.join('FullyQualifiedName~' + s for s in stems)]
+    if name == 'godot' and len(tests) == 1:
+        return [runner, '--headless', '--fixed-fps', '60', '--path', '.', '-s', test_file(tests[0]).replace('\\', '/')]
     return None
 
 
@@ -344,15 +365,38 @@ def checks(config, unit, repository, tree, planned=None):
             found[name] = narrowed('pytest', python, selectors)
             automatic[name] = selectors
 
-    tests = unit.get('test_paths') or []
+    from .turn_engine import project_checks
+    manual = project_checks(Path(config['repositories'][repository]))['manual']
+    manual_paths = {p for row in manual.values() for p in row.get('paths') or ()}
+    tests = [t for t in (unit.get('test_paths') or []) if test_file(t).replace('\\', '/').lstrip('./') not in manual_paths]
     if config.get('conversation_flow') and any(test_file(t).endswith('.py') for t in tests) \
             and not any(e['name'] == 'pytest' for e in ecosystems(Path(tree))):
         if 'pytest-tests' not in found:
             add_pytest([t for t in tests if test_file(t).endswith('.py')])
         tests = [t for t in tests if not test_file(t).endswith('.py')]
+    godot_runner = None
     for eco in ecosystems(Path(tree)) if tests else ():
         mine = [t for t in tests if test_file(t).endswith(SUFFIXES.get(eco['name'], ()))]
         runner = python if eco['name'] == 'pytest' else eco['runner']
+        if eco['name'] == 'godot' and mine and runner and eco['narrow']:
+            godot_runner = runner
+            covered_scripts = {target for argv in found.values() if (target := _godot_script_target(argv))}
+            for target in mine:
+                norm = test_file(target).replace('\\', '/').lstrip('./')
+                if norm in covered_scripts:
+                    continue
+                base = 'godot-tests:' + norm
+                name = base
+                suffix = 2
+                while name in found:
+                    name = f'{base}#{suffix}'
+                    suffix += 1
+                found[name] = narrowed('godot', runner, [norm])
+                covered_scripts.add(norm)
+                if planned is not None:
+                    planned[name] = [norm]
+            tests = [t for t in tests if t not in mine]
+            continue
         argv = narrowed(eco['name'], runner, mine) if mine and runner and eco['narrow'] else None
         if argv:
             if eco['name'] == 'pytest':
@@ -363,6 +407,15 @@ def checks(config, unit, repository, tree, planned=None):
                 if planned is not None:
                     planned[f"{eco['name']}-tests"] = [test_file(t) for t in mine]
             tests = [t for t in tests if t not in mine]
+    if any(_is_godot_script_argv(argv) for argv in found.values()):
+        if 'godot-import' in found:
+            found = {'godot-import': found['godot-import'], **{k: v for k, v in found.items() if k != 'godot-import'}}
+        elif 'godot-import' in config['verifiers'] and config['verifiers']['godot-import']['repository'] == repository:
+            found = {'godot-import': config['verifiers']['godot-import']['argv'], **found}
+        elif (Path(tree)/'project.godot').is_file():
+            g = godot_runner or next((argv[0] for argv in found.values() if _is_godot_script_argv(argv)), None)
+            if g:
+                found = {'godot-import': [g, '--headless', '--path', '.', '--import', '--quiet'], **found}
     if config.get('conversation_flow'):
         for name, selectors in automatic.items():
             scope = pytest_scope(found[name], python)
@@ -592,7 +645,7 @@ def already_red(before, after):
     return [name for name, state in now.items() if state == 'red' and was.get(name) == 'red']
 
 
-def run_checks(tree, commands):
+def run_checks(tree, commands, *, timeouts=None):
     """('green' | 'red' | 'inconclusive', output): every command must pass; a timeout or a command that cannot
     start settles nothing."""
     outputs = []
@@ -613,6 +666,8 @@ def run_checks(tree, commands):
     for name, argv in commands.items():
         if progress is not None:
             progress.running(name)
+        check_timeout = (timeouts or {}).get(name)
+        effective_timeout = (check_timeout if timeout is None else min(timeout, check_timeout)) if check_timeout is not None else timeout
         try:
             port = CHECK_PORT.get()
             run = port or managed_check
@@ -621,7 +676,7 @@ def run_checks(tree, commands):
                 from compute_plane.workspace import isolated_child_environment
                 options['env'] = isolated_child_environment({'PYTHONUTF8':'1', 'PYTHONDONTWRITEBYTECODE':'1'})
             done = run(argv, cwd=tree, capture_output=True, text=True, errors='replace',
-                                  timeout=timeout, stdin=subprocess.DEVNULL, **options)
+                                  timeout=effective_timeout, stdin=subprocess.DEVNULL, **options)
         except subprocess.TimeoutExpired as exc:
             completed.add(name)
             statuses.append(f'{name}: more than {exc.timeout} s (timeout)')
@@ -873,9 +928,10 @@ def session_suite(config, repository):
     return {n: v['argv'] for n, v in config['verifiers'].items() if v['repository'] == repository}
 
 
-def suite_states(tree, suite):
+def suite_states(tree, suite, *, timeouts=None):
     """{name: (state, output)} of each of the session's checks in a tree."""
-    return {name: run_checks(tree, {name: argv}) for name, argv in suite.items()}
+    kw = {'timeouts': timeouts} if timeouts else {}
+    return {name: run_checks(tree, {name: argv}, **kw) for name, argv in suite.items()}
 
 
 def blocked_by_sandbox(receipt):
@@ -883,7 +939,7 @@ def blocked_by_sandbox(receipt):
     return any(f': {code}:' in receipt for code in SANDBOX_LIMITS)
 
 
-def suite_allows(config, unit, repository, tree, changed, before=None, aside=()):
+def suite_allows(config, unit, repository, tree, changed, before=None, aside=(), *, timeouts=None):
     """D9b, before a VERIFIED change is applied: no check of the session that was not red before the change
     (`before`, {name: state}) fails with it, and when they all pass it is applied. A check red before as well (a
     later unit of the plan makes it pass) or one stopped unfinished (stop_reason) settles nothing: then only a change
@@ -892,7 +948,8 @@ def suite_allows(config, unit, repository, tree, changed, before=None, aside=())
     (run_unit's red_baseline): they are not run and do not count, or that answer would end in a held change.
     ponytail: "cover" means a unit test file names the changed module, a coverage run would be exact; a check red
     before and after can hide a new failure in it."""
-    after = suite_states(tree, {n: a for n, a in session_suite(config, repository).items() if n not in aside})
+    kw = {'timeouts': timeouts} if timeouts else {}
+    after = suite_states(tree, {n: a for n, a in session_suite(config, repository).items() if n not in aside}, **kw)
     broken = [n for n, (state, _) in after.items() if state == 'red' and (before or {}).get(n) != 'red']
     if broken:
         return False, 'the session\'s checks fail with the change:\n' + '\n'.join(after[n][1] for n in broken)
@@ -1391,7 +1448,10 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
     job.mkdir(parents=True)
     receipt = {'unit': unit, 'started': now(), 'rungs': [], 'effect_id':review_effect}
     if candidate:receipt['input_candidate']=candidate
-    protected = [test_file(t) for t in unit.get('test_paths') or []]
+    from .turn_engine import PROJECT_CHECKS_FILE, project_checks
+    protected = [*[test_file(t) for t in unit.get('test_paths') or []], PROJECT_CHECKS_FILE]
+    check_timeouts = project_checks(root)['timeouts']
+    timeout_kw = {'timeouts': check_timeouts} if check_timeouts else {}
     result = {'verdict': 'INCONCLUSIVE', 'reason': 'no implementer route is available'}
     producer=candidate_producer(custody,candidate['producer']) if candidate and candidate.get('review_only') else None
     refused = []  # why the routing profile refused the coordinator's chosen route or the session's own model
@@ -1555,7 +1615,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 if n.endswith('.gd') and not (tree/(n+'.uid')).exists()] if 'godot-import' in commands else []
             if progress is not None:
                 progress.begin('before')
-            checked_before = run_checks(tree, commands)
+            checked_before = run_checks(tree, commands, **timeout_kw)
             before, row['before'] = checked_before
             base, generated = imported_uid_baseline(tree, base, missing_uids)
             if generated:
@@ -1569,7 +1629,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 # command, or not reached) is run now, not the whole red suite a second time.
                 known={n:s for n,s in getattr(checked_before,'states',{}).items() if suite.get(n)==commands[n]}
                 suite_before={**known,**{n:s for n,(s,_) in suite_states(tree,
-                    {n:a for n,a in suite.items() if n not in known}).items()}}
+                    {n:a for n,a in suite.items() if n not in known}, **timeout_kw).items()}}
             set_aside = []
             # Checks red on the unchanged project, after any sandbox question settled: ask before paying an
             # implementer. Not on a retained candidate or a waiting worker (their tree already holds a change),
@@ -1744,7 +1804,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
             else:
                 if progress is not None:
                     progress.begin('after')
-                checked_after = run_checks(tree, commands)
+                checked_after = run_checks(tree, commands, **timeout_kw)
                 after, row['after'] = checked_after
             if row.get('host_baseline_metadata') and not unchanged_candidate:
                 from .candidate_checks import MANIFEST
@@ -1757,7 +1817,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
             if unchanged_candidate:
                 verdict_, reason, was_red = 'INCONCLUSIVE', 'the implementer made no changes to the retained candidate', []
             else:
-                verdict_, reason = verdict(before, after, changed, [] if review else protected, lambda: run_checks(tree, commands)[0])
+                verdict_, reason = verdict(before, after, changed, [] if review else protected, lambda: run_checks(tree, commands, **timeout_kw)[0])
                 was_red = ([n for n in already_red(checked_before, checked_after) if n in commands]
                            if verdict_ == 'NOT_VERIFIED' else [])
             if state.get('conversation_flow') and not unchanged_candidate:
@@ -1859,12 +1919,12 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     if progress is not None:
                         progress.begin('after')  # the checks before applying: the row leaves "audit"
                     moved = stale(tree, batch.applied)
-                    again = run_checks(tree, commands) if moved else ('green', '')
+                    again = run_checks(tree, commands, **timeout_kw) if moved else ('green', '')
                     if again[0] != 'green':
                         applied, files = 'CONFLICT', sorted(changed)
                         why = 'its checks fail with the units applied before it (' + ', '.join(moved) + '):\n' + again[1]
                     else:
-                        allowed, why = suite_allows(verification_config, unit, repository, tree, changed, suite_before, set_aside)
+                        allowed, why = suite_allows(verification_config, unit, repository, tree, changed, suite_before, set_aside, **timeout_kw)
                         if review is not None and changed_files(tree, base) != changed:
                             from .conversation_review import label_of
                             label = label_of(result.get('audit'))
@@ -1970,8 +2030,11 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
         audit = result.get('audit') or {}
         label = audit.get('audit_label')
         if audit.get('user_decision') == 'APPLY_WITHOUT_ACCEPTED_AUDIT':
-            result['next'] = ('Applied by the user\'s decision after its checks, although its audit (' + label + ') did '
-                'not accept it (local-only mode). Its open items: ' + ' | '.join(str(i)[:300] for i in audit.get('remaining', [])[:10]) +
+            who = (f'its audit ({label}) did not accept it (local-only mode)' if label else
+                   f"its audit ({audit['independence']}) did not accept it" if audit.get('independence')
+                   else 'the independent audit did not accept it')
+            result['next'] = ('Applied by the user\'s decision after its checks, although ' + who +
+                '. Its open items: ' + ' | '.join(str(i)[:300] for i in audit.get('remaining', [])[:10]) +
                 '. Tell the user in plain words, in the language of their request, what changed, that no audit accepted '
                 'it, and these open items; never say it was audited or accepted.')
         else:
