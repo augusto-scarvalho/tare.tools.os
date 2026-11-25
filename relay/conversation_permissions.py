@@ -313,7 +313,8 @@ def confirm_apply(root, state, task, changed, review, effect_id, control, direct
         return review  # findings and failures never ask to apply over them
     if same_family:
         refused = {'verdict': 'INCONCLUSIVE', 'audit_label': review['audit_label'],
-                   **({'actor': review['actor']} if review.get('actor') else {})}
+                   **({'actor': review['actor']} if review.get('actor') else {}),
+                   **({'agent_signals': review['agent_signals']} if review.get('agent_signals') else {})}
         if directory is None or current().only != 'local':
             return {**refused, 'reason': NO_AUDITOR} if accepted else review
     else:

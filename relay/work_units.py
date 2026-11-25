@@ -1068,7 +1068,11 @@ def brief(unit, commands, note, *, references=(), executables=(), host_review=Fa
                   'that review has happened. External reference folders remain read-only.',
                   'The candidate HEAD and generated custody commits can be private experiment snapshots. '
                   'Committed tests must not depend on those object IDs. Use an immutable published baseline or a '
-                  'reproducible fixture available in a fresh CI checkout for before/after controls.']
+                  'reproducible fixture available in a fresh CI checkout for before/after controls. '
+                  'If you hit a genuine problem outside your write scope, use report_signal (read-only, max 3/session): '
+                  'propose_checks to propose .tare/checks.json updates for user confirmation, goal_drift if repository '
+                  'facts contradict the recorded goal (stops safely without applying), or out_of_scope_blocker for a '
+                  'pre-existing failure or flake outside your paths.']
     return '\n'.join(lines)
 
 
@@ -1676,6 +1680,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                      'repositories': {repository: str(tree)}, 'writable': {repository: list(unit['target_paths'])},
                      'verifiers': {n: {'repository': repository, 'argv': a} for n, a in worker_commands.items()},
                      'capabilities': ['read', 'list', 'search', 'edit', 'verify'], 'specgraph_edit_context': False}
+            if state.get('conversation_flow'):
+                child['agent_signals'] = True
             if inputs:child['input_artifacts']=inputs
             if state.get('conversation_flow') and (graph:=planned_backlog(unit,repository,tree)):
                 child['project_graph']=graph
@@ -1776,16 +1782,21 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
             if row.get('attempts'):
                 from .native_routes import settle_attempt
                 settle_attempt(row['attempts'][-1], outcome)
+            implementer_signals = list(outcome.get('agent_signals') or []) if state.get('conversation_flow') else []
+            has_goal_drift = any(s.get('kind') == 'goal_drift' for s in implementer_signals)
+            if implementer_signals:
+                row['agent_signals'] = implementer_signals
             (job/'receipt.json').write_text(json.dumps({**receipt, 'rungs': receipt['rungs'] + [row]}), encoding='utf-8')
             changed = changed_files(tree, base)
             unchanged_candidate = (
                 before_worker is not None
                 and not stop()
+                and not has_goal_drift
                 and not (state.get('conversation_flow') and outcome.get('folder_access_request')
                          and outcome['status'] == 'PROPOSED')
                 and changed == before_worker
             )
-            if state.get('conversation_flow') and changed and not stop() and not unchanged_candidate:
+            if state.get('conversation_flow') and changed and not stop() and not unchanged_candidate and not has_goal_drift:
                 # Make new paths visible to diff --check before paying for an
                 # independent audit. Intent-to-add keeps their content unstaged.
                 added_or_modified = [name for name, raw in changed.items() if raw is not None]
@@ -1793,6 +1804,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     git(tree, 'add', '--intent-to-add', '--', *added_or_modified)
             if state.get('conversation_flow') and stop():
                 after, row['after'] = 'inconclusive', 'Not run: execution was stopped.'
+            elif has_goal_drift:
+                after, row['after'] = 'inconclusive', 'Not run: the implementer reported a goal drift.'
             elif unchanged_candidate:
                 after, row['after'] = 'inconclusive', 'Not run: the implementer made no changes to the retained candidate.'
             elif candidate and candidate.get('review_only'):
@@ -1806,7 +1819,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     progress.begin('after')
                 checked_after = run_checks(tree, commands, **timeout_kw)
                 after, row['after'] = checked_after
-            if row.get('host_baseline_metadata') and not unchanged_candidate:
+            if row.get('host_baseline_metadata') and not unchanged_candidate and not has_goal_drift:
                 from .candidate_checks import MANIFEST
                 checked_changes=changed_files(tree,base)
                 verifier_edits={n for n in set(changed)|set(checked_changes)
@@ -1816,6 +1829,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 changed=checked_changes
             if unchanged_candidate:
                 verdict_, reason, was_red = 'INCONCLUSIVE', 'the implementer made no changes to the retained candidate', []
+            elif has_goal_drift:
+                verdict_, reason, was_red = 'INCONCLUSIVE', 'the implementer reported a goal drift', []
             else:
                 verdict_, reason = verdict(before, after, changed, [] if review else protected, lambda: run_checks(tree, commands, **timeout_kw)[0])
                 was_red = ([n for n in already_red(checked_before, checked_after) if n in commands]
@@ -1855,6 +1870,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
             if isinstance(report,str) and report.strip():
                 result['implementer_report']={'basis':'Unverified implementer report; host checks and diff remain authoritative.',
                     'text':report[:2000],'truncated':len(report)>2000}
+            if implementer_signals:
+                result['agent_signals'] = implementer_signals
             if changed and review is not None and not unchanged_candidate:
                 from .conversation_tasks import source_state
                 result['candidate'] = {'patch': row['patch'],
@@ -1863,6 +1880,19 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     **({'checks_set_aside': chosen} if chosen else {})}  # the choice travels with the change
             if state.get('conversation_flow') and stop():
                 result.update(verdict='INCONCLUSIVE', reason='Execution was stopped; no candidate was applied.', patch=row.get('patch'))
+                break
+            if state.get('conversation_flow') and not stop() and has_goal_drift:
+                from .conversation_permissions import paths_allowed
+                if not paths_allowed(changed, unit['target_paths']):
+                    result.pop('candidate', None)
+                    result.update(verdict='NOT_VERIFIED', applied=False,
+                        reason='Candidate changed files outside the saved plan while reporting goal drift; nothing was applied.',
+                        patch=row.get('patch'))
+                else:
+                    result.update(verdict='INCONCLUSIVE', applied=False, goal_drift_stop=True,
+                        reason='The implementer reported a goal drift; the candidate was preserved unapplied pending user decision in chat.',
+                        patch=row.get('patch'))
+                row.update(verdict=result['verdict'], reason=result['reason'])
                 break
             if (state.get('conversation_flow') and outcome.get('folder_access_request')
                     and outcome['status']=='PROPOSED' and not stop()
@@ -1890,6 +1920,10 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                         'candidate_sha256':candidate['sha256']}} if candidate and candidate.get('review_only') else {}),
                     **({'observed_named_checks':observed} if observed else {})})
                 result['audit'] = row['audit'] = assessment
+                audit_signals = list(assessment.get('agent_signals') or []) if state.get('conversation_flow') else []
+                if audit_signals:
+                    merged_signals = [*(result.get('agent_signals') or []), *audit_signals]
+                    result['agent_signals'] = row['agent_signals'] = merged_signals
                 # Only the host sets user_decision, after the user's yes to a same-family audit that left open
                 # items only (conversation_permissions.confirm_apply); the checks above already passed.
                 if assessment.get('verdict') != 'ACCEPT' and assessment.get('user_decision') != 'APPLY_WITHOUT_ACCEPTED_AUDIT':
@@ -1982,6 +2016,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
             keep_tree=True
             row.update(verdict='INCONCLUSIVE',reason=str(exc)[:300])
             result={'verdict':'INCONCLUSIVE','reason':row['reason'],'route':name,'retained_tree':str(tree),
+                    **({'agent_signals': row['agent_signals']} if row.get('agent_signals') else {}),
                     **{k: row[k] for k in ('needs', 'route_class', 'kind', 'class_source', 'kinds', 'critical', 'effort', 'effort_from') if k in row}}
             break
         except (ValueError, OSError, KeyError, subprocess.SubprocessError) as exc:
@@ -1990,6 +2025,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 result = prior_compaction_result
                 break
             result = {'verdict': 'INCONCLUSIVE', 'reason': row['reason'], 'route': name,
+                      **({'agent_signals': row['agent_signals']} if row.get('agent_signals') else {}),
                       **{k: row[k] for k in ('needs', 'route_class', 'kind', 'class_source', 'kinds', 'critical', 'effort', 'effort_from') if k in row}}
             if keep_tree and worker:
                 result['worker']={**worker,'producer':producer_reference(Path(worker['session']).parent,worker['producer'])}

@@ -195,6 +195,27 @@ def _last_line(text):
     return next((line.strip() for line in reversed(_text(text).splitlines()) if line.strip()), '')[:200]
 
 
+def _signal_notes(output):
+    parts = []
+    for sig in (output.get('goal_drift') or [])[:2]:
+        if isinstance(sig, dict):
+            payload = sig.get('payload') or {}
+            exp = _clip(payload.get('expected'), 100)
+            disc = _clip(payload.get('discovered'), 100)
+            parts.append(f"goal_drift ({sig.get('from_role', 'agent')}): {_clip(sig.get('summary'), 120)}"
+                         + (f" [{exp} vs {disc}]" if exp and disc else ''))
+    for sig in (output.get('out_of_scope_blockers') or [])[:3]:
+        if isinstance(sig, dict):
+            payload = sig.get('payload') or {}
+            sym = _clip(payload.get('symptom'), 140)
+            parts.append(f"out_of_scope_blocker ({sig.get('from_role', 'agent')}): {_clip(sig.get('summary'), 120)}"
+                         + (f" ({sym})" if sym else ''))
+    outcome = output.get('checks_proposal_outcome')
+    if isinstance(outcome, dict) and outcome.get('status'):
+        parts.append(f"checks_proposal: {outcome['status']}")
+    return '; '.join(parts)
+
+
 def _detail(tool, args, output):
     """What a step did, beyond its status: an edit's old and new text, what an explorer was asked and found, a
     demand's objective and criteria, a delegated report, a command's last output."""
@@ -207,7 +228,10 @@ def _detail(tool, args, output):
     elif tool == 'explore':
         asked = [i.get('question') for i in args.get('investigations') or [] if isinstance(i, dict)]
         found = [(i.get('report') or {}).get('summary') for i in output.get('investigations') or [] if isinstance(i, dict)]
-        text = '; '.join(['asked: ' + _clip(q, 200) for q in asked if q] + ['found: ' + str(f) for f in found if f])
+        sig_note = _signal_notes(output)
+        text = '; '.join(['asked: ' + _clip(q, 200) for q in asked if q]
+                         + ['found: ' + str(f) for f in found if f]
+                         + ([sig_note] if sig_note else []))
     elif tool == 'demand':
         text = '; '.join([f"objective: {args.get('objective') or ''}"] + [f'criterion: {c}' for c in args.get('criteria') or []])
     elif tool in DELEGATED + ('Agent', 'Task'):
@@ -228,8 +252,9 @@ def _detail(tool, args, output):
             if remaining:
                 parts.append('remaining: ' + remaining)
             audit_note = '; '.join(parts)
+        sig_note = _signal_notes(output)
         text = '; '.join(x for x in (audit and f"audit {audit.get('verdict')}" + (': ' + audit_note if audit_note else ''),
-                                     asked and 'asked: ' + _clip(asked, 160), said and 'reported: ' + said) if x)
+                                     sig_note, asked and 'asked: ' + _clip(asked, 160), said and 'reported: ' + said) if x)
     elif tool in ('terminal_read', 'verify'):
         text = _tail(_text(output.get('output')).strip(), 400)
     else:

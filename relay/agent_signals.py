@@ -8,13 +8,16 @@ validators, and host routing policies.
 """
 from copy import deepcopy
 import hashlib
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
-from compute_plane.native_models import encode
+from compute_plane.native_journal import regular, save_json
+from compute_plane.native_models import encode, object_json
 
 
 MAX_SIGNALS_PER_RUN = 3
 MAX_SIGNAL_BYTES = 8192
+MAX_SIGNALS_FILE_BYTES = 32768
+SIGNALS_FILE = 'agent-signals.json'
 ADVISORY_AUTHORITY = 'ADVISORY_ONLY'
 
 POLICY_CONSENT_MODAL = 'CONSENT_MODAL'
@@ -334,3 +337,197 @@ def prepare_checks_proposal(root, payload):
         'has_changes': has_changes,
         'diff_text': '\n'.join(diff_lines),
     }
+
+
+REPORT_SIGNAL_SPEC = {
+    'report_signal': {
+        'description': 'Report a structured advisory signal to the host/user (read-only, at most 3 per session; '
+            'grants no write or shell authority and never reaches the auditor). '
+            'Use kind="propose_checks" (with checks[]) to propose .tare/checks.json updates for user confirmation; '
+            'kind="goal_drift" (with expected, discovered, optional proposed_objective/options) if repository facts '
+            'conflict with the task goal (stops safely without applying so the user can decide in chat); '
+            'or kind="out_of_scope_blocker" (with symptom, optional paths/suggested_follow_up) for a pre-existing '
+            'failure or flake outside your write scope.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'kind': {'type': 'string', 'enum': ['propose_checks', 'goal_drift', 'out_of_scope_blocker']},
+                'summary': {'type': 'string', 'minLength': 1, 'maxLength': 300},
+                'reason': {'type': 'string', 'minLength': 1, 'maxLength': 1000},
+                'checks': {
+                    'type': 'array',
+                    'maxItems': 16,
+                    'description': 'For kind="propose_checks" only: check definitions to add, update, or remove.',
+                    'items': {
+                        'type': 'object',
+                        'properties': {
+                            'name': {'type': 'string', 'minLength': 1, 'maxLength': 64},
+                            'remove': {'type': 'boolean'},
+                            'mode': {'type': 'string', 'enum': ['headless', 'manual', 'gui']},
+                            'argv': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'maxItems': 32},
+                            'timeout_seconds': {'type': 'integer', 'minimum': 5, 'maximum': 3600},
+                            'description': {'type': 'string', 'maxLength': 240},
+                            'paths': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': 16},
+                        },
+                        'required': ['name'],
+                        'additionalProperties': False,
+                    },
+                },
+                'replace': {'type': 'boolean', 'description': 'For kind="propose_checks" only.'},
+                'repository': {'type': 'string', 'minLength': 1, 'maxLength': 128,
+                               'description': 'For kind="propose_checks" only.'},
+                'expected': {'type': 'string', 'minLength': 1, 'maxLength': 1000,
+                             'description': 'For kind="goal_drift" only: what the recorded goal assumed.'},
+                'discovered': {'type': 'string', 'minLength': 1, 'maxLength': 1000,
+                               'description': 'For kind="goal_drift" only: what repository evidence actually shows.'},
+                'proposed_objective': {'type': 'string', 'minLength': 1, 'maxLength': 1000,
+                                       'description': 'For kind="goal_drift" only.'},
+                'options': {'type': 'array', 'items': {'type': 'string', 'maxLength': 300}, 'minItems': 1, 'maxItems': 6,
+                            'description': 'For kind="goal_drift" only: concrete choices for the user.'},
+                'symptom': {'type': 'string', 'minLength': 1, 'maxLength': 1000,
+                            'description': 'For kind="out_of_scope_blocker" only: concrete failure or flake observed.'},
+                'paths': {'type': 'array', 'items': {'type': 'string', 'maxLength': 256}, 'maxItems': 16,
+                          'description': 'For kind="out_of_scope_blocker" only: affected repo-relative paths.'},
+                'suggested_follow_up': {'type': 'string', 'minLength': 1, 'maxLength': 500,
+                                        'description': 'For kind="out_of_scope_blocker" only.'},
+            },
+            'required': ['kind', 'summary', 'reason'],
+            'additionalProperties': False,
+        },
+    },
+}
+
+_KIND_PAYLOAD_KEYS = {
+    'propose_checks': frozenset({'checks', 'replace', 'repository'}),
+    'goal_drift': frozenset({'expected', 'discovered', 'proposed_objective', 'options'}),
+    'out_of_scope_blocker': frozenset({'symptom', 'paths', 'suggested_follow_up'}),
+}
+_ALL_PAYLOAD_KEYS = frozenset().union(*_KIND_PAYLOAD_KEYS.values())
+
+
+def _load_session_records(custody):
+    from .native_agent import read_json
+    path = regular(Path(custody) / SIGNALS_FILE)
+    if not path.is_file():
+        return []
+    data = read_json(path, MAX_SIGNALS_FILE_BYTES)
+    if not isinstance(data, dict) or data.get('schema') != 'tare.tools/agent-signals/1' or not isinstance(data.get('signals'), list):
+        raise ValueError('agent_signals_store_invalid')
+    return data['signals']
+
+
+def read_session_signals(custody, *, role):
+    """Read and host-re-stamp recorded signals from a child session's private custody."""
+    try:
+        rows = _load_session_records(custody)
+    except (OSError, ValueError):
+        return []
+    if not rows:
+        return []
+    raw = [{'kind': r.get('kind'), 'summary': r.get('summary'), 'reason': r.get('reason'), 'payload': r.get('payload')}
+           for r in rows[:MAX_SIGNALS_PER_RUN] if isinstance(r, dict)]
+    try:
+        return stamp_signals(role, raw, source_id=str(Path(custody).name))
+    except ValueError:
+        return []
+
+
+class SignalTools:
+    """Lightweight read-only `report_signal` tool wrapper for delegated implementers.
+
+    Follows the FolderTools wrapper pattern: zero write or shell power, strict per-kind validation
+    against SIGNAL_CATALOG, max 3 signals per session persisted under session custody.
+    """
+
+    def __init__(self, tools, custody, *, role='implementer'):
+        if role not in {'implementer'}:
+            raise ValueError('SignalTools is admitted only for delegated implementers.')
+        self.tools, self.custody, self.role = tools, Path(custody), role
+        self.names = (*tools.names, 'report_signal')
+        self.tool_specs_json = encode({**object_json(tools.tool_specs_json), **REPORT_SIGNAL_SPEC})
+
+    def __getattr__(self, name):
+        return getattr(self.tools, name)
+
+    def execute(self, request, control):
+        from tare_tools_agent_runtime import EffectResult
+        if request.tool_call.name != 'report_signal':
+            return self.tools.execute(request, control)
+        if request.session_id != self.session_id or control.binding != self.binding or control.should_stop():
+            return EffectResult(request.effect_id, 'refused', encode({'reason': 'CONTROL_OR_SESSION_MISMATCH'}))
+        try:
+            args = object_json(request.tool_call.arguments_json)
+            if len(encode(args).encode('utf-8')) > 16384:
+                raise ValueError('Use bounded report_signal arguments within 16 KiB.')
+            if not isinstance(args, dict) or set(args) - ({'kind', 'summary', 'reason'} | _ALL_PAYLOAD_KEYS):
+                raise ValueError('Use only the declared report_signal fields.')
+            kind = args.get('kind')
+            if kind not in _KIND_PAYLOAD_KEYS:
+                raise ValueError('agent_signal_unknown_kind')
+            allowed_keys = _KIND_PAYLOAD_KEYS[kind]
+            extra_payload = {k for k in _ALL_PAYLOAD_KEYS - allowed_keys if args.get(k) is not None}
+            if extra_payload:
+                raise ValueError(f'Fields not allowed for kind={kind!r}: {", ".join(sorted(extra_payload))}.')
+            payload = {k: args[k] for k in allowed_keys if k in args and args[k] is not None}
+            validated = validate_signal(self.role, {
+                'kind': kind,
+                'summary': args.get('summary'),
+                'reason': args.get('reason'),
+                'payload': payload,
+            })
+            records = _load_session_records(self.custody)
+            existing = next((r for r in records if isinstance(r, dict) and r.get('effect_id') == request.effect_id), None)
+            if existing is not None:
+                return EffectResult(request.effect_id, 'succeeded', encode({
+                    'status': 'RECORDED', 'signal_id': existing['signal_id'], 'kind': existing['kind'],
+                    'authority': ADVISORY_AUTHORITY, 'reused': True,
+                    'remaining_signals': max(0, MAX_SIGNALS_PER_RUN - len(records)),
+                }), False)
+            if len(records) >= MAX_SIGNALS_PER_RUN:
+                raise ValueError(f'At most {MAX_SIGNALS_PER_RUN} signals may be reported per session.')
+            if kind == 'propose_checks' and any(r.get('kind') == 'propose_checks' for r in records if isinstance(r, dict)):
+                raise ValueError('At most one propose_checks signal may be reported per session.')
+            stamped = stamp_signals(self.role, [validated], source_id=f'{self.custody.name}:{request.effect_id}')[0]
+            stored = {**stamped, 'effect_id': request.effect_id}
+            records.append(stored)
+            save_json(regular(self.custody / SIGNALS_FILE),
+                      {'schema': 'tare.tools/agent-signals/1', 'signals': records},
+                      max_bytes=MAX_SIGNALS_FILE_BYTES)
+            next_hint = {
+                'goal_drift': 'Signal recorded. Stop editing and deliver a concise summary explaining the goal drift; '
+                              'the host will preserve your candidate unapplied and ask the user in chat.',
+                'propose_checks': 'Signal recorded. The host will validate and ask the user in the TUI after you return; '
+                                  'it does not modify .tare/checks.json during your run.',
+                'out_of_scope_blocker': 'Signal recorded. Stay strictly within your write scope; the host will surface '
+                                        'this blocker to the user.',
+            }[kind]
+            return EffectResult(request.effect_id, 'succeeded', encode({
+                'status': 'RECORDED',
+                'signal_id': stamped['signal_id'],
+                'kind': kind,
+                'authority': ADVISORY_AUTHORITY,
+                'remaining_signals': MAX_SIGNALS_PER_RUN - len(records),
+                'next': next_hint,
+            }), True)
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            return EffectResult(request.effect_id, 'refused', encode({'reason': str(exc)[:500]}))
+
+    def recover_effect(self, journal):
+        from compute_plane.native_effect_recovery import pending
+        from tare_tools_agent_runtime import EffectResult
+        request = pending(journal, self.session_id)
+        if request is not None and request.tool_call.name == 'report_signal':
+            try:
+                records = _load_session_records(self.custody)
+            except (OSError, ValueError):
+                records = []
+            existing = next((r for r in records if isinstance(r, dict) and r.get('effect_id') == request.effect_id), None)
+            if existing is not None:
+                return request, EffectResult(request.effect_id, 'succeeded', encode({
+                    'status': 'RECORDED', 'signal_id': existing['signal_id'], 'kind': existing['kind'],
+                    'authority': ADVISORY_AUTHORITY, 'recovered': True,
+                    'remaining_signals': max(0, MAX_SIGNALS_PER_RUN - len(records)),
+                }), True)
+            return request, EffectResult(request.effect_id, 'refused', encode({
+                'reason': 'Signal reporting was interrupted before recording. Call report_signal again if still needed.'}))
+        return self.tools.recover_effect(journal)
