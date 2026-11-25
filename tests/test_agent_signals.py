@@ -872,3 +872,92 @@ def test_work_unit_implementer_signals_goal_drift_isolation_and_heads_up(tmp_pat
     assert 'goal_drift (implementer): v1 missing' in detail
     assert 'out_of_scope_blocker (implementer): Unrelated smoke flake' in detail
     assert 'checks_proposal: SAVED' in detail
+
+
+def test_multirepo_propose_checks_activates_in_catalog_with_disambiguation_and_honest_explicit_override(tmp_path, monkeypatch):
+    repo1 = tmp_path / 'repo1'
+    repo2 = tmp_path / 'repo2'
+    repo1.mkdir()
+    repo2.mkdir()
+    session = tmp_path / 'session'
+    session.mkdir()
+    perm_dir = tmp_path / 'perms'
+    perm_dir.mkdir()
+    monkeypatch.setattr(turn_engine, 'project_python', lambda p: sys.executable)
+
+    # Approve via wait_for_answer without launching a full TUI or executing any real check command.
+    monkeypatch.setattr(permissions, 'wait_for_answer', lambda folder, req, ctrl: {'id': req.get('id', ''), 'choice': 'once'})
+
+    state = {
+        'session_id': 'sess-1',
+        'config': {'repositories': {'repo1': str(repo1), 'repo2': str(repo2)}, 'verifiers': {}},
+    }
+    inner = SimpleNamespace(names=('read',), tool_specs_json=encode({'read': {}}),
+                            session_id='sess-1', binding='test-binding')
+    tools = tasks.ConversationTools(inner, session, state, 'inv-1', permission_directory=perm_dir)
+
+    # 1. Approve a harmless check in repo2; verify catalog immediately exposes it bound to repo2 (no real command run).
+    res = tools.execute(_effect('propose_checks', {
+        'repository': 'repo2',
+        'summary': 'Add repo2 lint check',
+        'reason': 'Verify repo2 style.',
+        'checks': [{'name': 'repo2-lint', 'argv': ['python', '-c', 'pass'], 'timeout_seconds': 30}],
+    }, 'e1'), _control())
+    assert res.status == 'succeeded'
+    body = json.loads(res.output_json)
+    assert body['saved'] is True
+    assert body['active_in_conversation'] is True
+    assert body['active_checks'] == ['repo2-lint']
+
+    detected = tasks.detected_checks(state['config'])
+    assert detected == {'repo2-lint': {'repository': 'repo2', 'argv': [sys.executable, '-c', 'pass']}}
+    assert 'repo2-lint' in tasks.product_help(state, 'workflow')['available_checks']
+
+    # Query check catalog via an unknown name (does not execute any command) and confirm repo2-lint is registered on repo2.
+    probe = tools.execute(_effect('check', {'names': ['nonexistent']}, 'e2'), _control())
+    assert probe.status == 'refused'
+    catalog = json.loads(probe.output_json)['available_checks']
+    assert catalog['repo2-lint'] == {'repository': 'repo2', 'argv': [sys.executable, '-c', 'pass']}
+
+    # 2. Colliding check names across repo1 and repo2 are disambiguated as <repo>:<name>.
+    turn_engine.write_project_checks_doc(repo1, {'checks': {'smoke': {'argv': ['python', '-c', 'print(1)']}}})
+    res2 = tools.execute(_effect('propose_checks', {
+        'repository': 'repo2',
+        'summary': 'Add repo2 smoke check',
+        'reason': 'Run repo2 smoke.',
+        'checks': [{'name': 'smoke', 'argv': ['python', '-c', 'print(2)']}],
+    }, 'e3'), _control())
+    assert res2.status == 'succeeded'
+    body2 = json.loads(res2.output_json)
+    assert body2['active_checks'] == ['repo2-lint', 'repo2:smoke']
+    detected2 = tasks.detected_checks(state['config'])
+    assert detected2['repo1:smoke']['repository'] == 'repo1'
+    assert detected2['repo2:smoke']['repository'] == 'repo2'
+    assert 'smoke' not in detected2
+
+    # 3. When explicit scoped verifiers exist, saving .tare/checks.json does NOT claim immediate activation.
+    explicit_state = {
+        'session_id': 'sess-2',
+        'config': {
+            'repositories': {'repo1': str(repo1)},
+            'verifiers': {'scoped': {'repository': 'repo1', 'argv': [sys.executable, '-c', 'pass']}},
+        },
+    }
+    captured_requests = []
+
+    def capture_approve(folder, req, ctrl):
+        captured_requests.append(deepcopy(req))
+        return {'id': req.get('id', ''), 'choice': 'once'}
+
+    monkeypatch.setattr(permissions, 'wait_for_answer', capture_approve)
+    out = permissions.confirm_checks(
+        session, explicit_state, project=repo1,
+        proposal={'checks': [{'name': 'extra', 'argv': ['python', '-c', 'pass']}]},
+        from_role='coordinator', summary='Add extra check', reason='For future runs.',
+        effect_id='e4', control=_control(), directory=perm_dir)
+    assert out['saved'] is True
+    assert out['active_in_conversation'] is False
+    assert out['active_checks'] == []
+    assert 'explicit scoped verifiers' in out['next'].lower()
+    assert captured_requests[0]['checks_proposal']['active_now'] is False
+    assert tasks.detected_checks(explicit_state['config']) == {}

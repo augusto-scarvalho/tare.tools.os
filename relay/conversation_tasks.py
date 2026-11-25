@@ -263,16 +263,46 @@ def backlog_authoring_contract():
             'project files or the installation to rediscover this supplied product contract.'}
 
 
+def _uses_detected_checks(config):
+    return not config.get('delegated_verifiers') and not any(
+        n != 'conversation-diff' for n in (config.get('verifiers') or ()))
+
+
 def detected_checks(config):
-    """Reuse the host's bounded test detector without changing saved chat identity."""
+    """Reuse the host's bounded test detector without changing saved chat identity.
+
+    Single-repository conversations use config_for() (.tare/checks.json plus bounded autodetection).
+    Multi-repository conversations surface .tare/checks.json checks declared in each configured repository,
+    disambiguating colliding check names as `<repo>:<name>` so each check maps unambiguously to its repository.
+    """
     if config.get('delegated_verifiers'):
         return deepcopy(config['delegated_verifiers'])
-    if len(config['repositories']) != 1 or any(n != 'conversation-diff' for n in config['verifiers']):
+    if not _uses_detected_checks(config):
         return {}  # Explicit scoped checks take precedence over automatic detection.
-    from .turn_engine import config_for
-    repository, root = next(iter(config['repositories'].items()))
-    return {name: {**check, 'repository': repository}
-            for name, check in config_for(Path(root), mode='read-only')['verifiers'].items()}
+    repos = config.get('repositories') or {}
+    if not repos:
+        return {}
+    from .turn_engine import config_for, project_checks
+    if len(repos) == 1:
+        repository, root = next(iter(repos.items()))
+        return {name: {**check, 'repository': repository}
+                for name, check in config_for(Path(root), mode='read-only')['verifiers'].items()}
+    per_repo = {repo: project_checks(Path(root))['verifiers'] for repo, root in repos.items()}
+    counts = {}
+    for checks in per_repo.values():
+        for name in checks:
+            counts[name] = counts.get(name, 0) + 1
+    discovered = {}
+    for repo, checks in per_repo.items():
+        for name, check in checks.items():
+            key = f'{repo}:{name}' if counts[name] > 1 else name
+            if key in discovered:
+                suffix = 2
+                while f'{key}#{suffix}' in discovered:
+                    suffix += 1
+                key = f'{key}#{suffix}'
+            discovered[key] = {**check, 'repository': repo}
+    return discovered
 
 
 def host_checks(config, unit):
@@ -1440,9 +1470,14 @@ class ConversationTools:
                                           'These registered checks run exactly the requested test targets, not a broader suite. Retry them.'))
                     return refused(result.pop('reason'),**result)
                 from .work_units import _is_godot_script_argv
-                if ('godot-import' in config['verifiers']
-                        and ('tests' in names or any(_is_godot_script_argv(config['verifiers'][n]['argv']) for n in names))):
-                    names = ['godot-import', *[n for n in names if n != 'godot-import']]
+                selected_repos = {config['verifiers'][n]['repository'] for n in names}
+                if len(selected_repos) == 1:
+                    selected_repo = next(iter(selected_repos))
+                    import_name = next((c for c in ('godot-import', f'{selected_repo}:godot-import')
+                                        if c in config['verifiers'] and config['verifiers'][c]['repository'] == selected_repo), None)
+                    if import_name and (any(n in {'tests', f'{selected_repo}:tests'}
+                                            or _is_godot_script_argv(config['verifiers'][n]['argv']) for n in names)):
+                        names = [import_name, *[n for n in names if n != import_name]]
                 if value.get('turn', {}).get('invocation') != self.invocation_id:
                     value['turn'] = {'invocation': self.invocation_id, 'intent': 'investigate'}
                     value['input_scope'] = {'input': self.input_id(), 'intent': 'investigate'}
@@ -1484,7 +1519,15 @@ class ConversationTools:
                                                          local_producer=execution_scope.current().prefer == 'local'),
                               'read_only': (project_permission_mode(project) or 'read') == 'read'})))
                     from .turn_engine import project_checks
-                    check_timeouts = project_checks(project)['timeouts']
+                    raw_timeouts = project_checks(project)['timeouts']
+                    check_timeouts = {}
+                    for check_name in commands:
+                        if check_name in raw_timeouts:
+                            check_timeouts[check_name] = raw_timeouts[check_name]
+                        elif check_name.startswith(repository + ':'):
+                            plain = check_name.removeprefix(repository + ':').split('#', 1)[0]
+                            if plain in raw_timeouts:
+                                check_timeouts[check_name] = raw_timeouts[plain]
                     status, details = run_checks(tree, commands, **({'timeouts': check_timeouts} if check_timeouts else {}))
                     output = {'status': status, 'checks': details, 'applied': False}
                     if BACKLOG_CHECK in names:

@@ -103,8 +103,10 @@ class ProjectPermissions:
                                     'Applying the change you confirmed' if request['audit']['verdict'] == 'ACCEPT' else
                                     'Applying the change by your decision · no audit accepted it')
                 elif request.get('kind') == 'checks':
+                    active_now = (request.get('checks_proposal') or {}).get('active_now', True)
                     self.set_status('Not saved · .tare/checks.json was not changed' if choice in (None, 'deny')
-                                    else 'Saved .tare/checks.json · active for this conversation')
+                                    else 'Saved .tare/checks.json · active for this conversation' if active_now
+                                    else 'Saved .tare/checks.json · explicit checks still take precedence here')
                 else:
                     self.set_status('Permission denied.' if choice == 'deny' else
                                     'Plan sent back for changes · nothing was implemented' if choice == 'change' else

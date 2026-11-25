@@ -114,14 +114,19 @@ class ExecutionPermissionPanel(SupportPanel):
                         '\n\nThe checks passed. Not applying keeps the candidate unapplied.', markup=False)
                 elif checks_proposal is not None:
                     removed = checks_proposal.get('removed') or []
+                    active_now = checks_proposal.get('active_now', True)
+                    effect_note = (
+                        'Saving updates .tare/checks.json immediately for this conversation. '
+                        if active_now else
+                        'Saving writes .tare/checks.json for future conversations; this conversation has explicit '
+                        'scoped verifiers that take precedence. ')
                     yield Static(
                         'Project: ' + value['project'] + '\nFile: .tare/checks.json\n'
                         'Proposed by: ' + str(checks_proposal.get('from_role') or 'agent') + ' (advisory only)'
                         + ('\n\nReason:\n' + str(checks_proposal['reason']) if checks_proposal.get('reason') else '')
                         + ('\n\nWARNING — checks removed: ' + ', '.join(removed) if removed else '')
                         + '\n\nExact changes:\n' + str(checks_proposal.get('diff') or '')
-                        + '\n\nSaving updates .tare/checks.json immediately for this conversation. '
-                        'Choosing Do not save leaves the project unchanged.',
+                        + '\n\n' + effect_note + 'Choosing Do not save leaves the project unchanged.',
                         markup=False)
                 elif command:
                     yield Static('Project: '+value['project']+'\nWorking folder: '+value['cwd']+
