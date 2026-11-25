@@ -1325,6 +1325,16 @@ def _effective_trigger_limit(deployment):
         return None
 
 
+def _prior_audit_revised(unit):
+    raw = unit.get('review_feedback')
+    if isinstance(raw, str) and raw.strip():
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return False
+    return isinstance(raw, dict) and raw.get('verdict') == 'REVISE'
+
+
 def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=None, worker=None, control=None, spend_model=None, review_effect=None,
              outside=None, check_control=None, red_baseline=None):
     """Run one unit up the route ladder until VERIFIED or out of rungs; apply a VERIFIED change. The receipt and
@@ -1620,6 +1630,10 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 child['command_runtimes'] = command_runtimes
                 if 'command' in config.get('capabilities', []): child['capabilities'].append('command')
             session_path=None
+            before_worker = (changed_files(tree, base)
+                             if (candidate and not candidate.get('review_only') and not waiting
+                                 and _prior_audit_revised(unit))
+                             else None)
             if candidate and candidate.get('review_only'):
                 outcome = {'status': 'PROPOSED', 'model_calls': 0}
                 row['reused_candidate'] = candidate['patch']
@@ -1704,7 +1718,14 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 settle_attempt(row['attempts'][-1], outcome)
             (job/'receipt.json').write_text(json.dumps({**receipt, 'rungs': receipt['rungs'] + [row]}), encoding='utf-8')
             changed = changed_files(tree, base)
-            if state.get('conversation_flow') and changed and not stop():
+            unchanged_candidate = (
+                before_worker is not None
+                and not stop()
+                and not (state.get('conversation_flow') and outcome.get('folder_access_request')
+                         and outcome['status'] == 'PROPOSED')
+                and changed == before_worker
+            )
+            if state.get('conversation_flow') and changed and not stop() and not unchanged_candidate:
                 # Make new paths visible to diff --check before paying for an
                 # independent audit. Intent-to-add keeps their content unstaged.
                 added_or_modified = [name for name, raw in changed.items() if raw is not None]
@@ -1712,6 +1733,8 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     git(tree, 'add', '--intent-to-add', '--', *added_or_modified)
             if state.get('conversation_flow') and stop():
                 after, row['after'] = 'inconclusive', 'Not run: execution was stopped.'
+            elif unchanged_candidate:
+                after, row['after'] = 'inconclusive', 'Not run: the implementer made no changes to the retained candidate.'
             elif candidate and candidate.get('review_only'):
                 # No writer ran between these two phases. Keep the named check
                 # evidence; the independent audit and application gates remain.
@@ -1723,7 +1746,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     progress.begin('after')
                 checked_after = run_checks(tree, commands)
                 after, row['after'] = checked_after
-            if row.get('host_baseline_metadata'):
+            if row.get('host_baseline_metadata') and not unchanged_candidate:
                 from .candidate_checks import MANIFEST
                 checked_changes=changed_files(tree,base)
                 verifier_edits={n for n in set(changed)|set(checked_changes)
@@ -1731,10 +1754,13 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 if verifier_edits-{MANIFEST}:
                     raise ValueError('Host verification changed authored candidate files; nothing was applied.')
                 changed=checked_changes
-            verdict_, reason = verdict(before, after, changed, [] if review else protected, lambda: run_checks(tree, commands)[0])
-            was_red = ([n for n in already_red(checked_before, checked_after) if n in commands]
-                       if verdict_ == 'NOT_VERIFIED' else [])
-            if state.get('conversation_flow'):
+            if unchanged_candidate:
+                verdict_, reason, was_red = 'INCONCLUSIVE', 'the implementer made no changes to the retained candidate', []
+            else:
+                verdict_, reason = verdict(before, after, changed, [] if review else protected, lambda: run_checks(tree, commands)[0])
+                was_red = ([n for n in already_red(checked_before, checked_after) if n in commands]
+                           if verdict_ == 'NOT_VERIFIED' else [])
+            if state.get('conversation_flow') and not unchanged_candidate:
                 from .conversation_permissions import paths_allowed
                 if not paths_allowed(changed,unit['target_paths']):
                     verdict_,reason,was_red='NOT_VERIFIED','Candidate changed files outside the saved plan; nothing was applied.',[]
@@ -1746,8 +1772,9 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
             if set_aside and verdict_ == 'VERIFIED':
                 reason += ('; not judged by ' + ', '.join(set_aside) +
                            ', which already failed before the change (the user\'s decision)')
-            row.update(verdict=verdict_, reason=reason, before_state=before, after_state=after, files=sorted(changed))
-            if changed:
+            reported_files = [] if unchanged_candidate else sorted(changed)
+            row.update(verdict=verdict_, reason=reason, before_state=before, after_state=after, files=reported_files)
+            if changed and not unchanged_candidate:
                 if row.get('host_baseline_metadata'):
                     patch = git(tree, 'diff', '--binary', base, '--')
                 else:
@@ -1755,7 +1782,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     patch = git(tree, 'diff', '--cached', '--binary', base, '--')
                 (job/f'patch-{rung+1}.diff').write_bytes(patch)
                 row['patch'] = str(job/f'patch-{rung+1}.diff')
-            result = {'verdict': verdict_, 'reason': reason, 'route': name, 'files': sorted(changed),
+            result = {'verdict': verdict_, 'reason': reason, 'route': name, 'files': reported_files,
                       'checks_before': row['before'], 'checks_after': row['after'],
                       **{k: row[k] for k in ('needs', 'route_class', 'kind', 'class_source', 'kinds', 'critical', 'effort', 'effort_from') if k in row}}
             if was_red:
@@ -1768,7 +1795,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
             if isinstance(report,str) and report.strip():
                 result['implementer_report']={'basis':'Unverified implementer report; host checks and diff remain authoritative.',
                     'text':report[:2000],'truncated':len(report)>2000}
-            if changed and review is not None:
+            if changed and review is not None and not unchanged_candidate:
                 from .conversation_tasks import source_state
                 result['candidate'] = {'patch': row['patch'],
                     'sha256': hashlib.sha256(Path(row['patch']).read_bytes()).hexdigest(),

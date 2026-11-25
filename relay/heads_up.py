@@ -218,7 +218,17 @@ def _detail(tool, args, output):
         audit = output.get('audit') if isinstance(output.get('audit'), dict) else {}
         found = ' | '.join(_clip(f.get('claim'), 260) for f in audit.get('findings') or []
                            if isinstance(f, dict) and f.get('claim'))
-        text = '; '.join(x for x in (audit and f"audit {audit.get('verdict')}" + (': ' + found if found else ''),
+        audit_note = found
+        if not audit_note:
+            parts = []
+            if isinstance(audit.get('summary'), str) and audit['summary'].strip():
+                parts.append(_clip(audit['summary'], 260))
+            remaining = ' | '.join(_clip(r, 140) for r in (audit.get('remaining') or [])[:3]
+                                   if isinstance(r, str) and r.strip())
+            if remaining:
+                parts.append('remaining: ' + remaining)
+            audit_note = '; '.join(parts)
+        text = '; '.join(x for x in (audit and f"audit {audit.get('verdict')}" + (': ' + audit_note if audit_note else ''),
                                      asked and 'asked: ' + _clip(asked, 160), said and 'reported: ' + said) if x)
     elif tool in ('terminal_read', 'verify'):
         text = _tail(_text(output.get('output')).strip(), 400)

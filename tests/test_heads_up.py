@@ -844,3 +844,20 @@ def test_usage_totals_one_conversation_and_counts_older_rows_as_unknown(tmp_path
         'turns': 2, 'calls': 3, 'unknown': 1, 'input_tokens': 2400, 'output_tokens': 160, 'ms': 4500,
         'usd': 0.0246, 'usd_unknown': 1}
     assert heads_up.usage(tmp_path/'s3')['calls'] == 0
+
+
+def test_implement_detail_includes_audit_summary_and_remaining_when_findings_are_empty():
+    inconclusive = heads_up.step('implement', {'note': 'Fix contrast.'}, 'succeeded', {
+        'verdict': 'NOT_REVIEWED',
+        'audit': {'verdict': 'INCONCLUSIVE', 'findings': [],
+                  'summary': 'Contrast check fixed; no new code defect.',
+                  'remaining': ['Criterion 7: renderer check missing', 'Criterion 8: PNG captures missing']}})
+    assert 'audit INCONCLUSIVE: Contrast check fixed; no new code defect.' in inconclusive['detail']
+    assert 'remaining: Criterion 7: renderer check missing | Criterion 8: PNG captures missing' in inconclusive['detail']
+    refused = heads_up.step('implement', {'note': 'Retry.'}, 'succeeded', {
+        'verdict': 'NOT_REVIEWED',
+        'audit': {'verdict': 'REVISE', 'summary': 'Still broken.',
+                  'findings': [{'claim': 'local_contrast uses crop extrema.'}],
+                  'remaining': ['Criterion 8: PNG captures missing']}})
+    assert refused['detail'].startswith('audit REVISE: local_contrast uses crop extrema.;')
+    assert 'Still broken.' not in refused['detail']
