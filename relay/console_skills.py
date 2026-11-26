@@ -267,6 +267,7 @@ class SkillsPanel(WorkbenchPanel):
     DEFAULT_CSS = '''
     SkillsPanel #skills-capture-row { height: 1; margin-bottom: 1; }
     SkillsPanel #skills-capture-path { width: 1fr; }
+    SkillsPanel #skills-capture-row Button { min-width: 6; padding: 0 1; margin-left: 1; }
     SkillsPanel #workbench-list { height: 6; }
     SkillsPanel.narrow #workbench-list { height: 4; }
     SkillsPanel #workbench-preview { height: 1fr; }
@@ -478,6 +479,8 @@ class SkillsPanel(WorkbenchPanel):
             with Horizontal(id='skills-capture-row'):
                 yield Input(placeholder='Local skill folder to capture (inert snapshot)', id='skills-capture-path')
                 yield Button('Capture', id='skills-capture')
+                yield Button('GitHub', id='skills-check-remote',
+                             tooltip='Check GitHub / Git remotes for newer commits (read-only)')
             yield OptionList(id='workbench-list')
             yield TextArea('', read_only=True, show_line_numbers=False, id='workbench-preview')
             yield Static('', id='workbench-status', markup=False)
@@ -488,8 +491,6 @@ class SkillsPanel(WorkbenchPanel):
                 yield Button('Edit', id='skills-save', disabled=True)
                 yield Button('Roles', id='skills-roles')
                 yield Button('Update', id='skills-update', disabled=True)
-                yield Button('GitHub', id='skills-check-remote',
-                             tooltip='Check GitHub / Git remotes for newer commits (read-only)')
                 yield Button('View', id='skills-view')
 
     def render_rows(self):

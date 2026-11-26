@@ -260,7 +260,7 @@ def test_tui_vendor_catalog_import_hidden_toggle_and_live_drift_update(tmp_path,
             menu = panel.query_one('#workbench-list', OptionList)
             toggle_idx = next(i for i, r in enumerate(panel.rows) if r['row_kind'] == 'vendor_hidden_toggle')
             menu.highlighted = toggle_idx
-            await pilot.pause()
+            await pilot.pause(.2)
             assert str(panel.query_one('#skills-manage', Button).label) == 'Show'
             await pilot.click('#skills-manage')
             await pilot.pause(.4)  # Textual's pressed animation suppresses an immediate second click.
