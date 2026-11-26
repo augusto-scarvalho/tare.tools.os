@@ -1030,10 +1030,16 @@ def test_implement_refuses_blind_retry_on_unchanged_out_of_scope_blocker_until_c
     assert first.status == 'succeeded', first.output_json
     assert len(run_calls) == 1
     body = json.loads(first.output_json)
-    # No contradictory "Never ... open a replacement task" alongside follow-up task guidance.
+    # No contradictory "Never ... open a replacement task" or "use relation=correct and implement" guidance.
     assert 'open a replacement task' not in body['next']
     assert 'out_of_scope_blockers' in body['next']
     assert 'propose_checks' in body['next']
+    no_red_view = tasks.delivery_view({
+        'verdict': 'NOT_VERIFIED', 'applied': False, 'files': ['a.py'],
+        'out_of_scope_blockers': body['out_of_scope_blockers'],
+    })
+    assert 'use relation=correct and implement' not in no_red_view['next']
+    assert 'Do not retry implement unchanged' in no_red_view['next']
 
     # Fresh user turn: repeating implement() unchanged is refused cheaply with zero run_unit dispatch.
     journal.append({'kind': 'user_message', 'message_id': 'u2', 'text': 'Try again.'})

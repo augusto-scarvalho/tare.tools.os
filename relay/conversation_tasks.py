@@ -392,8 +392,6 @@ def delivery_view(value, *, config=None, unit=None):
                 'review ('+audit['independence']+')' if audit.get('independence') else 'independent review')+' identified required candidate corrections.'
             result['next']='Preserve the verdict, findings, remaining obligations and saved plan. Make one bounded correction now with demand relation=correct and implement. The host carries the full review to the implementer. An unchanged candidate does not authorize another audit.'
     elif value.get('verdict') == 'NOT_VERIFIED':
-        result['next'] = 'Preserve this demand and plan. Diagnose checks_after, then use relation=correct and implement '
-        result['next'] += 'to repair only the failed part; the host supplies the candidate and verifier feedback. '
         if value.get('already_red'):
             # A failure the project already had: the implementer is not sent to repair what the plan never touched.
             result['next'] = ('Preserve this demand and plan. These checks failed before the change as well (compare '
@@ -403,6 +401,12 @@ def delivery_view(value, *, config=None, unit=None):
                 'tool that cannot start, the environment), the implementer cannot repair it: do not send it back. '
                 'Tell the user which check already failed in their project before any change and the line of its '
                 'output that shows why, and that the candidate is kept and nothing was applied. ')
+        elif value.get('out_of_scope_blockers'):
+            result['next'] = ('Preserve this demand and plan. Diagnose checks_after alongside the reported '
+                'out_of_scope_blockers; the candidate is kept and nothing was applied. ')
+        else:
+            result['next'] = ('Preserve this demand and plan. Diagnose checks_after, then use relation=correct and '
+                'implement to repair only the failed part; the host supplies the candidate and verifier feedback. ')
         result['next'] += ('For Backlog fields use product_help(backlog). Never guess enum values, '
                            + ('' if value.get('out_of_scope_blockers') else 'open a replacement task, ')
                            + 'request installation access, or suggest direct edits to escape a failure guard.')

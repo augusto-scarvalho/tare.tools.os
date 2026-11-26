@@ -479,8 +479,9 @@ def committed(root):
         row = record(p)
         used = calls_used(row, p.parent/'session')
         second = p.parent/'session-2'
-        if (second/'journal.jsonl').is_file() and row.get('calls_used') is None:
-            used += count_calls(second)
+        if (second/'journal.jsonl').is_file() and (row.get('status') == 'RUNNING' or row.get('calls_used') is None):
+            first = count_calls(p.parent/'session') if (p.parent/'session'/'journal.jsonl').is_file() else 0
+            used = max(used, first + count_calls(second))
         total += used
     return total
 
@@ -920,8 +921,14 @@ class PlanningTools:
                         except ValueError:
                             can_fund = False
                     if can_fund:
+                        from .native_spend import total_amounts
+                        def _combine_amounts(first, second):
+                            combined = total_amounts([first, second])
+                            return None if combined is None else str(combined)
                         esc_session = job/'session-2'
+                        row.pop('calls_used', None)
                         row['calls_reserved'] = (attempt_calls + esc_calls) if esc_calls is not None else None
+                        row['amount_committed'] = _combine_amounts(attempt_spend, esc_allowance)
                         row['executed_decision'] = executed_decision(
                             esc_trace.get('mode'), esc_name, esc_trace.get('visited', [esc_name]),
                             esc_trace.get('skipped', []))
@@ -941,10 +948,7 @@ class PlanningTools:
                         esc_spent = self.spent(esc_outcome, esc_parent_spend, esc_allowance)
                         planner_calls = attempt_calls + esc_used
                         row['calls_used'] = planner_calls
-                        if attempt_spend is not None or esc_spent is not None:
-                            from .native_spend import total_amounts
-                            row['amount_committed'] = str(total_amounts(
-                                [v for v in (attempt_spend, esc_spent) if v is not None]))
+                        row['amount_committed'] = _combine_amounts(attempt_spend, esc_spent)
                         attempts.append(executed_attempt(esc_deployment, {
                             'status': esc_outcome['status'], 'reason': esc_outcome.get('reason'),
                             'failure_code': esc_outcome.get('failure_code')}))

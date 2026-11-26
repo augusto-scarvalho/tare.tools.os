@@ -406,3 +406,23 @@ def test_delegate_plan_escalates_once_on_compaction_loop_and_fair_quota_skips_ca
     res_cap = tool2.execute(request({'instruction': 'Seventh attempt.'}, effect='fair-7'), execution())
     assert res_cap.status == 'refused' and 'maximum of 6 planning attempts' in res_cap.output_json
     assert dispatched == []
+
+    # 4. Interrupted escalation keeps full reservation/journal calls in committed() and preserves unknown spend (None).
+    parent3 = tmp_path / 'parent3'; parent3.mkdir()
+    job3 = parent3 / 'planning' / 'interrupted-esc'
+    (job3 / 'session').mkdir(parents=True)
+    (job3 / 'session-2').mkdir(parents=True)
+    j1 = NativeJournal(job3 / 'session' / 'journal.jsonl')
+    for i in range(4):
+        j1.append({'kind': 'model_requested', 'call_id': f's1/{i}'})
+    j2 = NativeJournal(job3 / 'session-2' / 'journal.jsonl')
+    for i in range(3):
+        j2.append({'kind': 'model_requested', 'call_id': f's2/{i}'})
+    (job3 / 'receipt.json').write_text(json.dumps({
+        'status': 'RUNNING', 'calls_reserved': 10, 'amount_committed': None,
+    }), encoding='utf-8')
+    assert planning_tools.committed(parent3) == 10
+    (job3 / 'receipt.json').write_text(json.dumps({
+        'status': 'RUNNING', 'calls_reserved': 5, 'amount_committed': None,
+    }), encoding='utf-8')
+    assert planning_tools.committed(parent3) == 7
