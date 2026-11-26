@@ -287,3 +287,122 @@ def test_fresh_user_continuation_after_compaction_loop_authorizes_retry_of_saved
     body = json.loads(res.output_json)
     assert 'Call implement now with the saved plan' in body['delivery']['next']
     assert 'larger context window' in body['delivery']['next']
+
+
+@pytest.mark.parametrize('explicit_dup', [None, False])
+def test_agy_compact_planner_gets_planner_guidance_duplicate_read_elision_and_mechanical_read_bounds(
+        setup, tmp_path, explicit_dup):
+    config, custody, root = setup
+    (root / 'big.py').write_text(''.join(f'line_{i} = {i}\n' for i in range(1, 161)), encoding='utf-8')
+    planner_cfg = {**config, 'role': 'planner', 'writable': {}, 'verifiers': {},
+                   'capabilities': ['read', 'list', 'search'], 'context_policy': {}}
+    dep = _cli_deployment(
+        tmp_path, dep_id='agy-gemini-4-carbon-cli', endpoint='cli://agy', model='gemini-4-carbon-high',
+        projection=({'elide_duplicate_reads': explicit_dup} if explicit_dup is not None else None),
+    )
+    client = _VendorStubClient('cli://agy', 'gemini-4-carbon-high', [
+        [('read', {'repository': 'repo', 'path': 'big.py', 'start': 1, 'end': 160})],
+        [('read', {'repository': 'repo', 'path': 'big.py', 'start': 1, 'end': 120})],
+        [('tare_deliver', {'summary': 'Planned big.py.'})],
+    ])
+    result = native_agent.run_session(planner_cfg, dep, custody, 'Plan changes to big.py.', client=client)
+    assert result['status'] == 'PROPOSED' and len(client.calls) == 3
+    assert native_agent.COMPACT_PLANNER_GUIDANCE in client.calls[0][1]['system']
+    assert native_agent.COMPACT_CONTEXT_GUIDANCE not in client.calls[0][1]['system']
+    # Mechanical read cap clamps the 1..160 request to 120 lines.
+    prompt_t2 = client.calls[1][1]['prompt']
+    assert '120|line_120 = 120' in prompt_t2 and '121|line_121 = 121' not in prompt_t2
+    # After re-reading 1..120 on turn 2, turn 3 elides the earlier duplicate read by default.
+    prompt_t3 = client.calls[2][1]['prompt']
+    expected_elide = explicit_dup is None
+    assert ('Covered verbatim by a later read' in prompt_t3) is expected_elide
+    saved = json.loads((custody / 'native-agent.json').read_text(encoding='utf-8'))
+    assert saved.get('compact_context_guidance') is True
+    assert saved.get('read_max_lines') == native_agent.COMPACT_READ_MAX_LINES
+    assert saved.get('read_max_bytes') == native_agent.COMPACT_READ_MAX_BYTES
+    assert (saved.get('elide_duplicate_reads') is True) is expected_elide
+
+
+def test_delegate_plan_escalates_once_on_compaction_loop_and_fair_quota_skips_cancelled_and_invalid(
+        tmp_path, monkeypatch):
+    from relay import planning_tools, turn_engine
+    from test_planning_tools import PLAN, execution, request, wrap
+
+    parent = tmp_path / 'parent'; parent.mkdir()
+    repo = tmp_path / 'repo'; repo.mkdir()
+    (repo / 'a.py').write_text('value = 1\n', encoding='utf-8')
+    agy1 = _cli_deployment(tmp_path, dep_id='agy-carbon', endpoint='cli://agy', model='gemini-4-carbon-high')
+    agy2 = _cli_deployment(tmp_path, dep_id='agy-argon', endpoint='cli://agy', model='gemini-4-argon-high')
+    claude = _cli_deployment(tmp_path, dep_id='claude-large', endpoint='cli://claude', model='claude-opus-5-5')
+    by_id = {'agy-carbon': agy1, 'agy-argon': agy2, 'claude-large': claude}
+    monkeypatch.setattr(turn_engine, 'available', lambda name, probe=True: (by_id.get(name), None))
+    monkeypatch.setattr(turn_engine, 'policy', lambda: {'planner': [['agy-carbon'], ['agy-argon'], ['claude-large']]})
+    state = {
+        'deployment': claude, 'conversation_flow': False,
+        'planning': {'routes': dict(by_id), 'route_order': ['agy-carbon', 'agy-argon', 'claude-large']},
+        'limits': {'max_model_calls': 30}, 'deadline_utc': None,
+        'config': {'repositories': {'repo': str(repo)}, 'writable': {'repo': ['a.py']}, 'verifiers': {}},
+    }
+    dispatched = []
+
+    def fake_run_session(child, dep, session_path, instruction, **kwargs):
+        dispatched.append(dep['id'])
+        if dep['id'] == 'agy-carbon':
+            _write_compaction_loop_journal(session_path, compactions=3)
+            return {'status': 'BLOCKED', 'reason': 'NO_PROGRESS', 'model_calls': 5}
+        Path(session_path).mkdir(parents=True, exist_ok=True)
+        (Path(session_path) / 'artifact.json').write_text(json.dumps({
+            'schema': 'tare.tools/native-artifact/1', 'role': 'planner', 'payload': PLAN,
+        }), encoding='utf-8')
+        return {'status': 'PROPOSED', 'model_calls': 3}
+
+    monkeypatch.setattr(native_agent, 'run_session', fake_run_session)
+    tool = wrap(parent, state, execution())
+    # 1. Unpinned compaction loop skips equal-window agy-argon and escalates once to claude-large.
+    res = tool.execute(request({'instruction': 'Plan a.py.'}, effect='esc-1'), execution())
+    assert res.status == 'succeeded', res.output_json
+    body = json.loads(res.output_json)
+    assert body['status'] == 'PLANNED' and body['route'] == 'claude-large'
+    assert dispatched == ['agy-carbon', 'claude-large']
+    receipt = json.loads(next((parent / 'planning').glob('*/receipt.json')).read_text(encoding='utf-8'))
+    assert receipt['escalated_from'] == 'agy-carbon' and len(receipt['attempts']) == 2
+    skipped = receipt['executed_decision']['fallback']['skipped']
+    assert {'deployment': 'agy-carbon', 'reason': 'COMPACTION_LOOP_ESCALATED'} in skipped
+    assert {'deployment': 'agy-argon', 'reason': 'CONTEXT_WINDOW_NOT_LARGER'} in skipped
+
+    # 2. Explicit route pin never escalates automatically.
+    dispatched.clear()
+    res_pinned = tool.execute(request({'instruction': 'Plan pinned.', 'route': 'agy-carbon'}, effect='esc-pin'), execution())
+    assert res_pinned.status == 'succeeded'
+    assert json.loads(res_pinned.output_json)['status'] == 'BLOCKED'
+    assert dispatched == ['agy-carbon']
+
+    # 3. CANCELLED and pre-artifact INVALID_DELIVERY do not consume MAX_REQUESTS=3,
+    #    while MAX_TOTAL_ATTEMPTS=6 still enforces a hard cap.
+    parent2 = tmp_path / 'parent2'; parent2.mkdir()
+    for i, res_obj in enumerate([
+        {'status': 'CANCELLED'},
+        {'status': 'BLOCKED', 'failure_code': 'INVALID_DELIVERY', 'delivery_validation': {'issues': ['bad']}},
+        {'status': 'CANCELLED'},
+        {'status': 'BLOCKED', 'delivery_validation': {'issues': ['missing']}},
+    ]):
+        folder = parent2 / 'planning' / f'r{i}'; folder.mkdir(parents=True)
+        (folder / 'receipt.json').write_text(json.dumps({
+            'demand_id': None, 'planning_revision': 0, 'status': 'FINISHED',
+            'calls_reserved': 6, 'calls_used': 1, 'result': res_obj,
+        }), encoding='utf-8')
+    dispatched.clear()
+    tool2 = wrap(parent2, state, execution())
+    # 4 non-quota attempts -> 5th call is still admitted!
+    res_fifth = tool2.execute(request({'instruction': 'Fifth attempt.'}, effect='fair-5'), execution())
+    assert res_fifth.status == 'succeeded' and json.loads(res_fifth.output_json)['status'] == 'PLANNED'
+    # Add 1 more cancelled receipt to reach MAX_TOTAL_ATTEMPTS=6 -> 7th call is refused by hard cap.
+    folder = parent2 / 'planning' / 'r_extra'; folder.mkdir(parents=True)
+    (folder / 'receipt.json').write_text(json.dumps({
+        'demand_id': None, 'planning_revision': 0, 'status': 'FINISHED',
+        'calls_reserved': 6, 'calls_used': 1, 'result': {'status': 'CANCELLED'},
+    }), encoding='utf-8')
+    dispatched.clear()
+    res_cap = tool2.execute(request({'instruction': 'Seventh attempt.'}, effect='fair-7'), execution())
+    assert res_cap.status == 'refused' and 'maximum of 6 planning attempts' in res_cap.output_json
+    assert dispatched == []

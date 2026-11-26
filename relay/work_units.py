@@ -196,6 +196,75 @@ def _is_godot_script_argv(argv):
     return _godot_script_target(argv) is not None
 
 
+_GODOT_HEADLESS_IF = re.compile(
+    r'\bif\s+(?:DisplayServer\.get_name\s*\(\s*\)(?:\.to_lower\s*\(\s*\))?\s*==\s*["\']headless["\']'
+    r'|["\']headless["\']\s*==\s*DisplayServer\.get_name\s*\(\s*\)(?:\.to_lower\s*\(\s*\))?)\s*:'
+)
+_GODOT_HEADLESS_REFUSE = re.compile(
+    r'\b(?:push_error\s*\(|quit\s*\(\s*[1-9]\d*\s*\)|assert\s*\(\s*false\b)'
+)
+
+
+def _godot_script_refuses_headless(path: Path) -> bool:
+    """Return True when a Godot .gd script explicitly rejects DisplayServer == 'headless' with error/non-zero quit."""
+    try:
+        p = Path(path)
+        if not p.is_file() or p.is_symlink():
+            return False
+        with p.open('rb') as stream:
+            raw = stream.read(65536)
+        text = raw.decode('utf-8', errors='replace')
+    except OSError:
+        return False
+    lines = text.splitlines()
+    for i, raw_line in enumerate(lines):
+        code = raw_line.split('#', 1)[0]
+        if not _GODOT_HEADLESS_IF.search(code):
+            continue
+        if_indent = len(code) - len(code.lstrip(' \t'))
+        checked = 0
+        for follow in lines[i + 1:]:
+            body = follow.split('#', 1)[0]
+            if not body.strip():
+                continue
+            indent = len(body) - len(body.lstrip(' \t'))
+            if indent <= if_indent:
+                break
+            if _GODOT_HEADLESS_REFUSE.search(body):
+                return True
+            checked += 1
+            if checked >= 12:
+                break
+    return False
+
+
+def headless_refusing_godot_scripts(root, paths=None, *, limit=32):
+    """Return sorted relative POSIX paths of Godot scripts under `root` that explicitly refuse --headless."""
+    base = Path(root)
+    if not (base / 'project.godot').is_file():
+        return []
+    candidates = []
+    if paths is not None:
+        for rel in paths:
+            norm = test_file(rel).replace('\\', '/').lstrip('./')
+            if norm.endswith('.gd') and norm not in candidates:
+                candidates.append(norm)
+    else:
+        tests_dir = base / 'tests'
+        if tests_dir.is_dir() and not tests_dir.is_symlink():
+            for child in sorted(tests_dir.rglob('*.gd')):
+                if len(candidates) >= limit:
+                    break
+                if child.is_symlink():
+                    continue
+                try:
+                    rel = child.relative_to(base).as_posix()
+                except ValueError:
+                    continue
+                candidates.append(rel)
+    return sorted(rel for rel in candidates[:limit] if _godot_script_refuses_headless(base / rel))
+
+
 def narrowed(name, runner, tests):
     """The argv that runs only `tests` with an ecosystem's runner (the restricted targets of D6), or None."""
     stems = [Path(test_file(t)).stem for t in tests]
@@ -384,6 +453,11 @@ def checks(config, unit, repository, tree, planned=None):
             for target in mine:
                 norm = test_file(target).replace('\\', '/').lstrip('./')
                 if norm in covered_scripts:
+                    continue
+                script_file = Path(tree) / norm
+                if not script_file.is_file():
+                    script_file = Path(config['repositories'][repository]) / norm
+                if _godot_script_refuses_headless(script_file):
                     continue
                 base = 'godot-tests:' + norm
                 name = base

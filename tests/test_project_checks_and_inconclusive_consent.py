@@ -449,3 +449,78 @@ def test_suite_states_and_sandboxed_verifier_enforce_declared_timeout(tmp_path, 
     done = verifier(['cmd', '1'], cwd=root, timeout=15, env={})
     assert len(seen_controls) == 1, getattr(done, 'execution_limitation', done)
     assert seen_controls[0].deadline_monotonic == 115.0
+
+
+def test_godot_script_refusing_headless_is_skipped_from_auto_checks_and_surfaced_to_planner(tmp_path, monkeypatch):
+    from test_plan_critic import PLAN, Stub, execution, request, wrap
+    from test_native_agent import deployment
+    from compute_plane.native_journal import NativeJournal
+
+    root = tmp_path / 'game'
+    tree = tmp_path / 'tree'
+    headless_refuser = (
+        'extends SceneTree\n'
+        'func _initialize() -> void:\n'
+        '\tif DisplayServer.get_name() == "headless":\n'
+        '\t\tpush_error("visual_review requer renderizador; execute sem --headless")\n'
+        '\t\tquit(1)\n'
+        '\t\treturn\n'
+    )
+    graceful_skip = (
+        'extends SceneTree\n'
+        'func _initialize() -> void:\n'
+        '\tif DisplayServer.get_name() == "headless":\n'
+        '\t\treturn\n'
+    )
+    for d in (root, tree):
+        (d / 'tests').mkdir(parents=True)
+        (d / 'project.godot').write_text('config_version=5\n', encoding='utf-8')
+        (d / 'tests' / 'experience.gd').write_text('extends SceneTree\n', encoding='utf-8')
+        (d / 'tests' / 'visual_review.gd').write_text(headless_refuser, encoding='utf-8')
+        (d / 'tests' / 'soft_skip.gd').write_text(graceful_skip, encoding='utf-8')
+        (d / 'tests' / 'smoke.gd').write_text(headless_refuser, encoding='utf-8')
+
+    assert work_units._godot_script_refuses_headless(root / 'tests' / 'visual_review.gd') is True
+    assert work_units._godot_script_refuses_headless(root / 'tests' / 'experience.gd') is False
+    assert work_units._godot_script_refuses_headless(root / 'tests' / 'soft_skip.gd') is False
+    assert work_units.headless_refusing_godot_scripts(root) == ['tests/smoke.gd', 'tests/visual_review.gd']
+
+    monkeypatch.setattr(work_forms.shutil, 'which', lambda name: '/usr/bin/godot_console' if name == 'godot_console' else None)
+    monkeypatch.setattr(turn_engine.shutil, 'which', lambda name: '/usr/bin/godot_console' if name == 'godot_console' else None)
+
+    # config_for() does not auto-register a headless-refusing tests/smoke.gd.
+    assert turn_engine.config_for(root, mode='read-only')['verifiers'] == {}
+
+    # work_units.checks() skips visual_review.gd even without .tare/checks.json, keeping experience.gd and soft_skip.gd.
+    config = {'conversation_flow': True, 'repositories': {'game': str(root)}, 'verifiers': {}}
+    unit = {'verifiers': [], 'test_paths': ['tests/experience.gd', 'tests/visual_review.gd', 'tests/soft_skip.gd']}
+    planned_map = {}
+    compiled = work_units.checks(config, unit, 'game', tree, planned_map)
+    assert list(compiled) == ['godot-import', 'godot-tests:tests/experience.gd', 'godot-tests:tests/soft_skip.gd']
+    assert 'godot-tests:tests/visual_review.gd' not in compiled
+
+    # Planner mission surfaces detected_gui_only_scripts even before .tare/checks.json exists.
+    parent = tmp_path / 'parent'; parent.mkdir()
+    journal = NativeJournal(parent / 'journal.jsonl')
+    journal.append({'kind': 'session_started', 'session_id': 'parent',
+                    'instruction': 'TUI.\n\nOperator message:\nPolish HOME.'})
+    journal.append({'kind': 'model_requested', 'call_id': 'parent/model/1'})
+    candidate = dict(deployment(), id='fixture-planner')
+    params = json.loads(candidate['native_profile']['parameters_json'])
+    params['chat_template_kwargs']['reasoning_effort'] = 'high'
+    candidate['native_profile']['parameters_json'] = json.dumps(params, sort_keys=True, separators=(',', ':'))
+    state = {'deployment': deployment(), 'planning': {'routes': {'worker': candidate}},
+             'limits': {'max_model_calls': 15}, 'deadline_utc': None, 'conversation_flow': True,
+             'config': {'repositories': {'game': str(root)}, 'writable': {'game': ['hub.gd']},
+                        'verifiers': {}, 'capabilities': ['read', 'edit']}}
+    stub = Stub(monkeypatch, candidate, PLAN)
+    stub.verdict = {'verdict': 'ACCEPT', 'summary': 'Sound.', 'findings': [], 'remaining': [], 'sources': []}
+    control = execution()
+    tool = wrap(parent, state, control)
+    conversation_tasks.ConversationTools(tool, parent, state, 'turn').understand({
+        'intent': 'deliver', 'relation': 'new', 'objective': 'Polish HOME.', 'criteria': [], 'kinds': ['games']})
+    res = json.loads(tool.execute(request(), control).output_json)
+    assert res['status'] == 'PLANNED'
+    planner_brief = stub.sessions[0][3]
+    assert 'detected_gui_only_scripts' in planner_brief
+    assert 'tests/visual_review.gd' in planner_brief

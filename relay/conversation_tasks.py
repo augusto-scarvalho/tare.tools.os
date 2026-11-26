@@ -403,8 +403,9 @@ def delivery_view(value, *, config=None, unit=None):
                 'tool that cannot start, the environment), the implementer cannot repair it: do not send it back. '
                 'Tell the user which check already failed in their project before any change and the line of its '
                 'output that shows why, and that the candidate is kept and nothing was applied. ')
-        result['next'] += 'For Backlog fields use product_help(backlog). Never guess enum values, open a replacement '
-        result['next'] += 'task, request installation access, or suggest direct edits to escape a failure guard.'
+        result['next'] += ('For Backlog fields use product_help(backlog). Never guess enum values, '
+                           + ('' if value.get('out_of_scope_blockers') else 'open a replacement task, ')
+                           + 'request installation access, or suggest direct edits to escape a failure guard.')
     elif value.get('verdict') == 'INCONCLUSIVE' and value.get('already_red'):
         # The user's stop on the red-baseline question: nothing ran, so nothing is there to repair.
         result['next'] = ('No implementer started: before any change the project already failed these checks: '
@@ -457,9 +458,17 @@ def delivery_view(value, *, config=None, unit=None):
             'Present expected vs discovered, proposed_objective, and options clearly to the user in chat and wait for '
             'their reply before calling demand(relation=revise) or implement.')
     if value.get('out_of_scope_blockers'):
-        result['next'] = (result.get('next', '') +
-            ' Also report the out-of-scope blocker(s) in out_of_scope_blockers to the user and offer to open a '
-            'separate follow-up task if they want.').strip()
+        if value.get('applied'):
+            result['next'] = (result.get('next', '') +
+                ' Also report the out-of-scope blocker(s) in out_of_scope_blockers to the user and offer to open a '
+                'separate follow-up task if they want.').strip()
+        else:
+            result['next'] = (result.get('next', '') +
+                ' Also report the out-of-scope blocker(s) in out_of_scope_blockers to the user. Do not retry '
+                'implement unchanged while those out-of-scope files and checks remain unchanged: offer to mark '
+                'GUI/manual-only checks via propose_checks, or—with the user\'s approval—widen this plan '
+                '(demand relation=revise + delegate_plan) or open a separate prerequisite task '
+                '(demand relation=new) to fix the blocked file first.').strip()
     if (value.get('checks_proposal_outcome') or {}).get('saved') and not value.get('applied'):
         result['next'] = (result.get('next', '') +
             ' .tare/checks.json was saved by the user; if checks failed due to missing/wrong check config and the '
@@ -577,11 +586,66 @@ def delivery_notice(root, invocation):
         '; the candidate is preserved.' if delivery.get('candidate') or delivery.get('worker') else '.')
 
 
+def _blocker_state(config, unit, blockers):
+    """Snapshot in-repo out-of-scope blocker files and .tare/checks.json so unchanged blind retries are refused."""
+    if not unit or not blockers:
+        return None
+    repo = unit.get('repository')
+    if not repo or repo not in (config.get('repositories') or {}):
+        return None
+    from .conversation_permissions import paths_allowed
+    from .turn_engine import PROJECT_CHECKS_FILE
+    target_paths = list(unit.get('target_paths') or ())
+    oos_paths = []
+    for sig in blockers:
+        payload = (sig or {}).get('payload') or {}
+        for raw in payload.get('paths') or ():
+            if not isinstance(raw, str):
+                continue
+            norm = raw.replace('\\', '/').lstrip('./')
+            if not norm or norm.startswith('/') or '..' in Path(norm).parts:
+                continue
+            if not paths_allowed([norm], target_paths) and norm not in oos_paths:
+                oos_paths.append(norm)
+    if not oos_paths:
+        return None
+    tracked = list(dict.fromkeys([*oos_paths, PROJECT_CHECKS_FILE]))
+    return {'paths': oos_paths, 'state': source_state(config, {repo: tracked})}
+
+
+def _unchanged_out_of_scope_blocker(config, task, plan, previous):
+    """Return unchanged out-of-scope blocker paths when a repeat implement() would hit the same unchanged blocker."""
+    if not previous or previous.get('applied'):
+        return None
+    unit = (plan or {}).get('unit') or {}
+    repo = unit.get('repository')
+    if not repo or repo not in (config.get('repositories') or {}):
+        return None
+    if not plan.get('sha256') or task.get('delivery_plan_sha256') != plan.get('sha256'):
+        return None
+    last = previous.get('last_attempt') or previous
+    if last.get('verdict') not in {'NOT_VERIFIED', 'INCONCLUSIVE'}:
+        return None
+    saved = previous.get('out_of_scope_blocker_state') or last.get('out_of_scope_blocker_state')
+    if not isinstance(saved, dict) or not saved.get('paths') or not isinstance(saved.get('state'), dict):
+        return None
+    from .conversation_permissions import paths_allowed
+    from .turn_engine import PROJECT_CHECKS_FILE
+    target_paths = list(unit.get('target_paths') or ())
+    still_oos = [p for p in saved['paths'] if not paths_allowed([p], target_paths)]
+    if not still_oos:
+        return None
+    tracked = list(dict.fromkeys([*saved['paths'], PROJECT_CHECKS_FILE]))
+    if source_state(config, {repo: tracked}) != saved['state']:
+        return None
+    return still_oos
+
+
 def retained_delivery(output):
     result={k:output[k] for k in ('verdict','applied','files','reason','route','receipt','targets',
         'source_state','candidate','worker','folder_access_request','implementer_report','implementation_stop',
         'scope_needed','checks_proposal_outcome','goal_drift','goal_drift_stop',
-        'out_of_scope_blockers') if k in output}
+        'out_of_scope_blockers','out_of_scope_blocker_state') if k in output}
     if output.get('audit'):
         # The labels are kept as well: confirm_apply's refusal has no review session to classify again (labelled).
         result['audit']={k:output['audit'][k] for k in ('verdict','route','session','reason','failure_code','budget','actor',
@@ -659,10 +723,12 @@ def recover_unapplied_delivery(root,state,value):
     raw_signals = list(result.get('agent_signals') or [])
     drift_signals = [s for s in raw_signals if isinstance(s, dict) and s.get('kind') == 'goal_drift']
     blocker_signals = [s for s in raw_signals if isinstance(s, dict) and s.get('kind') == 'out_of_scope_blocker']
+    blocker_state = _blocker_state(state['config'], plan, blocker_signals) if blocker_signals else None
     delivery=retained_delivery({**result,'candidate':candidate,'receipt':str(path),
                                 **({'scope_needed':needed} if needed else {}),
                                 **({'goal_drift':drift_signals} if drift_signals else {}),
-                                **({'out_of_scope_blockers':blocker_signals} if blocker_signals else {})})
+                                **({'out_of_scope_blockers':blocker_signals} if blocker_signals else {}),
+                                **({'out_of_scope_blocker_state':blocker_state} if blocker_state else {})})
     if lost:delivery['last_attempt']=task['delivery']
     task.update(stage='PENDING',delivery=delivery)
     if (result.get('goal_drift_stop') or drift_signals) and task.get('attempt_input'):
@@ -1126,10 +1192,11 @@ class ConversationTools:
         recovery = recovery_view(self.root, task)
         planning_recovery = None
         if not question and task.get('plan'):
-            from .planning_tools import MAX_REQUESTS, records, source_requalification
+            from .planning_tools import MAX_REQUESTS, MAX_TOTAL_ATTEMPTS, counts_toward_quota, records, source_requalification
             prior = records(self.root)
-            if sum(r.get('demand_id')==task['id'] and r.get('planning_revision',0)==task.get('planning_revision',0)
-                    for r in prior) >= MAX_REQUESTS:
+            cohort = [r for r in prior
+                      if r.get('demand_id')==task['id'] and r.get('planning_revision',0)==task.get('planning_revision',0)]
+            if sum(counts_toward_quota(r) for r in cohort) >= MAX_REQUESTS or len(cohort) >= MAX_TOTAL_ATTEMPTS:
                 repair = source_requalification(self.root, self.state['config'], task, prior)
                 if repair:
                     planning_recovery = {'status': 'SOURCE_CHANGED', 'changed_sources': repair['changed_sources'],
@@ -1700,6 +1767,19 @@ class ConversationTools:
                         'dispatch': {'implementer':'NOT_STARTED','auditor':'NOT_STARTED'},
                         'next': 'Stop and explain the concrete failure. The saved candidate and inconclusive audit were returned unchanged; '
                             'no implementer or auditor was rerun. An unchanged inconclusive implementation is not repeated in the same user turn.'}), True)
+                if (not candidate_revision and (previous.get('audit') or {}).get('verdict') != 'REVISE'
+                        and not getattr(self, '_host_retry_delivery', False)):
+                    blocked_paths = _unchanged_out_of_scope_blocker(self.state['config'], task, plan, previous)
+                    if blocked_paths:
+                        listed = ', '.join(blocked_paths)
+                        raise ValueError(
+                            f'The previous delivery stopped on unchanged out-of-scope blocker(s) ({listed}); '
+                            'retrying implement unchanged would hit the same blocker. '
+                            'If a failing check requires a GUI/GPU renderer or manual environment, call '
+                            f'propose_checks(mode="gui" or "manual", paths={json.dumps(blocked_paths)}) to update '
+                            '.tare/checks.json with the user\'s confirmation. Otherwise, ask the user before widening '
+                            'this plan (demand relation=revise + delegate_plan) or opening a separate prerequisite '
+                            'task (demand relation=new) to fix the blocked file(s) first.')
                 # Rehydrate the executable projection from the same immutable
                 # artifact. Earlier plan-only summary/phase limits are history,
                 # never implementation criteria, and require no paid replanning.
@@ -1867,6 +1947,9 @@ class ConversationTools:
                 if output.get('agent_signals'):
                     self._route_agent_signals(output, output['agent_signals'], request=request,
                                               control=control, value=value, task=task)
+                if not output.get('applied') and output.get('out_of_scope_blockers'):
+                    if bstate := _blocker_state(self.state['config'], plan['unit'], output['out_of_scope_blockers']):
+                        output['out_of_scope_blocker_state'] = bstate
                 if output.get('applied'):
                     task['verification'] = {'status': 'green', 'checks': output.get('checks_after', ''), 'applied': True}
                     output['targets'] = proof_paths(config, plan['unit'], [*plan.get('sources', []),

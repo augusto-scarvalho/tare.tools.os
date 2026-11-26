@@ -1501,7 +1501,10 @@ def config_for(root, mode='accept-edits'):
                 except (ValueError, OSError):
                     pass
     manual_paths = {p for row in declared['manual'].values() for p in row.get('paths') or ()}
-    if not verifiers and (root/'project.godot').is_file() and (root/'tests/smoke.gd').is_file() and 'tests/smoke.gd' not in manual_paths:
+    from .work_units import _godot_script_refuses_headless
+    if (not verifiers and (root/'project.godot').is_file() and (root/'tests/smoke.gd').is_file()
+            and 'tests/smoke.gd' not in manual_paths
+            and not _godot_script_refuses_headless(root/'tests/smoke.gd')):
         godot = shutil.which('godot_console') or shutil.which('godot')
         if godot:
             # Fresh private candidates have no imported-resource cache. Prepare
