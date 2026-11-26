@@ -790,10 +790,13 @@ def sync_managed_from_origin(
         name=view['origin']['bundle_id'],
         storage_root=storage_root,
     )
+    live_git = _bundles._git_origin_info(root)
     return _managed.apply_upstream_update(
         skill_id,
         captured['snapshot_id'],
         keep_overlay=keep_overlay,
+        origin_git_head=live_git.get('origin_git_head'),
+        origin_git_remote=live_git.get('origin_git_remote'),
         storage_root=storage_root,
     )
 

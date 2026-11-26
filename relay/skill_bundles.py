@@ -74,12 +74,15 @@ def _sanitize_git_remote(url: str | None) -> str | None:
     if GIT_SCP_REMOTE_RE.fullmatch(raw):
         return raw[:300]
     parsed = urllib.parse.urlsplit(raw)
-    if parsed.scheme.lower() not in ('https', 'http', 'ssh') or not parsed.hostname:
+    scheme = parsed.scheme.lower()
+    if scheme not in ('https', 'http', 'ssh') or not parsed.hostname:
         return None
     netloc = parsed.hostname
     if parsed.port is not None:
         netloc = f'{netloc}:{parsed.port}'
-    cleaned = urllib.parse.urlunsplit((parsed.scheme.lower(), netloc, parsed.path, '', ''))
+    if scheme == 'ssh' and parsed.username:
+        netloc = f'{parsed.username}@{netloc}'
+    cleaned = urllib.parse.urlunsplit((scheme, netloc, parsed.path, '', ''))
     return cleaned[:300]
 
 
@@ -131,11 +134,63 @@ def _git_origin_info(root: Path, *, timeout: float = 2.0) -> dict[str, str]:
         return {}
 
 
-def _git_ls_remote_head(remote_url: str | None, *, timeout: float = 8.0) -> tuple[str | None, str | None]:
-    """Read-only `git ls-remote <remote> HEAD`. Never mutates local state; fails closed offline."""
+def _git_upstream_ref(root: Path, *, timeout: float = 2.0) -> str:
+    """Return the upstream branch ref (e.g. refs/heads/main) for `root`, or 'HEAD' when none is configured."""
+    try:
+        from compute_plane.managed_process import host_executable
+        git_bin = host_executable('git')
+    except Exception:
+        git_bin = shutil.which('git')
+    if not git_bin:
+        return 'HEAD'
+    env = _read_only_git_env()
+    try:
+        res = subprocess.run(
+            [git_bin, '-c', 'core.fsmonitor=false', '-C', str(root),
+             'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=timeout, env=env,
+        )
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 'HEAD'
+    if res.returncode != 0:
+        return 'HEAD'
+    upstream = res.stdout.strip()
+    if '/' in upstream:
+        _, branch = upstream.split('/', 1)
+        if branch and not branch.startswith('-') and not any(ch in branch for ch in ('\r', '\n', '\x00', ' ')):
+            return f'refs/heads/{branch}'
+    return 'HEAD'
+
+
+def _git_is_ancestor(root: Path, ancestor: str, descendant: str = 'HEAD', *, timeout: float = 2.0) -> bool:
+    """Return True when `ancestor` commit is already contained in `descendant` in local repo `root`."""
+    if not GIT_SHA_RE.fullmatch(ancestor or ''):
+        return False
+    try:
+        from compute_plane.managed_process import host_executable
+        git_bin = host_executable('git')
+    except Exception:
+        git_bin = shutil.which('git')
+    if not git_bin:
+        return False
+    env = _read_only_git_env()
+    try:
+        res = subprocess.run(
+            [git_bin, '-c', 'core.fsmonitor=false', '-C', str(root),
+             'merge-base', '--is-ancestor', ancestor, descendant],
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=timeout, env=env,
+        )
+        return res.returncode == 0
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
+
+
+def _git_ls_remote_head(remote_url: str | None, *, ref: str = 'HEAD', timeout: float = 8.0) -> tuple[str | None, str | None]:
+    """Read-only `git ls-remote <remote> <ref>`. Never mutates local state; fails closed offline."""
     cleaned = _sanitize_git_remote(remote_url)
     if not cleaned:
         return None, 'no_remote'
+    target_ref = ref if (isinstance(ref, str) and ref and not ref.startswith('-')) else 'HEAD'
     try:
         from compute_plane.managed_process import host_executable
         git_bin = host_executable('git')
@@ -146,7 +201,7 @@ def _git_ls_remote_head(remote_url: str | None, *, timeout: float = 8.0) -> tupl
     env = _read_only_git_env()
     try:
         res = subprocess.run(
-            [git_bin, '-c', 'credential.helper=', 'ls-remote', '--', cleaned, 'HEAD'],
+            [git_bin, '-c', 'credential.helper=', 'ls-remote', '--', cleaned, target_ref],
             capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=timeout, env=env,
         )
     except subprocess.TimeoutExpired:

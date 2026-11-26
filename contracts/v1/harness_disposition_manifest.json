@@ -4531,8 +4531,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 89501,
-      "sha256": "2e68d7c9b012e942d10d4c47306fe6f75abce99834383a464e442a67cb289f61"
+      "size_bytes": 91792,
+      "sha256": "b2aeac9c8c80139556abd4f757174144aabbbbe4a6f987438db5e8d09a5f8c33"
     },
     {
       "name": "managed_skills.py",
@@ -4541,8 +4541,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 64763,
-      "sha256": "579de041d2e06b8eacff7291d749e7e9b6a08533009199128f315e5b401050d6"
+      "size_bytes": 65711,
+      "sha256": "30289b3a0d860a6b279fe9f798f4a195cf570e1ae7c64f746f7790b85142aafd"
     },
     {
       "name": "console_skills.py",
@@ -4561,8 +4561,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 34227,
-      "sha256": "b1f8673b56483f9d6cd0426e9b7d43a03993cc75a201ef4f15e48adbe172f1e3"
+      "size_bytes": 34392,
+      "sha256": "6fd3f369e5fa66fe338606a73de83c7f187f45457c76fb61018f84a728d26ac0"
     },
     {
       "name": "skill_selector.py",

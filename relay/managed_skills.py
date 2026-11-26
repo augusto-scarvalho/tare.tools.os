@@ -781,6 +781,8 @@ def apply_upstream_update(
     snapshot_ref: str = 'latest',
     *,
     keep_overlay: bool = False,
+    origin_git_head: str | None = None,
+    origin_git_remote: str | None = None,
     storage_root=None,
 ) -> dict:
     """Explicitly advance a managed skill to a verified inert snapshot (keep_overlay preserves local text edit)."""
@@ -799,8 +801,12 @@ def apply_upstream_update(
     entry['snapshot_id'] = manifest['snapshot_id']
     entry['bundle_sha256'] = manifest['bundle_sha256']
     entry['origin_path'] = manifest['source']['origin_path']
-    entry['origin_git_head'] = manifest['source'].get('origin_git_head')
-    entry['origin_git_remote'] = manifest['source'].get('origin_git_remote')
+    entry['origin_git_head'] = (
+        origin_git_head if origin_git_head is not None else manifest['source'].get('origin_git_head')
+    )
+    entry['origin_git_remote'] = (
+        origin_git_remote if origin_git_remote is not None else manifest['source'].get('origin_git_remote')
+    )
     entry['skill_name'] = manifest['source']['skill_name']
     entry['description'] = manifest['source']['description']
     entry['base_text'] = new_base
@@ -1113,11 +1119,22 @@ def check_skill_updates(
                 row['remote_status'] = 'no_remote'
                 row['remote_git_head'] = None
             else:
-                r_head, r_err = _bundles._git_ls_remote_head(remote_url, timeout=timeout)
+                origin_root = Path(entry['origin_path']) if entry.get('origin_path') else None
+                target_ref = (
+                    _bundles._git_upstream_ref(origin_root)
+                    if origin_root and origin_root.is_dir() else 'HEAD'
+                )
+                r_head, r_err = _bundles._git_ls_remote_head(remote_url, ref=target_ref, timeout=timeout)
+                if r_err == 'no_head' and target_ref != 'HEAD':
+                    r_head, r_err = _bundles._git_ls_remote_head(remote_url, ref='HEAD', timeout=timeout)
                 row['remote_git_head'] = r_head
                 if r_err is not None or not r_head:
                     row['remote_status'] = r_err or 'offline_or_error'
-                elif local_head and r_head != local_head:
+                elif local_head and r_head == local_head:
+                    row['remote_status'] = 'up_to_date'
+                elif origin_root and origin_root.is_dir() and _bundles._git_is_ancestor(origin_root, r_head, 'HEAD'):
+                    row['remote_status'] = 'local_ahead'
+                elif local_head:
                     row['remote_status'] = 'remote_ahead'
                     remote_ahead += 1
                 else:

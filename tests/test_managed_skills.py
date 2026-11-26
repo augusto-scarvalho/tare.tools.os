@@ -1151,9 +1151,17 @@ def test_auto_skills_persists_across_restarts_and_git_skill_update_sensitization
     summary = managed.outdated_managed_summary(storage_root=storage)
     assert summary['count'] == 1 and summary['skills'][0]['reason'] == 'git_head_changed'
 
-    # 3. Read-only check_skill_updates(remote=True) + CLI `tare skills check --remote` distinguishes local vs remote_ahead.
+    # 3. Read-only check_skill_updates(remote=True) + CLI `tare skills check --remote` distinguishes local vs remote_ahead,
+    #    never falsely reports local_ahead unpushed commits as remote_ahead, and preserves SSH usernames without passwords.
+    assert bundles._sanitize_git_remote('ssh://git@github.com/example/pxl-repo.git') == 'ssh://git@github.com/example/pxl-repo.git'
+    assert bundles._sanitize_git_remote('ssh://git:secret@github.com/example/pxl-repo.git') == 'ssh://git@github.com/example/pxl-repo.git'
+    monkeypatch.setattr(bundles, '_git_ls_remote_head', lambda url, ref='HEAD', timeout=8.0: (head1, None))
+    rep_local_ahead = managed.check_skill_updates(remote=True, storage_root=storage)
+    assert rep_local_ahead['remote_ahead_count'] == 0
+    assert rep_local_ahead['items'][0]['remote_status'] == 'local_ahead'
+
     head3 = 'f' * 40
-    monkeypatch.setattr(bundles, '_git_ls_remote_head', lambda url, timeout=8.0: (head3, None))
+    monkeypatch.setattr(bundles, '_git_ls_remote_head', lambda url, ref='HEAD', timeout=8.0: (head3, None))
     assert tare_ops.main(['skills', 'check', '--remote', '--json']) == 0
     rep = json.loads(capsys.readouterr().out)
     assert rep['local_outdated_count'] == 1 and rep['remote_ahead_count'] == 1
@@ -1162,7 +1170,7 @@ def test_auto_skills_persists_across_restarts_and_git_skill_update_sensitization
     assert rep['items'][0]['remote_git_head'] == head3
 
     # 4. TUI surfaces passive `Skills (1↑) · /skills` badge in header and `GitHub` button inside /skills,
-    #    and updating from origin clears the header badge on close.
+    #    and updating from origin clears the header badge on close (including commits that do not change captured bytes).
     async def scenario():
         app = WorkConsole(proj, backend=FakeBackend(), initial_mode='assistant')
         async with app.run_test(size=(120, 36)) as pilot:
@@ -1192,3 +1200,12 @@ def test_auto_skills_persists_across_restarts_and_git_skill_update_sensitization
             assert app._skills_update_note == ''
 
     asyncio.run(scenario())
+
+    # An empty/metadata-only commit changes HEAD without changing captured snapshot bytes; sync clears drift cleanly.
+    subprocess.run(['git', 'commit', '--allow-empty', '-q', '-m', 'empty bump'], cwd=repo, env=git_env, check=True)
+    head_empty = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+    assert head_empty != head2
+    assert managed.outdated_managed_summary(storage_root=storage)['count'] == 1
+    synced = vendor_skills.sync_managed_from_origin('pxl-git', storage_root=storage)
+    assert synced['origin']['origin_git_head'] == head_empty
+    assert managed.outdated_managed_summary(storage_root=storage)['count'] == 0
