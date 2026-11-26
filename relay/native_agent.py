@@ -468,7 +468,7 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 'timeout': resolved_limits['max_seconds'], 'limits': resolved_limits,
                 'invocations': [], 'authority': 'NONE', 'streaming': streaming(deployment)}
             from .native_generation import model_context_policy
-            state['model_context_policy'] = model_context_policy(deployment)
+            state['model_context_policy'] = model_context_policy(deployment, ephemeral=bool(delegated_leaf))
             if config['role'] in {'auditor', 'planner'} and resolved_limits['max_seconds'] is not None:
                 from .challenger import local
                 if not local(deployment):
@@ -729,8 +729,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             caps = config.get('capabilities')
             can_edit = (config['role'] == 'implementer' and (caps is None or 'edit' in caps)
                         and any(config['writable'].values()))
-            compact_agy = (profile.protocol == 'vendor-cli' and profile.endpoint == 'cli://agy'
-                           and policy.trigger_limit <= COMPACT_CONTEXT_TRIGGER_LIMIT)
+            is_agy = profile.protocol == 'vendor-cli' and profile.endpoint == 'cli://agy'
+            compact_agy = is_agy and policy.trigger_limit <= COMPACT_CONTEXT_TRIGGER_LIMIT
             projection_cfg = deployment.get('native_context_projection', {})
             if compact_agy and (can_edit or config['role'] == 'planner'):
                 state['compact_context_guidance'] = True
@@ -740,6 +740,12 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                     state['elide_duplicate_reads'] = True
                 if can_edit and 'elide_edited_reads' not in projection_cfg:
                     state['elide_edited_reads'] = True
+            elif is_agy and delegated_leaf and (can_edit or config['role'] == 'planner'):
+                # Ephemeral delegated AGY leaves use --resume delta caching at ~130k headroom:
+                # keep elide_edited_reads off by default so edits do not rewrite history and bust
+                # the prefix cache, while keeping duplicate-read elision on to prevent re-read bloat.
+                if 'elide_duplicate_reads' not in projection_cfg:
+                    state['elide_duplicate_reads'] = True
             save_json(path, state)
             if continuation:
                 parent['continued_to'] = str(root)

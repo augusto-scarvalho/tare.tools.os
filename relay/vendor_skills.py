@@ -405,8 +405,14 @@ def _unified_diff(before: str, after: str, from_label: str, to_label: str) -> st
     return '\n'.join(lines[:400])
 
 
-def check_origin_drift(origin_path: str | None, base_sha256: str, base_text: str) -> dict:
-    """Safely check whether a managed skill's local origin SKILL.md changed on disk (zero execution, no link traversal)."""
+def check_origin_drift(
+    origin_path: str | None,
+    base_sha256: str,
+    base_text: str,
+    *,
+    base_git_head: str | None = None,
+) -> dict:
+    """Safely check whether a managed skill's local origin SKILL.md or Git HEAD changed on disk (zero execution, no link traversal)."""
     if not origin_path:
         return {'available': False, 'status': 'no_origin'}
     root = Path(origin_path)
@@ -426,14 +432,30 @@ def check_origin_drift(origin_path: str | None, base_sha256: str, base_text: str
         return {'available': False, 'status': 'origin_unavailable'}
 
     current_sha = hashlib.sha256(live_text.encode('utf-8')).hexdigest()
-    if current_sha == base_sha256:
-        return {'available': False, 'status': 'in_sync', 'current_sha256': current_sha}
-    return {
-        'available': True,
-        'status': 'changed',
-        'current_sha256': current_sha,
-        'skill_md_diff': _unified_diff(base_text, live_text, 'base (frozen)', 'origin (live)'),
+    git_info = _bundles._git_origin_info(root) if (base_git_head or (root / '.git').exists()) else {}
+    current_head = git_info.get('origin_git_head')
+    current_remote = git_info.get('origin_git_remote')
+    git_meta = {
+        **({'base_git_head': base_git_head} if base_git_head else {}),
+        **({'current_git_head': current_head} if current_head else {}),
+        **({'origin_git_remote': current_remote} if current_remote else {}),
     }
+    if current_sha != base_sha256:
+        return {
+            'available': True,
+            'status': 'changed',
+            'current_sha256': current_sha,
+            'skill_md_diff': _unified_diff(base_text, live_text, 'base (frozen)', 'origin (live)'),
+            **git_meta,
+        }
+    if base_git_head and current_head and current_head != base_git_head:
+        return {
+            'available': True,
+            'status': 'git_head_changed',
+            'current_sha256': current_sha,
+            **git_meta,
+        }
+    return {'available': False, 'status': 'in_sync', 'current_sha256': current_sha, **git_meta}
 
 
 def _scan_source(source: dict) -> list[dict]:

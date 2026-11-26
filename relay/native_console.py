@@ -366,7 +366,11 @@ class WorkConsole(BackgroundExecution, ConversationWorkbench, ConversationModels
         self.permission_write_paths = []
         self.project_admission = {'mode': 'quarantine', 'root_sha256': None, 'nested': False}
         self.selected_managed_skills = []
-        self.auto_skills = False
+        try:
+            from .managed_skills import get_auto_skills
+            self.auto_skills = get_auto_skills()
+        except (OSError, ValueError):
+            self.auto_skills = False
         self.command_protection = {}
         self.project_graph_path = ''
         self.graph_profile_root = self.graph_profile_error = None
@@ -777,6 +781,7 @@ class WorkConsole(BackgroundExecution, ConversationWorkbench, ConversationModels
         self.set_interval(30, lambda: self.sync_header(force=True))
         self.set_interval(60, self.check_storage_space)
         self.call_after_refresh(self.check_storage_space)
+        self.call_after_refresh(self.check_skills_updates)
         from .storage import sweep_in_background
         sweep_in_background()  # what an interrupted run of tare left, on a thread of its own
         self.set_interval(1800, self.check_product_update)
@@ -1463,6 +1468,11 @@ class WorkConsole(BackgroundExecution, ConversationWorkbench, ConversationModels
 
     def toggle_auto_skills(self) -> bool:
         self.auto_skills = not bool(self.auto_skills)
+        try:
+            from .managed_skills import set_auto_skills
+            set_auto_skills(self.auto_skills)
+        except (OSError, ValueError):
+            pass
         if self.demand_id:
             self.save_demand()
         return self.auto_skills

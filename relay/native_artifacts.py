@@ -5,7 +5,7 @@ from pathlib import Path, PurePosixPath
 import re
 from typing import Literal, get_origin
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from pydantic_core import PydanticCustomError
 from compute_plane.native_journal import io_path, regular, save_json
 from compute_plane.native_models import encode, object_json
@@ -57,6 +57,24 @@ class Signal(Record):
     summary: str = Field(min_length=1, max_length=300)
     reason: str = Field(min_length=1, max_length=1000)
     payload: ProposeChecksPayload | GoalDriftPayload | OutOfScopeBlockerPayload
+
+
+class AuditorSignal(Record):
+    kind: Literal['out_of_scope_blocker']
+    summary: str = Field(min_length=1, max_length=300)
+    reason: str = Field(min_length=1, max_length=1000)
+    payload: OutOfScopeBlockerPayload
+
+    @field_validator('kind', mode='before')
+    @classmethod
+    def _reject_disallowed_auditor_signal_kind(cls, value):
+        if isinstance(value, str) and value in {'propose_checks', 'goal_drift'}:
+            raise PydanticCustomError(
+                'agent_signal_emitter_not_allowed',
+                'agent_signal_emitter_not_allowed:auditor:{kind}',
+                {'kind': value},
+            )
+        return value
 
 
 class Proposal(Record):
@@ -168,6 +186,10 @@ class Review(Proposal):
     findings: list[Finding] = Field(description=(
         'Unresolved defects or evidence gaps only, never positive observations. '
         'ACCEPT requires findings=[] and remaining=[]. Put supporting observations in summary and sources.'))
+    signals: list[AuditorSignal] = Field(default_factory=list, max_length=3, description=(
+        'Optional structured advisory signals for the host/user (at most 3). '
+        'Auditors may only emit out_of_scope_blocker (pre-existing failure/flake outside task scope). '
+        'Omit unless needed.'))
 
 
 MODELS = {'planner': Plan, 'implementer': Proposal, 'plan-auditor': Review,

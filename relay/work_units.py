@@ -238,7 +238,13 @@ def _godot_script_refuses_headless(path: Path) -> bool:
     return False
 
 
-def headless_refusing_godot_scripts(root, paths=None, *, limit=32):
+_GODOT_SCAN_SKIP_DIRS = frozenset({
+    '.git', '.godot', '.tare', '.venv', 'venv', 'addons', 'node_modules',
+    'build', 'dist', 'out', 'target', '__pycache__',
+})
+
+
+def headless_refusing_godot_scripts(root, paths=None, *, limit=32, max_scan=256, max_depth=4):
     """Return sorted relative POSIX paths of Godot scripts under `root` that explicitly refuse --headless."""
     base = Path(root)
     if not (base / 'project.godot').is_file():
@@ -249,20 +255,39 @@ def headless_refusing_godot_scripts(root, paths=None, *, limit=32):
             norm = test_file(rel).replace('\\', '/').lstrip('./')
             if norm.endswith('.gd') and norm not in candidates:
                 candidates.append(norm)
-    else:
-        tests_dir = base / 'tests'
-        if tests_dir.is_dir() and not tests_dir.is_symlink():
-            for child in sorted(tests_dir.rglob('*.gd')):
-                if len(candidates) >= limit:
-                    break
-                if child.is_symlink():
+        return sorted(rel for rel in candidates[:limit] if _godot_script_refuses_headless(base / rel))
+
+    scanned = 0
+    found = []
+
+    def _walk(directory: Path, depth: int):
+        nonlocal scanned
+        if depth > max_depth or scanned >= max_scan or len(found) >= limit:
+            return
+        try:
+            entries = sorted(directory.iterdir(), key=lambda p: (0 if p.name == 'tests' else 1, p.name.lower()))
+        except OSError:
+            return
+        for child in entries:
+            if scanned >= max_scan or len(found) >= limit:
+                return
+            if child.is_symlink():
+                continue
+            if child.is_dir():
+                if child.name in _GODOT_SCAN_SKIP_DIRS or child.name.startswith('.'):
                     continue
+                _walk(child, depth + 1)
+            elif child.is_file() and child.suffix == '.gd':
+                scanned += 1
                 try:
                     rel = child.relative_to(base).as_posix()
                 except ValueError:
                     continue
-                candidates.append(rel)
-    return sorted(rel for rel in candidates[:limit] if _godot_script_refuses_headless(base / rel))
+                if _godot_script_refuses_headless(child):
+                    found.append(rel)
+
+    _walk(base, 0)
+    return sorted(found)
 
 
 def narrowed(name, runner, tests):
@@ -1445,7 +1470,7 @@ def verification_evidence(session):
     return rows
 
 
-def _effective_trigger_limit(deployment):
+def _effective_trigger_limit(deployment, *, ephemeral=False):
     from tare_tools_agent_runtime import ContextPolicy
     from .native_generation import model_context_policy
     profile = (deployment or {}).get('native_profile') or {}
@@ -1454,7 +1479,7 @@ def _effective_trigger_limit(deployment):
             or window <= output_tokens + 128):
         return None
     try:
-        fractions = model_context_policy(deployment)
+        fractions = model_context_policy(deployment, ephemeral=ephemeral)
         return ContextPolicy(window=window, output_reserve=output_tokens, margin=128, **fractions).trigger_limit
     except (ValueError, KeyError, TypeError):
         return None
@@ -1550,7 +1575,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
         if executed_rungs >= MAX_RUNGS or stop():
             break
         if min_trigger_limit is not None:
-            candidate_trigger = _effective_trigger_limit(deployment)
+            candidate_trigger = _effective_trigger_limit(deployment, ephemeral=True)
             if candidate_trigger is None or candidate_trigger <= min_trigger_limit:
                 visited.append(name)
                 skipped_reasons.append((name, 'CONTEXT_WINDOW_NOT_LARGER'))
@@ -2077,7 +2102,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     and bool((result.get('implementation_stop') or {}).get('compaction_loop'))
                 )
                 if can_escalate:
-                    trigger = _effective_trigger_limit(deployment)
+                    trigger = _effective_trigger_limit(deployment, ephemeral=True)
                     if trigger is not None:
                         compaction_escalated = True
                         min_trigger_limit = trigger

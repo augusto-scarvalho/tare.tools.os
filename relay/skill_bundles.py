@@ -15,9 +15,11 @@ from pathlib import Path
 import re
 import shutil
 import stat
+import subprocess
 import sys
 import time
 import tomllib
+import urllib.parse
 import uuid
 
 from . import console_resources as _resources
@@ -58,6 +60,106 @@ SNAPSHOT_ID_RE = re.compile(r'^[0-9a-f]{16,64}$')
 MD_LINK_RE = re.compile(r'(?<!!)\[[^\]]{0,200}\]\(([^)\r\n]{1,300})\)')
 BACKTICK_PATH_RE = re.compile(r'`((?:\./|\.\./)?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+\.[A-Za-z0-9]{1,12})`')
 URL_SCHEME_RE = re.compile(r'^[a-zA-Z][a-zA-Z0-9+.-]*:')
+GIT_SHA_RE = re.compile(r'^[0-9a-f]{40}$')
+GIT_SCP_REMOTE_RE = re.compile(r'^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:[A-Za-z0-9._/~-]+$')
+
+
+def _sanitize_git_remote(url: str | None) -> str | None:
+    """Return a credential-free read-only Git remote URL (https/http/ssh/SCP only), or None."""
+    if not isinstance(url, str):
+        return None
+    raw = url.strip()
+    if not raw or raw.startswith('-') or any(ch in raw for ch in ('\r', '\n', '\x00')):
+        return None
+    if GIT_SCP_REMOTE_RE.fullmatch(raw):
+        return raw[:300]
+    parsed = urllib.parse.urlsplit(raw)
+    if parsed.scheme.lower() not in ('https', 'http', 'ssh') or not parsed.hostname:
+        return None
+    netloc = parsed.hostname
+    if parsed.port is not None:
+        netloc = f'{netloc}:{parsed.port}'
+    cleaned = urllib.parse.urlunsplit((parsed.scheme.lower(), netloc, parsed.path, '', ''))
+    return cleaned[:300]
+
+
+def _read_only_git_env() -> dict[str, str]:
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS='0', GIT_TERMINAL_PROMPT='0')
+    for key in ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR'):
+        env.pop(key, None)
+    return env
+
+
+def _git_origin_info(root: Path, *, timeout: float = 2.0) -> dict[str, str]:
+    """Read-only Git provenance (HEAD SHA + sanitized remote URL) for a local skill folder, or {}."""
+    try:
+        from compute_plane.managed_process import host_executable
+        git_bin = host_executable('git')
+    except Exception:
+        git_bin = shutil.which('git')
+    if not git_bin:
+        return {}
+    env = _read_only_git_env()
+    base = [git_bin, '-c', 'core.fsmonitor=false', '-c', 'core.quotepath=false', '-C', str(root)]
+    try:
+        top = subprocess.run([*base, 'rev-parse', '--show-toplevel'], capture_output=True, text=True,
+                             encoding='utf-8', errors='replace', timeout=timeout, env=env)
+        if top.returncode != 0 or not top.stdout.strip():
+            return {}
+        head_res = subprocess.run([*base, 'rev-parse', 'HEAD'], capture_output=True, text=True,
+                                  encoding='utf-8', errors='replace', timeout=timeout, env=env)
+        head = head_res.stdout.strip().lower() if head_res.returncode == 0 else ''
+        if not GIT_SHA_RE.fullmatch(head):
+            return {}
+        info = {'origin_git_head': head}
+        rem = subprocess.run([*base, 'remote', 'get-url', 'origin'], capture_output=True, text=True,
+                             encoding='utf-8', errors='replace', timeout=timeout, env=env)
+        remote_raw = rem.stdout.strip() if rem.returncode == 0 else ''
+        if not remote_raw:
+            rems = subprocess.run([*base, 'remote'], capture_output=True, text=True,
+                                  encoding='utf-8', errors='replace', timeout=timeout, env=env)
+            first = next((ln.strip() for ln in rems.stdout.splitlines() if ln.strip()), '') if rems.returncode == 0 else ''
+            if first and not first.startswith('-'):
+                rem2 = subprocess.run([*base, 'remote', 'get-url', '--', first], capture_output=True, text=True,
+                                      encoding='utf-8', errors='replace', timeout=timeout, env=env)
+                remote_raw = rem2.stdout.strip() if rem2.returncode == 0 else ''
+        cleaned = _sanitize_git_remote(remote_raw)
+        if cleaned:
+            info['origin_git_remote'] = cleaned
+        return info
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return {}
+
+
+def _git_ls_remote_head(remote_url: str | None, *, timeout: float = 8.0) -> tuple[str | None, str | None]:
+    """Read-only `git ls-remote <remote> HEAD`. Never mutates local state; fails closed offline."""
+    cleaned = _sanitize_git_remote(remote_url)
+    if not cleaned:
+        return None, 'no_remote'
+    try:
+        from compute_plane.managed_process import host_executable
+        git_bin = host_executable('git')
+    except Exception:
+        git_bin = shutil.which('git')
+    if not git_bin:
+        return None, 'git_unavailable'
+    env = _read_only_git_env()
+    try:
+        res = subprocess.run(
+            [git_bin, '-c', 'credential.helper=', 'ls-remote', '--', cleaned, 'HEAD'],
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=timeout, env=env,
+        )
+    except subprocess.TimeoutExpired:
+        return None, 'timeout'
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None, 'offline_or_error'
+    if res.returncode != 0:
+        return None, 'offline_or_error'
+    for line in res.stdout.splitlines():
+        parts = line.strip().split()
+        if parts and GIT_SHA_RE.fullmatch(parts[0].lower()):
+            return parts[0].lower(), None
+    return None, 'no_head'
 
 
 def snapshots_root(storage_root=None) -> Path:
@@ -627,6 +729,7 @@ def _scan_bundle(
     )
     snapshot_id = bundle_sha256[:16]
 
+    git_info = _git_origin_info(abs_root)
     manifest = {
         'schema': SCHEMA,
         'authority': 'NONE',
@@ -643,6 +746,7 @@ def _scan_bundle(
             'skill_name': skill_name,
             'description': skill_description,
             'skill_md_sha256': captured_map['SKILL.md']['sha256'],
+            **git_info,
         },
         'scope': {
             'kind': 'full_directory' if complete_directory else 'subset',
@@ -1413,6 +1517,18 @@ def main(argv=None) -> int:
     p_select.add_argument('--max-shortlist', type=int, default=5, help='Maximum shortlist size (1..5)')
     p_select.add_argument('--json', action='store_true', dest='as_json')
 
+    p_check = sub.add_parser('check', help='Check managed skills for local origin drift, Git HEAD changes, or remote Git updates (read-only)')
+    p_check.add_argument('skill_id', nargs='?', help='Optional managed skill id (omit to check all)')
+    p_check.add_argument('--remote', action='store_true',
+                         help='Query remote Git HEAD via read-only git ls-remote (never modifies local repos)')
+    p_check.add_argument('--json', action='store_true', dest='as_json')
+
+    p_auto = sub.add_parser('auto-select', help='Show or configure persistent opt-in auto-selection of managed skills')
+    auto_mode = p_auto.add_mutually_exclusive_group()
+    auto_mode.add_argument('--enable', action='store_true', help='Enable automatic deterministic skill selection')
+    auto_mode.add_argument('--disable', action='store_true', help='Disable automatic skill selection (manual Activate only)')
+    p_auto.add_argument('--json', action='store_true', dest='as_json')
+
     args = parser.parse_args(argv)
     try:
         if args.action == 'inspect':
@@ -1656,6 +1772,22 @@ def main(argv=None) -> int:
                 safe=False,
             )
             print(json.dumps(receipt, indent=2, ensure_ascii=False) if args.as_json else selector.format_selection(receipt))
+            return 0
+        if args.action == 'check':
+            report = managed.check_skill_updates(args.skill_id, remote=args.remote)
+            print(json.dumps(report, indent=2, ensure_ascii=False) if args.as_json else managed.format_update_check(report))
+            return 0
+        if args.action == 'auto-select':
+            if args.enable:
+                enabled = managed.set_auto_skills(True)
+            elif args.disable:
+                enabled = managed.set_auto_skills(False)
+            else:
+                enabled = managed.get_auto_skills()
+            if args.as_json:
+                print(json.dumps({'auto_skills': enabled}, indent=2))
+            else:
+                print('Auto-select managed skills: ' + ('ENABLED' if enabled else 'DISABLED'))
             return 0
     except ValueError as exc:
         print(f'Error: {exc}', file=sys.stderr)
