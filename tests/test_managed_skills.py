@@ -1095,3 +1095,117 @@ def test_managed_skill_skip_plan_review_lifecycle_cli_and_tui(tmp_path, monkeypa
             await pilot.pause()
 
     asyncio.run(scenario())
+
+
+def test_auto_skills_persists_across_restarts_and_git_skill_update_sensitization(tmp_path, monkeypatch, capsys):
+    import os
+    import subprocess
+    from relay import vendor_skills
+
+    storage = tmp_path / 'state'
+    proj = tmp_path / 'proj'
+    proj.mkdir()
+    monkeypatch.setenv('TARE_STORAGE_ROOT', str(storage))
+
+    # 1. Persistent auto_skills defaults to False, toggles via CLI & TUI, and survives WorkConsole restarts.
+    assert managed.get_auto_skills(storage_root=storage) is False
+    assert tare_ops.main(['skills', 'auto-select', '--enable', '--json']) == 0
+    assert json.loads(capsys.readouterr().out) == {'auto_skills': True}
+    assert managed.get_auto_skills(storage_root=storage) is True
+    app1 = WorkConsole(proj, backend=FakeBackend(), initial_mode='assistant')
+    assert app1.auto_skills is True
+    assert app1.toggle_auto_skills() is False
+    assert managed.get_auto_skills(storage_root=storage) is False
+    app2 = WorkConsole(proj, backend=FakeBackend(), initial_mode='assistant')
+    assert app2.auto_skills is False
+
+    # 2. Local Git skill repo records origin_git_head + sanitized origin_git_remote and detects Git HEAD drift
+    #    even when SKILL.md itself is unchanged.
+    repo = tmp_path / 'pxl-repo'
+    repo.mkdir()
+    _write(repo, 'SKILL.md', '---\nname: PXL Git\n---\nDraw crisp pixel art.\n')
+    _write(repo, 'bin/tool.js', 'console.log("v1");\n')
+    git_env = {**os.environ, 'GIT_AUTHOR_NAME': 'Test', 'GIT_AUTHOR_EMAIL': 'test@example.com',
+               'GIT_COMMITTER_NAME': 'Test', 'GIT_COMMITTER_EMAIL': 'test@example.com'}
+    subprocess.run(['git', 'init', '-q'], cwd=repo, env=git_env, check=True)
+    subprocess.run(['git', 'remote', 'add', 'origin', 'https://user:secret@github.com/example/pxl-repo.git'],
+                   cwd=repo, env=git_env, check=True)
+    subprocess.run(['git', 'add', '.'], cwd=repo, env=git_env, check=True)
+    subprocess.run(['git', 'commit', '-q', '-m', 'init'], cwd=repo, env=git_env, check=True)
+    head1 = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+
+    manifest = bundles.capture_bundle(repo, name='pxl-git', storage_root=storage)
+    assert manifest['source']['origin_git_head'] == head1
+    assert manifest['source']['origin_git_remote'] == 'https://github.com/example/pxl-repo.git'
+    assert 'secret' not in manifest['source']['origin_git_remote']
+    managed.adopt_snapshot('pxl-git', storage_root=storage)
+    assert managed.outdated_managed_summary(storage_root=storage)['count'] == 0
+
+    # Commit a change to bin/tool.js WITHOUT touching SKILL.md -> Git HEAD drift is detected!
+    _write(repo, 'bin/tool.js', 'console.log("v2");\n')
+    subprocess.run(['git', 'add', 'bin/tool.js'], cwd=repo, env=git_env, check=True)
+    subprocess.run(['git', 'commit', '-q', '-m', 'update script'], cwd=repo, env=git_env, check=True)
+    head2 = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+    assert head2 != head1
+
+    summary = managed.outdated_managed_summary(storage_root=storage)
+    assert summary['count'] == 1 and summary['skills'][0]['reason'] == 'git_head_changed'
+
+    # 3. Read-only check_skill_updates(remote=True) + CLI `tare skills check --remote` distinguishes local vs remote_ahead,
+    #    never falsely reports local_ahead unpushed commits as remote_ahead, and preserves SSH usernames without passwords.
+    assert bundles._sanitize_git_remote('ssh://git@github.com/example/pxl-repo.git') == 'ssh://git@github.com/example/pxl-repo.git'
+    assert bundles._sanitize_git_remote('ssh://git:secret@github.com/example/pxl-repo.git') == 'ssh://git@github.com/example/pxl-repo.git'
+    monkeypatch.setattr(bundles, '_git_ls_remote_head', lambda url, ref='HEAD', timeout=8.0: (head1, None))
+    rep_local_ahead = managed.check_skill_updates(remote=True, storage_root=storage)
+    assert rep_local_ahead['remote_ahead_count'] == 0
+    assert rep_local_ahead['items'][0]['remote_status'] == 'local_ahead'
+
+    head3 = 'f' * 40
+    monkeypatch.setattr(bundles, '_git_ls_remote_head', lambda url, ref='HEAD', timeout=8.0: (head3, None))
+    assert tare_ops.main(['skills', 'check', '--remote', '--json']) == 0
+    rep = json.loads(capsys.readouterr().out)
+    assert rep['local_outdated_count'] == 1 and rep['remote_ahead_count'] == 1
+    assert rep['items'][0]['local_status'] == 'git_head_changed'
+    assert rep['items'][0]['remote_status'] == 'remote_ahead'
+    assert rep['items'][0]['remote_git_head'] == head3
+
+    # 4. TUI surfaces passive `Skills (1↑) · /skills` badge in header and `GitHub` button inside /skills,
+    #    and updating from origin clears the header badge on close (including commits that do not change captured bytes).
+    async def scenario():
+        app = WorkConsole(proj, backend=FakeBackend(), initial_mode='assistant')
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.pause(.2)
+            assert app._skills_update_note == 'Skills (1↑) · /skills'
+            assert 'Skills (1↑)' in str(app.query_one('#session-context', Static).render())
+
+            app.action_skills()
+            await pilot.pause(.2)
+            panel = app.screen
+            assert isinstance(panel, SkillsPanel)
+            assert 'git-drift' in panel.current['label']
+            await pilot.click('#skills-check-remote')
+            await app.workers.wait_for_complete()
+            await pilot.pause(.3)
+            assert 'remote-ahead' in panel.current['label']
+            assert 'remote ahead: pxl-git' in str(panel.query_one('#workbench-status', Static).render())
+
+            # Click Update -> re-captures origin at head2 -> closes panel -> header badge clears.
+            await pilot.click('#skills-update')
+            await pilot.pause(.2)
+            assert managed.effective_view('pxl-git', storage_root=storage)['origin']['origin_git_head'] == head2
+            await pilot.press('escape')
+            await app.workers.wait_for_complete()
+            await pilot.pause(.2)
+            assert app._skills_update_note == ''
+
+    asyncio.run(scenario())
+
+    # An empty/metadata-only commit changes HEAD without changing captured snapshot bytes; sync clears drift cleanly.
+    subprocess.run(['git', 'commit', '--allow-empty', '-q', '-m', 'empty bump'], cwd=repo, env=git_env, check=True)
+    head_empty = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+    assert head_empty != head2
+    assert managed.outdated_managed_summary(storage_root=storage)['count'] == 1
+    synced = vendor_skills.sync_managed_from_origin('pxl-git', storage_root=storage)
+    assert synced['origin']['origin_git_head'] == head_empty
+    assert managed.outdated_managed_summary(storage_root=storage)['count'] == 0

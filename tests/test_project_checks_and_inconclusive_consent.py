@@ -474,16 +474,23 @@ def test_godot_script_refusing_headless_is_skipped_from_auto_checks_and_surfaced
     )
     for d in (root, tree):
         (d / 'tests').mkdir(parents=True)
+        (d / 'visual_lab' / 'poc').mkdir(parents=True)
+        (d / 'addons' / 'plug').mkdir(parents=True)
         (d / 'project.godot').write_text('config_version=5\n', encoding='utf-8')
         (d / 'tests' / 'experience.gd').write_text('extends SceneTree\n', encoding='utf-8')
         (d / 'tests' / 'visual_review.gd').write_text(headless_refuser, encoding='utf-8')
         (d / 'tests' / 'soft_skip.gd').write_text(graceful_skip, encoding='utf-8')
         (d / 'tests' / 'smoke.gd').write_text(headless_refuser, encoding='utf-8')
+        (d / 'visual_lab' / 'poc' / 'compare.gd').write_text(headless_refuser, encoding='utf-8')
+        (d / 'addons' / 'plug' / 'ignored.gd').write_text(headless_refuser, encoding='utf-8')
 
     assert work_units._godot_script_refuses_headless(root / 'tests' / 'visual_review.gd') is True
+    assert work_units._godot_script_refuses_headless(root / 'visual_lab' / 'poc' / 'compare.gd') is True
     assert work_units._godot_script_refuses_headless(root / 'tests' / 'experience.gd') is False
     assert work_units._godot_script_refuses_headless(root / 'tests' / 'soft_skip.gd') is False
-    assert work_units.headless_refusing_godot_scripts(root) == ['tests/smoke.gd', 'tests/visual_review.gd']
+    assert work_units.headless_refusing_godot_scripts(root) == [
+        'tests/smoke.gd', 'tests/visual_review.gd', 'visual_lab/poc/compare.gd',
+    ]
 
     monkeypatch.setattr(work_forms.shutil, 'which', lambda name: '/usr/bin/godot_console' if name == 'godot_console' else None)
     monkeypatch.setattr(turn_engine.shutil, 'which', lambda name: '/usr/bin/godot_console' if name == 'godot_console' else None)
@@ -524,3 +531,16 @@ def test_godot_script_refusing_headless_is_skipped_from_auto_checks_and_surfaced
     planner_brief = stub.sessions[0][3]
     assert 'detected_gui_only_scripts' in planner_brief
     assert 'tests/visual_review.gd' in planner_brief
+    assert 'visual_lab/poc/compare.gd' in planner_brief
+    assert 'addons/plug/ignored.gd' not in planner_brief
+
+    # Declaring visual_lab/poc/compare.gd as mode="gui" in .tare/checks.json moves it into manual_checks.
+    turn_engine.write_project_checks_doc(root, {
+        'checks': {'visual-compare': {'mode': 'gui', 'paths': ['visual_lab/poc/compare.gd']}}
+    })
+    res2 = json.loads(tool.execute(request({'instruction': 'Replan with manual check'}, effect='p2'), control).output_json)
+    assert res2['status'] == 'PLANNED'
+    planner_brief2 = [s[3] for s in stub.sessions if s[0]['role'] == 'planner'][-1]
+    payload2 = json.loads(planner_brief2.split('\n', 1)[1])
+    assert 'visual-compare' in payload2['manual_checks']
+    assert 'visual_lab/poc/compare.gd' not in payload2['detected_gui_only_scripts']['paths']

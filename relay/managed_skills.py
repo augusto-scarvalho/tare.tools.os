@@ -264,6 +264,8 @@ def load_store(*, storage_root=None) -> dict:
         raise ValueError(f'{path} is not a valid {SCHEMA} file')
     if 'role_policy' in parsed:
         parsed['role_policy'] = _validate_role_policy_map(parsed['role_policy'], context='role_policy')
+    if 'auto_skills' in parsed and type(parsed['auto_skills']) is not bool:
+        raise ValueError('auto_skills must be a boolean')
     if 'project_role_policies' in parsed:
         raw_proj = parsed['project_role_policies']
         if not isinstance(raw_proj, dict):
@@ -289,6 +291,21 @@ def _save_store(store: dict, *, storage_root=None) -> None:
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+def get_auto_skills(*, storage_root=None) -> bool:
+    """Return the persisted global auto_skills preference (defaults to False when absent)."""
+    return bool(load_store(storage_root=storage_root).get('auto_skills', False))
+
+
+def set_auto_skills(enabled: bool, *, storage_root=None) -> bool:
+    """Persist the global auto_skills preference in serve/skills/managed.json."""
+    if type(enabled) is not bool:
+        raise ValueError('auto_skills must be a boolean')
+    store = load_store(storage_root=storage_root)
+    store['auto_skills'] = enabled
+    _save_store(store, storage_root=storage_root)
+    return enabled
 
 
 def adopt_snapshot(
@@ -324,6 +341,8 @@ def adopt_snapshot(
         'snapshot_id': manifest['snapshot_id'],
         'bundle_sha256': manifest['bundle_sha256'],
         'origin_path': manifest['source']['origin_path'],
+        'origin_git_head': manifest['source'].get('origin_git_head'),
+        'origin_git_remote': manifest['source'].get('origin_git_remote'),
         'origin_vendor': origin_vendor,
         'origin_vendors': list(origin_vendors) if origin_vendors else ([origin_vendor] if origin_vendor else []),
         'skill_name': manifest['source']['skill_name'],
@@ -762,6 +781,8 @@ def apply_upstream_update(
     snapshot_ref: str = 'latest',
     *,
     keep_overlay: bool = False,
+    origin_git_head: str | None = None,
+    origin_git_remote: str | None = None,
     storage_root=None,
 ) -> dict:
     """Explicitly advance a managed skill to a verified inert snapshot (keep_overlay preserves local text edit)."""
@@ -780,6 +801,12 @@ def apply_upstream_update(
     entry['snapshot_id'] = manifest['snapshot_id']
     entry['bundle_sha256'] = manifest['bundle_sha256']
     entry['origin_path'] = manifest['source']['origin_path']
+    entry['origin_git_head'] = (
+        origin_git_head if origin_git_head is not None else manifest['source'].get('origin_git_head')
+    )
+    entry['origin_git_remote'] = (
+        origin_git_remote if origin_git_remote is not None else manifest['source'].get('origin_git_remote')
+    )
     entry['skill_name'] = manifest['source']['skill_name']
     entry['description'] = manifest['source']['description']
     entry['base_text'] = new_base
@@ -894,7 +921,12 @@ def effective_view(
     if include_status:
         upstream = _upstream_status(entry, storage_root=storage_root)
         from .vendor_skills import check_origin_drift
-        origin_drift = check_origin_drift(entry.get('origin_path'), entry['base_sha256'], entry['base_text'])
+        origin_drift = check_origin_drift(
+            entry.get('origin_path'),
+            entry['base_sha256'],
+            entry['base_text'],
+            base_git_head=entry.get('origin_git_head'),
+        )
     else:
         upstream = {'available': False, 'latest_snapshot_id': entry['snapshot_id']}
         origin_drift = {'available': False}
@@ -911,6 +943,8 @@ def effective_view(
             'snapshot_id': entry['snapshot_id'],
             'bundle_sha256': entry['bundle_sha256'],
             'origin_path': entry['origin_path'],
+            'origin_git_head': entry.get('origin_git_head'),
+            'origin_git_remote': entry.get('origin_git_remote') or origin_drift.get('origin_git_remote'),
             'origin_vendor': entry.get('origin_vendor'),
             'origin_vendors': list(entry.get('origin_vendors') or ()),
             'base_sha256': entry['base_sha256'],
@@ -987,10 +1021,161 @@ def list_managed(*, project=None, role: str | None = None, storage_root=None) ->
             'origin_vendors': list(view['origin'].get('origin_vendors') or ()),
             'upstream_update_available': bool(view['upstream_update'].get('available')),
             'origin_drift_available': bool(view['origin_drift'].get('available')),
+            'origin_drift_status': view['origin_drift'].get('status'),
+            'origin_git_head': view['origin'].get('origin_git_head'),
+            'origin_git_remote': view['origin'].get('origin_git_remote'),
             'latest_snapshot_id': view['upstream_update'].get('latest_snapshot_id'),
             'updated_at': view['updated_at'],
         })
     return rows
+
+
+def outdated_managed_summary(*, storage_root=None) -> dict:
+    """Fast, offline check for managed skills with local origin drift, Git HEAD drift, or newer captured snapshots."""
+    store = load_store(storage_root=storage_root)
+    from .vendor_skills import check_origin_drift
+    outdated = []
+    for sid in sorted(store['skills']):
+        entry = store['skills'][sid]
+        drift = check_origin_drift(
+            entry.get('origin_path'),
+            entry['base_sha256'],
+            entry['base_text'],
+            base_git_head=entry.get('origin_git_head'),
+        )
+        upstream = _upstream_status(entry, storage_root=storage_root)
+        if drift.get('available') or upstream.get('available'):
+            reason = (
+                'git_head_changed' if drift.get('status') == 'git_head_changed'
+                else 'local_changed' if drift.get('available')
+                else 'upstream_snapshot'
+            )
+            outdated.append({
+                'skill_id': sid,
+                'reason': reason,
+                'origin_path': entry.get('origin_path'),
+                'origin_drift_status': drift.get('status'),
+                'upstream_snapshot_id': upstream.get('latest_snapshot_id') if upstream.get('available') else None,
+            })
+    return {'count': len(outdated), 'skills': outdated}
+
+
+def check_skill_updates(
+    skill_id: str | None = None,
+    *,
+    remote: bool = False,
+    storage_root=None,
+    timeout: float = 8.0,
+) -> dict:
+    """Read-only update check for managed skills (local origin/Git HEAD drift + optional git ls-remote HEAD)."""
+    store = load_store(storage_root=storage_root)
+    if skill_id is not None:
+        sid = _validate_skill_id(skill_id)
+        if sid not in store['skills']:
+            raise ValueError(f'Managed skill {sid!r} not found')
+        sids = [sid]
+    else:
+        sids = sorted(store['skills'])
+
+    from .vendor_skills import check_origin_drift
+    items = []
+    local_outdated = 0
+    remote_ahead = 0
+    for sid in sids:
+        entry = store['skills'][sid]
+        drift = check_origin_drift(
+            entry.get('origin_path'),
+            entry['base_sha256'],
+            entry['base_text'],
+            base_git_head=entry.get('origin_git_head'),
+        )
+        upstream = _upstream_status(entry, storage_root=storage_root)
+        remote_url = entry.get('origin_git_remote') or drift.get('origin_git_remote')
+        local_head = drift.get('current_git_head') or entry.get('origin_git_head')
+        if drift.get('status') == 'git_head_changed':
+            local_status = 'git_head_changed'
+        elif drift.get('available'):
+            local_status = 'local_changed'
+        elif upstream.get('available'):
+            local_status = 'upstream_snapshot'
+        else:
+            local_status = drift.get('status') or 'in_sync'
+        if local_status in {'local_changed', 'git_head_changed', 'upstream_snapshot'}:
+            local_outdated += 1
+
+        row = {
+            'skill_id': sid,
+            'snapshot_id': entry['snapshot_id'],
+            'origin_path': entry.get('origin_path'),
+            'local_status': local_status,
+            'base_git_head': entry.get('origin_git_head'),
+            'local_git_head': local_head,
+            'origin_git_remote': remote_url,
+            'upstream_update_available': bool(upstream.get('available')),
+            'latest_snapshot_id': upstream.get('latest_snapshot_id'),
+        }
+        if remote:
+            if not remote_url:
+                row['remote_status'] = 'no_remote'
+                row['remote_git_head'] = None
+            else:
+                origin_root = Path(entry['origin_path']) if entry.get('origin_path') else None
+                target_ref = (
+                    _bundles._git_upstream_ref(origin_root)
+                    if origin_root and origin_root.is_dir() else 'HEAD'
+                )
+                r_head, r_err = _bundles._git_ls_remote_head(remote_url, ref=target_ref, timeout=timeout)
+                if r_err == 'no_head' and target_ref != 'HEAD':
+                    r_head, r_err = _bundles._git_ls_remote_head(remote_url, ref='HEAD', timeout=timeout)
+                row['remote_git_head'] = r_head
+                if r_err is not None or not r_head:
+                    row['remote_status'] = r_err or 'offline_or_error'
+                elif local_head and r_head == local_head:
+                    row['remote_status'] = 'up_to_date'
+                elif origin_root and origin_root.is_dir() and _bundles._git_is_ancestor(origin_root, r_head, 'HEAD'):
+                    row['remote_status'] = 'local_ahead'
+                elif local_head:
+                    row['remote_status'] = 'remote_ahead'
+                    remote_ahead += 1
+                else:
+                    row['remote_status'] = 'up_to_date'
+        items.append(row)
+    return {
+        'schema': SCHEMA,
+        'remote_checked': bool(remote),
+        'total': len(items),
+        'local_outdated_count': local_outdated,
+        'remote_ahead_count': remote_ahead,
+        'items': items,
+    }
+
+
+def format_update_check(report: dict) -> str:
+    items = report.get('items') or []
+    if not items:
+        return 'No managed skills configured.'
+    lines = []
+    for it in items:
+        parts = [f"local={it['local_status']}"]
+        if it.get('local_git_head'):
+            parts.append(f"head={it['local_git_head'][:8]}")
+        if report.get('remote_checked'):
+            rstat = it.get('remote_status', 'unchecked')
+            if rstat == 'remote_ahead' and it.get('remote_git_head'):
+                parts.append(f"remote=ahead ({it['remote_git_head'][:8]})")
+            else:
+                parts.append(f'remote={rstat}')
+        lines.append(f"{it['skill_id']} ({it['snapshot_id'][:8]})  [{', '.join(parts)}]")
+        if it['local_status'] in {'local_changed', 'git_head_changed'}:
+            lines.append(f"  -> Run: tare skills update {it['skill_id']} --from-origin")
+        elif it['local_status'] == 'upstream_snapshot':
+            lines.append(f"  -> Run: tare skills update {it['skill_id']}")
+        if report.get('remote_checked') and it.get('remote_status') == 'remote_ahead' and it.get('origin_path'):
+            lines.append(
+                f"  -> Remote has newer commits: git -C \"{it['origin_path']}\" pull "
+                f"&& tare skills update {it['skill_id']} --from-origin"
+            )
+    return '\n'.join(lines)
 
 
 def runtime_bindings() -> list[dict]:

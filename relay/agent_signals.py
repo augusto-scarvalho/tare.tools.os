@@ -196,33 +196,57 @@ SIGNAL_CATALOG = {
 }
 
 
-def validate_signal(role, signal):
+def _signal_validation_error(code: str, message: str, loc: tuple = ('signals',)):
+    from pydantic import ValidationError
+    from pydantic_core import PydanticCustomError
+    return ValidationError.from_exception_data('AgentSignals', [{
+        'loc': loc,
+        'type': PydanticCustomError(code, '{msg}', {'msg': message}),
+    }])
+
+
+def validate_signal(role, signal, *, _index: int | None = None):
     """Validate one raw signal dict against role allowlist, byte budget, and per-kind payload schema."""
+    base_loc = ('signals', _index) if _index is not None else ('signals',)
     if not isinstance(signal, dict):
-        raise ValueError('agent_signal_invalid_shape')
+        raise _signal_validation_error('agent_signal_invalid_shape', 'agent_signal_invalid_shape', base_loc)
     if set(signal) != {'kind', 'summary', 'reason', 'payload'}:
-        raise ValueError('agent_signal_invalid_fields')
+        raise _signal_validation_error('agent_signal_invalid_fields', 'agent_signal_invalid_fields', base_loc)
     kind = signal.get('kind')
     spec = SIGNAL_CATALOG.get(kind)
     if spec is None:
-        raise ValueError('agent_signal_unknown_kind')
+        raise _signal_validation_error('agent_signal_unknown_kind', 'agent_signal_unknown_kind', (*base_loc, 'kind'))
     if role not in spec['emitters']:
-        raise ValueError(f'agent_signal_emitter_not_allowed:{role}:{kind}')
+        raise _signal_validation_error(
+            'agent_signal_emitter_not_allowed',
+            f'agent_signal_emitter_not_allowed:{role}:{kind}',
+            (*base_loc, 'kind'),
+        )
     if len(encode(signal).encode('utf-8')) > MAX_SIGNAL_BYTES:
-        raise ValueError('agent_signal_over_budget')
-    summary = _clean_text(signal.get('summary'), 'summary', max_chars=300)
-    reason = _clean_text(signal.get('reason'), 'reason', max_chars=1000)
-    payload = spec['validator'](signal.get('payload'))
+        raise _signal_validation_error('agent_signal_over_budget', 'agent_signal_over_budget', base_loc)
+    try:
+        summary = _clean_text(signal.get('summary'), 'summary', max_chars=300)
+        reason = _clean_text(signal.get('reason'), 'reason', max_chars=1000)
+        payload = spec['validator'](signal.get('payload'))
+    except ValueError as exc:
+        from pydantic import ValidationError
+        if isinstance(exc, ValidationError):
+            raise
+        raise _signal_validation_error('agent_signal_invalid_payload', str(exc), (*base_loc, 'payload')) from None
     return {'kind': kind, 'summary': summary, 'reason': reason, 'payload': payload}
 
 
 def validate_artifact_signals(role, signals):
     """Validate a role's emitted signals list (count, allowlist, size, per-kind schemas)."""
     if not isinstance(signals, list) or len(signals) > MAX_SIGNALS_PER_RUN:
-        raise ValueError('agent_signal_limit_exceeded')
-    validated = [validate_signal(role, item) for item in signals]
+        raise _signal_validation_error('agent_signal_limit_exceeded', 'agent_signal_limit_exceeded', ('signals',))
+    validated = [validate_signal(role, item, _index=idx) for idx, item in enumerate(signals)]
     if sum(1 for item in validated if item['kind'] == 'propose_checks') > 1:
-        raise ValueError('agent_signal_multiple_propose_checks')
+        raise _signal_validation_error(
+            'agent_signal_multiple_propose_checks',
+            'agent_signal_multiple_propose_checks',
+            ('signals',),
+        )
     return validated
 
 

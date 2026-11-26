@@ -576,7 +576,7 @@ class PlanningTools:
             if connection in exclude:
                 raise ValueError('Pinned planner route cannot be escalated automatically.')
             if min_trigger_limit is not None:
-                cand_trigger = _effective_trigger_limit(value)
+                cand_trigger = _effective_trigger_limit(value, ephemeral=True)
                 if cand_trigger is None or cand_trigger <= min_trigger_limit:
                     raise ValueError('Pinned planner route does not have a larger context window.')
             if trace is not None:
@@ -626,7 +626,7 @@ class PlanningTools:
                 skipped.append((name, 'REASONING_BELOW_FLOOR'))
                 continue  # An incapable preferred route must not hide a capable next planner.
             if min_trigger_limit is not None:
-                cand_trigger = _effective_trigger_limit(value)
+                cand_trigger = _effective_trigger_limit(value, ephemeral=True)
                 if cand_trigger is None or cand_trigger <= min_trigger_limit:
                     skipped.append((name, 'CONTEXT_WINDOW_NOT_LARGER'))
                     continue
@@ -888,7 +888,7 @@ class PlanningTools:
         from .work_units import _effective_trigger_limit
         if (not args.get('route') and not current_scope().pin('planner') and not control.should_stop()
                 and _planner_compaction_loop(session_dir, outcome)):
-            orig_trigger = _effective_trigger_limit(deployment)
+            orig_trigger = _effective_trigger_limit(deployment, ephemeral=True)
             if orig_trigger is not None:
                 esc_trace = {}
                 self._trace = esc_trace

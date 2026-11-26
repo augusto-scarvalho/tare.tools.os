@@ -426,3 +426,41 @@ def test_delegate_plan_escalates_once_on_compaction_loop_and_fair_quota_skips_ca
         'status': 'RUNNING', 'calls_reserved': 5, 'amount_committed': None,
     }), encoding='utf-8')
     assert planning_tools.committed(parent3) == 7
+
+
+def test_ephemeral_delegated_agy_leaf_gets_larger_headroom_and_preserves_resume_cache_across_edits(setup, tmp_path):
+    from relay.native_generation import model_context_policy
+
+    dep_agy = _cli_deployment(tmp_path, dep_id='agy-opus-cli', endpoint='cli://agy', model='claude-opus-5-5-cli')
+    dep_claude = _cli_deployment(tmp_path, dep_id='claude-opus-cli', endpoint='cli://claude', model='claude-opus-5-5')
+
+    # Non-ephemeral (long-lived restartable) AGY stays at conservative 49k/32k; ephemeral delegated leaves get 0.65/0.45
+    # (~130k on 200k), still strictly below Claude's 0.80 so escalation continues to work.
+    pol_long = model_context_policy(dep_agy, ephemeral=False)
+    pol_leaf = model_context_policy(dep_agy, ephemeral=True)
+    pol_claude = model_context_policy(dep_claude, ephemeral=True)
+    assert pol_long['trigger'] < 0.30
+    assert pol_leaf == {'trigger': 0.65, 'target': 0.45}
+    assert pol_leaf['trigger'] < pol_claude['trigger']
+    assert work_units._effective_trigger_limit(dep_agy, ephemeral=True) < work_units._effective_trigger_limit(dep_claude, ephemeral=True)
+
+    # Delegated leaf AGY implementer keeps elide_edited_reads OFF by default (preserving --resume prefix cache
+    # across edits) while keeping elide_duplicate_reads ON.
+    config, custody, root = setup
+    config['verifiers'] = {}
+    config['context_policy'] = {}
+    client = _VendorStubClient('cli://agy', 'claude-opus-5-5-cli', [
+        [('read', {'repository': 'repo', 'path': 'a.py', 'start': 1, 'end': 10})],
+        [('edit', {'repository': 'repo', 'path': 'a.py',
+                   'sha256': hashlib.sha256(b'value = 1\n').hexdigest(),
+                   'search': 'value = 1', 'replace': 'value = 2'})],
+        [('tare_deliver', {'summary': 'Updated a.py.'})],
+    ])
+    result = native_agent.run_session(config, dep_agy, custody, 'Change a.py.', client=client, delegated_leaf=True)
+    assert result['status'] == 'PROPOSED' and len(client.calls) == 3
+    prompt_after_edit = client.calls[2][1]['prompt']
+    assert '1|value = 1' in prompt_after_edit and 'text_omitted' not in prompt_after_edit
+    saved = json.loads((custody / 'native-agent.json').read_text(encoding='utf-8'))
+    assert saved['model_context_policy'] == {'trigger': 0.65, 'target': 0.45}
+    assert saved.get('elide_duplicate_reads') is True
+    assert not saved.get('elide_edited_reads')

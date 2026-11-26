@@ -86,6 +86,8 @@ GUIDANCE = (
     'notes and the final summary included, in the language of the user latest message, even when tool results are '
     'in English. '
     'Never use internal jargon in operator-facing replies (host, auditor, worker, demanda, receipts, pipeline). '
+    'Never offer to launch external GUI applications directly on the user\'s machine; interactive or visual GUI checks '
+    'are run by the user unless configured as headless checks. '
     'On failure cite the recorded reason and the next step, never invent a cause.'
 )
 SPEC = {
@@ -382,6 +384,10 @@ def delivery_view(value, *, config=None, unit=None):
             result['next'] += ' The auditor requested other actions instead of the required final decision. '
             result['next'] += 'Preserve the goal, plan and candidate. Changing token/time limits or splitting the '
             result['next'] += 'delivery does not qualify this transport choice; identical paid reviews are stopped.'
+        elif audit.get('failure_code') == 'INVALID_DELIVERY' and result['candidate_preserved']:
+            result['next'] += ' The auditor\'s delivery failed schema validation (not a defect in the candidate). '
+            result['next'] += ('After the user replies, you can re-verify and re-audit the preserved candidate with '
+                               'implement(recheck_candidate=true) without reimplementing.')
         if audit.get('failure_code')=='REVIEW_PACKET_OVERSIZED' and audit.get('requires_candidate_revision'):
             result['reason']='Review preparation requires a candidate correction; no auditor started.'
             result['next']='The host stopped review preparation before any auditor ran. Preserve this candidate and all criteria; '

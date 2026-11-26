@@ -641,6 +641,30 @@ class ConversationWorkbench:
             if self.header_identity is not None:
                 self.render_header()
 
+    def _apply_skills_update_note(self, note: str):
+        if self.connection_closing or not self.is_mounted:
+            return
+        if note != getattr(self, '_skills_update_note', ''):
+            self._skills_update_note = note
+            if self.header_identity is not None:
+                self.render_header()
+
+    @work(thread=True, group='skills-updates', exclusive=True)
+    def check_skills_updates(self):
+        """Fast offline check for local origin/Git HEAD/snapshot skill updates; never makes network calls."""
+        try:
+            from . import managed_skills as managed
+            summary = managed.outdated_managed_summary()
+            count = int(summary.get('count') or 0)
+            note = f'Skills ({count}↑) · /skills' if count > 0 else ''
+        except Exception:
+            note = ''
+        if not self.connection_closing and self.is_mounted:
+            try:
+                self.call_from_thread(self._apply_skills_update_note, note)
+            except RuntimeError:
+                pass
+
     def action_skills(self):
         self.open_workbench('skills')
 
@@ -809,5 +833,8 @@ class ConversationWorkbench:
             panel = WorkbenchPanel('Tools · effective conversation scope', [
                 {'id': 'scope', 'label': 'Available tools and scope', 'body': value['effective_text']},
                 {'id': 'instructions', 'label': 'Project instructions', 'body': value['instructions_text']}], kind=kind)
-        self.push_screen(panel)
+        if kind == 'skills':
+            self.push_screen(panel, callback=lambda _res: self.check_skills_updates())
+        else:
+            self.push_screen(panel)
         return True

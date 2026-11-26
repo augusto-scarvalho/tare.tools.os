@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from rich.text import Text
+from textual import work
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Input, OptionList, Static, TextArea
 
@@ -266,6 +267,7 @@ class SkillsPanel(WorkbenchPanel):
     DEFAULT_CSS = '''
     SkillsPanel #skills-capture-row { height: 1; margin-bottom: 1; }
     SkillsPanel #skills-capture-path { width: 1fr; }
+    SkillsPanel #skills-capture-row Button { min-width: 6; padding: 0 1; margin-left: 1; }
     SkillsPanel #workbench-list { height: 6; }
     SkillsPanel.narrow #workbench-list { height: 4; }
     SkillsPanel #workbench-preview { height: 1fr; }
@@ -294,8 +296,20 @@ class SkillsPanel(WorkbenchPanel):
         self.editing_overlay = False
         self.editing_project_scope = False
         self.show_hidden_vendor = False
+        self._remote_check: dict[str, dict] = {}
+        self._checking_remote = False
         self._pending_status: tuple[str | None, str] | None = None
         self._load_rows()
+        outdated = [
+            r['skill_id'] for r in self.rows
+            if r['row_kind'] == 'managed' and (r.get('origin_drift_available') or r.get('upstream_update_available'))
+        ]
+        if outdated and self.rows:
+            names = ', '.join(outdated[:3]) + (f' (+{len(outdated) - 3})' if len(outdated) > 3 else '')
+            self._pending_status = (
+                self.rows[0]['id'],
+                f"Updates available ({len(outdated)}): {names}. Select and click Update, or click GitHub to check remotes.",
+            )
 
     def action_close(self):
         if self.editing_overlay:
@@ -391,7 +405,10 @@ class SkillsPanel(WorkbenchPanel):
             if m['upstream_update_available']:
                 tags.append('update')
             if m.get('origin_drift_available'):
-                tags.append('drift')
+                tags.append('git-drift' if m.get('origin_drift_status') == 'git_head_changed' else 'drift')
+            rem = self._remote_check.get(m['skill_id'])
+            if rem and rem.get('remote_status') == 'remote_ahead':
+                tags.append('remote-ahead')
             tag_str = ' · '.join(tags) if tags else 'base'
             rows.append({
                 **m,
@@ -462,6 +479,8 @@ class SkillsPanel(WorkbenchPanel):
             with Horizontal(id='skills-capture-row'):
                 yield Input(placeholder='Local skill folder to capture (inert snapshot)', id='skills-capture-path')
                 yield Button('Capture', id='skills-capture')
+                yield Button('GitHub', id='skills-check-remote',
+                             tooltip='Check GitHub / Git remotes for newer commits (read-only)')
             yield OptionList(id='workbench-list')
             yield TextArea('', read_only=True, show_line_numbers=False, id='workbench-preview')
             yield Static('', id='workbench-status', markup=False)
@@ -519,6 +538,9 @@ class SkillsPanel(WorkbenchPanel):
         save_btn.disabled = not (valid and kind == 'managed')
         _set_button_label(save_btn, 'Save' if self.editing_overlay else 'Edit')
         self.query_one('#skills-update', Button).disabled = not (valid and kind == 'managed' and has_update)
+        remote_btn = self.query_one('#skills-check-remote', Button)
+        remote_btn.disabled = self._checking_remote
+        _set_button_label(remote_btn, 'Checking…' if self._checking_remote else 'GitHub')
 
     def show_row(self, index):
         if not 0 <= index < len(self.rows):
@@ -571,7 +593,18 @@ class SkillsPanel(WorkbenchPanel):
                 else:
                     body = view['effective_text']
                 active_note = 'ACTIVE for next new session. ' if self.current['skill_id'] in self.selected_managed else ''
+                drift_status = (view.get('origin_drift') or {}).get('status')
+                rem = self._remote_check.get(self.current['skill_id'])
+                remote_note = ''
+                if rem and rem.get('remote_status') == 'remote_ahead':
+                    rhead = (rem.get('remote_git_head') or '')[:8]
+                    origin_p = view['origin'].get('origin_path') or ''
+                    remote_note = (
+                        f"Remote ahead ({rhead}): run `git -C \"{origin_p}\" pull` then click Update. "
+                    )
                 update_note = (
+                    'Origin Git HEAD changed (click Update to re-capture). '
+                    if drift_avail and drift_status == 'git_head_changed' else
                     'Origin changed on disk (click Update to re-capture). '
                     if drift_avail else
                     f"Upstream {view['upstream_update']['latest_snapshot_id'][:8]} available. "
@@ -581,7 +614,7 @@ class SkillsPanel(WorkbenchPanel):
                 tier_note = f"Min model: {view['min_model_class']}. " if view.get('min_model_class') else ''
                 audit_note = 'Plan audit: skipped. ' if view.get('skip_plan_review') else ''
                 message = (
-                    f"{active_note}{update_note}{role_note}{tier_note}{audit_note}Origin: {view['origin']['bundle_id']}@{view['origin']['snapshot_id'][:8]} "
+                    f"{active_note}{remote_note}{update_note}{role_note}{tier_note}{audit_note}Origin: {view['origin']['bundle_id']}@{view['origin']['snapshot_id'][:8]} "
                     f"({view['text_source']}). Frozen per session; no effects authorized."
                 )
                 valid = True
@@ -778,6 +811,14 @@ class SkillsPanel(WorkbenchPanel):
                     note = f"Updated {sid} to upstream snapshot {view['origin']['snapshot_id'][:8]}."
                 self.view_mode = 'content'
                 self._reload_and_select('managed:' + sid, note)
+            elif bid == 'skills-check-remote':
+                if not self._checking_remote:
+                    self._checking_remote = True
+                    self._sync_buttons(self.current, valid=self.current is not None)
+                    self.query_one('#workbench-status', Static).update(
+                        'Checking Git remotes for newer commits (read-only)…'
+                    )
+                    self._run_remote_check()
             elif bid == 'skills-view':
                 order = ('content', 'diff', 'bindings')
                 self.view_mode = order[(order.index(self.view_mode) + 1) % len(order)]
@@ -791,3 +832,50 @@ class SkillsPanel(WorkbenchPanel):
                     self.render_rows()
         except (OSError, ValueError, UnicodeError) as exc:
             self.query_one('#workbench-status', Static).update(plain(str(exc)))
+
+    def _finish_remote_check(self, report: dict | None, error: str | None):
+        self._checking_remote = False
+        if not self.is_mounted:
+            return
+        if error is not None or report is None:
+            self._sync_buttons(self.current, valid=self.current is not None)
+            self.query_one('#workbench-status', Static).update(plain(f'Remote check failed: {error or "unknown error"}'))
+            return
+        self._remote_check = {it['skill_id']: it for it in report.get('items') or []}
+        ahead = [it['skill_id'] for it in report.get('items') or [] if it.get('remote_status') == 'remote_ahead']
+        local = [
+            it['skill_id'] for it in report.get('items') or []
+            if it.get('local_status') in {'local_changed', 'git_head_changed', 'upstream_snapshot'}
+        ]
+        errs = [
+            it['skill_id'] for it in report.get('items') or []
+            if it.get('remote_status') in {'timeout', 'offline_or_error', 'git_unavailable'}
+        ]
+        parts = []
+        if ahead:
+            parts.append(f"remote ahead: {', '.join(ahead)} (git pull, then Update)")
+        if local:
+            parts.append(f"local updates ready: {', '.join(local)} (click Update)")
+        if errs:
+            parts.append(f"unreachable: {', '.join(errs)}")
+        msg = (
+            'GitHub check: ' + '; '.join(parts) + '.'
+            if parts else
+            f"GitHub check: all {report.get('total', 0)} managed skill(s) are up to date."
+        )
+        target_id = self.current['id'] if self.current else None
+        self._reload_and_select(target_id, msg)
+
+    @work(thread=True, group='skills-remote-check', exclusive=True)
+    def _run_remote_check(self):
+        from . import managed_skills as managed
+        try:
+            report = managed.check_skill_updates(remote=True)
+            err = None
+        except Exception as exc:
+            report, err = None, str(exc)
+        if self.is_mounted:
+            try:
+                self.app.call_from_thread(self._finish_remote_check, report, err)
+            except RuntimeError:
+                pass

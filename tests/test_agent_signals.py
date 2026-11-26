@@ -1063,3 +1063,58 @@ def test_implement_refuses_blind_retry_on_unchanged_out_of_scope_blocker_until_c
     (repo / 'tests' / 'visual_review.gd').write_text('var moving_a := 1\nvar home_moving_a := 2\n', encoding='utf-8')
     fourth = tools.execute(_effect('implement', {}, 'imp-4'), ctrl)
     assert fourth.status == 'succeeded' and len(run_calls) == 3
+
+
+from test_native_agent import setup as _agent_setup  # noqa: F401
+
+
+def test_auditor_schema_restricts_signals_self_repairs_disallowed_signal_and_delivery_view_guides_recheck(_agent_setup):
+    from compute_plane.native_models import DeliveryRejected
+    from test_native_artifacts import Client, payload, run
+
+    config, custody, root = _agent_setup
+
+    # 1. Review JSON Schema exposes ONLY out_of_scope_blocker (never propose_checks or goal_drift).
+    rev_schema_obj = native_artifacts.schema('auditor')
+    rev_schema = json.dumps(rev_schema_obj)
+    assert rev_schema_obj['$defs']['AuditorSignal']['properties']['kind']['const'] == 'out_of_scope_blocker'
+    assert 'ProposeChecksPayload' not in rev_schema_obj['$defs']
+    assert 'GoalDriftPayload' not in rev_schema_obj['$defs']
+    assert 'propose_checks' not in rev_schema and 'goal_drift' not in rev_schema
+
+    # 2. If an auditor still submits a disallowed signal, validate() raises Pydantic ValidationError so
+    #    Kernel's DeliveryRejected preserves the real field/code (self.form=True) and grants 1 self-repair turn.
+    config.update(role='auditor', typed_output=True, writable={}, verifiers={})
+    bad_review = payload('auditor', root)
+    bad_review['signals'] = [{
+        'kind': 'propose_checks',
+        'summary': 'Mark visual test manual',
+        'reason': 'GUI script fails headless.',
+        'payload': {'checks': [{'name': 'visual', 'mode': 'gui', 'paths': ['tests/visual_review.gd']}]},
+    }]
+    good_review = payload('auditor', root)
+    with pytest.raises(ValueError) as exc_info:
+        native_artifacts.validate('auditor', bad_review)
+    rejected = DeliveryRejected(exc_info.value)
+    assert rejected.form is True
+    assert rejected.issues[0]['code'] == 'agent_signal_emitter_not_allowed'
+    assert rejected.issues[0]['field'].startswith('signals.0')
+
+    # End-to-end: auditor emits disallowed signal on turn 2 -> Kernel grants 1 repair turn -> turn 3 succeeds.
+    result = run(config, custody, Client(steps=[
+        ('read', {'repository': 'repo', 'path': 'a.py'}),
+        ('tare_deliver', bad_review),
+        ('tare_deliver', good_review),
+    ]))
+    assert result['status'] == 'PROPOSED'
+    saved = json.loads((custody / 'artifact.json').read_text(encoding='utf-8'))['payload']
+    assert saved['verdict'] == 'ACCEPT'
+
+    # 3. delivery_view() on auditor INCONCLUSIVE / INVALID_DELIVERY with preserved candidate explicitly points
+    #    to implement(recheck_candidate=true) without reimplementing, and GUIDANCE forbids launching GUI apps.
+    view = tasks.delivery_view({
+        'verdict': 'INCONCLUSIVE', 'applied': False, 'files': ['a.py'], 'candidate': {'patch': 'x'},
+        'audit': {'verdict': 'INCONCLUSIVE', 'failure_code': 'INVALID_DELIVERY', 'actor': {'model': 'auditor-x'}},
+    })
+    assert 'implement(recheck_candidate=true)' in view['next']
+    assert 'external GUI applications' in tasks.GUIDANCE

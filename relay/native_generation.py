@@ -96,7 +96,7 @@ def deployment_profile(deployment, requested_model):
     return profile
 
 
-def model_context_policy(deployment):
+def model_context_policy(deployment, *, ephemeral=False):
     """Declared per-model fractions, or named Tare defaults; never guessed recommendations."""
     from tare_tools_agent_runtime import ContextPolicy
     declared = deployment.get('native_context_policy', {})
@@ -108,12 +108,20 @@ def model_context_policy(deployment):
     policy = ContextPolicy(window=profile['context_window'], output_reserve=profile['output_tokens'], margin=0,
                            **{k: v for k, v in declared.items() if k != 'source'})
     if profile.get('protocol') == 'vendor-cli' and profile.get('endpoint') == 'cli://agy':
-        # Transport operating headroom, not a claim about Gemini's native window.
-        # The CLI can shorten a large user envelope before reaching that window.
-        # Keep the journal/cache prefix and use the existing compaction protocol.
+        # Transport operating headroom, not a claim about the backend's native window.
+        # Single-process delegated leaves (ephemeral=True) use AGY --resume delta turns (and resumed
+        # summaries), so they avoid the 160 KiB per-turn cap and get ~65% window headroom (~130k on
+        # 200k) without premature compaction, while staying strictly below 80% on larger CLI routes.
+        # Long-lived/restartable sessions (ephemeral=False) keep the conservative 49k/32k stateless
+        # headroom so reopening a saved conversation across restarts never exceeds 160 KiB.
+        if ephemeral:
+            trigger = min(policy.trigger, 0.65)
+            target = min(policy.target, 0.45)
+        else:
+            trigger = min(policy.trigger, (profile['output_tokens']+32768)/profile['context_window'])
+            target = min(policy.target, (profile['output_tokens']+16384)/profile['context_window'])
         policy = ContextPolicy(window=profile['context_window'], output_reserve=profile['output_tokens'], margin=0,
-            trigger=min(policy.trigger, (profile['output_tokens']+32768)/profile['context_window']),
-            target=min(policy.target, (profile['output_tokens']+16384)/profile['context_window']))
+                               trigger=trigger, target=target)
     return {'trigger': policy.trigger, 'target': policy.target}
 
 

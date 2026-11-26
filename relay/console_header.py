@@ -270,12 +270,15 @@ class ConversationHeader:
             self._unread_note = unread
             welcome.update(welcome_text(unread))
         disk = getattr(self, '_storage_warning', '')
-        suffix = '  ·  '+health+('  ·  '+disk if disk else '')
+        skills_note = getattr(self, '_skills_update_note', '')
+        suffix = '  ·  '+health+('  ·  '+disk if disk else '')+('  ·  '+skills_note if skills_note else '')
         value = Text(model, no_wrap=True, overflow='ellipsis')
         value.truncate(max(8, context.size.width-len(suffix)), overflow='ellipsis')
         value.append('  ·  '+health)
         if disk:
             value.append('  ·  '+disk, style='bold '+(self.current_theme.warning or 'yellow'))
+        if skills_note:
+            value.append('  ·  '+skills_note, style='bold '+(self.current_theme.warning or 'yellow'))
         show(context, value, layout=False)  # one fixed line
         detail = ('No connection check yet. Use Check to make one read-only request.' if not observation else
                   observation.detail+'\nObserved '+observation.observed_at+' · '+str(observation.duration_ms)+' ms')
