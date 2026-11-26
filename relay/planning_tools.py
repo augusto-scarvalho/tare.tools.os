@@ -12,8 +12,43 @@ from .execution_scope import for_role
 
 # High-effort planning can spend minutes inspecting a multi-file change. Keep
 # calls and shared spend bounded independently of its wall-clock allowance.
-MAX_CALLS, MAX_SECONDS, MAX_REQUESTS = 6, 600, 3
+MAX_CALLS, MAX_SECONDS, MAX_REQUESTS, MAX_TOTAL_ATTEMPTS = 6, 600, 3, 6
 RESERVE = 2  # the coordinator must still inspect the handoff and answer
+
+
+def counts_toward_quota(row):
+    """Cancelled planning runs and pre-artifact delivery-validation rejections do not burn MAX_REQUESTS.
+    MAX_TOTAL_ATTEMPTS still enforces a bounded ceiling per demand revision."""
+    if row.get('status') != 'FINISHED':
+        return True
+    result = row.get('result') or {}
+    if result.get('status') == 'CANCELLED':
+        return False
+    if (result.get('status') == 'BLOCKED'
+            and (result.get('failure_code') == 'INVALID_DELIVERY'
+                 or bool(result.get('delivery_validation')))):
+        return False
+    return True
+
+
+def _planner_compaction_loop(session_dir, outcome):
+    """True when a planner stopped due to context compaction budget or compaction-loop NO_PROGRESS."""
+    if not isinstance(outcome, dict) or outcome.get('status') != 'BLOCKED':
+        return False
+    reason = outcome.get('reason')
+    if reason == 'COMPACTION_BUDGET':
+        return True
+    if reason != 'NO_PROGRESS':
+        return False
+    journal_path = Path(session_dir) / 'journal.jsonl'
+    if not journal_path.is_file():
+        return False
+    try:
+        from compute_plane.native_journal import NativeJournal
+        return any(r.event().get('kind') == 'context_activated'
+                   for r in NativeJournal(journal_path).snapshot().records)
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
 CRITIC_CALLS, CRITIC_SECONDS = 12, 600  # the critic's own ceiling, inside the shared budget
 # The text measured on 2026-11-17 (a planted-defect experiment: it found them and accepted the sound plans): keep it as is.
 CRITIC_BRIEF = '''You are the frugal critic of the plan in proposal/plan.json. Read the request in proposal/request.json and the project's files, then judge the plan only against what the request asks and what this project needs to keep working. You look for two things, and nothing else.
@@ -121,7 +156,7 @@ def incomplete_input(root, active):
                     or result.get('status') != 'PLANNED' or (result.get('plan') or {}).get('tasks')):
                 continue
             artifact = regular(Path(result['artifact']))
-            if artifact.resolve() not in {(receipt.parent/n/'artifact.json').resolve() for n in ('session', 'revision')}:
+            if artifact.resolve() not in {(receipt.parent/n/'artifact.json').resolve() for n in ('session', 'session-2', 'revision')}:
                 continue
             value = read_input(artifact)
             if value['artifact']['role'] != 'planner' or value['artifact']['payload'] != result.get('plan'):
@@ -431,14 +466,24 @@ def route_requalification(root, active, prior, routes, name, deployment):
 
 
 def children(root):
-    """The planner sessions and, beside each, the critic's and the revision's, when they ran."""
+    """The planner sessions (including any escalated attempt) and, beside each, the critic's and the revision's."""
     return [regular(p.parent/name) for p in regular(Path(root)/'planning').glob('*/receipt.json')
-            for name in ('session', 'review/session', 'revision') if regular(p.parent/name/'native-agent.json').is_file()]
+            for name in ('session', 'session-2', 'review/session', 'revision') if regular(p.parent/name/'native-agent.json').is_file()]
 
 
 def committed(root):
+    from .delegation_tools import count_calls
     from .execution_resources import calls_used
-    return sum(calls_used(record(p), p.parent/'session') for p in regular(Path(root)/'planning').glob('*/receipt.json'))
+    total = 0
+    for p in regular(Path(root)/'planning').glob('*/receipt.json'):
+        row = record(p)
+        used = calls_used(row, p.parent/'session')
+        second = p.parent/'session-2'
+        if (second/'journal.jsonl').is_file() and (row.get('status') == 'RUNNING' or row.get('calls_used') is None):
+            first = count_calls(p.parent/'session') if (p.parent/'session'/'journal.jsonl').is_file() else 0
+            used = max(used, first + count_calls(second))
+        total += used
+    return total
 
 
 def configure_model(profile):
@@ -505,10 +550,11 @@ class PlanningTools:
                               inner() if callable(inner) else Decimal(0)])
 
     @for_role('planner')
-    def choose(self, args, kinds=None):
+    def choose(self, args, kinds=None, *, min_trigger_limit=None, exclude=()):
         """`kinds`: the recorded demand's types of work, which order only an automatic choice (no pin, no route the
         coordinator chose, no temporary policy, no list the owner saved)."""
         from .turn_engine import available, planner_routes, policy
+        from .work_units import _effective_trigger_limit
         routes = self.planning['routes']
         trace = getattr(self, '_trace', None)
         chosen = args.get('route')
@@ -527,6 +573,12 @@ class PlanningTools:
             connection=value['native_model_choice']['connection']
             if chosen and chosen!=connection:
                 raise ValueError('Requested route conflicts with --planner; consult tare models --role planner.')
+            if connection in exclude:
+                raise ValueError('Pinned planner route cannot be escalated automatically.')
+            if min_trigger_limit is not None:
+                cand_trigger = _effective_trigger_limit(value)
+                if cand_trigger is None or cand_trigger <= min_trigger_limit:
+                    raise ValueError('Pinned planner route does not have a larger context window.')
             if trace is not None:
                 trace.update(mode='EXACT_TEMPORARY_PIN', visited=[connection], skipped=[])
             return connection,value
@@ -552,6 +604,9 @@ class PlanningTools:
         refused = None  # the coordinator's chosen planner, switched off for the planner by the routing profile
         for name,frozen in candidates:
             visited.append(name)
+            if name in exclude:
+                skipped.append((name, 'COMPACTION_LOOP_ESCALATED'))
+                continue
             current, _ = (deepcopy(frozen), None) if name == 'session-planner' else available(name)
             if current is None or current.get('native_profile') != frozen.get('native_profile'):
                 skipped.append((name, 'UNAVAILABLE_OR_PROFILE_CHANGED'))
@@ -570,6 +625,11 @@ class PlanningTools:
                     raise
                 skipped.append((name, 'REASONING_BELOW_FLOOR'))
                 continue  # An incapable preferred route must not hide a capable next planner.
+            if min_trigger_limit is not None:
+                cand_trigger = _effective_trigger_limit(value)
+                if cand_trigger is None or cand_trigger <= min_trigger_limit:
+                    skipped.append((name, 'CONTEXT_WINDOW_NOT_LARGER'))
+                    continue
             if trace is not None:
                 trace.update(mode=mode, visited=visited, skipped=skipped)
             return name, value
@@ -606,7 +666,9 @@ class PlanningTools:
         prior = records(self.root)
         requalification = None
         cohort = [r for r in prior if r.get('demand_id') == demand_id and r.get('planning_revision',0)==revision]
-        exhausted = len(cohort) >= MAX_REQUESTS
+        quota_used = sum(counts_toward_quota(r) for r in cohort)
+        hard_exhausted = len(cohort) >= MAX_TOTAL_ATTEMPTS
+        exhausted = quota_used >= MAX_REQUESTS or hard_exhausted
         if exhausted:
             requalification = source_requalification(self.root, self.state['config'], active, prior) if active else None
         trace = {}
@@ -617,6 +679,10 @@ class PlanningTools:
             self._trace = None
         route_repair = route_requalification(self.root, active, cohort, self.planning['routes'], name, deployment) if exhausted and not requalification else None
         if exhausted and not requalification and not route_repair:
+            if hard_exhausted and quota_used < MAX_REQUESTS:
+                raise ValueError(f'This demand reached the maximum of {MAX_TOTAL_ATTEMPTS} planning attempts; use the recorded plans or clarify the unresolved scope.'
+                                 if self.state.get('conversation_flow') else
+                                 f'This session reached the maximum of {MAX_TOTAL_ATTEMPTS} planning attempts; use the recorded plans or plan directly.')
             raise ValueError('This demand already delegated planning three times; use the recorded plans or clarify the unresolved scope.'
                              if self.state.get('conversation_flow') else
                              'This session already delegated planning three times; use the recorded plans or plan directly.')
@@ -679,118 +745,219 @@ class PlanningTools:
             save_json(receipt_path, row)
             return result
         from . import execution_resources as resources
-        profile = deployment.get('native_profile') or {}
-        agy_cli = profile.get('protocol') == 'vendor-cli' and profile.get('endpoint') == 'cli://agy'
-        # Non-AGY planners keep exact history (max_compactions=0); cli://agy has a 160 KiB wire cap below its model
-        # window, so enable compaction at model_context_policy's trigger_limit to avoid CLI_INPUT_BYTE_LIMIT_EXCEEDED.
-        planner_context = resources.context({'max_compactions': 1}) if agy_cli else {'max_compactions': 0}
-        config = {k: deepcopy(v) for k, v in self.state['config'].items()
-                  if k in {'repositories', 'folder_access', 'project_admission'}}
-        config.update(schema='tare.tools/native-agent-config/1', role='planner', writable={}, verifiers={},
-                      capabilities=['read', 'list', 'search'], typed_output=True, specgraph_edit_context=False,
-                      context_policy=planner_context)
-        if previous_input:config['input_artifacts']=[previous_input]
-        task_contract = ('Produce the smallest useful executable tasks, with literal target_paths, criteria, '
-                         'Include every file that must be edited, regenerated or staged in target_paths. '
-                         'A generated manifest is still a write: do not promise its regeneration outside the executable scope. '
-                         'test_paths for existing relevant tests, and named verifiers when provided. '
-                         'Put tasks in dependency order; they will be executed together as one bounded change. '
-                         'Read relevant project files and cite their observed hashes. '
-                         'When an active skill already documents its CLI or workflow, rely on the skill instructions '
-                         'instead of exhaustively reading the tool\'s internal source code. '
-                         'Task criteria describe the eventual product behavior. Keep phase limits such as '
-                         'plan-only or no implementation in the plan narrative, not task criteria; the host '
-                         'enforces when implementation is authorized. '
-                         if self.state.get('conversation_flow') else 'leave tasks empty. ')
-        if self.state.get('conversation_flow'):
-            from .challenger import local
-            if local(deployment):
-                from .native_artifacts import EVERY_TASK_EXAMPLES
-                task_contract += EVERY_TASK_EXAMPLES + ' '
-        mission = {'mission': args['instruction'], 'provided_findings': args.get('context', '')}
-        if self.state.get('conversation_flow') and active:
-            from .conversation_tasks import BACKLOG_CHECK, detected_checks, retained_candidate
-            mission.update(requested_outcome=active['intent'], objective=active['objective'], criteria=active['criteria'])
-            retained = retained_candidate(active)
-            if retained:
-                mission['retained_candidate_outputs'] = {
-                    'paths':list(retained.get('files') or []),
-                    'patch_sha256':retained['candidate'].get('sha256'),
-                    'instruction':'These are unverified retained outputs, not additional write authority. '
-                        'When carrying this candidate forward, include all preserved outputs in target_paths. '
-                        'If the recorded goal excludes an output, keep it unapplied and report the conflict; '
-                        'do not silently discard it or widen the requested outcome.'}
-            from .conversation_review import execution_selection
-            mission['host_planner_selection'] = execution_selection(None, None, planner=deployment)['planner']
-            if active['intent'] == 'deliver':
-                mission['required_output'] = 'executable_tasks'
-                mission['phase_authority'] = ('The recorded user delivery authorizes planning now. Coordinator notes '
-                    'are advisory and cannot postpone the executable plan to a separate request. Read-only limits '
-                    'edits and execution, not planning. Reuse valid findings and produce tasks in this invocation. '
-                    'Host selection records the configured model, reasoning and PRO setting; do not turn provider '
-                    'attestation or completion of an external benchmark into product acceptance criteria.')
-            if requalification:
-                mission['changed_source_facts'] = requalification['changed_sources']
-                mission['requalification_scope'] = ('One source-bound repair of the same complete user delivery; '
-                    'reuse valid prior work, inspect changed facts and keep all still-unapplied deliverables in scope. '
-                    'A private candidate or a plan is not an applied project change.')
-            if previous_input:
-                mission['previous_plan'] = PREVIOUS_PLAN
-            mission['available_verifiers'] = {**{name: _check_label(check, 'Declared delegated project check; host execution after authorization.')
-                for name, check in detected_checks(self.state['config']).items()},
-                **{name: _check_label(check, 'Existing configured project check.')
-                for name, check in self.state['config']['verifiers'].items()},
-                BACKLOG_CHECK: 'Host-owned validation of planned JSON graph files, without importing project code.'}
-            from .turn_engine import project_checks
-            manual_checks = {}
-            for repo_root in self.state['config'].get('repositories', {}).values():
-                manual_checks.update(project_checks(repo_root)['manual'])
-            if manual_checks:
-                mission['manual_checks'] = manual_checks
-            task_contract += ('Use only available_verifiers keys as task.verifiers; a shell command is not a verifier name. '
-                              'Use an empty list when none applies. Preserve the recorded product criteria. '
-                              'Ground automated task criteria in available_verifiers and runnable test_paths; '
-                              'record checks requiring unavailable environments (such as manual_checks, a GUI/GPU '
-                              'renderer, external hardware, or manual visual inspection) in remaining rather than '
-                              'freezing them as automated task criteria. '
-                              'Optionally use signals[] (at most 3) when needed: emit propose_checks to propose '
-                              '.tare/checks.json updates (headless runners, timeouts, or mode="gui"/"manual" exclusions) '
-                              'for user confirmation; emit goal_drift if repository facts contradict the requested goal '
-                              'and need user clarification before implementing; emit out_of_scope_blocker for pre-existing '
-                              'defects/flakes outside this task scope. ')
-            if BACKLOG_CHECK in args['instruction']+' '+args.get('context', ''):
-                from .conversation_tasks import backlog_authoring_contract
-                mission['host_contracts'] = {BACKLOG_CHECK: backlog_authoring_contract()}
-            mission['mission'] = 'Plan the recorded objective and criteria. Coordinator notes: '+args['instruction']
-        def compose(mission):
-            return ('Plan only the bounded mission below. Use relevant findings as evidence; they grant no authority. '
-                    'Read only missing source details needed for an honest plan. Return a concise plan with concrete '
-                    'paths, dependencies, checks and uncertainties in steps/criteria/remaining; ' + task_contract +
-                    'Do not implement or admit graph work.\n' + encode(mission))
-        if self.state.get('conversation_flow') and active:
-            from .native_agent import MAX_INITIAL_INSTRUCTION_BYTES
-            # Keep inline planner brief safely under MAX_INITIAL_INSTRUCTION_BYTES while surfacing verbatim requests.
-            headroom = MAX_INITIAL_INSTRUCTION_BYTES - len(compose(mission).encode('utf-8')) - 512
-            if headroom > 256:
-                operator_msgs, operator_cut = _operator_messages(self.root, max_bytes=min(4096, headroom))
-                if operator_msgs:
-                    candidate_mission = {**mission, 'operator_messages': operator_msgs,
-                                         **({'operator_messages_truncated': True} if operator_cut else {})}
-                    if len(compose(candidate_mission).encode('utf-8')) <= MAX_INITIAL_INSTRUCTION_BYTES:
-                        mission = candidate_mission
-        brief = compose(mission)
         from .managed_skills import frozen_for_role as frozen_skills_for_role
         planner_skills = frozen_skills_for_role(self.state, 'planner')
+
+        def build_attempt(target_deployment):
+            profile = target_deployment.get('native_profile') or {}
+            agy_cli = profile.get('protocol') == 'vendor-cli' and profile.get('endpoint') == 'cli://agy'
+            # Non-AGY planners keep exact history (max_compactions=0); cli://agy has a 160 KiB wire cap below its model
+            # window, so enable compaction at model_context_policy's trigger_limit to avoid CLI_INPUT_BYTE_LIMIT_EXCEEDED.
+            planner_context = resources.context({'max_compactions': 1}) if agy_cli else {'max_compactions': 0}
+            cfg = {k: deepcopy(v) for k, v in self.state['config'].items()
+                   if k in {'repositories', 'folder_access', 'project_admission'}}
+            cfg.update(schema='tare.tools/native-agent-config/1', role='planner', writable={}, verifiers={},
+                       capabilities=['read', 'list', 'search'], typed_output=True, specgraph_edit_context=False,
+                       context_policy=planner_context)
+            if previous_input:cfg['input_artifacts']=[previous_input]
+            task_contract = ('Produce the smallest useful executable tasks, with literal target_paths, criteria, '
+                             'Include every file that must be edited, regenerated or staged in target_paths. '
+                             'A generated manifest is still a write: do not promise its regeneration outside the executable scope. '
+                             'test_paths for existing relevant tests, and named verifiers when provided. '
+                             'Put tasks in dependency order; they will be executed together as one bounded change. '
+                             'Read relevant project files and cite their observed hashes. '
+                             'When an active skill already documents its CLI or workflow, rely on the skill instructions '
+                             'instead of exhaustively reading the tool\'s internal source code. '
+                             'Task criteria describe the eventual product behavior. Keep phase limits such as '
+                             'plan-only or no implementation in the plan narrative, not task criteria; the host '
+                             'enforces when implementation is authorized. '
+                             if self.state.get('conversation_flow') else 'leave tasks empty. ')
+            if self.state.get('conversation_flow'):
+                from .challenger import local
+                if local(target_deployment):
+                    from .native_artifacts import EVERY_TASK_EXAMPLES
+                    task_contract += EVERY_TASK_EXAMPLES + ' '
+            m = {'mission': args['instruction'], 'provided_findings': args.get('context', '')}
+            if self.state.get('conversation_flow') and active:
+                from .conversation_tasks import BACKLOG_CHECK, detected_checks, retained_candidate
+                m.update(requested_outcome=active['intent'], objective=active['objective'], criteria=active['criteria'])
+                retained = retained_candidate(active)
+                if retained:
+                    m['retained_candidate_outputs'] = {
+                        'paths':list(retained.get('files') or []),
+                        'patch_sha256':retained['candidate'].get('sha256'),
+                        'instruction':'These are unverified retained outputs, not additional write authority. '
+                            'When carrying this candidate forward, include all preserved outputs in target_paths. '
+                            'If the recorded goal excludes an output, keep it unapplied and report the conflict; '
+                            'do not silently discard it or widen the requested outcome.'}
+                from .conversation_review import execution_selection
+                m['host_planner_selection'] = execution_selection(None, None, planner=target_deployment)['planner']
+                if active['intent'] == 'deliver':
+                    m['required_output'] = 'executable_tasks'
+                    m['phase_authority'] = ('The recorded user delivery authorizes planning now. Coordinator notes '
+                        'are advisory and cannot postpone the executable plan to a separate request. Read-only limits '
+                        'edits and execution, not planning. Reuse valid findings and produce tasks in this invocation. '
+                        'Host selection records the configured model, reasoning and PRO setting; do not turn provider '
+                        'attestation or completion of an external benchmark into product acceptance criteria.')
+                if requalification:
+                    m['changed_source_facts'] = requalification['changed_sources']
+                    m['requalification_scope'] = ('One source-bound repair of the same complete user delivery; '
+                        'reuse valid prior work, inspect changed facts and keep all still-unapplied deliverables in scope. '
+                        'A private candidate or a plan is not an applied project change.')
+                if previous_input:
+                    m['previous_plan'] = PREVIOUS_PLAN
+                m['available_verifiers'] = {**{n: _check_label(check, 'Declared delegated project check; host execution after authorization.')
+                    for n, check in detected_checks(self.state['config']).items()},
+                    **{n: _check_label(check, 'Existing configured project check.')
+                    for n, check in self.state['config']['verifiers'].items()},
+                    BACKLOG_CHECK: 'Host-owned validation of planned JSON graph files, without importing project code.'}
+                from .turn_engine import project_checks
+                from .work_units import headless_refusing_godot_scripts
+                manual_checks = {}
+                for repo_root in self.state['config'].get('repositories', {}).values():
+                    manual_checks.update(project_checks(repo_root)['manual'])
+                if manual_checks:
+                    m['manual_checks'] = manual_checks
+                manual_paths = {p for r_row in manual_checks.values() for p in r_row.get('paths') or ()}
+                gui_scripts = []
+                for repo_root in self.state['config'].get('repositories', {}).values():
+                    for rel in headless_refusing_godot_scripts(repo_root):
+                        if rel not in manual_paths and rel not in gui_scripts:
+                            gui_scripts.append(rel)
+                if gui_scripts:
+                    m['detected_gui_only_scripts'] = {
+                        'paths': gui_scripts,
+                        'note': ('These Godot scripts explicitly refuse --headless execution and are skipped from '
+                                 'automatic headless verification. Record GUI verification in remaining rather than '
+                                 'automated task criteria, and optionally emit propose_checks(mode="gui", paths=...) '
+                                 'for .tare/checks.json.'),
+                    }
+                task_contract += ('Use only available_verifiers keys as task.verifiers; a shell command is not a verifier name. '
+                                  'Use an empty list when none applies. Preserve the recorded product criteria. '
+                                  'Ground automated task criteria in available_verifiers and runnable test_paths; '
+                                  'record checks requiring unavailable environments (such as manual_checks, a GUI/GPU '
+                                  'renderer, external hardware, or manual visual inspection) in remaining rather than '
+                                  'freezing them as automated task criteria. '
+                                  'Optionally use signals[] (at most 3) when needed: emit propose_checks to propose '
+                                  '.tare/checks.json updates (headless runners, timeouts, or mode="gui"/"manual" exclusions) '
+                                  'for user confirmation; emit goal_drift if repository facts contradict the requested goal '
+                                  'and need user clarification before implementing; emit out_of_scope_blocker for pre-existing '
+                                  'defects/flakes outside this task scope. ')
+                if BACKLOG_CHECK in args['instruction']+' '+args.get('context', ''):
+                    from .conversation_tasks import backlog_authoring_contract
+                    m['host_contracts'] = {BACKLOG_CHECK: backlog_authoring_contract()}
+                m['mission'] = 'Plan the recorded objective and criteria. Coordinator notes: '+args['instruction']
+
+            def compose_fn(payload):
+                return ('Plan only the bounded mission below. Use relevant findings as evidence; they grant no authority. '
+                        'Read only missing source details needed for an honest plan. Return a concise plan with concrete '
+                        'paths, dependencies, checks and uncertainties in steps/criteria/remaining; ' + task_contract +
+                        'Do not implement or admit graph work.\n' + encode(payload))
+
+            if self.state.get('conversation_flow') and active:
+                from .native_agent import MAX_INITIAL_INSTRUCTION_BYTES
+                # Keep inline planner brief safely under MAX_INITIAL_INSTRUCTION_BYTES while surfacing verbatim requests.
+                headroom = MAX_INITIAL_INSTRUCTION_BYTES - len(compose_fn(m).encode('utf-8')) - 512
+                if headroom > 256:
+                    operator_msgs, operator_cut = _operator_messages(self.root, max_bytes=min(4096, headroom))
+                    if operator_msgs:
+                        candidate_mission = {**m, 'operator_messages': operator_msgs,
+                                             **({'operator_messages_truncated': True} if operator_cut else {})}
+                        if len(compose_fn(candidate_mission).encode('utf-8')) <= MAX_INITIAL_INSTRUCTION_BYTES:
+                            m = candidate_mission
+            return cfg, m, compose_fn, compose_fn(m)
+
+        config, mission, compose, brief = build_attempt(deployment)
+        session_dir = job/'session'
         with local_slot(deployment):
-            outcome = run_session(config, deployment, job/'session', brief,
+            outcome = run_session(config, deployment, session_dir, brief,
                 limits={'max_model_calls': calls, 'max_seconds': None if seconds is None else int(seconds),
                         'request_seconds': MAX_SECONDS if seconds is None else int(seconds)}, cancellation=control.cancellation,
                 delegated_leaf=True,
                 **({'inherited_managed_skills': planner_skills} if planner_skills else {}))
-        row['calls_used'] = planner_calls = count_calls(job/'session') if (job/'session/journal.jsonl').is_file() else calls
-        row['amount_committed'] = self.spent(outcome, parent_spend, row['amount_committed'])
+        attempt_calls = count_calls(session_dir) if (session_dir/'journal.jsonl').is_file() else calls
+        attempt_spend = self.spent(outcome, parent_spend, row['amount_committed'])
+        attempts = [executed_attempt(deployment, {'status': outcome['status'], 'reason': outcome.get('reason'),
+                                                  'failure_code': outcome.get('failure_code')})]
+        planner_calls = attempt_calls
+        row['calls_used'] = planner_calls
+        row['amount_committed'] = attempt_spend
+
+        # Bounded 1-shot automatic escalation when an unpinned planner hits a compaction loop on a smaller window.
+        from .execution_scope import current as current_scope
+        from .work_units import _effective_trigger_limit
+        if (not args.get('route') and not current_scope().pin('planner') and not control.should_stop()
+                and _planner_compaction_loop(session_dir, outcome)):
+            orig_trigger = _effective_trigger_limit(deployment)
+            if orig_trigger is not None:
+                esc_trace = {}
+                self._trace = esc_trace
+                try:
+                    esc_name, esc_deployment = self.choose(
+                        args, (active or {}).get('kinds'), min_trigger_limit=orig_trigger, exclude=(name,))
+                except ValueError:
+                    esc_name = esc_deployment = None
+                finally:
+                    self._trace = None
+                if esc_deployment is not None:
+                    # Save attempt 1's actual call consumption before computing remaining shared budget.
+                    row['calls_reserved'] = attempt_calls
+                    save_json(receipt_path, row)
+                    esc_calls = resources.child_calls(MAX_CALLS)
+                    if maximum is not None:
+                        esc_calls = resources.ceiling(
+                            'calls', esc_calls,
+                            maximum - count_calls(self.root) - resources.known_calls(self.calls_committed()) - RESERVE)
+                    esc_seconds = resources.child_seconds(MAX_SECONDS, control.remaining_seconds(), reserve=5)
+                    if self.state.get('deadline_utc') is not None:
+                        esc_seconds = resources.ceiling('time', esc_seconds, self.state['deadline_utc'] - time.time() - 5)
+                    can_fund = not ((esc_calls is not None and esc_calls < 2)
+                                    or (esc_seconds is not None and esc_seconds < 10)
+                                    or control.should_stop())
+                    esc_allowance = esc_parent_spend = None
+                    if can_fund:
+                        try:
+                            esc_allowance, esc_parent_spend = self.allowance(esc_deployment)
+                        except ValueError:
+                            can_fund = False
+                    if can_fund:
+                        from .native_spend import total_amounts
+                        def _combine_amounts(first, second):
+                            combined = total_amounts([first, second])
+                            return None if combined is None else str(combined)
+                        esc_session = job/'session-2'
+                        row.pop('calls_used', None)
+                        row['calls_reserved'] = (attempt_calls + esc_calls) if esc_calls is not None else None
+                        row['amount_committed'] = _combine_amounts(attempt_spend, esc_allowance)
+                        row['executed_decision'] = executed_decision(
+                            esc_trace.get('mode'), esc_name, esc_trace.get('visited', [esc_name]),
+                            esc_trace.get('skipped', []))
+                        row['attempts'] = [*attempts, executed_attempt(esc_deployment, {'status': 'DISPATCHING'})]
+                        row['escalated_from'] = name
+                        row['route'] = esc_name
+                        save_json(receipt_path, row)
+                        esc_config, esc_mission, esc_compose, esc_brief = build_attempt(esc_deployment)
+                        with local_slot(esc_deployment):
+                            esc_outcome = run_session(esc_config, esc_deployment, esc_session, esc_brief,
+                                limits={'max_model_calls': esc_calls,
+                                        'max_seconds': None if esc_seconds is None else int(esc_seconds),
+                                        'request_seconds': MAX_SECONDS if esc_seconds is None else int(esc_seconds)},
+                                cancellation=control.cancellation, delegated_leaf=True,
+                                **({'inherited_managed_skills': planner_skills} if planner_skills else {}))
+                        esc_used = count_calls(esc_session) if (esc_session/'journal.jsonl').is_file() else esc_calls
+                        esc_spent = self.spent(esc_outcome, esc_parent_spend, esc_allowance)
+                        planner_calls = attempt_calls + esc_used
+                        row['calls_used'] = planner_calls
+                        row['amount_committed'] = _combine_amounts(attempt_spend, esc_spent)
+                        attempts.append(executed_attempt(esc_deployment, {
+                            'status': esc_outcome['status'], 'reason': esc_outcome.get('reason'),
+                            'failure_code': esc_outcome.get('failure_code')}))
+                        name, deployment = esc_name, esc_deployment
+                        config, mission, compose = esc_config, esc_mission, esc_compose
+                        session_dir, outcome = esc_session, esc_outcome
+
         if outcome['status'] == 'PROPOSED':
-            artifact = regular(job/'session/artifact.json')
+            artifact = regular(session_dir/'artifact.json')
             plan = read_json(artifact, 65536)['payload']
             result = handoff(artifact,plan)
             # Every conversation plan with tasks is reviewed unless it is non-critical, non-code creative/asset work
@@ -823,13 +990,12 @@ class PlanningTools:
         else:
             result = {'status': outcome['status'], 'reason': outcome.get('reason'),
                       'failure_code': outcome.get('failure_code'),
-                      'provider_stop_reason': outcome.get('provider_stop_reason'), 'session': str(job/'session')}
+                      'provider_stop_reason': outcome.get('provider_stop_reason'), 'session': str(session_dir)}
             if outcome.get('delivery_validation'):
                 result['delivery_validation'] = deepcopy(outcome['delivery_validation'])
                 result['next'] = ('The provider completed a response but the host rejected its typed delivery. '
                     'Inspect the listed local validation issues; this is not evidence of quota or provider failure.')
-        row['attempts'] = [executed_attempt(deployment, {'status': outcome['status'], 'reason': outcome.get('reason'),
-                                                         'failure_code': outcome.get('failure_code')})]
+        row['attempts'] = attempts
         row.update(status='FINISHED', result={**result, 'route': name, 'model_calls': planner_calls})
         save_json(receipt_path, row)
         return row['result']

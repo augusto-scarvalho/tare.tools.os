@@ -29,9 +29,9 @@ def deployment_profile(deployment, requested_model):
     if type(deployment.get('native_streaming', False)) is not bool:
         raise ValueError('native_streaming_requires_boolean')
     projection = deployment.get('native_context_projection', {})
-    if (not isinstance(projection, dict) or set(projection) - {'elide_edited_reads'}
+    if (not isinstance(projection, dict) or set(projection) - {'elide_edited_reads', 'elide_duplicate_reads'}
             or any(type(v) is not bool for v in projection.values())):
-        raise ValueError('native_context_projection_supports_boolean_elide_edited_reads')
+        raise ValueError('native_context_projection_supports_boolean_read_elision_flags')
     from relay.native_spend import settings
     settings(deployment)
     counter_protocol = deployment.get('native_counter_protocol', 'server-template-tokenize')

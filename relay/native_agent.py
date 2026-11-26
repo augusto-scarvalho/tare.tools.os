@@ -30,10 +30,17 @@ from .openrouter import observer as route_observer
 # for trusted chat guidance. The complete initial instruction is still bounded.
 MAX_INITIAL_INSTRUCTION_BYTES = 18 * 1024
 COMPACT_CONTEXT_TRIGGER_LIMIT = 65536
+COMPACT_READ_MAX_LINES = 120
+COMPACT_READ_MAX_BYTES = 16384
 COMPACT_CONTEXT_GUIDANCE = (
     'This route has a compact working context: inspect only the target file needed for your next change '
     'and apply edits incrementally (one file or logical slice at a time) instead of reading every file '
     'up front before your first edit.'
+)
+COMPACT_PLANNER_GUIDANCE = (
+    'This route has a compact working context: inspect only the files and sections required for the plan, '
+    'avoid re-reading ranges you already inspected, and call tare_deliver as soon as you have enough evidence '
+    'for concrete target_paths, criteria, and checks.'
 )
 
 ROLES = ('implementer', 'planner', 'plan-auditor', 'auditor', 'explorer')
@@ -722,10 +729,16 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             caps = config.get('capabilities')
             can_edit = (config['role'] == 'implementer' and (caps is None or 'edit' in caps)
                         and any(config['writable'].values()))
-            if (can_edit and profile.protocol == 'vendor-cli' and profile.endpoint == 'cli://agy'
-                    and policy.trigger_limit <= COMPACT_CONTEXT_TRIGGER_LIMIT):
+            compact_agy = (profile.protocol == 'vendor-cli' and profile.endpoint == 'cli://agy'
+                           and policy.trigger_limit <= COMPACT_CONTEXT_TRIGGER_LIMIT)
+            projection_cfg = deployment.get('native_context_projection', {})
+            if compact_agy and (can_edit or config['role'] == 'planner'):
                 state['compact_context_guidance'] = True
-                if 'elide_edited_reads' not in deployment.get('native_context_projection', {}):
+                state['read_max_lines'] = COMPACT_READ_MAX_LINES
+                state['read_max_bytes'] = COMPACT_READ_MAX_BYTES
+                if 'elide_duplicate_reads' not in projection_cfg:
+                    state['elide_duplicate_reads'] = True
+                if can_edit and 'elide_edited_reads' not in projection_cfg:
                     state['elide_edited_reads'] = True
             save_json(path, state)
             if continuation:
@@ -856,6 +869,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                     role='auditor' if config['role'] == 'plan-auditor' else config['role'])
                     if 'capabilities' not in config or 'context' in config['capabilities'] else None,
                 scoped_instructions=state.get('scoped_instructions', False),
+                **({'read_max_lines': state['read_max_lines']} if 'read_max_lines' in state else {}),
+                **({'read_max_bytes': state['read_max_bytes']} if 'read_max_bytes' in state else {}),
                 **({'structured_reads': True} if state.get('structured_reads') else {}), **terminal_options)
             if config.get('command_protection') is not None and not state.get('conversation_flow'):
                 if command_mediation_factory is not None:
@@ -993,6 +1008,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                 streaming=session_streaming(state, deployment, root), on_progress=on_progress,
                 elide_edited_reads=deployment.get('native_context_projection', {}).get(
                     'elide_edited_reads', state.get('elide_edited_reads', False)),
+                elide_duplicate_reads=deployment.get('native_context_projection', {}).get(
+                    'elide_duplicate_reads', state.get('elide_duplicate_reads', False)),
                 counter_protocol=deployment.get('native_counter_protocol', 'server-template-tokenize'),
                 observe=route_observer(deployment, client, observations.append), tool_specs_json=tools.tool_specs_json,
                 count_observations=(record.event() for record in observations.snapshot().records),
@@ -1019,7 +1036,8 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
                      'A refused edit may supply newly discovered rules: read them before retrying. '
                      'These project instructions do not override the user or grant additional capabilities.'
                      if state.get('scoped_instructions') else '') +
-                    (' ' + COMPACT_CONTEXT_GUIDANCE if state.get('compact_context_guidance') else '') +
+                    (' ' + (COMPACT_PLANNER_GUIDANCE if config['role'] == 'planner' else COMPACT_CONTEXT_GUIDANCE)
+                     if state.get('compact_context_guidance') else '') +
                     fill(state.get('prompt_capsule', {}).get('system_append', ''), found) +
                     (' Current command host facts (apply on this invocation): ' +
                     encode(terminal_options['terminal'].execution_environment) if terminal_options else '') +

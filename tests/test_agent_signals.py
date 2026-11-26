@@ -961,3 +961,105 @@ def test_multirepo_propose_checks_activates_in_catalog_with_disambiguation_and_h
     assert 'explicit scoped verifiers' in out['next'].lower()
     assert captured_requests[0]['checks_proposal']['active_now'] is False
     assert tasks.detected_checks(explicit_state['config']) == {}
+
+
+def test_implement_refuses_blind_retry_on_unchanged_out_of_scope_blocker_until_checks_or_file_changes(
+        tmp_path, monkeypatch):
+    from relay import work_units
+    from test_conversation_tasks import effect, host as host_factory, intake, planned, user_reply
+
+    # Build a standard conversation host via pytest helper components.
+    repo = tmp_path / 'repo'; repo.mkdir()
+    (repo / 'a.py').write_text('value = 1\n', encoding='utf-8')
+    (repo / 'tests').mkdir()
+    (repo / 'tests' / 'visual_review.gd').write_text('var moving_a := 1\nvar moving_a := 2\n', encoding='utf-8')
+    session = tmp_path / 'session'; session.mkdir()
+    from compute_plane.native_journal import NativeJournal
+    journal = NativeJournal(session / 'journal.jsonl')
+    journal.append({'kind': 'session_started', 'session_id': 'sess-1', 'instruction': 'Update a.py.'})
+    state = {
+        'session_id': 'sess-1', 'conversation_flow': True,
+        'deployment': {'id': 'coord', 'native_profile': {'model': 'coord'}},
+        'limits': {'max_model_calls': 30, 'max_seconds': 600}, 'deadline_utc': None,
+        'config': {'repositories': {'repo': str(repo)}, 'writable': {'repo': ['a.py']}, 'verifiers': {}},
+    }
+    inner = SimpleNamespace(names=('read',), tool_specs_json=encode({'read': {}}),
+                            session_id='sess-1', binding='test-binding',
+                            execute=lambda req, ctrl: None, recover_effect=lambda j: None)
+    tools = tasks.ConversationTools(inner, session, state, 'inv-1')
+    ctrl = _control()
+
+    # Record demand + saved plan whose only target is a.py (tests/visual_review.gd is out of scope).
+    tools.understand({'intent': 'deliver', 'relation': 'new', 'objective': 'Update a.py.', 'criteria': ['value=2']})
+    artifact = session / 'planning' / 'p1' / 'session' / 'artifact.json'
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text(json.dumps({
+        'schema': 'tare.tools/native-artifact/1', 'role': 'planner', 'payload': {
+            'summary': 'Update a.py.', 'steps': ['Edit a.py'], 'criteria': ['value=2'],
+            'remaining': [], 'sources': [], 'tasks': [{
+                'key': 't1', 'title': 'Update a.py', 'repository': 'repo',
+                'target_paths': ['a.py'], 'criteria': ['value=2'], 'depends_on': [],
+                'verifiers': [], 'test_paths': [],
+            }],
+        },
+    }), encoding='utf-8')
+    val = tasks.load(session); task = tasks.current(val)
+    tasks.task_plan(session, state['config'], task, {'artifact': str(artifact)})
+    tasks.save(session, val)
+
+    monkeypatch.setattr('relay.conversation_permissions.authorize', lambda *a, **kw: state['config'])
+    monkeypatch.setattr(work_units, 'check_failures', lambda *a, **kw: None)
+    monkeypatch.setattr(work_units, 'child_limits', lambda *a, **kw: {'max_model_calls': 10, 'max_seconds': 300})
+    run_calls = []
+
+    def fake_run_unit(custody, st, args, stop, **kw):
+        run_calls.append(args)
+        return {
+            'verdict': 'NOT_VERIFIED', 'applied': False, 'files': ['a.py'], 'route': 'worker',
+            'reason': 'pre-existing check failure', 'already_red': ['godot-tests:tests/visual_review.gd'],
+            'agent_signals': agent_signals.stamp_signals('implementer', [{
+                'kind': 'out_of_scope_blocker',
+                'summary': 'Parse error in tests/visual_review.gd',
+                'reason': 'Duplicate var moving_a outside target_paths.',
+                'payload': {'paths': ['tests/visual_review.gd'], 'symptom': 'Parse error at line 2'},
+            }], source_id='w1'),
+        }
+
+    monkeypatch.setattr(work_units, 'run_unit', fake_run_unit)
+    first = tools.execute(_effect('implement', {}, 'imp-1'), ctrl)
+    assert first.status == 'succeeded', first.output_json
+    assert len(run_calls) == 1
+    body = json.loads(first.output_json)
+    # No contradictory "Never ... open a replacement task" or "use relation=correct and implement" guidance.
+    assert 'open a replacement task' not in body['next']
+    assert 'out_of_scope_blockers' in body['next']
+    assert 'propose_checks' in body['next']
+    no_red_view = tasks.delivery_view({
+        'verdict': 'NOT_VERIFIED', 'applied': False, 'files': ['a.py'],
+        'out_of_scope_blockers': body['out_of_scope_blockers'],
+    })
+    assert 'use relation=correct and implement' not in no_red_view['next']
+    assert 'Do not retry implement unchanged' in no_red_view['next']
+
+    # Fresh user turn: repeating implement() unchanged is refused cheaply with zero run_unit dispatch.
+    journal.append({'kind': 'user_message', 'message_id': 'u2', 'text': 'Try again.'})
+    tools.invocation_id = 'inv-2'
+    tools.understand({'intent': 'deliver', 'relation': 'continue'})
+    second = tools.execute(_effect('implement', {}, 'imp-2'), ctrl)
+    assert second.status == 'refused' and len(run_calls) == 1
+    assert 'tests/visual_review.gd' in second.output_json and 'propose_checks' in second.output_json
+
+    # Once .tare/checks.json is updated (e.g. via propose_checks), the guard clears and implement() dispatches.
+    turn_engine.write_project_checks_doc(repo, {
+        'checks': {'visual-review': {'mode': 'gui', 'paths': ['tests/visual_review.gd']}}
+    })
+    third = tools.execute(_effect('implement', {}, 'imp-3'), ctrl)
+    assert third.status == 'succeeded' and len(run_calls) == 2
+
+    # Editing the blocked out-of-scope file itself also clears the guard on the next turn.
+    journal.append({'kind': 'user_message', 'message_id': 'u3', 'text': 'Fixed visual_review.gd.'})
+    tools.invocation_id = 'inv-4'
+    tools.understand({'intent': 'deliver', 'relation': 'continue'})
+    (repo / 'tests' / 'visual_review.gd').write_text('var moving_a := 1\nvar home_moving_a := 2\n', encoding='utf-8')
+    fourth = tools.execute(_effect('implement', {}, 'imp-4'), ctrl)
+    assert fourth.status == 'succeeded' and len(run_calls) == 3
