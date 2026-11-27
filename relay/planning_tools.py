@@ -837,8 +837,9 @@ class PlanningTools:
                         'paths': gui_scripts,
                         'note': ('These Godot scripts explicitly refuse --headless execution and are skipped from '
                                  'automatic headless verification. Record GUI verification in remaining rather than '
-                                 'automated task criteria, and optionally emit propose_checks(mode="gui", paths=...) '
-                                 'for .tare/checks.json.'),
+                                 'automated headless task criteria, and optionally emit propose_checks(mode="gui", '
+                                 'paths=..., argv=...) for .tare/checks.json so the host can offer consent-gated '
+                                 'desktop GUI verification.'),
                     }
                 task_contract += ('Use only available_verifiers keys as task.verifiers; a shell command is not a verifier name. '
                                   'Use an empty list when none applies. Preserve the recorded product criteria. '

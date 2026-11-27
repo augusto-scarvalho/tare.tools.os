@@ -797,6 +797,179 @@ def run_checks(tree, commands, *, timeouts=None):
     return Checked(state, receipt(), states)
 
 
+def _snapshot_tree_images(tree, *, max_files=2000):
+    """Bounded read-only inventory of image files inside `tree` (`rel_posix -> (mtime_ns, size)`)."""
+    from .vision_tools import IMAGE_EXTENSIONS
+    root = Path(tree)
+    snap = {}
+    scanned = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(
+            d for d in dirnames if d not in {'.git', '.godot', 'node_modules', '__pycache__', '.venv', 'venv'})
+        cur = Path(dirpath)
+        if cur.is_symlink():
+            dirnames.clear()
+            continue
+        for fname in sorted(filenames):
+            scanned += 1
+            if scanned > max_files:
+                return snap
+            p = cur / fname
+            if p.suffix.lower() not in IMAGE_EXTENSIONS or p.is_symlink():
+                continue
+            try:
+                st = p.stat()
+                snap[p.relative_to(root).as_posix()] = (st.st_mtime_ns, st.st_size)
+            except OSError:
+                continue
+    return snap
+
+
+def run_gui_checks(tree, gui_commands, decide_gui, *, stop=lambda: False, job=None, base=None, changed_before_gui=None):
+    """Execute user-consented `.tare/checks.json` `mode: "gui"` checks directly on desktop outside the sandbox.
+
+    Returns `(overall_state, output_text, details_dict)` where `overall_state` is one of
+    `'green'`, `'red'`, `'inconclusive'`, or `'skipped'`. Newly written non-ignored image artifacts are
+    copied under `<job>/gui-artifacts/<name>/` and removed from `tree` so `changed_files(tree, base)`
+    stays identical to `changed_before_gui`; any non-artifact mutation to candidate files fails closed.
+    """
+    from compute_plane.native_journal import regular
+    from .vision_tools import IMAGE_EXTENSIONS, MAX_IMAGE_BYTES, detect_image_media_type
+    outputs = []
+    details = {}
+    ran_states = []
+    _, sup_timeout, _ = supervision()
+    progress = PROGRESS.get()
+    tree_path = Path(tree)
+    tree_resolved = tree_path.resolve()
+
+    for name, entry in gui_commands.items():
+        if stop():
+            details[name] = {'status': 'skipped', 'reason': 'execution stopped', 'argv': list(entry['argv'])}
+            continue
+        argv = list(entry['argv'])
+        allowed, why = decide_gui(name, argv, entry.get('description', ''))
+        if not allowed:
+            details[name] = {'status': 'skipped', 'reason': why, 'argv': argv}
+            outputs.append(f'$ {name} [gui] skipped: {why}')
+            continue
+        if progress is not None:
+            progress.running(f'{name} (GUI)')
+        check_timeout = entry.get('timeout_seconds')
+        effective_timeout = (
+            (check_timeout if sup_timeout is None else min(sup_timeout, check_timeout))
+            if check_timeout is not None else sup_timeout
+        )
+        before_imgs = _snapshot_tree_images(tree_path)
+        env = {**os.environ, 'PYTHONUTF8': '1'}
+        try:
+            done = managed_check(argv, cwd=tree_path, timeout=effective_timeout, env=env, cancelled=stop)
+        except subprocess.TimeoutExpired as exc:
+            msg = f'{name} [gui]: more than {exc.timeout} s (timeout)'
+            outputs.append(msg)
+            details[name] = {'status': 'inconclusive', 'reason': msg, 'argv': argv}
+            ran_states.append('inconclusive')
+            continue
+        except OSError as exc:
+            msg = f'{name} [gui]: could not start: {exc}'
+            outputs.append(msg)
+            details[name] = {'status': 'inconclusive', 'reason': msg, 'argv': argv}
+            ran_states.append('inconclusive')
+            continue
+
+        out_text = check_output((done.stdout or '') + (done.stderr or ''))
+        outputs.append(f'$ {name} [gui] (exit {done.returncode})\n{out_text}')
+        limitation = getattr(done, 'execution_limitation', None)
+        if limitation:
+            outputs.append(f'{name} [gui]: {limitation}')
+            status = 'inconclusive'
+        else:
+            status = 'red' if done.returncode else 'green'
+
+        artifacts = []
+        mutation_error = None
+        if base is not None and changed_before_gui is not None:
+            after_changed = changed_files(tree_path, base)
+            for rel, raw in list(after_changed.items()):
+                if rel in changed_before_gui or raw is None:
+                    continue
+                target = tree_path / rel
+                if (target.suffix.lower() in IMAGE_EXTENSIONS and not target.is_symlink()
+                        and target.resolve().is_relative_to(tree_resolved) and target.is_file()
+                        and 0 < len(raw) <= MAX_IMAGE_BYTES and detect_image_media_type(raw) is not None):
+                    digest = hashlib.sha256(raw).hexdigest()
+                    saved_path = None
+                    if job is not None and len(artifacts) < 16:
+                        art_root = regular(Path(job) / 'gui-artifacts' / name)
+                        dst = art_root / rel
+                        if dst.resolve().is_relative_to(art_root.resolve()):
+                            dst.parent.mkdir(parents=True, exist_ok=True)
+                            dst.write_bytes(raw)
+                            saved_path = str(dst)
+                    if len(artifacts) < 16:
+                        artifacts.append({
+                            'repository': 'review' if saved_path else 'candidate',
+                            'path': rel,
+                            'sha256': digest,
+                            **({'saved_path': saved_path} if saved_path else {}),
+                        })
+                    try:
+                        target.unlink()
+                    except OSError:
+                        pass
+            remaining_changed = changed_files(tree_path, base)
+            if remaining_changed != changed_before_gui:
+                mutated = sorted(
+                    k for k in set(remaining_changed) | set(changed_before_gui)
+                    if remaining_changed.get(k) != changed_before_gui.get(k)
+                )
+                mutation_error = f'GUI check {name} modified candidate files: {", ".join(mutated[:8])}'
+                outputs.append(mutation_error)
+                status = 'red'
+
+        after_imgs = _snapshot_tree_images(tree_path)
+        for rel, meta in sorted(after_imgs.items()):
+            if len(artifacts) >= 16:
+                break
+            if before_imgs.get(rel) == meta:
+                continue
+            p = tree_path / rel
+            try:
+                if p.is_symlink() or not p.resolve().is_relative_to(tree_resolved) or not p.is_file():
+                    continue
+                raw = p.read_bytes()
+                if not raw or len(raw) > MAX_IMAGE_BYTES or detect_image_media_type(raw) is None:
+                    continue
+                artifacts.append({
+                    'repository': 'candidate',
+                    'path': rel,
+                    'sha256': hashlib.sha256(raw).hexdigest(),
+                })
+            except OSError:
+                continue
+
+        details[name] = {
+            'status': status,
+            'exit_code': done.returncode,
+            'argv': argv,
+            'consent': why,
+            'output': out_text[:2000],
+            **({'reason': mutation_error or limitation} if (mutation_error or limitation) else {}),
+            **({'artifacts': artifacts} if artifacts else {}),
+        }
+        ran_states.append(status)
+
+    if 'red' in ran_states:
+        overall = 'red'
+    elif 'inconclusive' in ran_states:
+        overall = 'inconclusive'
+    elif ran_states:
+        overall = 'green'
+    else:
+        overall = 'skipped'
+    return overall, clip('\n'.join(outputs)), details
+
+
 def verdict(before, after, changed, protected, retry):
     """VERIFIED, NOT_VERIFIED or INCONCLUSIVE, and why; `retry` reruns the checks once (a flaky check)."""
     if not changed:
@@ -1542,7 +1715,7 @@ def _prior_audit_revised(unit):
 
 
 def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=None, worker=None, control=None, spend_model=None, review_effect=None,
-             outside=None, check_control=None, red_baseline=None):
+             outside=None, check_control=None, red_baseline=None, gui_check=None):
     """Run one unit up the route ladder until VERIFIED or out of rungs; apply a VERIFIED change. The receipt and
     the patch stay under the session's custody; the ledger records the unit's state. Without command protection the
     host checks run in the sandbox (command_protection.conversation_verifier) on the execution control (`control`, or
@@ -1830,6 +2003,12 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                      'capabilities': ['read', 'list', 'search', 'edit', 'verify'], 'specgraph_edit_context': False}
             if state.get('conversation_flow'):
                 child['agent_signals'] = True
+                attachments_dir = Path(custody) / 'attachments'
+                child['image_inspection'] = (
+                    {'attachments_root': str(attachments_dir.resolve())}
+                    if attachments_dir.is_dir() and not attachments_dir.is_symlink()
+                    else True
+                )
             if inputs:child['input_artifacts']=inputs
             if state.get('conversation_flow') and (graph:=planned_backlog(unit,repository,tree)):
                 child['project_graph']=graph
@@ -2053,6 +2232,32 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                 row.update(verdict='INCONCLUSIVE',reason=result['reason'])
                 keep_tree=True
                 break  # consent cannot be replaced by checks or an audit of partial work
+            gui_details = None
+            if (verdict_ == 'VERIFIED' and state.get('conversation_flow') and gui_check is not None
+                    and not stop() and not has_goal_drift and not unchanged_candidate):
+                from .challenger import local as is_local_deployment
+                from .turn_engine import project_gui_checks
+                declared_gui = project_gui_checks(Path(root))
+                if declared_gui:
+                    gui_state, gui_text, gui_details = run_gui_checks(
+                        tree,
+                        declared_gui,
+                        lambda n, a, d='': gui_check(n, a, d, local_producer=is_local_deployment(deployment)),
+                        stop=stop,
+                        job=job,
+                        base=base,
+                        changed_before_gui=changed,
+                    )
+                    row['gui_checks'] = result['gui_checks'] = gui_details
+                    if gui_text:
+                        row['after'] = (row['after'] + '\n' + gui_text).strip() if row.get('after') else gui_text
+                        result['checks_after'] = row['after']
+                    if gui_state in ('red', 'inconclusive'):
+                        verdict_ = 'NOT_VERIFIED' if gui_state == 'red' else 'INCONCLUSIVE'
+                        reason = ('a consented GUI check failed on the candidate' if gui_state == 'red'
+                                  else 'a consented GUI check did not finish')
+                        row.update(verdict=verdict_, reason=reason)
+                        result.update(verdict=verdict_, reason=reason, patch=row.get('patch'))
             if verdict_ == 'VERIFIED' and review is not None:
                 observed=verification_evidence(session_path) if session_path is not None else []
                 if candidate:
@@ -2061,6 +2266,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                     if previous_job.resolve().is_relative_to(Path(custody).resolve()/'units') and sessions:
                         observed=[*verification_evidence(sessions[-1]),*observed]
                 assessment = review(tree, deployment, unit, changed, {'before': row['before'], 'after': row['after'],
+                    **({'gui_checks': gui_details} if gui_details else {}),
                     **({'checks_set_aside': {'checks': set_aside, 'why': 'red before any change; the user chose to '
                         'judge the change without them, so they did not run after it'}} if set_aside else {}),
                     **({'host_baseline_metadata':row['host_baseline_metadata']} if row.get('host_baseline_metadata') else {}),

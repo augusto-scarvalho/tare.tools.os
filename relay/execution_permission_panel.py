@@ -36,6 +36,7 @@ class ExecutionPermissionPanel(SupportPanel):
         audit=value.get('kind')=='audit'  # local-only: apply a change whose audit was not independent?
         checks_proposal=value.get('checks_proposal') if value.get('kind')=='checks' else None
         sandbox=value.get('kind')=='sandbox'  # a check the sandbox blocked: run it outside?
+        gui_check=value.get('gui_check') if value.get('kind')=='gui_check' else None  # declared mode="gui" check
         stall=value.get('stall') if value.get('kind')=='stall' else None  # a check or command with no activity
         baseline=value.get('baseline') if value.get('kind')=='baseline' else None  # checks red before any change
         one=len(value.get('checks') or {})==1
@@ -46,6 +47,7 @@ class ExecutionPermissionPanel(SupportPanel):
                          'Run this command?' if command else 'Apply this change?' if audit else
                          ('Update .tare/checks.json?' if checks_proposal.get('existed') else 'Create .tare/checks.json?')
                          if checks_proposal is not None else
+                         'Run this GUI check on your desktop?' if gui_check is not None else
                          'Run this check outside the sandbox?' if sandbox else
                          ('Implement with a check that already fails?' if one else
                           'Implement with checks that already fail?') if baseline is not None else
@@ -90,6 +92,20 @@ class ExecutionPermissionPanel(SupportPanel):
                          'its result says so.' if baseline.get('aside') else '')+
                         '\nStop: no implementer starts and nothing is spent on one.'+
                         '\n\nTheir output before any change:\n'+str(baseline.get('output') or ''), markup=False)
+                elif gui_check is not None:
+                    name,argv=next(iter(value['checks'].items()))
+                    desc=str(gui_check.get('description') or '').strip()
+                    yield Static('Project: '+value['project']+'\nCheck: '+name+
+                        ('\nDescription: '+desc if desc else '')+
+                        '\n\nExact command:\n'+repr(argv)+
+                        '\n\nOutside the sandbox this GUI check runs directly on your desktop as you: it can open '
+                        'windows, use your GPU/display, reach the network, and read your files (secret files included). '
+                        'Skipping it leaves the GUI check unrun.'+
+                        ('\n\nA local model wrote the code this check runs, so its GUI checks are asked about each turn.'
+                         if gui_check.get('always') is False else
+                         '\n\nAlways allow binds this exact command only; changing .tare/checks.json asks again, and '
+                         '/permissions can clear remembered GUI checks.'),
+                        markup=False)
                 elif sandbox:
                     name,argv=next(iter(value['checks'].items()))
                     line=str((value.get('sandbox') or {}).get('line') or '')[:200]  # the check's own words: plain
@@ -139,7 +155,7 @@ class ExecutionPermissionPanel(SupportPanel):
                 checks = '\n'.join('Validate Backlog Graph format' if n == BACKLOG_CHECK else n+': '+repr(argv)
                                    for n, argv in value.get('checks',{}).items())
                 from .execution_scope import current
-                if not command and not audit and checks_proposal is None and not sandbox and stall is None and baseline is None:yield Static('Checks: '+(checks or 'host diff check; any tests named in the plan')+
+                if not command and not audit and checks_proposal is None and not sandbox and gui_check is None and stall is None and baseline is None:yield Static('Checks: '+(checks or 'host diff check; any tests named in the plan')+
                     ('\nTest targets: '+', '.join(value['tests']) if value.get('tests') else '')+
                     ('\nThe candidate is checked and audited before applying; an audit by the same model family is '
                      'not independent, so tare asks you before applying it.' if current().only == 'local' else
@@ -158,6 +174,12 @@ class ExecutionPermissionPanel(SupportPanel):
                     yield Button('Stop it', id='permission-deny')
                     if stall['outside']:
                         yield Button('Stop it and run it outside the sandbox', id='permission-outside')
+                    return
+                if gui_check is not None:
+                    yield Button('Run this GUI check', id='permission-once')
+                    if gui_check.get('always') is not False:  # never for a local model's work
+                        yield Button('Always allow this exact GUI check here', id='permission-project')
+                    yield Button('Skip GUI check', id='permission-deny')
                     return
                 if sandbox:
                     yield Button('Run it outside the sandbox this turn', id='permission-once')
@@ -192,7 +214,7 @@ class ExecutionPermissionPanel(SupportPanel):
         # nothing) start on the safe answer; a process with no activity starts on keeping it running, and failing
         # tests the plan itself names start on Continue (a bug fix: the change is meant to make them pass).
         unaccepted=self.request.get('kind')=='audit' and self.request['audit']['verdict']!='ACCEPT'
-        safe=unaccepted or self.request.get('kind') in {'sandbox', 'checks'} or (
+        safe=unaccepted or self.request.get('kind') in {'sandbox', 'gui_check', 'checks'} or (
             self.request.get('kind')=='baseline' and not self.request['baseline'].get('named'))
         self.query_one('#permission-deny' if safe else '#permission-once', Button).focus()
 
