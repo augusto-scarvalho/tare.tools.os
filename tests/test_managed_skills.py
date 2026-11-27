@@ -926,6 +926,32 @@ def test_managed_skill_min_model_class_lifecycle_freezing_cli_and_work_unit_rout
     with execution_scope.activated(execution_scope.Scope(only='local')):
         assert [n for n, _ in work_units.routes(cheap_dep, needs=eff_needs)] == ['local-cheap']
 
+    # Auto-selected creative skill raises floor on art/matching units, NOT on unrelated pure-coding follow-ups.
+    auto_state = {
+        'managed_skills_pool': pool_art,
+        'skill_selection': {
+            'status': 'selected', 'selected_ids': ['pxl-art'],
+            'shortlist': [{'skill_id': 'pxl-art', 'matched_terms': ['pxl']}],
+        },
+    }
+    coding_unrelated = {'needs': 'middling', 'kind': 'coding', 'title': 'Lower horizon in hub.gd',
+                        'target_paths': ['hub.gd', 'tests/experience.gd'], 'criteria': ['Horizon at y=968']}
+    u_needs, _, u_floor, _ = work_units.effective_unit_routing(coding_unrelated, auto_state)
+    assert u_floor is None and u_needs == 'middling'
+
+    art_unit = {'needs': 'middling', 'kind': 'art', 'title': 'Draw neon buildings', 'target_paths': ['hub.gd']}
+    a_needs, _, a_floor, _ = work_units.effective_unit_routing(art_unit, auto_state)
+    assert a_floor == 'frontier' and a_needs == 'frontier'
+
+    coding_pxl = {'needs': 'middling', 'kind': 'coding', 'title': 'Update pxl build runner', 'target_paths': ['art.px.js']}
+    px_needs, _, px_floor, _ = work_units.effective_unit_routing(coding_pxl, auto_state)
+    assert px_floor == 'frontier' and px_needs == 'frontier'
+
+    # If the same skill was ALSO explicitly activated in config.managed_skills, its floor remains unconditional.
+    overlap_state = {**auto_state, 'config': {'managed_skills': ['pxl-art']}}
+    ov_needs, _, ov_floor, _ = work_units.effective_unit_routing(coding_unrelated, overlap_state)
+    assert ov_floor == 'frontier' and ov_needs == 'frontier'
+
 
 @pytest.mark.parametrize('size', [(80, 24), (130, 44)])
 def test_tui_roles_dialog_tier_button_cycles_min_model_class_compact_and_wide(tmp_path, monkeypatch, size):

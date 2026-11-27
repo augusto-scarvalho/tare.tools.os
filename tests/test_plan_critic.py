@@ -636,3 +636,18 @@ def test_long_operator_history_stays_under_planner_brief_limit_and_preserves_ope
     req = json.loads((proposal/'request.json').read_text(encoding='utf-8'))
     assert req['operator_messages'][0] == 'Opening requirement: keep the 6 critters.'
     assert req['operator_messages'][-1].startswith('Follow-up 7:')
+
+
+def test_bounded_followup_correction_skips_plan_critic_while_frontier_security_wide_and_initial_keep_it():
+    hosted = {'native_profile': {'endpoint': 'cli://claude', 'protocol': 'vendor-cli', 'model': 'claude-fable-5-2'}}
+    followup = {'prior_delivery': {'applied': True}, 'planning_revision': 1, 'kinds': ['coding']}
+    small_plan = plan_of(needs='middling', kind='coding', target_paths=['hub.gd', 'tests/experience.gd'])
+    assert planning_tools.plan_review_skip_reason(followup, small_plan, hosted) == 'BOUNDED_FOLLOWUP_CORRECTION'
+    # Initial delivery (no prior delivery / revision 0) STILL gets plan review.
+    assert planning_tools.plan_review_skip_reason({'kinds': ['coding']}, small_plan, hosted) is None
+    # Frontier, critical, security, or >3 target paths STILL get plan review even on follow-up.
+    assert planning_tools.plan_review_skip_reason(followup, plan_of(needs='frontier', kind='coding'), hosted) is None
+    assert planning_tools.plan_review_skip_reason(followup, plan_of(needs='middling', kind='coding', critical=True), hosted) is None
+    assert planning_tools.plan_review_skip_reason(followup, plan_of(needs='middling', kind='security'), hosted) is None
+    wide = plan_of(needs='middling', kind='coding', target_paths=['a.gd', 'b.gd', 'c.gd', 'd.gd'])
+    assert planning_tools.plan_review_skip_reason(followup, wide, hosted) is None

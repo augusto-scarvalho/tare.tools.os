@@ -838,7 +838,7 @@ def implementer_label(name, deployment):
         return str(name)  # presentation only
 
 
-def class_row(unit, deployment):
+def class_row(unit, deployment, *, original_needs=None, retry=False):
     """What a unit's outcome keeps of its need: how each class of model did on each class of unit. The class is the
     one the route was ranked by (`model_signals.judged`): for the unit's task type, from the board named in
     'class_source', or the general class ('general')."""
@@ -850,6 +850,7 @@ def class_row(unit, deployment):
         return critical
     from .model_choices import EFFORTS
     from .model_signals import ORDER, capped, judged
+    eff_needs = None if retry else (original_needs or unit.get('needs'))
     used = judged(deployment, unit.get('kind')) if unit.get('needs') or unit.get('kind') else {}
     parts, effort_used = unit.get('parts') or [], used
     if ranked := [(p, judged(deployment, p.get('kind'))) for p in parts if p.get('needs')]:
@@ -857,7 +858,7 @@ def class_row(unit, deployment):
         weakest, used = min(ranked, key=lambda r: ORDER.index(r[1]['class']))
         unit = {**unit, 'kind': weakest.get('kind')}
         effort_used = max((judged(deployment, p['kind']) for p in parts if p.get('kind')), default=used,
-                          key=lambda u: EFFORTS.index(e) if (e := capped(u.get('effort'), unit.get('critical'))) else -1)
+                          key=lambda u: EFFORTS.index(e) if (e := capped(u.get('effort'), unit.get('critical'), needs=eff_needs)) else -1)
     # A unit that names its types and no need was ranked by no class, but it is still work of those types: the row
     # keeps them ('kinds' alone), or the route's own record per type (model_signals.own_record) would count the run and
     # lose its type (found 2026-11-17: an audio unit with no `needs` was missing from the audio record).
@@ -865,24 +866,58 @@ def class_row(unit, deployment):
             **({'kind': unit['kind'], 'class_source': used['source']} if unit.get('kind') else {}),
             **({'kinds': named} if parts else {})} if unit.get('needs') else
            {'kinds': named or [unit['kind']]} if named or unit.get('kind') else {})
-    # The effort it ran at, said only when `routes` asked for it: the plan's, else the board's (`judged_effort`), each
-    # clamped to the route's supported levels. Read off the route that ran: one that took no such level ran at its own
-    # and says nothing.
+    # The effort it ran at, said only when `routes` asked for it: the plan's, else unit_needs cap, else the board's
+    # (`judged_effort`), each clamped to the route's supported levels.
     from .execution_team import reasoning
     from .model_choices import supported_level
     try:
-        ran, wanted = reasoning(deployment), stated or capped(effort_used.get('effort'), unit.get('critical'))
-        if ran and ran == supported_level(deployment, wanted):
+        ran = reasoning(deployment)
+        wanted = stated or capped(effort_used.get('effort'), unit.get('critical'), needs=eff_needs)
+        if not stated and not unit.get('critical') and not retry and eff_needs in ('cheap', 'middling') and ran == 'medium':
+            row.update(effort=ran, effort_from='unit_needs')
+        elif ran and ran == supported_level(deployment, wanted):
             row.update(effort=ran, effort_from='plan' if stated else effort_used['source'])
     except Exception:
         pass  # a deployment the picker cannot describe: a record, never a failure
     return {**row, **critical}
 
 
+def _auto_skill_applies_to_unit(skill: dict, unit: dict, selection: dict) -> bool:
+    """Return True when an auto-selected managed skill is relevant to `unit` so its min_model_class floor applies."""
+    from .planning_tools import CODE_REVIEW_KINDS, CREATIVE_PLAN_KINDS
+    kinds = {k for k in (unit.get('kind'), *(p.get('kind') for p in (unit.get('parts') or ()) if isinstance(p, dict))) if k}
+    if not kinds or (kinds & CREATIVE_PLAN_KINDS) or not (kinds & CODE_REVIEW_KINDS):
+        return True
+    sid = str(skill.get('skill_id') or '').lower()
+    terms = {t for t in (sid.split('-')[0], sid) if len(t) >= 3}
+    for item in (selection.get('shortlist') or ()):
+        if isinstance(item, dict) and item.get('skill_id') == skill.get('skill_id'):
+            terms.update(str(t).lower() for t in (item.get('matched_terms') or ()) if len(str(t)) >= 2)
+    haystack = ' '.join(filter(None, [
+        str(unit.get('title') or ''),
+        str(unit.get('summary') or ''),
+        *(str(c) for c in (unit.get('criteria') or ())),
+        *(str(p) for p in (unit.get('target_paths') or ())),
+    ])).lower()
+    return any(term in haystack for term in terms)
+
+
 def effective_unit_routing(unit: dict, state: dict | None):
-    """Raise a unit's effective needs/parts floor from frozen implementer managed skills without mutating unit."""
+    """Raise a unit's effective needs/parts floor from frozen implementer managed skills without mutating unit.
+    Explicitly activated skills always apply; auto-selected skills only raise the floor on units relevant to them."""
     from .managed_skills import frozen_for_role as frozen_skills_for_role, max_model_class, skills_min_model_class
-    skill_floor = skills_min_model_class(frozen_skills_for_role(state, 'implementer'))
+    impl_skills = frozen_skills_for_role(state, 'implementer')
+    selection = (state or {}).get('skill_selection')
+    if isinstance(selection, dict) and selection.get('status') == 'selected':
+        explicit_ids = set(((state or {}).get('config') or {}).get('managed_skills') or ())
+        auto_ids = set(selection.get('selected_ids') or ()) - explicit_ids
+        scoped_skills = [
+            s for s in impl_skills
+            if s.get('skill_id') not in auto_ids or _auto_skill_applies_to_unit(s, unit, selection)
+        ]
+    else:
+        scoped_skills = impl_skills
+    skill_floor = skills_min_model_class(scoped_skills)
     effective_needs = max_model_class((unit.get('needs'), skill_floor))
     raw_parts = unit.get('parts')
     effective_parts = (
@@ -897,7 +932,7 @@ def effective_unit_routing(unit: dict, state: dict | None):
 
 
 def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None, needs=None, work_type=None,
-           critical=False, unit_effort=None, parts=None):
+           critical=False, unit_effort=None, parts=None, original_needs=None, retry=False):
     """The implementer routes to try, whichever account the conversation runs on (owner, 2026-11-14): the routes of
     the kind --prefer_* names first, then those whose allowance lapses in surplus (the sooner lapse first), then tare's
     implementer ladder, cheapest tier first (the owner's <storage>/serve/routing.json, else the role table's, cheapest sufficient first). With nothing in
@@ -954,8 +989,8 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
     kept = boards() if (work_type or parts) and not chosen else None  # once for the whole ranking and the efforts
     def at_effort(deployment):
         """The route at the effort the coordinator fixed; else, for an automatic route, the one the plan states, else
-        the one a board judged its model at (never lower than its own); either one clamped to the levels the route
-        supports. A hint never fails a unit: a route with no such level runs at its own."""
+        the one a board judged its model at (capped at medium for first-pass non-critical cheap/middling units unless
+        the owner raised the ordinary ceiling). A hint never fails a unit: a route with no such level runs at its own."""
         if effort:
             return with_effort(deployment, effort)
         if chosen:
@@ -964,9 +999,20 @@ def routes(parent, chosen=None, effort=None, *, allow_parent=False, refused=None
             if unit_effort:
                 want = supported_level(deployment, unit_effort)
             else:
+                eff_needs = original_needs or needs
                 kinds = [p['kind'] for p in parts if p.get('kind')] if parts else [work_type]
-                want = max(filter(None, (kind and judged_effort(deployment, judged(deployment, kind, kept), critical)
+                want = max(filter(None, (kind and judged_effort(deployment, judged(deployment, kind, kept), critical,
+                                                                needs=None if retry else eff_needs)
                                          for kind in kinds)), key=EFFORTS.index, default=None)
+                if want is None and not critical and not retry and eff_needs in ('cheap', 'middling'):
+                    from .execution_team import reasoning
+                    from .model_signals import CEILING, ceiling as effort_ceiling
+                    own = reasoning(deployment)
+                    if (effort_ceiling(False) == CEILING[False]
+                            and own in EFFORTS and EFFORTS.index(own) > EFFORTS.index('medium')):
+                        med = supported_level(deployment, 'medium')
+                        if med == 'medium':
+                            want = med
             return with_effort(deployment, want) if want else deployment
         except Exception:
             return deployment
@@ -1561,9 +1607,12 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
     effective_needs, effective_parts, skill_floor, class_unit = effective_unit_routing(unit, state)
     if skill_floor:
         receipt['skill_min_model_class'] = skill_floor
+    is_retry = bool(candidate or unit.get('review_feedback') or unit.get('verification_feedback')
+                    or unit.get('implementation_feedback'))
     choices = [(worker['route'], worker['producer'])] if worker else [(producer['id'], producer)] if producer else routes(
         state.get('deployment') or {}, args.get('route'), args.get('effort'), refused=refused, needs=effective_needs, work_type=unit.get('kind'),
         critical=bool(unit.get('critical')), unit_effort=unit.get('effort'), parts=effective_parts,
+        original_needs=unit.get('needs'), retry=is_retry,
         **({'allow_parent': True} if state.get('conversation_flow') else {}))
     visited = []  # rungs actually reached, for executed_decision only; selection is unchanged
     skipped_reasons = []
@@ -1597,7 +1646,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
                         and callable(getattr(review,'resume_tree',None)) else None)
         tree = waiting[0] if waiting else resumed_view or storage_root()/'wt'/uuid.uuid4().hex[:8]  # short: Windows paths stop at 260 characters
         row = {'route': name}
-        row.update(class_row(class_unit, deployment))
+        row.update(class_row(class_unit, deployment, original_needs=unit.get('needs'), retry=is_retry))
         check_token = None
         keep_tree = bool(waiting)
         try:

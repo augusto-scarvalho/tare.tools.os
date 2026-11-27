@@ -1627,13 +1627,22 @@ def describe_images(urls, emit):
         return describe_files(paths, emit)
 
 
-def describe_files(paths, emit):
+def describe_files(paths, emit, *, question=None, on_vision=None):
     """Text for a model that cannot see: the first vision route that describes the image files."""
     if not paths:
         return ''
     emit(f'\n> `image` {len(paths)} attached')
     from . import native_catalog
     from .execution_scope import refusal
+    prompt = IMAGE_PROMPT
+    if isinstance(question, str) and question.strip():
+        prompt = (
+            IMAGE_PROMPT
+            + '\n\nThe user sent this message with the image(s). Inspect the image(s) carefully to answer or verify '
+              'every visual detail they mention, and explicitly state if something they ask about is absent, occluded, '
+              'or different from expected:\n'
+            + clip(question.strip(), 1500)
+        )
     saved, selection, failures = policy().get('vision'), None, []
     if saved:
         candidates = [(name, *available(name)) for name in saved]
@@ -1646,10 +1655,19 @@ def describe_files(paths, emit):
         if deployment is None or (why := refusal('vision', deployment, name)):
             failures.append(f'{name}: {why}')
             continue
+        started = time.monotonic()
+        if on_vision is not None:
+            on_vision({'phase': 'start', 'route': name, 'deployment': deployment, 'count': len(paths)})
         try:
-            text = see(deployment, IMAGE_PROMPT, paths)
+            text = see(deployment, prompt, paths)
+            if on_vision is not None:
+                on_vision({'phase': 'finish', 'route': name, 'deployment': deployment, 'ok': True,
+                           'duration_ms': round((time.monotonic() - started) * 1000, 1)})
             break
         except (RuntimeError, OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
+            if on_vision is not None:
+                on_vision({'phase': 'finish', 'route': name, 'deployment': deployment, 'ok': False,
+                           'duration_ms': round((time.monotonic() - started) * 1000, 1), 'reason': str(exc)[:120]})
             failures.append(f'{name}: {str(exc)[:120]}')
     else:
         if not candidates and selection is not None:
