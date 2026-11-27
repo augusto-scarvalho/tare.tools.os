@@ -1575,22 +1575,123 @@ def project_checks(root):
     return parsed
 
 
-def project_gui_checks(root):
-    """Return declared executable `mode: "gui"` checks from trusted `<root>/.tare/checks.json`.
+def project_gui_checks(root, *, include_autodetected=True):
+    """Return executable GUI checks from trusted `<root>` (never a candidate tree).
 
-    Never included in automatic headless verifiers; requires explicit interactive desktop consent.
+    Includes:
+    1. Declared `.tare/checks.json` `mode: "gui"` entries with explicit `argv`.
+    2. Declared `.tare/checks.json` `mode: "gui"` entries in a Godot project whose `paths` name regular `.gd`
+       scripts (synthesizing `[godot, '--path', '.', '-s', <script>]` without requiring manual `argv` JSON).
+    3. When `include_autodetected=True` in a Godot project, auto-detected scripts from
+       `headless_refusing_godot_scripts(root)` not already covered by headless verifiers, declared GUI checks,
+       or explicit `mode: "manual"` path exclusions.
+
+    Never included in automatic headless verifiers; always requires explicit interactive desktop consent.
     """
-    manual = project_checks(root)['manual']
+    from compute_plane.native_journal import regular
+    from .work_units import _godot_script_target, headless_refusing_godot_scripts
+
+    root_path = Path(root)
+    base_resolved = root_path.resolve() if root_path.exists() else root_path
+    try:
+        raw_doc, _ = read_project_checks_doc(root_path)
+    except (OSError, ValueError):
+        raw_doc = None
+    raw_checks = raw_doc.get('checks') if isinstance(raw_doc, dict) and isinstance(raw_doc.get('checks'), dict) else {}
+    declared = project_checks(root_path)
+    manual = declared['manual']
+    verifiers = declared['verifiers']
+    is_godot = (root_path / 'project.godot').is_file()
+    godot = (shutil.which('godot_console') or shutil.which('godot')) if is_godot else None
+
+    def _norm_rel(raw: str) -> str:
+        norm = raw.replace('\\', '/')
+        while norm.startswith('./'):
+            norm = norm[2:]
+        return norm
+
+    def _safe_godot_script(rel: str) -> bool:
+        from pathlib import PurePosixPath
+        if not isinstance(rel, str) or not rel.endswith('.gd') or '\\' in rel or ':' in rel or '\0' in rel:
+            return False
+        posix = PurePosixPath(rel)
+        if posix.is_absolute() or not posix.parts or any(p in ('', '.', '..', '.git') for p in posix.parts):
+            return False
+        cursor = root_path
+        for part in posix.parts:
+            cursor = cursor / part
+            if cursor.is_symlink() or not cursor.exists():
+                return False
+            try:
+                regular(cursor)
+            except (OSError, ValueError):
+                return False
+        try:
+            return cursor.is_file() and cursor.resolve().is_relative_to(base_resolved)
+        except (OSError, ValueError):
+            return False
+
     gui = {}
+    covered_scripts = {t for v in verifiers.values() if (t := _godot_script_target(v.get('argv') or ()))}
+    manual_excluded = set()
     for name, row in manual.items():
-        if row.get('mode') == 'gui' and isinstance(row.get('argv'), list) and row['argv']:
+        mode = row.get('mode')
+        paths = [_norm_rel(p) for p in (row.get('paths') or ()) if isinstance(p, str)]
+        if mode == 'manual':
+            manual_excluded.update(paths)
+            continue
+        if mode != 'gui':
+            continue
+        raw_entry = raw_checks.get(name) if isinstance(raw_checks.get(name), dict) else {}
+        had_explicit_command = (
+            raw_entry.get('argv') is not None or raw_entry.get('timeout_seconds') is not None
+        )
+        if isinstance(row.get('argv'), list) and row['argv']:
             gui[name] = {
                 'repository': 'workspace',
                 'argv': list(row['argv']),
+                'source': 'declared',
                 **({'timeout_seconds': row['timeout_seconds']} if 'timeout_seconds' in row else {}),
                 **({'description': row['description']} if 'description' in row else {}),
-                **({'paths': list(row['paths'])} if 'paths' in row else {}),
+                **({'paths': list(paths)} if paths else {}),
             }
+            covered_scripts.update(paths)
+            if target := _godot_script_target(row['argv']):
+                covered_scripts.add(target)
+        elif had_explicit_command:
+            # Explicit argv/timeout failed validation or executable resolution: never silently fall back
+            # to a synthesized direct Godot command bypassing the project's declared wrapper/args.
+            covered_scripts.update(paths)
+        elif godot and paths:
+            gd_paths = [p for p in paths if _safe_godot_script(p)]
+            for rel in gd_paths:
+                key = name if len(gd_paths) == 1 else f'{name}:{rel}'
+                if key in gui:
+                    continue
+                gui[key] = {
+                    'repository': 'workspace',
+                    'argv': [godot, '--path', '.', '-s', rel],
+                    'source': 'declared',
+                    'paths': [rel],
+                    **({'description': row['description']} if 'description' in row else {}),
+                }
+                covered_scripts.add(rel)
+
+    if include_autodetected and godot:
+        for rel in headless_refusing_godot_scripts(root_path):
+            if rel in covered_scripts or rel in manual_excluded or not _safe_godot_script(rel):
+                continue
+            key = f'godot-gui:{rel}'
+            if key in gui or key in verifiers:
+                continue
+            gui[key] = {
+                'repository': 'workspace',
+                'argv': [godot, '--path', '.', '-s', rel],
+                'source': 'autodetected',
+                'paths': [rel],
+                'description': f'Auto-detected Godot GUI check ({rel}; requires desktop renderer).',
+            }
+            covered_scripts.add(rel)
     return gui
 
 

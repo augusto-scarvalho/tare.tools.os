@@ -733,3 +733,119 @@ def test_review_findings_gui_cross_repo_turn_cap_cjk_overflow_cleanup_and_identi
             control,
         )
     assert len(dispatched) == 2 and dispatched[0] != dispatched[1]
+
+
+def test_zero_config_godot_gui_autodiscovery_path_synthesis_and_unit_scoping(tmp_path, monkeypatch):
+    root = tmp_path / 'godot-game'
+    (root / 'tests').mkdir(parents=True)
+    (root / 'visual_lab' / 'poc').mkdir(parents=True)
+    (root / 'project.godot').write_text('config_version=5\n', encoding='utf-8')
+    headless_refuser = (
+        'extends SceneTree\n'
+        'func _initialize() -> void:\n'
+        '\tif DisplayServer.get_name() == "headless":\n'
+        '\t\tpush_error("requires renderer")\n'
+        '\t\tquit(1)\n'
+    )
+    (root / 'tests' / 'visual_review.gd').write_text(headless_refuser, encoding='utf-8')
+    (root / 'visual_lab' / 'poc' / 'compare.gd').write_text(headless_refuser, encoding='utf-8')
+    monkeypatch.setattr(turn_engine.shutil, 'which', lambda name: '/usr/bin/godot_console' if name == 'godot_console' else None)
+
+    # 1. Zero .tare/checks.json: auto-discovers both GUI scripts while keeping headless verifiers clean.
+    assert turn_engine.config_for(root, mode='read-only')['verifiers'] == {}
+    auto_gui = turn_engine.project_gui_checks(root)
+    assert set(auto_gui) == {'godot-gui:tests/visual_review.gd', 'godot-gui:visual_lab/poc/compare.gd'}
+    assert auto_gui['godot-gui:tests/visual_review.gd']['argv'] == [
+        '/usr/bin/godot_console', '--path', '.', '-s', 'tests/visual_review.gd',
+    ]
+    assert auto_gui['godot-gui:tests/visual_review.gd']['source'] == 'autodetected'
+
+    # 2. run_unit() scoping: tests/ auto-detected GUI script is offered automatically; non-tests PoC script is not
+    #    unless referenced by the unit, avoiding popup spam.
+    unrelated = work_units._select_unit_gui_checks(root, {'target_paths': ['hub.gd'], 'test_paths': []}, {'hub.gd': b'x'})
+    assert set(unrelated) == {'godot-gui:tests/visual_review.gd'}
+    referenced = work_units._select_unit_gui_checks(
+        root, {'target_paths': ['visual_lab/poc/compare.gd'], 'test_paths': []}, {'visual_lab/poc/compare.gd': b'x'})
+    assert set(referenced) == {'godot-gui:tests/visual_review.gd', 'godot-gui:visual_lab/poc/compare.gd'}
+
+    # 3. product_help('workflow') exposes available_gui_checks to the coordinator.
+    wf = conversation_tasks.product_help({'config': {'repositories': {'game': str(root)}, 'verifiers': {}}}, 'workflow')
+    assert set(wf['available_gui_checks']) == {'godot-gui:tests/visual_review.gd', 'godot-gui:visual_lab/poc/compare.gd'}
+
+    # 4. Legacy description-only mode="manual" (no paths) does NOT block auto-discovery of tests/visual_review.gd,
+    #    whereas mode="gui" with paths (and NO argv) synthesizes argv under the declared check name cleanly.
+    (root / '.tare').mkdir()
+    (root / '.tare' / 'checks.json').write_text(json.dumps({
+        'checks': {
+            'legacy-note': {'mode': 'manual', 'description': 'Run tests/visual_review.gd manually.'},
+            'visual-compare': {'mode': 'gui', 'paths': ['visual_lab/poc/compare.gd'], 'description': 'Compare shader'},
+        }
+    }), encoding='utf-8')
+    mixed = turn_engine.project_gui_checks(root)
+    assert set(mixed) == {'visual-compare', 'godot-gui:tests/visual_review.gd'}
+    assert mixed['visual-compare']['source'] == 'declared'
+    assert mixed['visual-compare']['argv'] == ['/usr/bin/godot_console', '--path', '.', '-s', 'visual_lab/poc/compare.gd']
+    # Declared GUI check is always included in run_unit() selection.
+    assert set(work_units._select_unit_gui_checks(root, {'target_paths': ['hub.gd']}, {'hub.gd': b'x'})) == {
+        'visual-compare', 'godot-gui:tests/visual_review.gd',
+    }
+
+    # 5. Explicit mode="manual" WITH paths opts out of auto-discovery for that path.
+    (root / '.tare' / 'checks.json').write_text(json.dumps({
+        'checks': {
+            'skip-visual': {'mode': 'manual', 'paths': ['tests/visual_review.gd'], 'description': 'Manual only'},
+        }
+    }), encoding='utf-8')
+    opted_out = turn_engine.project_gui_checks(root)
+    assert 'godot-gui:tests/visual_review.gd' not in opted_out
+    assert set(opted_out) == {'godot-gui:visual_lab/poc/compare.gd'}
+
+    # 6. Rejected explicit argv/timeout NEVER silently falls back to synthesized direct Godot command.
+    (root / '.tare' / 'checks.json').write_text(json.dumps({
+        'checks': {
+            'custom-wrapper': {
+                'mode': 'gui',
+                'argv': ['missing-wrapper-bin-xyz', '--custom-mode'],
+                'paths': ['tests/visual_review.gd'],
+            },
+            'bad-timeout': {
+                'mode': 'gui',
+                'argv': ['godot', '--path', '.', '-s', 'visual_lab/poc/compare.gd'],
+                'timeout_seconds': 2,
+                'paths': ['visual_lab/poc/compare.gd'],
+            },
+        }
+    }), encoding='utf-8')
+    assert turn_engine.project_gui_checks(root) == {}
+
+    # 7. Leading-dot script names (.render.gd) are NOT stripped into render.gd, and colon-containing check names
+    #    (godot-gui:tests/visual_review.gd) safely preserve non-ignored PNG artifacts on Windows.
+    (root / 'render.gd').write_text(headless_refuser, encoding='utf-8')
+    (root / '.tare' / 'checks.json').write_text(json.dumps({
+        'checks': {
+            'dot-script': {'mode': 'gui', 'paths': ['.render.gd']},
+        }
+    }), encoding='utf-8')
+    dot_gui = turn_engine.project_gui_checks(root, include_autodetected=False)
+    assert dot_gui == {}  # .render.gd does not exist; must NOT synthesize render.gd!
+
+    art_repo = tmp_path / 'art-repo'
+    art_repo.mkdir()
+    _git(art_repo, 'init', '-q')
+    (art_repo / 'a.py').write_text('x = 1\n', encoding='utf-8')
+    _git(art_repo, 'add', '.')
+    _git(art_repo, 'commit', '-q', '-m', 'init')
+    base_sha = _git(art_repo, 'rev-parse', 'HEAD').stdout.strip()
+    (art_repo / 'a.py').write_text('x = 2\n', encoding='utf-8')
+    job_dir = tmp_path / 'art-job'
+    job_dir.mkdir()
+    colon_name = 'godot-gui:tests/visual_review.gd'
+    st_col, _, det_col = work_units.run_gui_checks(
+        art_repo,
+        {colon_name: {'argv': [sys.executable, '-c', f'from pathlib import Path; Path("shot.png").write_bytes({PNG_BYTES!r})']}},
+        lambda _n, _a, _d='': (True, 'for this turn'),
+        job=job_dir, base=base_sha, changed_before_gui=work_units.changed_files(art_repo, base_sha),
+    )
+    assert st_col == 'green'
+    saved = Path(det_col[colon_name]['artifacts'][0]['saved_path'])
+    assert saved.is_file() and saved.read_bytes() == PNG_BYTES and ':' not in saved.parent.name

@@ -2481,8 +2481,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns the product turn coordination shared by its frontends; the agent loop stays in the runtime.",
-      "size_bytes": 131428,
-      "sha256": "b413bbb1cf4ab8b109798080f75be31769ba1f38888a4750e0827688546d57c7"
+      "size_bytes": 136085,
+      "sha256": "f3a25d13691fde669d25b2d1e9eacf30ff400c4e312e7f837ea22d716a00db72"
     },
     {
       "name": "audit_report.py",
@@ -3841,8 +3841,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 159476,
-      "sha256": "2d7bb6a41799ab9ab74ca1caaec017361aa89de50d4ae0f03577099c789deabd"
+      "size_bytes": 161182,
+      "sha256": "f17aea54cb9197c567cb87dbe411f1c996df642974d62e2b5efc0d144a196785"
     },
     {
       "name": "gpu.py",
@@ -4091,8 +4091,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 83443,
-      "sha256": "8208221d006fbf427176e6a2b92bc01b5bc8e2ad208aeb0c4c26581d82dd6633"
+      "size_bytes": 84403,
+      "sha256": "3cadc52c51cc77c32e55c5cd5b92890604cb42553137667003e4eb5f63665418"
     },
     {
       "name": "conversation_tasks.py",
@@ -4101,8 +4101,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 154328,
-      "sha256": "9e44e435553b75c47808b8d4ba776da9347c70f80ea21909d3e89f8a6c404b97"
+      "size_bytes": 154884,
+      "sha256": "befeafb742cd2dbbfe455fef3a3c6a0c40c4bb4782c19ba5bec18897b49d4e91"
     },
     {
       "name": "conversation_review.py",
@@ -4111,8 +4111,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 80860,
-      "sha256": "397dcfafadf09e267e29f1ff18bf1c7cd09254b0eedae9ccd866e87a119c1214"
+      "size_bytes": 80952,
+      "sha256": "6cf54d35d02aedbbca913fe667eb2e1cc297a98eb7ae7d7e4d4ec0fd60f92ee8"
     },
     {
       "name": "conversation_workspace.py",
