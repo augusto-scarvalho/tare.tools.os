@@ -464,10 +464,11 @@ def test_permissions_panel_displays_and_revokes_remembered_gui_checks_and_detect
             assert cb.display is True and cb.value is True
             cb.value = False
             await pilot.click('#permissions-save')
-            for _ in range(40):
-                if not turn_engine.gui_check_allowed(project, 'visual-review', argv):
+            for _ in range(80):
+                if not turn_engine.gui_check_allowed(project, 'visual-review', argv) and not panel._is_saving:
                     break
                 await pilot.pause(0.05)
+            await app.workers.wait_for_complete()
             assert turn_engine.gui_check_allowed(project, 'visual-review', argv) is False
             await pilot.press('escape')
             await pilot.pause()
