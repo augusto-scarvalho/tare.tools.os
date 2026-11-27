@@ -819,13 +819,26 @@ class PlanningTools:
                     **{n: _check_label(check, 'Existing configured project check.')
                     for n, check in self.state['config']['verifiers'].items()},
                     BACKLOG_CHECK: 'Host-owned validation of planned JSON graph files, without importing project code.'}
+                from .conversation_tasks import detected_gui_checks
                 from .turn_engine import project_checks
                 from .work_units import headless_refusing_godot_scripts
                 manual_checks = {}
                 for repo_root in self.state['config'].get('repositories', {}).values():
                     manual_checks.update(project_checks(repo_root)['manual'])
+                available_gui = {
+                    g_name: {
+                        'repository': g_row['repository'],
+                        'argv': list(g_row['argv']),
+                        'source': g_row.get('source', 'declared'),
+                        **({'paths': list(g_row['paths'])} if g_row.get('paths') else {}),
+                        **({'description': g_row['description']} if g_row.get('description') else {}),
+                    }
+                    for g_name, g_row in detected_gui_checks(self.state['config']).items()
+                }
                 if manual_checks:
                     m['manual_checks'] = manual_checks
+                if available_gui:
+                    m['available_gui_checks'] = available_gui
                 manual_paths = {p for r_row in manual_checks.values() for p in r_row.get('paths') or ()}
                 gui_scripts = []
                 for repo_root in self.state['config'].get('repositories', {}).values():
@@ -836,10 +849,12 @@ class PlanningTools:
                     m['detected_gui_only_scripts'] = {
                         'paths': gui_scripts,
                         'note': ('These Godot scripts explicitly refuse --headless execution and are skipped from '
-                                 'automatic headless verification. Record GUI verification in remaining rather than '
-                                 'automated headless task criteria, and optionally emit propose_checks(mode="gui", '
-                                 'paths=..., argv=...) for .tare/checks.json so the host can offer consent-gated '
-                                 'desktop GUI verification.'),
+                                 'automatic headless verification. When Godot is installed they are auto-discovered '
+                                 'in available_gui_checks and offered for inline desktop user consent during delivery '
+                                 'or check(...), with zero manual .tare/checks.json editing. Record GUI verification '
+                                 'in remaining rather than automated headless task criteria, and only emit '
+                                 'propose_checks(mode="gui", argv=...) when a non-autodetected GUI command or custom '
+                                 'timeout is needed.'),
                     }
                 task_contract += ('Use only available_verifiers keys as task.verifiers; a shell command is not a verifier name. '
                                   'Use an empty list when none applies. Preserve the recorded product criteria. '

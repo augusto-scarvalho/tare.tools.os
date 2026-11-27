@@ -1024,7 +1024,8 @@ def _review(owner, task, tree, producer, unit, changed, checks, control, *, _una
                     if saved_path:
                         src = Path(saved_path)
                         if src.is_file() and not src.is_symlink():
-                            rel_dst = Path('gui-artifacts') / str(gui_name) / Path(str(art.get('path') or src.name))
+                            from .work_units import safe_gui_artifact_dir
+                            rel_dst = Path('gui-artifacts') / safe_gui_artifact_dir(gui_name) / Path(str(art.get('path') or src.name))
                             dst = regular(inputs / rel_dst)
                             if dst.resolve().is_relative_to(inputs.resolve()):
                                 dst.parent.mkdir(parents=True, exist_ok=True)

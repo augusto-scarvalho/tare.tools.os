@@ -86,8 +86,10 @@ GUIDANCE = (
     'notes and the final summary included, in the language of the user latest message, even when tool results are '
     'in English. '
     'Never use internal jargon in operator-facing replies (host, auditor, worker, demanda, receipts, pipeline). '
-    'Never offer to launch external GUI applications directly on the user\'s machine; interactive or visual GUI checks '
-    'are run by the user unless configured as headless checks. '
+    'Never offer to launch arbitrary external GUI applications on the user\'s machine; declared or auto-detected '
+    'GUI checks (mode="gui") run only via check(...) or delivery verification after the user approves the inline '
+    'desktop prompt, and you can propose a new or updated mode="gui" check via propose_checks so the user approves '
+    'it in one click without editing JSON. '
     'On failure cite the recorded reason and the next step, never invent a cause.'
 )
 SPEC = {
@@ -135,16 +137,19 @@ SPEC = {
                        'description': 'Required when the user explicitly requests implementer reasoning: pass that supported level. The coordinator reasoning does not set this level. Otherwise omit to preserve the configured implementer route settings.'},
         }, 'additionalProperties': False}},
     'check': {
-        'description': 'Run configured project checks or the Tare backlog graph check from the saved plan in a private candidate. '
+        'description': 'Run configured or auto-detected project checks (including consent-gated mode="gui" desktop checks) '
+            'or the Tare backlog graph check from the saved plan in a private candidate. '
             'A verification-only request needs no new demand, plan, implementation or auditor and authorizes no edits. '
-            'Use check names, not test file paths. The saved plan exposes scoped test checks; '
-            'a refused name returns their exact commands and any equivalent retry. No arbitrary command arguments.',
+            'Use check names, not test file paths. GUI checks ask the user inline in the TUI before running outside the sandbox. '
+            'A refused name returns available_checks and available_gui_checks with exact commands and any equivalent retry. '
+            'No arbitrary command arguments.',
         'parameters': {'type': 'object', 'properties': {
             'names': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'maxItems': 16},
         }, 'required': ['names'], 'additionalProperties': False}},
     'propose_checks': {
         'description': 'Propose creating or updating <project>/.tare/checks.json for project verification checks '
-            '(headless commands, timeouts, or marking gui/manual checks so they are not run headlessly). '
+            '(headless commands, timeouts, executable desktop mode="gui" checks with argv so the user approves in one click '
+            'without editing JSON, or documentary mode="manual" entries). '
             'Validates strictly and asks the user directly in the TUI with an exact diff before writing. '
             'Never writes without user confirmation (refuses in headless mode). '
             'Set remove=true on an entry when replace=false to remove an existing check.',
@@ -184,7 +189,8 @@ def product_help(state, topic):
             'permissions': 'Tare asks inline for the implementer permission when needed. '
                 'Read-only coordinator capabilities are compatible with starting this workflow.',
             'conversation': 'Natural-language requests use this workflow; slash commands are optional.',
-            'available_checks': list({**state['config']['verifiers'], **detected_checks(state['config'])})}
+            'available_checks': list({**state['config']['verifiers'], **detected_checks(state['config'])}),
+            'available_gui_checks': list(detected_gui_checks(state['config']))}
     if topic == 'permissions':
         return {**common, 'source': 'relay/conversation_permissions.py',
             'coordinator': 'Reads facts and delegates; never edits or runs project commands directly.',

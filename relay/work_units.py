@@ -825,6 +825,49 @@ def _snapshot_tree_images(tree, *, max_files=2000):
     return snap
 
 
+def _strip_dot_slash(raw: str) -> str:
+    norm = raw.replace('\\', '/')
+    while norm.startswith('./'):
+        norm = norm[2:]
+    return norm
+
+
+def safe_gui_artifact_dir(name: str) -> str:
+    """Return a cross-platform safe directory name for GUI check artifacts (handles colons/slashes on Windows)."""
+    raw = str(name)
+    if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}', raw):
+        return raw
+    slug = re.sub(r'[^A-Za-z0-9._-]+', '-', raw).strip('.-_')[:40] or 'gui'
+    return f'{slug}-{hashlib.sha256(raw.encode("utf-8")).hexdigest()[:8]}'
+
+
+def _select_unit_gui_checks(root, unit, changed):
+    """Select consent-gated GUI checks relevant to a unit's delivery verification.
+
+    Always includes explicitly declared `.tare/checks.json` `mode: "gui"` checks; includes
+    auto-detected GUI scripts (e.g. Godot `headless_refusing_godot_scripts`) when under `tests/`
+    or directly referenced by the unit's `test_paths`, `target_paths`, or changed files.
+    """
+    from .turn_engine import project_gui_checks
+    all_gui = project_gui_checks(Path(root))
+    if not all_gui:
+        return {}
+    referenced = {
+        _strip_dot_slash(test_file(p))
+        for p in (*(unit.get('test_paths') or ()), *(unit.get('target_paths') or ()), *(changed or ()))
+        if isinstance(p, str) and p.strip()
+    }
+    selected = {}
+    for name, entry in all_gui.items():
+        if entry.get('source', 'declared') == 'declared':
+            selected[name] = entry
+            continue
+        paths = [_strip_dot_slash(p) for p in (entry.get('paths') or ()) if isinstance(p, str)]
+        if any(p.startswith('tests/') or p in referenced for p in paths):
+            selected[name] = entry
+    return selected
+
+
 def run_gui_checks(tree, gui_commands, decide_gui, *, stop=lambda: False, job=None, base=None, changed_before_gui=None):
     """Execute user-consented `.tare/checks.json` `mode: "gui"` checks directly on desktop outside the sandbox.
 
@@ -900,7 +943,7 @@ def run_gui_checks(tree, gui_commands, decide_gui, *, stop=lambda: False, job=No
                     digest = hashlib.sha256(raw).hexdigest()
                     saved_path = None
                     if job is not None and len(artifacts) < 16:
-                        art_root = regular(Path(job) / 'gui-artifacts' / name)
+                        art_root = regular(Path(job) / 'gui-artifacts' / safe_gui_artifact_dir(name))
                         dst = art_root / rel
                         if dst.resolve().is_relative_to(art_root.resolve()):
                             dst.parent.mkdir(parents=True, exist_ok=True)
@@ -2236,8 +2279,7 @@ def run_unit(custody, state, args, stop, batch=None, *, review=None, candidate=N
             if (verdict_ == 'VERIFIED' and state.get('conversation_flow') and gui_check is not None
                     and not stop() and not has_goal_drift and not unchanged_candidate):
                 from .challenger import local as is_local_deployment
-                from .turn_engine import project_gui_checks
-                declared_gui = project_gui_checks(Path(root))
+                declared_gui = _select_unit_gui_checks(Path(root), unit, changed)
                 if declared_gui:
                     gui_state, gui_text, gui_details = run_gui_checks(
                         tree,
