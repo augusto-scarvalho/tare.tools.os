@@ -1874,15 +1874,8 @@ def main(argv=None):
                 'tier': selection['tier'], 'route': selection['route']})
         refs, attachment_root = (), None
         if args.attachment_input:
-            from .native_attachments import describe_for_blind, read_input
+            from .native_attachments import read_input
             refs, attachment_root = read_input(args.attachment_input)
-            # A model that cannot see gets a description from the turn engine's vision routes instead.
-            seer = (read_json(Path(args.session)/'native-agent.json', 1024*1024)['deployment'] if args.resume
-                    else deployment)
-            if args.resume:
-                refs, args.follow_up = describe_for_blind(refs, attachment_root, seer, args.follow_up)
-            else:
-                refs, prompt = describe_for_blind(refs, attachment_root, seer, prompt)
         if not args.resume and (refs or args.attach) and prompt is None:
             prompt = ''
         if args.interactive and not args.resume and prompt is None:
@@ -1927,6 +1920,23 @@ def main(argv=None):
             emit = activity_scope.enter_context(stream(
                 'conversation', Path(custody).resolve(), project,
                 callback=lambda event: print(encode(event), file=sys.stderr, flush=True), lock=stderr_lock))
+        if refs and attachment_root is not None:
+            if not args.resume and any(
+                Path(custody).resolve().is_relative_to(Path(p).resolve())
+                for p in (terminal_config.get('repositories') or {}).values()
+            ):
+                raise ValueError('native_agent_custody_inside_repository')
+            from .native_attachments import describe_for_blind
+            # A model that cannot see gets a context-aware description from the turn engine's vision routes instead,
+            # emitted onto the live TUI activity stream while preserving the original PNG in `<custody>/attachments/`.
+            seer = (read_json(Path(custody)/'native-agent.json', 1024*1024)['deployment'] if args.resume
+                    else deployment)
+            if args.resume:
+                refs, args.follow_up = describe_for_blind(
+                    refs, attachment_root, seer, args.follow_up, custody=custody, on_activity=emit)
+            else:
+                refs, prompt = describe_for_blind(
+                    refs, attachment_root, seer, prompt, custody=custody, on_activity=emit)
         from .execution_scope import current, user_choice
         activity_scope.enter_context(user_choice(role, named))  # the routing profile lets the user's own route start
         result = run_session(config, deployment, custody, prompt,

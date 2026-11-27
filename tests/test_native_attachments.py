@@ -209,3 +209,43 @@ def test_large_document_uses_same_request_allowance_for_counting_and_generation(
         assert result['status']=='PROPOSED' and client.generations==1
         assert sizes['/apply-template']>1024*1024 and sizes['/chat/completions']>1024*1024
     finally:server.shutdown();server.server_close();thread.join(5)
+
+
+def test_describe_for_blind_forwards_user_question_emits_activity_and_preserves_png_in_custody(tmp_path, monkeypatch):
+    from relay import native_activity, native_attachments, turn_engine
+    drafts = NativeAttachmentStore(tmp_path / 'drafts')
+    custody = tmp_path / 'session'
+    custody.mkdir()
+    ref = screenshot(drafts, 'purple')
+    raw = drafts.load(ref)
+    seen_prompts = []
+    events = []
+
+    vision_dep = {'id': 'codex-cli-gpt-6-luna', 'runner': 'native-cli',
+                  'native_profile': {'endpoint': 'cli://codex', 'model': 'gpt-6-luna', 'protocol': 'vendor-cli'}}
+    monkeypatch.setattr(turn_engine, 'policy', lambda: {'vision': ['codex-cli-gpt-6-luna']})
+    monkeypatch.setattr(turn_engine, 'available', lambda name: (vision_dep, None))
+    monkeypatch.setattr('relay.execution_scope.refusal', lambda *a, **kw: None)
+    def fake_see(dep, prompt, paths, timeout=240):
+        seen_prompts.append((dep['id'], prompt, len(paths)))
+        return 'No buildings are visible behind the menu cards; only a faint perspective grid is shown.'
+    monkeypatch.setattr(turn_engine, 'see', fake_see)
+
+    from relay.console_entry import ASSISTANT_CONTEXT
+    remaining, out_text = native_attachments.describe_for_blind(
+        (ref,), drafts.root, {'id': 'glm-blind'},
+        ASSISTANT_CONTEXT + 'Where are the skyline buildings? Maybe hidden behind the menu?',
+        custody=custody, on_activity=events.append,
+    )
+    assert remaining == ()
+    assert len(seen_prompts) == 1
+    assert 'Where are the skyline buildings?' in seen_prompts[0][1]
+    assert 'You are the assistant in the tare.tools terminal UI' not in seen_prompts[0][1]
+    assert 'No buildings are visible' in out_text
+    assert 'Original image(s) preserved in session attachments' in out_text
+    assert NativeAttachmentStore(custody / 'attachments').load(ref) == raw
+    assert [e['activity']['state'] for e in events] == ['running', 'succeeded']
+    for e in events:
+        validated = native_activity.activity_view(e['activity'])
+        assert validated['operation'] == 'inspect_image'
+        assert 'codex-cli-gpt-6-luna' in validated['target']

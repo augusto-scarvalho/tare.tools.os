@@ -252,3 +252,17 @@ def test_judged_carries_the_row_effort_and_judged_effort_is_never_lower_than_the
     assert higher(claude('max'), {'effort': 'max'}) is None and higher(claude('xhigh'), {'effort': 'high'}) is None
     assert higher(claude('high'), {'effort': 'max'}) is None  # already at the ordinary ceiling
     assert higher(claude('low'), {}) is None and higher(claude('low'), {'effort': None}) is None
+
+
+def test_first_pass_middling_and_cheap_units_cap_effort_at_medium_and_escalate_on_retry(ran):
+    board = {'fable-5-2': ('frontier', 'max')}
+    # Non-critical first-pass middling/cheap units cap board effort AND high-default routes at medium.
+    assert ran({FABLE: 'high'}, board, work_type='coding', needs='middling')[FABLE] == 'medium'
+    assert ran({FABLE: 'low'}, board, work_type='coding', needs='cheap')[FABLE] == 'medium'
+    # Skill-elevated frontier needs still honors original_needs='middling' on first pass, then escalates on retry.
+    assert ran({FABLE: 'high'}, board, work_type='coding', needs='frontier', original_needs='middling')[FABLE] == 'medium'
+    assert ran({FABLE: 'high'}, board, work_type='coding', needs='frontier', original_needs='middling', retry=True)[FABLE] == 'high'
+    # Native frontier, critical, and explicit plan effort keep full effort.
+    assert ran({FABLE: 'high'}, board, work_type='coding', needs='frontier')[FABLE] == 'high'
+    assert ran({FABLE: 'low'}, board, work_type='coding', needs='middling', critical=True)[FABLE] == 'xhigh'
+    assert ran({FABLE: 'high'}, board, work_type='coding', needs='middling', unit_effort='high')[FABLE] == 'high'

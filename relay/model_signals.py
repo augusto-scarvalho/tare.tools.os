@@ -719,12 +719,19 @@ def ceiling(critical=False):
     return choice if choice in EFFORTS else CEILING[bool(critical)]
 
 
-def capped(effort, critical=False):
-    """A board's effort, no higher than `ceiling` for the unit; None when the board names none."""
-    return min(effort, ceiling(critical), key=EFFORTS.index) if effort in EFFORTS else None
+def capped(effort, critical=False, *, needs=None):
+    """A board's effort, no higher than `ceiling` for the unit; None when the board names none.
+    Non-critical cheap/middling units cap default ordinary board effort at medium to avoid high-effort thinking
+    explosions on routine work, unless the owner explicitly configured an ordinary effort_ceiling."""
+    if effort not in EFFORTS:
+        return None
+    limit = ceiling(critical)
+    if not critical and needs in ('cheap', 'middling') and limit == CEILING[False]:
+        limit = 'medium'
+    return min(effort, limit, key=EFFORTS.index)
 
 
-def judged_effort(deployment, used, critical=False):
+def judged_effort(deployment, used, critical=False, *, needs=None):
     """The effort to run a route at because the board that judged it (`used`, from `judged`) read its model at a
     higher one: the board's, capped (`capped`), or the highest level the route supports below that
     (`supported_level`), when it is higher than the route's own (unknown counts as lowest), else None: never lower."""
@@ -732,7 +739,7 @@ def judged_effort(deployment, used, critical=False):
     from .model_choices import supported_level
     model = _slug(deployment)
     own = _version_effort(deployment, model)[1] if model and line(model) else reasoning(deployment)
-    level = supported_level(deployment, capped(used.get('effort'), critical))
+    level = supported_level(deployment, capped(used.get('effort'), critical, needs=needs))
     return level if level and EFFORTS.index(level) > (EFFORTS.index(own) if own in EFFORTS else -1) else None
 
 
