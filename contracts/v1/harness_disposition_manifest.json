@@ -4091,8 +4091,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
-      "size_bytes": 84403,
-      "sha256": "3cadc52c51cc77c32e55c5cd5b92890604cb42553137667003e4eb5f63665418"
+      "size_bytes": 84582,
+      "sha256": "7bc8db5ed5548f35603205e74a4d8ddb720d20ea4fa4ba3428b9aeadd484ccdc"
     },
     {
       "name": "conversation_tasks.py",
