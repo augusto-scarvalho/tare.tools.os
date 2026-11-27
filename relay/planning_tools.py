@@ -87,9 +87,13 @@ def plan_review_skip_reason(active, plan, deployment, skills=()):
     demand_kinds = set((active or {}).get('kinds') or ())
     task_kinds = {t['kind'] for t in tasks if t.get('kind')}
     skill_opt_out = skills_skip_plan_review(skills)
-    # Bounded non-critical follow-up corrections (<= 3 files, non-frontier, non-security, after a prior delivery or
-    # planning revision) skip redundant plan critic/revision; the independent code auditor still reviews the diff.
-    is_followup = bool((active or {}).get('prior_delivery') or ((active or {}).get('planning_revision') or 0) >= 1)
+    # Bounded non-critical follow-up corrections (<= 3 files, non-frontier, non-security, only after actual
+    # prior delivery/candidate evidence — never merely because planning_revision >= 1 from a pre-delivery scope
+    # revision) skip redundant plan critic/revision; the independent code auditor still reviews the diff.
+    prior_delivery = (active or {}).get('prior_delivery')
+    is_followup = isinstance(prior_delivery, dict) and bool(
+        prior_delivery.get('applied') or prior_delivery.get('candidate')
+    )
     unique_targets = {p for t in tasks for p in (t.get('target_paths') or ()) if isinstance(p, str) and p}
     if (is_followup and 1 <= len(unique_targets) <= 3
             and not any(t.get('needs') == 'frontier' for t in tasks)

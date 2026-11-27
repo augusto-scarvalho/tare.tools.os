@@ -645,6 +645,14 @@ def test_bounded_followup_correction_skips_plan_critic_while_frontier_security_w
     assert planning_tools.plan_review_skip_reason(followup, small_plan, hosted) == 'BOUNDED_FOLLOWUP_CORRECTION'
     # Initial delivery (no prior delivery / revision 0) STILL gets plan review.
     assert planning_tools.plan_review_skip_reason({'kinds': ['coding']}, small_plan, hosted) is None
+    # Pre-delivery scope/plan revision (planning_revision >= 1 WITHOUT prior_delivery) STILL gets plan review!
+    assert planning_tools.plan_review_skip_reason({'planning_revision': 1, 'kinds': ['coding']}, small_plan, hosted) is None
+    assert planning_tools.plan_review_skip_reason(
+        {'prior_delivery': {}, 'planning_revision': 1, 'kinds': ['coding']}, small_plan, hosted) is None
+    # Follow-up after a retained prior candidate also qualifies when bounded.
+    assert planning_tools.plan_review_skip_reason(
+        {'prior_delivery': {'candidate': {'sha256': 'a' * 64}}, 'planning_revision': 1, 'kinds': ['coding']},
+        small_plan, hosted) == 'BOUNDED_FOLLOWUP_CORRECTION'
     # Frontier, critical, security, or >3 target paths STILL get plan review even on follow-up.
     assert planning_tools.plan_review_skip_reason(followup, plan_of(needs='frontier', kind='coding'), hosted) is None
     assert planning_tools.plan_review_skip_reason(followup, plan_of(needs='middling', kind='coding', critical=True), hosted) is None
