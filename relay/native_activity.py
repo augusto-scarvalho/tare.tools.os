@@ -313,6 +313,9 @@ class ActivityJournal:
                 target = (f'{len(asked)} in parallel: ' if len(asked) > 1 else '') + ' | '.join(asked)
             if call['name'] in {'folder_list', 'folder_read', 'folder_search'}:  # outside the project: say where
                 target = str(args.get('folder', '')) + ': ' + str(args.get('path', args.get('query', '')))
+            if call['name'] == 'inspect_image':
+                repo_alias, img_path = str(args.get('repository', '')), str(args.get('path', ''))
+                target = f'{repo_alias}: {img_path}' if repo_alias and img_path else (img_path or repo_alias)
             if call['name'] == 'rename':
                 src, dst = str(args.get('path', '')), str(args.get('target', ''))
                 target = f'{src} -> {dst}' if src and dst else (dst or src)

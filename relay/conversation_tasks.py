@@ -307,6 +307,55 @@ def detected_checks(config):
     return discovered
 
 
+def detected_gui_checks(config):
+    """Declared executable `.tare/checks.json` `mode: "gui"` checks across configured repositories.
+
+    Never included in automatic headless verifiers; requires explicit desktop confirmation to execute.
+    """
+    repos = (config or {}).get('repositories') or {}
+    if not repos:
+        return {}
+    from .turn_engine import project_gui_checks
+    if len(repos) == 1:
+        repository, root = next(iter(repos.items()))
+        return {name: {**check, 'repository': repository}
+                for name, check in project_gui_checks(Path(root)).items()}
+    per_repo = {repo: project_gui_checks(Path(root)) for repo, root in repos.items()}
+    counts = {}
+    for checks in per_repo.values():
+        for name in checks:
+            counts[name] = counts.get(name, 0) + 1
+    discovered = {}
+    for repo, checks in per_repo.items():
+        for name, check in checks.items():
+            key = f'{repo}:{name}' if counts[name] > 1 else name
+            if key in discovered:
+                suffix = 2
+                while f'{key}#{suffix}' in discovered:
+                    suffix += 1
+                key = f'{key}#{suffix}'
+            discovered[key] = {**check, 'repository': repo}
+    return discovered
+
+
+def _public_gui_checks(raw):
+    """Strip internal custody paths (`saved_path`) before exposing GUI check results to the coordinator."""
+    if not isinstance(raw, dict):
+        return raw
+    out = {}
+    for name, row in raw.items():
+        if not isinstance(row, dict):
+            continue
+        clean = {k: v for k, v in row.items() if k != 'artifacts'}
+        if isinstance(row.get('artifacts'), list):
+            clean['artifacts'] = [
+                {k: v for k, v in art.items() if k in ('repository', 'path', 'sha256')}
+                for art in row['artifacts'] if isinstance(art, dict)
+            ]
+        out[name] = clean
+    return out
+
+
 def host_checks(config, unit):
     """Closed host check, scoped to the unit; no project code or model-supplied argv."""
     if BACKLOG_CHECK not in unit['verifiers']:
@@ -328,9 +377,11 @@ def delivery_view(value, *, config=None, unit=None):
     """Actionable facts for the coordinator; custody paths remain in the host records."""
     result = {k: value[k] for k in ('verdict', 'applied', 'application', 'application_files',
                                   'reason', 'files', 'route', 'checks', 'suite',
-                                  'checks_before', 'checks_after', 'already_red', 'checks_set_aside', 'needs', 'route_class', 'kind', 'class_source', 'kinds', 'critical', 'effort', 'effort_from', 'review_edits', 'source_state', 'implementer_report',
+                                  'checks_before', 'checks_after', 'gui_checks', 'already_red', 'checks_set_aside', 'needs', 'route_class', 'kind', 'class_source', 'kinds', 'critical', 'effort', 'effort_from', 'review_edits', 'source_state', 'implementer_report',
                                   'verification', 'summary', 'remaining', 'next', 'folder_access_request','last_attempt','implementation_stop',
                                   'checks_proposal_outcome', 'goal_drift', 'goal_drift_stop', 'out_of_scope_blockers') if k in value}
+    if 'gui_checks' in result:
+        result['gui_checks'] = _public_gui_checks(result['gui_checks'])
     if value.get('needs') and value.get('route_class'):
         from .model_signals import ORDER
         if ORDER.index(value['route_class']) < ORDER.index(value['needs']):
@@ -1496,12 +1547,14 @@ class ConversationTools:
                 # A closed verification request needs no planning ceremony. It
                 # never authorizes implementation or changes the saved goal.
                 value = load(self.root); task = current(value)
-                from .work_units import CHECK_PORT, STALL_ASK, run_checks, checks as planned_checks, test_file
+                from .work_units import CHECK_PORT, STALL_ASK, CheckCleanupUnknown, run_checks, run_gui_checks, checks as planned_checks, test_file
                 from .conversation_workspace import snapshot
                 from .challenger import git
                 from .native_installation import storage_root
                 config = deepcopy(self.state['config'])
                 config['verifiers'].update(detected_checks(config))
+                gui_catalog = {n: entry for n, entry in detected_gui_checks(config).items()
+                               if n not in config['verifiers']}
                 unit = (task or {}).get('plan', {}).get('unit')
                 unit_checks = {}
                 if unit:
@@ -1511,11 +1564,17 @@ class ConversationTools:
                     config['verifiers'].update({n:{'repository':owner,'argv':a} for n,a in unit_checks.items()})
                 names = args.get('names')
                 if (set(args) != {'names'} or not isinstance(names, list) or not 1 <= len(names) <= 16
-                        or any(not isinstance(n,str) or n not in config['verifiers'] for n in names)):
+                        or any(not isinstance(n,str) or (n not in config['verifiers'] and n not in gui_catalog) for n in names)):
                     catalog={n:{'repository':v['repository'],'argv':v['argv']}
                              for n,v in config['verifiers'].items()}
                     result={'reason':'Choose a registered check name, not test paths. No arbitrary commands.',
                             'available_checks':catalog}
+                    if gui_catalog:
+                        result['available_gui_checks'] = {
+                            n: {'repository': v['repository'], 'argv': v['argv'], 'mode': 'gui',
+                                **({'description': v['description']} if 'description' in v else {})}
+                            for n, v in gui_catalog.items()
+                        }
                     # Only suggest an exact equivalent, never broaden a subset to
                     # the whole plan or silently execute it on a refused request.
                     tests=(unit or {}).get('test_paths') or []
@@ -1547,34 +1606,42 @@ class ConversationTools:
                                           'These registered checks run exactly the requested test targets, not a broader suite. Retry them.'))
                     return refused(result.pop('reason'),**result)
                 from .work_units import _is_godot_script_argv
-                selected_repos = {config['verifiers'][n]['repository'] for n in names}
-                if len(selected_repos) == 1:
-                    selected_repo = next(iter(selected_repos))
-                    import_name = next((c for c in ('godot-import', f'{selected_repo}:godot-import')
-                                        if c in config['verifiers'] and config['verifiers'][c]['repository'] == selected_repo), None)
-                    if import_name and (any(n in {'tests', f'{selected_repo}:tests'}
-                                            or _is_godot_script_argv(config['verifiers'][n]['argv']) for n in names)):
-                        names = [import_name, *[n for n in names if n != import_name]]
+                headless_names = [n for n in names if n in config['verifiers']]
+                gui_names = [n for n in names if n in gui_catalog and n not in config['verifiers']]
+                selected_repos = {
+                    (config['verifiers'][n]['repository'] if n in config['verifiers'] else gui_catalog[n]['repository'])
+                    for n in names
+                }
+                if len(selected_repos) != 1:
+                    raise ValueError('Verify one project at a time.')
+                selected_repo = next(iter(selected_repos))
+                import_name = next((c for c in ('godot-import', f'{selected_repo}:godot-import')
+                                    if c in config['verifiers'] and config['verifiers'][c]['repository'] == selected_repo), None)
+                if import_name and (
+                    any(n in {'tests', f'{selected_repo}:tests'}
+                        or _is_godot_script_argv(config['verifiers'][n]['argv']) for n in headless_names)
+                    or any(_is_godot_script_argv(gui_catalog[n]['argv']) for n in gui_names)
+                ):
+                    headless_names = [import_name, *[n for n in headless_names if n != import_name]]
                 if value.get('turn', {}).get('invocation') != self.invocation_id:
                     value['turn'] = {'invocation': self.invocation_id, 'intent': 'investigate'}
                     value['input_scope'] = {'input': self.input_id(), 'intent': 'investigate'}
                     save(self.root, value)
-                repositories = {config['verifiers'][n]['repository'] for n in names}
-                if len(repositories) != 1:
-                    raise ValueError('Verify one project at a time.')
-                repository = repositories.pop()
-                from .conversation_permissions import with_review_policy
+                repository = selected_repo
+                from .conversation_permissions import gui_check_permission, with_review_policy
                 from . import relay_mesh
                 config = with_review_policy(config, self.permission_directory,
                     config['repositories'][repository], relay_mesh.RELAY_ROOT)
-                commands = {n: config['verifiers'][n]['argv'] for n in names}
+                commands = {n: config['verifiers'][n]['argv'] for n in headless_names}
+                selected_gui = {n: gui_catalog[n] for n in gui_names}
                 tree = storage_root()/'wt'/uuid4().hex[:8]
                 token = stall = None
+                keep_tree = False
                 try:
                     snapshot(config['repositories'][repository], tree)
-                    if unit and unit['repository']==repository:
+                    if unit and unit['repository']==repository and commands:
                         scoped=planned_checks({**config,'conversation_flow':True},unit,repository,tree)
-                        commands.update({n:a for n,a in scoped.items() if n in names})
+                        commands.update({n:a for n,a in scoped.items() if n in headless_names})
                     # Protected: the project's command gate. Otherwise the sandbox, no model review; a check it blocks
                     # (and, with no sandbox here, any check of a read-only project) runs outside only if the user says.
                     from .command_protection import conversation_verifier
@@ -1587,32 +1654,54 @@ class ConversationTools:
                     project = config['repositories'][repository]
                     stall = STALL_ASK.set(stall_question(self.root, self.state, task, request.effect_id, project,
                                                          control, self.permission_directory))
-                    # No implementer here: the project's files, which this conversation's implementers may have
-                    # changed. They are local in local-only mode (outside_sandbox) and with --prefer_local.
-                    token = CHECK_PORT.set(conversation_verifier(control, self.root/'checks', config,
-                        self.state['deployment'], tree, check_unit, commands, **({} if config.get('command_protection')
-                        else {'outside': outside_sandbox(self.root, self.state, task, request.effect_id, project,
-                                                         control, self.permission_directory, self.invocation_id,
-                                                         local_producer=execution_scope.current().prefer == 'local'),
-                              'read_only': (project_permission_mode(project) or 'read') == 'read'})))
-                    from .turn_engine import project_checks
-                    raw_timeouts = project_checks(project)['timeouts']
-                    check_timeouts = {}
-                    for check_name in commands:
-                        if check_name in raw_timeouts:
-                            check_timeouts[check_name] = raw_timeouts[check_name]
-                        elif check_name.startswith(repository + ':'):
-                            plain = check_name.removeprefix(repository + ':').split('#', 1)[0]
-                            if plain in raw_timeouts:
-                                check_timeouts[check_name] = raw_timeouts[plain]
-                    status, details = run_checks(tree, commands, **({'timeouts': check_timeouts} if check_timeouts else {}))
+                    status, details = 'green', ''
+                    if commands:
+                        # No implementer here: the project's files, which this conversation's implementers may have
+                        # changed. They are local in local-only mode (outside_sandbox) and with --prefer_local.
+                        token = CHECK_PORT.set(conversation_verifier(control, self.root/'checks', config,
+                            self.state['deployment'], tree, check_unit, commands, **({} if config.get('command_protection')
+                            else {'outside': outside_sandbox(self.root, self.state, task, request.effect_id, project,
+                                                             control, self.permission_directory, self.invocation_id,
+                                                             local_producer=execution_scope.current().prefer == 'local'),
+                                  'read_only': (project_permission_mode(project) or 'read') == 'read'})))
+                        from .turn_engine import project_checks
+                        raw_timeouts = project_checks(project)['timeouts']
+                        check_timeouts = {}
+                        for check_name in commands:
+                            if check_name in raw_timeouts:
+                                check_timeouts[check_name] = raw_timeouts[check_name]
+                            elif check_name.startswith(repository + ':'):
+                                plain = check_name.removeprefix(repository + ':').split('#', 1)[0]
+                                if plain in raw_timeouts:
+                                    check_timeouts[check_name] = raw_timeouts[plain]
+                        status, details = run_checks(tree, commands, **({'timeouts': check_timeouts} if check_timeouts else {}))
+                    gui_details = None
+                    if selected_gui and status == 'green':
+                        decide_gui = gui_check_permission(
+                            self.root, self.state, task, request.effect_id, project,
+                            control, self.permission_directory, self.invocation_id,
+                            local_producer=execution_scope.current().prefer == 'local',
+                        )
+                        gui_state, gui_text, gui_details = run_gui_checks(
+                            tree, selected_gui, decide_gui, stop=control.should_stop)
+                        if gui_text:
+                            details = (details + '\n' + gui_text).strip() if details else gui_text
+                        if gui_state in ('red', 'inconclusive'):
+                            status = gui_state
+                        elif gui_state == 'skipped' and not commands:
+                            status = 'inconclusive'
                     output = {'status': status, 'checks': details, 'applied': False}
+                    if gui_details:
+                        output['gui_checks'] = _public_gui_checks(gui_details)
                     if BACKLOG_CHECK in names:
                         output['project_graph_binding'] = graph_binding(config)
                     (task if task else value)['verification'] = output
                     if task and status != 'green':
                         task['stage'] = 'PENDING'
                     save(self.root, value)
+                except CheckCleanupUnknown:
+                    keep_tree = True
+                    raise
                 finally:
                     if token is not None:
                         check_runner=CHECK_PORT.get()
@@ -1620,11 +1709,12 @@ class ConversationTools:
                         if callable(getattr(check_runner,'close',None)):check_runner.close()
                     if stall is not None:
                         STALL_ASK.reset(stall)
-                    try: git(config['repositories'][repository], 'worktree', 'remove', '--force', str(tree), timeout=120)
-                    except (ValueError, OSError): pass
-                    from .worker_wait import discard
-                    try: discard(tree)  # what Git left of the tree, and its pytest temporary root
-                    except OSError: pass
+                    if not keep_tree:
+                        try: git(config['repositories'][repository], 'worktree', 'remove', '--force', str(tree), timeout=120)
+                        except (ValueError, OSError): pass
+                        from .worker_wait import discard
+                        try: discard(tree)  # what Git left of the tree, and its pytest temporary root
+                        except OSError: pass
             elif name == 'delegate_plan':
                 value, task = self.active()
                 if task['intent'] not in {'plan', 'deliver'}:
@@ -1931,7 +2021,7 @@ class ConversationTools:
                 audit.preflight = lambda producer: available(producer, self)
                 audit.packet_preflight = packet_preflight
                 audit.resume_tree = lambda: resume_tree(self, task)
-                from .conversation_permissions import outside_sandbox, red_baseline, stall_question
+                from .conversation_permissions import gui_check_permission, outside_sandbox, red_baseline, stall_question
                 from .work_units import PROGRESS, Progress, STALL_ASK
                 project = config['repositories'][plan['unit']['repository']]
                 # The implement row says what is running (its checks, its implementer) where a screen can show it.
@@ -1947,6 +2037,8 @@ class ConversationTools:
                                       outside=outside_sandbox(self.root, self.state, task, request.effect_id,
                                           project, control, self.permission_directory, self.invocation_id),
                                       red_baseline=red_baseline(self.root, self.state, task, request.effect_id,
+                                          project, control, self.permission_directory, self.invocation_id),
+                                      gui_check=gui_check_permission(self.root, self.state, task, request.effect_id,
                                           project, control, self.permission_directory, self.invocation_id))
                 except (ValueError, OSError, KeyError, TypeError):
                     task['stage'] = 'PENDING'; save(self.root, value)

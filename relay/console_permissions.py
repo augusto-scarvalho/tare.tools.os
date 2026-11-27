@@ -90,6 +90,10 @@ class ProjectPermissions:
                                         else 'Stopping it to run it outside the sandbox' if choice == 'outside'
                                         else 'Stopping it · the check stays unjudged' if request['stall']['check']
                                         else 'Stopping it')
+                elif request.get('kind') == 'gui_check':
+                    self.set_status('Skipped GUI check · it was not run' if choice in (None, 'deny')
+                                    else 'Running the GUI check on your desktop'+(' · remembered for this exact command'
+                                    if choice == 'project' else ' · for this turn'))
                 elif request.get('kind') == 'sandbox':
                     self.set_status('Not run outside the sandbox · the check stays unjudged' if choice in (None, 'deny')
                                     else 'Running the check outside the sandbox'+(' · saved for this project'

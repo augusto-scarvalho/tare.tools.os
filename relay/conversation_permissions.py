@@ -151,7 +151,17 @@ def answer(root, request_id, choice, *, project, directory, control_root, change
         if request.get('kind') == 'sandbox' and choice == 'project' and request['sandbox'].get('always') is False:
             raise ValueError("A local model's checks are asked about each turn: run it this turn or do not run it. "
                              'Nothing was authorized.')
-        if request.get('kind') == 'sandbox' and choice == 'project':
+        if request.get('kind') == 'gui_check':
+            if choice not in ('once', 'project', 'deny'):
+                raise ValueError('Run this GUI check on your desktop or skip it. Nothing was authorized.')
+            if choice == 'project' and (request.get('gui_check') or {}).get('always') is False:
+                raise ValueError("A local model's GUI checks are asked about each turn: run it once or skip it. "
+                                 'Nothing was authorized.')
+        if request.get('kind') == 'gui_check' and choice == 'project':
+            from .turn_engine import set_gui_check_allowed
+            gui_name, gui_argv = next(iter(request['checks'].items()))
+            set_gui_check_allowed(request['project'], gui_name, gui_argv, True)
+        elif request.get('kind') == 'sandbox' and choice == 'project':
             # Only this: no edit access, mode or command protection changes with it. /permissions shows and clears it.
             from .turn_engine import set_checks_outside_sandbox
             set_checks_outside_sandbox(request['project'], True)
@@ -457,6 +467,77 @@ def outside_sandbox(root, state, task, effect_id, project, control, directory, i
             save_json(regular(folder/SANDBOX_TURN), turn)
             return True, 'for this turn, as the user chose'
         return True, 'always for this project, as the user chose'
+    return decide
+
+
+GUI_CHECK_TURN = 'gui-check-turn.json'  # this turn's exact GUI check approvals: [{'invocation', 'binding'}]
+
+
+def gui_check_permission(root, state, task, effect_id, project, control, directory, invocation_id, *, local_producer=False):
+    """Explicit desktop consent for declared `.tare/checks.json` `mode: "gui"` checks with `argv`.
+
+    Always fails closed when no interactive TUI is connected (`directory is None`), even if an exact
+    command was remembered for the project. Remembered approvals bind exact `(name, argv)` digests and
+    are never honored or offered for a local model's work.
+    """
+    from .native_agent import read_json
+    from .turn_engine import gui_check_allowed, gui_check_binding
+    import os
+    folder = regular(Path(root)/'execution-permission')
+    project_key = os.path.normcase(str(Path(project).resolve()))
+
+    def decide(name, argv, description='', *, local_producer=local_producer):
+        if directory is None:
+            return False, 'no interactive TUI is connected; GUI checks require explicit desktop confirmation'
+        local = local_work(local_producer)
+        binding = gui_check_binding(name, argv)
+        if not local and gui_check_allowed(project, name, argv):
+            return True, 'always for this exact GUI check in this project, as the user chose'
+        turn_file = regular(folder/GUI_CHECK_TURN)
+        turn_rows = []
+        if turn_file.is_file():
+            try:
+                loaded = read_json(turn_file, 16384)
+                grants = loaded.get('grants') if isinstance(loaded, dict) and loaded.get('invocation') == invocation_id else None
+                if isinstance(grants, list):
+                    turn_rows = [r for r in grants if isinstance(r, dict)]
+            except (OSError, ValueError):
+                turn_rows = []
+        if any(r.get('project') == project_key and r.get('binding') == binding
+               and (not local or r.get('local') is True) for r in turn_rows):
+            return True, 'for this turn, as the user chose'
+        folder.mkdir(exist_ok=True)
+        objective = (
+            f'Run the project\'s declared GUI check "{name}" directly on your desktop outside the sandbox? '
+            'This opens a desktop window and runs as you.'
+        )[:2000]
+        request = {
+            'schema': SCHEMA,
+            'kind': 'gui_check',
+            'session': state['session_id'],
+            'effect': effect_id,
+            'task': (task or {}).get('id', ''),
+            'plan': ((task or {}).get('plan') or {}).get('sha256', ''),
+            'project': str(Path(project).resolve()),
+            'paths': [],
+            'checks': {name: list(argv)},
+            'tests': [],
+            'objective': objective,
+            'status': 'WAITING',
+            'gui_check': {
+                'check': name,
+                **({'description': str(description)[:240]} if description else {}),
+                **({'always': False} if local else {}),
+            },
+        }
+        value = wait_for_answer(folder, request, control)
+        if not value or value['choice'] == 'deny':
+            return False, 'the user chose to skip this GUI check'
+        if value['choice'] == 'once':
+            turn_rows.append({'project': project_key, 'binding': binding, 'local': bool(local)})
+            save_json(turn_file, {'invocation': invocation_id, 'grants': turn_rows})
+            return True, 'for this turn, as the user chose'
+        return True, 'always for this exact GUI check in this project, as the user chose'
     return decide
 
 

@@ -99,7 +99,7 @@ def describe_for_blind(refs, source_root, deployment, text, *, custody=None, on_
             data = store.load(ref)
             if destination is not None:
                 destination.put_bytes(ref.name, data, ref.media_type)
-                preserved_notes.append(f'{ref.name} (sha256={ref.sha256[:12]})')
+                preserved_notes.append(f'{ref.name} (repository="attachments", path="{ref.sha256}")')
             paths.append(Path(folder)/f"image-{index + 1}.{ref.media_type.split('/')[1]}")
             paths[-1].write_bytes(data)
         names_label = ', '.join(ref.name for ref in blind[:4])

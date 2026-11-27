@@ -236,6 +236,10 @@ class PermissionsPanel(SupportPanel):
                     yield Input('24', placeholder='Calls per request, 1 to 24', type='integer', id='permissions-review-limit')
                 yield Checkbox('Run checks the sandbox blocks outside it, without asking (they can then reach the '
                                'network and your files)', id='permissions-checks-outside')
+                gui_checkbox = Checkbox('Allow remembered exact GUI checks (.tare/checks.json mode="gui") on desktop '
+                                        'without asking (uncheck to ask again)', id='permissions-gui-checks')
+                gui_checkbox.display = False
+                yield gui_checkbox
                 yield Checkbox("Trust this repository's AGENTS.md (all its worktrees; uncommitted edits need review)", id='permissions-root')
                 yield Checkbox('Allow nested instructions (requires root adoption)', id='permissions-nested', disabled=True)
                 yield Static(COMMANDS_WARNING, id='permissions-command-warning', markup=False)
@@ -297,6 +301,9 @@ class PermissionsPanel(SupportPanel):
             'write_paths': write_paths,
             'checks_outside_sandbox': self.query_one('#permissions-checks-outside', Checkbox).value,
         }
+        gui_checkbox = self.query_one('#permissions-gui-checks', Checkbox)
+        if gui_checkbox.display and not gui_checkbox.value:
+            defaults['gui_checks_allowed'] = False
         plan = self.query_one('#permissions-plan', Select).value
         if plan != 'default':  # Use my default: no choice of the project's own
             defaults['show_plan'] = plan == 'ask'
@@ -492,6 +499,10 @@ class PermissionsPanel(SupportPanel):
             self.query_one('#permissions-nested', Checkbox).value = (
                 bool(policy.get('nested', False)) and self.reviewed_preview is not None)
             self.query_one('#permissions-checks-outside', Checkbox).value = bool(defaults.get('checks_outside_sandbox'))
+            gui_checkbox = self.query_one('#permissions-gui-checks', Checkbox)
+            has_gui = bool(defaults.get('gui_checks_allowed'))
+            gui_checkbox.value = has_gui
+            gui_checkbox.display = has_gui
         mode = defaults.get('mode', 'read')
         write_paths = defaults.get('write_paths', [])
 

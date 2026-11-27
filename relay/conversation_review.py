@@ -789,6 +789,20 @@ def _review(owner, task, tree, producer, unit, changed, checks, control, *, _una
         'criteria': task['criteria'], 'plan': task['plan']['sha256'],
         'producer': producer, 'diff': raw_diff_sha256, 'planner_provenance': planner_proof}
     if projections:identity_input['diff_projection']={'sha256':hashlib.sha256(diff).hexdigest(),'files':projections}
+    if isinstance(checks, dict) and isinstance(checks.get('gui_checks'), dict):
+        gui_evidence = {
+            k: {
+                'status': v.get('status'),
+                'exit_code': v.get('exit_code'),
+                'argv': v.get('argv'),
+                'output_sha256': hashlib.sha256(str(v.get('output') or '').encode('utf-8')).hexdigest(),
+                'artifacts': [a.get('sha256') for a in (v.get('artifacts') or ()) if isinstance(a, dict)],
+            }
+            for k, v in checks['gui_checks'].items()
+            if isinstance(v, dict) and v.get('status') in ('green', 'red')
+        }
+        if gui_evidence:
+            identity_input['gui_checks'] = gui_evidence
     identity = hashlib.sha256(encode(identity_input).encode()).hexdigest()
     past = records(owner.root)
     projected=[]
@@ -995,6 +1009,35 @@ def _review(owner, task, tree, producer, unit, changed, checks, control, *, _una
         (inputs/'diff.patch').write_bytes(diff)
         for location,body in json_views.items():
             view=regular(inputs/location);view.parent.mkdir(parents=True,exist_ok=True);view.write_bytes(body)
+        # Copy any non-ignored GUI check image artifacts saved outside the candidate tree into review:gui-artifacts/...
+        if isinstance(checks, dict) and isinstance(checks.get('gui_checks'), dict):
+            from copy import deepcopy as _deepcopy
+            checks = _deepcopy(checks)
+            for gui_name, gui_row in checks['gui_checks'].items():
+                if not isinstance(gui_row, dict):
+                    continue
+                sanitized_artifacts = []
+                for art in gui_row.get('artifacts') or ():
+                    if not isinstance(art, dict):
+                        continue
+                    saved_path = art.get('saved_path')
+                    if saved_path:
+                        src = Path(saved_path)
+                        if src.is_file() and not src.is_symlink():
+                            rel_dst = Path('gui-artifacts') / str(gui_name) / Path(str(art.get('path') or src.name))
+                            dst = regular(inputs / rel_dst)
+                            if dst.resolve().is_relative_to(inputs.resolve()):
+                                dst.parent.mkdir(parents=True, exist_ok=True)
+                                dst.write_bytes(src.read_bytes())
+                                sanitized_artifacts.append({
+                                    'repository': 'review',
+                                    'path': rel_dst.as_posix(),
+                                    'sha256': art.get('sha256'),
+                                })
+                    else:
+                        sanitized_artifacts.append({k: v for k, v in art.items() if k in ('repository', 'path', 'sha256')})
+                if sanitized_artifacts:
+                    gui_row['artifacts'] = sanitized_artifacts
         dependencies = [s['path'] for s in task['plan'].get('sources', [])
                         if s['repository'] == unit.get('repository')]
         for ci_name in ('.github/workflows/ci.yml', '.github/workflows/ci.yaml'):
@@ -1066,10 +1109,17 @@ def _review(owner, task, tree, producer, unit, changed, checks, control, *, _una
             **({'diff_projection':projections,'raw_diff_sha256':raw_diff_sha256} if projections else {})}
         # Private input is complete before dispatch. Line ranges must be able to reach every field.
         (inputs/'request.json').write_text(json.dumps(request_body, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
+        attachments_dir = owner.root / 'attachments'
+        image_inspection = (
+            {'attachments_root': str(attachments_dir.resolve())}
+            if attachments_dir.is_dir() and not attachments_dir.is_symlink()
+            else True
+        )
         config = {'schema': 'tare.tools/native-agent-config/1', 'role': 'auditor', 'typed_output': True,
             'repositories': {'candidate': str(Path(tree).resolve()), 'review': str(inputs.resolve())},
             'writable': {}, 'verifiers': {}, 'capabilities': ['read', 'list', 'search'],
             'instruction_repositories': ['candidate'], 'specgraph_edit_context': False,
+            'image_inspection': image_inspection,
             # Use this auditor model's fractions. One summary shares its call/time budget.
             'context_policy': contract['policy'],
             # Local-only, same family: an ACCEPT with open items is read as not accepted, never discarded.
@@ -1113,6 +1163,10 @@ def _review(owner, task, tree, producer, unit, changed, checks, control, *, _una
               'this projection is not an application patch. '
               if projections else '')+
             'The host ran the recorded checks on this candidate; they are evidence, not a semantic verdict. '
+            'If host_verification.gui_checks lists rendered screenshots (in repository "candidate" or "review") or '
+            'the user attached screenshots (repository "attachments"), you may call inspect_image(repository, path, question) '
+            '(read-only, capped at 6 calls, authority="NONE") to visually verify concrete visual criteria before '
+            'rendering your verdict. '
             'host_verification.observed_named_checks preserves earlier host-observed worker checks, including '
             'successful intermediate runs. Their timings describe those runs and need not equal later '
             'before/after rechecks. Truncated or explicitly omitted outputs remain unknown; do not infer '

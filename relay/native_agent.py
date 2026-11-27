@@ -77,7 +77,7 @@ def configuration(value):
             'schema', 'role', 'repositories', 'writable', 'verifiers', 'index_states',
             'context_policy', 'specgraph_edit_context', 'typed_output', 'input_artifacts', 'capabilities', 'terminal', 'project_graph',
             'folder_access', 'instruction_repositories', 'command_protection', 'command_context', 'command_runtimes', 'project_admission', 'shared_context', 'delegated_verifiers',
-            'same_family_audit', 'managed_skills', 'auto_skills', 'agent_signals'}):
+            'same_family_audit', 'managed_skills', 'auto_skills', 'agent_signals', 'image_inspection'}):
         raise ValueError('explicit_native_agent_configuration_required')
     if 'same_family_audit' in value and (value['same_family_audit'] is not True or value.get('role') != 'auditor'):
         raise ValueError('same_family_audit is set only by the local-only conversation review, for an auditor.')
@@ -202,6 +202,9 @@ def configuration(value):
         value = {**value, 'managed_skills': validate_skill_ids(value['managed_skills'])}
     if 'auto_skills' in value and type(value['auto_skills']) is not bool:
         raise ValueError('native_agent_auto_skills_boolean_required')
+    if value.get('image_inspection') is not None:
+        from .vision_tools import validate_image_inspection_config
+        value = {**value, 'image_inspection': validate_image_inspection_config(value['image_inspection'], role=role)}
     return {**value, 'role': role, 'repositories': resolved, 'writable': writable,
             'verifiers': verifiers, 'index_states': indexes, 'context_policy': context}
 
@@ -910,6 +913,9 @@ def run_session(config, deployment, custody, instruction=None, *, resume=False,
             if config.get('agent_signals') and config['role'] == 'implementer' and state.get('delegated_leaf'):
                 from .agent_signals import SignalTools
                 tools = SignalTools(tools, root, role='implementer')
+            if config.get('image_inspection') and config['role'] in {'implementer', 'auditor'} and state.get('delegated_leaf'):
+                from .vision_tools import VisionTools
+                tools = VisionTools(tools, config, root)
             if state.get('continuation'):
                 from .native_continuity import HistoryTools
                 tools = HistoryTools(tools, root, state['continuation'])

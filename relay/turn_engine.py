@@ -948,6 +948,69 @@ def set_checks_outside_sandbox(root, on):
     os.replace(temporary, path)
 
 
+def gui_checks_store():
+    """Remembered exact `(name, argv)` bindings for `.tare/checks.json` `mode: "gui"` checks approved per project.
+    Always separate from `checks_outside_sandbox` and never honored headless or for local models' work."""
+    return mode_store().with_name('project-gui-checks-allowed.json')
+
+
+def gui_check_binding(name, argv):
+    payload = json.dumps({'name': str(name), 'argv': list(argv)}, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()
+
+
+def gui_checks_allowed_entries(root):
+    key = os.path.normcase(str(Path(root).resolve()))
+    try:
+        saved = json.loads(gui_checks_store().read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return []
+    entries = saved.get(key) if isinstance(saved, dict) else None
+    return [b for b in entries if isinstance(b, str) and len(b) == 64] if isinstance(entries, list) else []
+
+
+def gui_check_allowed(root, name, argv):
+    return gui_check_binding(name, argv) in gui_checks_allowed_entries(root)
+
+
+def set_gui_check_allowed(root, name, argv, on):
+    if type(on) is not bool:
+        raise ValueError('Choose whether this exact GUI check may run on your desktop without asking.')
+    path, key = gui_checks_store(), os.path.normcase(str(Path(root).resolve()))
+    binding = gui_check_binding(name, argv)
+    try:
+        saved = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        saved = {}
+    if not isinstance(saved, dict):
+        saved = {}
+    current_list = [b for b in saved.get(key, []) if isinstance(b, str) and len(b) == 64] if isinstance(saved.get(key), list) else []
+    updated = sorted({*(b for b in current_list if b != binding), *([binding] if on else [])})
+    if updated:
+        saved[key] = updated
+    else:
+        saved.pop(key, None)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + f'.{os.getpid()}.tmp')
+    temporary.write_text(json.dumps(saved, indent=1, sort_keys=True), encoding='utf-8')
+    os.replace(temporary, path)
+
+
+def clear_gui_checks_allowed(root):
+    path, key = gui_checks_store(), os.path.normcase(str(Path(root).resolve()))
+    try:
+        saved = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return
+    if not isinstance(saved, dict) or key not in saved:
+        return
+    saved.pop(key, None)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + f'.{os.getpid()}.tmp')
+    temporary.write_text(json.dumps(saved, indent=1, sort_keys=True), encoding='utf-8')
+    os.replace(temporary, path)
+
+
 MAX_STAGNANT_ROUNDS = 3  # the runtime's NativeBudget.max_stagnant_turns
 
 
@@ -1278,9 +1341,14 @@ def validate_project_checks_data(root, data, *, strict=False, check_executables=
                 raise ValueError(f'Check {name!r} has invalid mode: {mode!r}.')
             continue
         if mode in ('manual', 'gui'):
-            if strict and ({'argv', 'timeout_seconds'} & set(entry)):
+            has_argv = 'argv' in entry and entry['argv'] is not None
+            has_timeout = 'timeout_seconds' in entry and entry['timeout_seconds'] is not None
+            if mode == 'manual' and strict and ({'argv', 'timeout_seconds'} & set(entry)):
                 raise ValueError(f'Check {name!r} with mode={mode!r} cannot specify argv or timeout_seconds.')
+            if mode == 'gui' and not has_argv and strict and has_timeout:
+                raise ValueError(f'Check {name!r} with mode="gui" requires argv when timeout_seconds is set.')
             row = {'mode': mode}
+            norm_row = {'mode': mode}
             if 'description' in entry and entry['description'] is not None:
                 desc = entry['description']
                 if not isinstance(desc, str) or not desc.strip() or len(desc.strip()) > 240:
@@ -1288,6 +1356,7 @@ def validate_project_checks_data(root, data, *, strict=False, check_executables=
                         raise ValueError(f'Check {name!r} description must be 1..240 characters.')
                 else:
                     row['description'] = desc.strip()[:240]
+                    norm_row['description'] = row['description']
             if 'paths' in entry and entry['paths'] is not None:
                 paths = entry['paths']
                 if not isinstance(paths, list) or len(paths) > 16 or (strict and not paths):
@@ -1314,8 +1383,41 @@ def validate_project_checks_data(root, data, *, strict=False, check_executables=
                             clean.append(norm)
                     if clean:
                         row['paths'] = clean
+                        norm_row['paths'] = list(clean)
+            if mode == 'gui' and has_argv:
+                argv = entry['argv']
+                if (not isinstance(argv, list) or not 1 <= len(argv) <= 32
+                        or any(not isinstance(a, str) or not a or len(a) > 1024 or '\0' in a for a in argv)):
+                    if strict:
+                        raise ValueError(f'Check {name!r} argv must be 1..32 non-empty strings.')
+                elif not _valid_project_check_command_syntax(argv[0]):
+                    if strict:
+                        raise ValueError(f'Check {name!r} executable {argv[0]!r} must be a bare command name or safe relative path.')
+                else:
+                    timeout = entry.get('timeout_seconds')
+                    timeout_ok = timeout is None or (type(timeout) is int and 5 <= timeout <= 3600)
+                    if not timeout_ok:
+                        if strict:
+                            raise ValueError(f'Check {name!r} timeout_seconds must be an integer between 5 and 3600.')
+                    else:
+                        resolved_argv = list(argv)
+                        exe_ok = True
+                        if check_executables:
+                            exe = _resolve_project_check_executable(root, argv[0])
+                            if not exe:
+                                if strict:
+                                    raise ValueError(f'Check {name!r} executable {argv[0]!r} could not be resolved safely.')
+                                exe_ok = False
+                            else:
+                                resolved_argv = [exe, *argv[1:]]
+                        if exe_ok:
+                            row['argv'] = resolved_argv
+                            norm_row['argv'] = list(argv)
+                            if timeout is not None:
+                                row['timeout_seconds'] = timeout
+                                norm_row['timeout_seconds'] = timeout
             manual[name] = row
-            norm_checks[name] = deepcopy(row)
+            norm_checks[name] = norm_row
             continue
         if strict and 'paths' in entry:
             raise ValueError(f'Check {name!r} with mode="headless" cannot specify paths.')
@@ -1471,6 +1573,25 @@ def project_checks(root):
         return empty
     _, parsed = validate_project_checks_data(root, data, strict=False, check_executables=True)
     return parsed
+
+
+def project_gui_checks(root):
+    """Return declared executable `mode: "gui"` checks from trusted `<root>/.tare/checks.json`.
+
+    Never included in automatic headless verifiers; requires explicit interactive desktop consent.
+    """
+    manual = project_checks(root)['manual']
+    gui = {}
+    for name, row in manual.items():
+        if row.get('mode') == 'gui' and isinstance(row.get('argv'), list) and row['argv']:
+            gui[name] = {
+                'repository': 'workspace',
+                'argv': list(row['argv']),
+                **({'timeout_seconds': row['timeout_seconds']} if 'timeout_seconds' in row else {}),
+                **({'description': row['description']} if 'description' in row else {}),
+                **({'paths': list(row['paths'])} if 'paths' in row else {}),
+            }
+    return gui
 
 
 def config_for(root, mode='accept-edits'):
