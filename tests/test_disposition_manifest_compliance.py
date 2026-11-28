@@ -110,8 +110,12 @@ def test_anti_resurrection_barrier_falsifier():
     forbidden_tokens = [
         "import tare.tools.harness",
         "from tare.tools.harness",
+        "import harness_lib",
+        "from harness_lib",
         "importlib.import_module('tare.tools.harness",
         'importlib.import_module("tare.tools.harness',
+        "importlib.import_module('harness_lib",
+        'importlib.import_module("harness_lib',
         "sys.path.append('C:\\projects\\tare.tools.harness",
         'sys.path.append("C:\\projects\\tare.tools.harness',
         "sys.path.insert(0, 'C:\\projects\\tare.tools.harness",

@@ -15,7 +15,7 @@ from relay.native_settlement import NativeWorkRunner
 
 def runner_for(tmp_path, node):
     from relay.agent_runtime_host import CoordinatorAuthorityGate
-    from relay.cluster_coordinator import CoordinatorDB
+    from relay.coordinator_db import CoordinatorDB
     from relay.landing_policy import attest_identity
     args = native_fixture_arguments(tmp_path, node)
     args.pop('journal')
@@ -236,7 +236,7 @@ from types import SimpleNamespace
 c=json.load(sys.stdin)
 from relay import relay_mesh
 relay_mesh.rebind_root(Path(c['os_root']));sys.modules['relay_mesh']=relay_mesh
-from relay.cluster_coordinator import CoordinatorDB
+from relay.coordinator_db import CoordinatorDB
 from relay.agent_runtime_host import CoordinatorAuthorityGate
 from relay.native_settlement import NativeWorkRunner
 from relay.landing_policy import AgentIdentity

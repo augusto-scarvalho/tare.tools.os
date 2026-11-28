@@ -274,7 +274,7 @@ def test_durable_native_preparation_failure_has_a_receipt(os_root,tmp_path):
 @pytest.mark.parametrize('transition',['resume','revoke','handoff'])
 def test_durable_native_attempt_uses_real_coordinator_authority(os_root,tmp_path,transition):
     from dataclasses import replace
-    from relay.cluster_coordinator import CoordinatorDB
+    from relay.coordinator_db import CoordinatorDB
     from relay.agent_runtime_host import CoordinatorAuthorityGate
     from relay.native_attempt import run_native_attempt
     from tare_tools_agent_runtime import CancellationToken
@@ -320,7 +320,7 @@ def test_durable_native_attempt_uses_real_coordinator_authority(os_root,tmp_path
 @pytest.mark.parametrize('crash',['none','before_rebind','after_rebind'])
 def test_native_handoff_continues_saved_edit_and_survives_lost_ack(os_root,tmp_path,monkeypatch,crash):
     from dataclasses import replace
-    from relay.cluster_coordinator import CoordinatorDB
+    from relay.coordinator_db import CoordinatorDB
     from relay.agent_runtime_host import CoordinatorAuthorityGate
     from relay.native_attempt import run_native_attempt
     from compute_plane.native_journal import NativeJournal
@@ -374,7 +374,7 @@ def test_native_handoff_continues_saved_edit_and_survives_lost_ack(os_root,tmp_p
 @pytest.mark.parametrize('invalid',['acquired','expired','token','predecessor'])
 def test_native_handoff_receipt_requires_causal_current_successor(tmp_path,invalid):
     from dataclasses import replace
-    from relay.cluster_coordinator import CoordinatorDB
+    from relay.coordinator_db import CoordinatorDB
     from relay.agent_runtime_host import CoordinatorAuthorityGate
     from relay.native_attempt import binding_identity
     clock=[100.0]
@@ -392,7 +392,7 @@ def test_native_handoff_receipt_requires_causal_current_successor(tmp_path,inval
 
 def test_native_handoff_cannot_clear_unrecorded_edit_result(os_root,tmp_path,monkeypatch):
     from dataclasses import replace
-    from relay.cluster_coordinator import CoordinatorDB
+    from relay.coordinator_db import CoordinatorDB
     from relay.agent_runtime_host import CoordinatorAuthorityGate
     from relay.native_attempt import run_native_attempt
     from compute_plane.native_journal import NativeJournal

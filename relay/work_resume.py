@@ -7,7 +7,7 @@ from compute_plane.managed_process import host_executable
 
 def resume_settlement(work_id, receipt, stage, cancellation, *, repository_root=None, evidence_factory=None, retry_plan=False, retry_audit=False, graph_path=None):
     from relay import relay_mesh, work_run
-    from relay.cluster_coordinator import CoordinatorDB
+    from relay.coordinator_db import CoordinatorDB
     from relay.runtime_authority import CoordinatorAuthorityGate
     from relay.native_settlement import recover_accepted_candidate
     from relay.train_execution import read_execution_descriptor, validate_descriptor_for_train

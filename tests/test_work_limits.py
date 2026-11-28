@@ -70,7 +70,7 @@ def test_unlimited_attempt_persists_null_deadline_and_resumes_without_new_calls(
 
 
 def test_lease_renews_beyond_original_expiry_and_never_reacquires_after_revocation(tmp_path, os_root):
-    from relay.cluster_coordinator import CoordinatorDB
+    from relay.coordinator_db import CoordinatorDB
     from relay.runtime_authority import CoordinatorAuthorityGate
     from tare_tools_agent_runtime import CancellationToken
     clock = [0.0]

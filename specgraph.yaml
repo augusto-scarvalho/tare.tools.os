@@ -29,5 +29,4 @@ excluded_paths:
   - relay/leases
   - relay/approvals
   # Test discovery remains tests/; these are test-only code, not runtime roots.
-  - relay/test_ai_bookkeeper.py
   - tools/tests
