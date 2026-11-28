@@ -46,7 +46,7 @@ def pause_implementation(host, monkeypatch, capsys, *, calls=None):
     assert relay_mesh.current_lease(work_run.train_id_for('work-one')) is None
     origin = json.loads((train/'WORK_RUN.json').read_bytes())
     from relay import native_work_credentials
-    from relay.cluster_coordinator import CoordinatorDB
+    from relay.coordinator_db import CoordinatorDB
     binding = json.loads((Path(origin['implementation_custody'])/'host.json').read_bytes())['binding']
     assert not CoordinatorDB(work_run.coordinator_path()).is_agent_runtime_binding_current(
         work_id=binding['work_id'], binding_id=binding['binding_id'], owner_id=binding['owner_id'],

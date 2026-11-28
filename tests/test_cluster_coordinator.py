@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from relay import cluster_coordinator, relay_mesh
+from relay import coordinator_db as cluster_coordinator
 
 
 class ClusterCoordinatorTests(unittest.TestCase):
@@ -252,117 +252,6 @@ class AgentRuntimeBindingTests(unittest.TestCase):
     def test_invalid_ttl_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "ttl_s"):
             self.db.acquire_agent_runtime_binding("WORK-TTL", "owner-a", ttl_s=0)
-
-
-class CoordinatorRpcReachabilityTests(unittest.TestCase):
-    """P0 falsifiers: the three Tailscale RPC endpoints must be reachable (never 404).
-
-    The existing tests exercise CoordinatorDB directly; these boot the real
-    CoordinatorHandler over HTTP on an ephemeral port to prove the endpoints
-    are wired into routing — the actual symptom of the P0 was HTTP 404.
-    """
-
-    def setUp(self):
-        self.tmp_dir = tempfile.TemporaryDirectory()
-        root = Path(self.tmp_dir.name)
-
-        # Hermetic: point the module globals the handler reads at temp state.
-        self._orig_db = cluster_coordinator.DB
-        self._orig_trains = cluster_coordinator.relay_mesh.TRAINS_DIR
-        cluster_coordinator.DB = cluster_coordinator.CoordinatorDB(root / "coord.db")
-
-        trains_dir = root / "trains"
-        train_dir = trains_dir / "TRAIN-RPC-TEST-01"
-        train_dir.mkdir(parents=True)
-        (train_dir / "STATE.json").write_text(json.dumps({
-            "train_id": "TRAIN-RPC-TEST-01",
-            "title": "RPC reachability fixture",
-            "status": "PLAN_APPROVED",
-            "current_role": "implementer",
-            "revision": 1,
-        }), encoding="utf-8")
-        cluster_coordinator.relay_mesh.TRAINS_DIR = trains_dir
-        cluster_coordinator.TRAINS_DIR = trains_dir
-
-        socketserver.TCPServer.allow_reuse_address = True
-        self.server = socketserver.TCPServer(("127.0.0.1", 0), cluster_coordinator.CoordinatorHandler)
-        self.port = self.server.server_address[1]
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.thread.start()
-
-    def tearDown(self):
-        try:
-            self.server.shutdown()
-            self.server.server_close()
-        finally:
-            cluster_coordinator.DB = self._orig_db
-            cluster_coordinator.relay_mesh.TRAINS_DIR = self._orig_trains
-            cluster_coordinator.TRAINS_DIR = self._orig_trains
-            # ponytail: best-effort — SQLite WAL handles can linger on Windows
-            # and block unlink; the sibling DB test class swallows this too.
-            try:
-                self.tmp_dir.cleanup()
-            except Exception:
-                pass
-
-    def _get(self, path):
-        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}", timeout=5) as r:
-            return r.status, json.loads(r.read().decode("utf-8"))
-
-    def _post(self, path, body):
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{self.port}{path}",
-            data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=5) as r:
-            return r.status, json.loads(r.read().decode("utf-8"))
-
-    def test_fal01_jobs_available_reachable(self):
-        """FAL-01: GET /api/v1/jobs/available returns 200 {ok, jobs:[...]}, not 404."""
-        status, body = self._get("/api/v1/jobs/available")
-        self.assertEqual(status, 200)
-        self.assertTrue(body["ok"])
-        ids = [j["train_id"] for j in body["jobs"]]
-        self.assertIn("TRAIN-RPC-TEST-01", ids)
-
-    def test_fal02_jobs_claim_reachable_and_atomic(self):
-        """FAL-02: POST /api/v1/jobs/claim assigns a lease; re-claim by another host is 409."""
-        status, body = self._post("/api/v1/jobs/claim", {
-            "train_id": "TRAIN-RPC-TEST-01", "role": "implementer",
-            "hostname": "host_a", "agent_id": "agent_a",
-        })
-        self.assertEqual(status, 200)
-        self.assertTrue(body["ok"])
-        self.assertGreaterEqual(len(body["claim"]["lease_token"]), 16)
-
-        # Falsifier: a second host must be refused while the lease is held.
-        with self.assertRaises(urllib.error.HTTPError) as ctx:
-            self._post("/api/v1/jobs/claim", {
-                "train_id": "TRAIN-RPC-TEST-01", "role": "implementer",
-                "hostname": "host_b", "agent_id": "agent_b",
-            })
-        self.assertEqual(ctx.exception.code, 409)
-
-    def test_fal03_heartbeat_reachable_and_visible_in_state(self):
-        """FAL-03: POST /api/v1/nodes/heartbeat returns 200 and node shows in /api/state."""
-        status, body = self._post("/api/v1/nodes/heartbeat", {
-            "hostname": "rpc_test_node", "ip": "100.64.0.9", "pressure": "IDLE",
-            "resources": {"cpu_load_pct": 3.0, "ram_available_gb": 8.0},
-        })
-        self.assertEqual(status, 200)
-        self.assertTrue(body["ok"])
-
-        _, state = self._get("/api/state")
-        hostnames = [n.get("hostname") for n in state.get("nodes", [])]
-        self.assertIn("rpc_test_node", hostnames)
-
-    def test_fal_unknown_path_is_404(self):
-        """Falsifier: routing is real — an unknown path 404s (endpoints aren't a catch-all)."""
-        with self.assertRaises(urllib.error.HTTPError) as ctx:
-            self._get("/api/v1/does/not/exist")
-        self.assertEqual(ctx.exception.code, 404)
 
 
 if __name__ == "__main__":

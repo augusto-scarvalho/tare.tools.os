@@ -1933,33 +1933,6 @@ def main() -> None:
     elif cmd == "capsule":
         print(json.dumps(context_capsule(_arg("--train"), _arg("--role", "implementer")),
                          indent=2, ensure_ascii=False))
-    elif cmd == "intake":  # ingest one human demand file into the backlog
-        import intake_processor
-        out = (intake_processor.ingest_file(Path(_arg("--file"))) if "--file" in sys.argv
-               else {"swept": intake_processor.sweep_human()})
-        print(json.dumps(out, indent=2, ensure_ascii=False))
-    elif cmd == "propose":  # open a multi-agent consensus proposal
-        import consensus_engine
-        print(json.dumps(consensus_engine.create_proposal(
-            _arg("--id"), _arg("--agent", "unknown_agent"), _arg("--title", ""),
-            _arg("--body", "")), indent=2, ensure_ascii=False))
-    elif cmd == "vote":  # cast a typed vote on a proposal
-        import consensus_engine
-        print(json.dumps(consensus_engine.cast_vote(
-            _arg("--id"), _arg("--agent"), _arg("--vote", "AGREE"), _arg("--comment", "")),
-            indent=2, ensure_ascii=False))
-    elif cmd == "consensus":  # tally, or --synthesize on consensus
-        import consensus_engine
-        pid = _arg("--id")
-        out = consensus_engine.synthesize(pid) if "--synthesize" in sys.argv \
-            else consensus_engine.tally(pid)
-        print(json.dumps(out, indent=2, ensure_ascii=False))
-    elif cmd == "publish-study":  # 1-command publication to tare.tools.research & GitHub Pages
-        import publisher_engine
-        src_file = _arg("--file")
-        ctx = _arg("--context", "02_harness-architecture")
-        res = publisher_engine.publish_study(src_file, context_dir=ctx)
-        print(json.dumps(res, indent=2, ensure_ascii=False))
     elif cmd == "retire-train":  # formally retire and archive a train
         tid = _arg("--train")
         reason = _arg("--reason", "SUPERSEDED_BY_NORTH_STAR_V2")

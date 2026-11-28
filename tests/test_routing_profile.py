@@ -808,46 +808,6 @@ def test_a_work_implementer_that_does_not_pass_run_session_is_admitted(monkeypat
         native_work_host.create_runner(route, 'work-one', tmp_path/'implement')
 
 
-def test_the_relay_mesh_chairs_read_the_profile_of_their_role(tmp_path, monkeypatch):  # round three, 2
-    import subprocess
-    from relay import autonomous_auditor, autonomous_planner, vendor_chairs
-    from test_autonomous_auditor_identity import _strict_train
-    started = []
-    monkeypatch.setattr(vendor_chairs, 'is_vendor_healthy', lambda engine, host=None: (True, 'healthy'))
-    monkeypatch.setattr(vendor_chairs, '_resolve_engine_cmd', lambda engine, prompt, role: [engine])
-    monkeypatch.setattr(vendor_chairs, 'report_vendor_success', lambda engine, host=None: None)
-    monkeypatch.setattr(vendor_chairs.subprocess, 'run', lambda cmd, **k: started.append(cmd[0]) or
-                        subprocess.CompletedProcess(cmd, 0, 'report', ''))
-    saved(off={'auditor': ['*@*']})
-    result = vendor_chairs.dispatch_role('auditor', 'Audit.')
-    assert not result.ok and started == []
-    assert vendor_chairs.dispatch_role('bookkeeper', 'Keep the books.').engine == 'antigravity'  # not a profile role
-    saved(off={'auditor': ['gemini/*@agy']})  # Gemini on AGY, the auditor's first chair
-    assert vendor_chairs.dispatch_role('auditor', 'Audit.').engine == 'codex'
-    # The autonomous auditor never starts AGY for the role; its chair fallback is asked instead.
-    relay_dir, train = _strict_train(tmp_path, 'gpt-5.6-sol', 'codex', 'gpt-5.6-sol')
-    monkeypatch.setattr(autonomous_auditor.relay_mesh, 'RELAY_DIR', relay_dir)
-    monkeypatch.setattr(autonomous_auditor.relay_mesh, 'TRAINS_DIR', train.parent)
-    monkeypatch.setattr(autonomous_auditor, 'TRACKER_FILE', tmp_path/'tracker.json')
-    (train/'prompt.txt').write_text('Audit the change', encoding='utf-8')
-    monkeypatch.setattr(autonomous_auditor, '_run_agy', lambda *a: pytest.fail('AGY started for an off role'))
-    asked = []
-    chairs = autonomous_auditor.vendor_chairs
-    monkeypatch.setattr(chairs, 'dispatch_role', lambda role, *a, **k: asked.append(role) or chairs.DispatchResult(
-        ok=False, engine='none', returncode=-3, stdout='', stderr='', duration_s=0.0, error_reason='none'))
-    assert autonomous_auditor.audit('code-audit', train/'prompt.txt') == 1 and asked == ['auditor']
-    # The autonomous planner refuses before its vendor starts; the caller quarantines the message.
-    monkeypatch.setattr(autonomous_planner, '_run', lambda cmd: pytest.fail('planner started for an off role'))
-    # Its argv names no model, so the CLI picks one: any model switched off on that CLI refuses it, whatever
-    # model tare would have guessed (gpt/terra is not the mesh's default model).
-    saved(off={'planner': ['gpt/terra@codex']})
-    refused = autonomous_planner.execute_vendor('Plan.', vendor_id='codex')
-    assert refused.returncode == 1 and refused.stderr.startswith('SWITCHED_OFF_FOR_ROLE: codex runs whatever')
-    assert vendor_chairs.chair_off('codex', 'planner') is None  # with the model known, that entry is another's
-    saved(off={'planner': ['gpt/terra@claude-code'], 'auditor': ['*@*']})  # another source, another role
-    assert vendor_chairs.chair_off('codex', 'planner', model_known=False) is None
-
-
 def test_an_edited_copilot_message_is_admitted_again(tmp_path, monkeypatch):  # round three, 3
     from relay import copilot_mode
     route = {'id': 'local', 'native_profile': {'protocol': 'openai-chat', 'model': 'm',

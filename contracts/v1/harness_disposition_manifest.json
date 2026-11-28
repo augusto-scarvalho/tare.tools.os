@@ -2,7 +2,7 @@
   "$schema": "https://tare.tools/schemas/v1/disposition-manifest.json",
   "version": "1.0.0",
   "generated_at": "2026-10-04T03:10:28.054735+00:00",
-  "total_modules": 460,
+  "total_modules": 441,
   "modules": [
     {
       "name": "consent_decisions.py",
@@ -1975,46 +1975,6 @@
       "sha256": "0795630d967ab0d2c5d505021eadb708f5719556ee980929086368061f58a308"
     },
     {
-      "name": "autonomous_auditor.py",
-      "path": "tare.tools.os/relay/autonomous_auditor.py",
-      "size_bytes": 14186,
-      "sha256": "98e4033c3f582357a4a44f6a9234311bc9952e1291a86171956312130561bc75",
-      "summary": "relay/autonomous_auditor.py — on-demand EXTERNAL auditor spawner (agy/Antigravity).",
-      "disposition": "EVOLVE_SATELLITE",
-      "target_repository": "tare.tools.kernel (Harness Driver)",
-      "rationale": "Rebuilt as an on-demand subprocess driver inside bwrap/Aider jails, without auto-approve drift."
-    },
-    {
-      "name": "autonomous_implementer.py",
-      "path": "tare.tools.os/relay/autonomous_implementer.py",
-      "size_bytes": 13230,
-      "sha256": "60205615f1dfa42ff7a0273ce1ea08d2101f4a5b9c70a558e1eff4a67752bece",
-      "summary": "tare.tools Autonomous Implementer Worker (Claude Opus 4.8 Runner)",
-      "disposition": "EVOLVE_SATELLITE",
-      "target_repository": "tare.tools.kernel (Harness Driver)",
-      "rationale": "Rebuilt as an on-demand subprocess driver inside bwrap/Aider jails, without auto-approve drift."
-    },
-    {
-      "name": "autonomous_planner.py",
-      "path": "tare.tools.os/relay/autonomous_planner.py",
-      "size_bytes": 12111,
-      "sha256": "2123a32db3be990073ebecd85868ae01da3ed9b38e2a277bd0a68bd9487aeca2",
-      "summary": "tare.tools Autonomous Planner Worker (Codex Runner v2.1 with Session Reuse)",
-      "disposition": "EVOLVE_SATELLITE",
-      "target_repository": "tare.tools.kernel (Harness Driver)",
-      "rationale": "Rebuilt as an on-demand subprocess driver inside bwrap/Aider jails, without auto-approve drift."
-    },
-    {
-      "name": "bookkeeper.py",
-      "path": "tare.tools.os/relay/bookkeeper.py",
-      "size_bytes": 16920,
-      "sha256": "399065e1c919c7eb2a8e4664c27adea77ef06b90948336a31955561b260a3b69",
-      "summary": "tare.tools Relay Bookkeeper & Horizon AI Curator (Role: bookkeeper)",
-      "disposition": "EVOLVE_SATELLITE",
-      "target_repository": "tare.tools.os (CLI)",
-      "rationale": "On-demand operational utilities invoked by explicit CLI commands (no permanent daemons)."
-    },
-    {
       "name": "candidate_change.py",
       "path": "tare.tools.os/relay/candidate_change.py",
       "size_bytes": 11113,
@@ -2023,56 +1983,6 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Binds code audit and landing to the same verified Git object without creating a store, private ref or parallel authority."
-    },
-    {
-      "name": "cluster_coordinator.py",
-      "path": "tare.tools.os/relay/cluster_coordinator.py",
-      "size_bytes": 131930,
-      "sha256": "2aae2fd1ecfe088a9b61c6d7e68c8801339b98826c95144566e386b58cc44596",
-      "summary": "relay/cluster_coordinator.py — tare.tools Central Cluster Coordinator & Cockpit Server",
-      "disposition": "DISCARD_FROZEN",
-      "target_repository": "NONE (Frozen Legacy)",
-      "rationale": "Vulnerable HTTP servers (SEC-01/02), endless polling daemons and zombie background processes."
-    },
-    {
-      "name": "cluster_sre.py",
-      "path": "tare.tools.os/relay/cluster_sre.py",
-      "size_bytes": 9978,
-      "sha256": "b27a7dbd9d1edc947a4706e2408e43fdfa2ca2190ebf22f5d4ae2f4aeaf04c3a",
-      "summary": "relay/cluster_sre.py — Autonomous Cluster SRE & Self-Healing Overseer Daemon.",
-      "disposition": "RETAIN_CORE",
-      "target_repository": "tare.tools.os/relay",
-      "rationale": "Support module for the in-memory/CLI relay bus."
-    },
-    {
-      "name": "cluster_worker.py",
-      "path": "tare.tools.os/relay/cluster_worker.py",
-      "size_bytes": 16637,
-      "sha256": "2d0a22dca697afdfcad1796c29b2df3764ab91fde49fcef16ffd81d8a02d16e3",
-      "summary": "relay/cluster_worker.py — tare.tools Distributed Autonomous Worker Node",
-      "disposition": "RETAIN_CORE",
-      "target_repository": "tare.tools.os/relay",
-      "rationale": "Support module for the in-memory/CLI relay bus."
-    },
-    {
-      "name": "cockpit_server.py",
-      "path": "tare.tools.os/relay/cockpit_server.py",
-      "size_bytes": 18551,
-      "sha256": "7907757db00f889996d49fd727fe959cb359fc3740d8094f7b1575d65b58c6ef",
-      "summary": "relay/cockpit_server.py — tare.tools Owner Cockpit Web UI V0.1",
-      "disposition": "DISCARD_FROZEN",
-      "target_repository": "NONE (Frozen Legacy)",
-      "rationale": "Vulnerable HTTP servers (SEC-01/02), endless polling daemons and zombie background processes."
-    },
-    {
-      "name": "consensus_engine.py",
-      "path": "tare.tools.os/relay/consensus_engine.py",
-      "size_bytes": 7546,
-      "sha256": "4d09bab4004371922e651ef37e724748edc4ca28b362c2e9cb7a247f0873ab84",
-      "summary": "relay/consensus_engine.py — multi-agent dogfooding & consensus",
-      "disposition": "RETAIN_CORE",
-      "target_repository": "tare.tools.os/relay",
-      "rationale": "Core of tripartite governance, telemetry auditing, MWR measurement and resilient web ingestion."
     },
     {
       "name": "execution_preflight.py",
@@ -2093,26 +2003,6 @@
       "rationale": "OS policy adapter over SpecGraph receipts; no implicit owner mutation or approval.",
       "size_bytes": 3191,
       "sha256": "55e8a63d8305064adacc1b6cc662e332bb2a3e447a20b05947a8838a6a8ed19e"
-    },
-    {
-      "name": "human_watcher.py",
-      "path": "tare.tools.os/relay/human_watcher.py",
-      "size_bytes": 21114,
-      "sha256": "4abee111b78d89503400ee12747a91999b11728ff9cf65ad6000fcf36abdab89",
-      "summary": "tare.tools Relay HUMAN watcher — external approval/alert notifier + mobile actions.",
-      "disposition": "RETAIN_CORE",
-      "target_repository": "tare.tools.os/relay",
-      "rationale": "Support module for the in-memory/CLI relay bus."
-    },
-    {
-      "name": "intake_processor.py",
-      "path": "tare.tools.os/relay/intake_processor.py",
-      "size_bytes": 10842,
-      "sha256": "f7759dc19f5ef5745408b75d111bfc27f969c053d51f371feac65e489dea03a3",
-      "summary": "relay/intake_processor.py — asynchronous human intake queue",
-      "disposition": "RETAIN_CORE",
-      "target_repository": "tare.tools.os/relay",
-      "rationale": "Core of tripartite governance, telemetry auditing, MWR measurement and resilient web ingestion."
     },
     {
       "name": "landing_evidence.py",
@@ -2291,18 +2181,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "OS composition for the qualified native runner; providers and tactical execution remain in Kernel and Runtime.",
-      "size_bytes": 25633,
-      "sha256": "6a585a351eb02d5d2869cdf6db9b81d3a3ec89dc3c0d5c46bcc389bf2742b532"
-    },
-    {
-      "name": "overseer_agent.py",
-      "path": "tare.tools.os/relay/overseer_agent.py",
-      "size_bytes": 15053,
-      "sha256": "baa2621e875094711e0201e9ffc3c61acf5bb6e39041a0be1fdcbfb3546bb6f8",
-      "summary": "relay/overseer_agent.py — tare.tools Cluster Overseer Agent & Interactive Copilot",
-      "disposition": "RETAIN_CORE",
-      "target_repository": "tare.tools.os/relay",
-      "rationale": "Support module for the in-memory/CLI relay bus."
+      "size_bytes": 25628,
+      "sha256": "34829f5307ec4179b6cdd05ba90f4a5fb28ba9f1732f8860f55b0f283cd484b6"
     },
     {
       "name": "package_data.py",
@@ -2323,26 +2203,6 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Support module for the in-memory/CLI relay bus."
-    },
-    {
-      "name": "process_all_pending_audits.py",
-      "path": "tare.tools.os/relay/process_all_pending_audits.py",
-      "size_bytes": 5831,
-      "sha256": "1eaf7c755c59a29da5c27c2b79446b983aa977689c9e2a123d0cc368c2dac0d6",
-      "summary": "relay/process_all_pending_audits.py — Comprehensive Autonomous Swarm Auditor",
-      "disposition": "RETAIN_CORE",
-      "target_repository": "tare.tools.os/relay",
-      "rationale": "Support module for the in-memory/CLI relay bus."
-    },
-    {
-      "name": "publisher_engine.py",
-      "path": "tare.tools.os/relay/publisher_engine.py",
-      "size_bytes": 24721,
-      "sha256": "3d59f2da902888555b24b602514b5ec96645e951e8e757956883bf9e64bf4909",
-      "summary": "tare.tools Automated Research & Pages Publisher Engine (RELAY-PUBLISHER-01)",
-      "disposition": "EVOLVE_SATELLITE",
-      "target_repository": "tare.tools.os (CLI)",
-      "rationale": "On-demand operational utilities invoked by explicit CLI commands (no permanent daemons)."
     },
     {
       "name": "relay_benchmark.py",
@@ -2367,19 +2227,9 @@
     {
       "name": "relay_mesh.py",
       "path": "tare.tools.os/relay/relay_mesh.py",
-      "size_bytes": 96868,
-      "sha256": "17479fc04abd5ac7e0297b243a0cfb3b155a4b03e5775badb181811961570d67",
+      "size_bytes": 95298,
+      "sha256": "dc59da05c025717ecc73b197a04120b7544503cd271b59ae233999302902f699",
       "summary": "tare.tools Multi-Agent Relay Mesh (MARM) Core Engine v3.0 (TRAIN-06)",
-      "disposition": "RETAIN_CORE",
-      "target_repository": "tare.tools.os/relay",
-      "rationale": "Support module for the in-memory/CLI relay bus."
-    },
-    {
-      "name": "remote_tunnel.py",
-      "path": "tare.tools.os/relay/remote_tunnel.py",
-      "size_bytes": 2162,
-      "sha256": "d3f4adf673925af5d85fa713bdf8fe796c7503acf3523d2cc44be374cbb76e4d",
-      "summary": "relay/remote_tunnel.py — Zero-Install Public HTTPS Tunnel via Windows OpenSSH",
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Support module for the in-memory/CLI relay bus."
@@ -2393,16 +2243,6 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Delegates bulk research to the local model; the frontier model receives only the citable envelope."
-    },
-    {
-      "name": "resource_telemetry.py",
-      "path": "tare.tools.os/relay/resource_telemetry.py",
-      "size_bytes": 11083,
-      "sha256": "71db17ba446f3d3fc8b805fbc13c51910194b2fbd9539a5ab18a635ebe2228da",
-      "summary": "relay/resource_telemetry.py — Complete Stdlib Hardware Telemetry & Capability Mesh",
-      "disposition": "EVOLVE_SATELLITE",
-      "target_repository": "tare.tools.os (CLI)",
-      "rationale": "On-demand operational utilities invoked by explicit CLI commands (no permanent daemons)."
     },
     {
       "name": "round_table_engine.py",
@@ -2527,19 +2367,9 @@
     {
       "name": "spawn_background_worker.py",
       "path": "tare.tools.os/relay/spawn_background_worker.py",
-      "size_bytes": 5763,
-      "sha256": "9fa65d585b3d33526ef3e919f2ac43e90a2c4f5c9076783475b76e9123aac4aa",
+      "size_bytes": 497,
+      "sha256": "70eb970ca673e76340f0cabcb77ff4ea9f0159df58804f4df48a07050e763cdb",
       "summary": "relay/spawn_background_worker.py — Completely Silent / Headless Background Worker Daemon Spawner",
-      "disposition": "DISCARD_FROZEN",
-      "target_repository": "NONE (Frozen Legacy)",
-      "rationale": "Vulnerable HTTP servers (SEC-01/02), endless polling daemons and zombie background processes."
-    },
-    {
-      "name": "start_swarm.py",
-      "path": "tare.tools.os/relay/start_swarm.py",
-      "size_bytes": 3752,
-      "sha256": "08caa17ac482e4043800cd2c6ca3c15240e980f561ec5b17abf4fa5878b71d06",
-      "summary": "relay/start_swarm.py — Master Autonomous Swarm Orchestrator",
       "disposition": "DISCARD_FROZEN",
       "target_repository": "NONE (Frozen Legacy)",
       "rationale": "Vulnerable HTTP servers (SEC-01/02), endless polling daemons and zombie background processes."
@@ -2555,16 +2385,6 @@
       "rationale": "Closes the crash window before worktree add with create-only artifacts and exact-identity reconciliation."
     },
     {
-      "name": "test_ai_bookkeeper.py",
-      "path": "tare.tools.os/relay/test_ai_bookkeeper.py",
-      "size_bytes": 1451,
-      "sha256": "3a862bff7af5364d99172aa1e70e442b91e504ab87d46a23c7fdcb91b2baf8cd",
-      "summary": "!/usr/bin/env python3",
-      "disposition": "RETAIN_CORE",
-      "target_repository": "tare.tools.os/relay",
-      "rationale": "Support module for the in-memory/CLI relay bus."
-    },
-    {
       "name": "train_execution.py",
       "path": "tare.tools.os/relay/train_execution.py",
       "size_bytes": 11609,
@@ -2573,16 +2393,6 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Seals Work, revision, repository, paths and explicit verifiers in the plan audit without inferring them from prompt, branch or cwd."
-    },
-    {
-      "name": "vendor_chairs.py",
-      "path": "tare.tools.os/relay/vendor_chairs.py",
-      "size_bytes": 15602,
-      "sha256": "7bedb12d61a2a5b98ace4e3b81a887ad52e66dab1e27c20e566a72f3c90a45f7",
-      "summary": "relay/vendor_chairs.py — MARM Multi-Vendor Fuel Gauge & Model Chair Fallback Router.",
-      "disposition": "RETAIN_CORE",
-      "target_repository": "tare.tools.os/relay",
-      "rationale": "Core of tripartite governance, telemetry auditing, MWR measurement and resilient web ingestion."
     },
     {
       "name": "vendor_models.py",
@@ -2600,16 +2410,6 @@
       "size_bytes": 3123,
       "sha256": "47dbca2ec6a301ba27869e19da4b9dfe30265d64ab12740e0b924459b151b1f9",
       "summary": "tare.tools Role-Specific Watcher (for Planner, Implementer, or Auditor terminal)",
-      "disposition": "DISCARD_FROZEN",
-      "target_repository": "NONE (Frozen Legacy)",
-      "rationale": "Vulnerable HTTP servers (SEC-01/02), endless polling daemons and zombie background processes."
-    },
-    {
-      "name": "watcher_daemon.py",
-      "path": "tare.tools.os/relay/watcher_daemon.py",
-      "size_bytes": 38379,
-      "sha256": "4226d9675b24c5bc987fc17b5c177b1c2f814dd9cb8b2c351a55345d3f09cd3a",
-      "summary": "tare.tools Relay Supervisor Daemon v3.0 (TRAIN-06, Seam B)",
       "disposition": "DISCARD_FROZEN",
       "target_repository": "NONE (Frozen Legacy)",
       "rationale": "Vulnerable HTTP servers (SEC-01/02), endless polling daemons and zombie background processes."
@@ -2831,8 +2631,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os/relay",
       "rationale": "Native flows/TUI composition qualified in the post-Aider roadmap; provider and tactical loop owners remain Kernel and Runtime.",
-      "size_bytes": 24886,
-      "sha256": "c09485fbdf680556b4ac2c62e2ffed96bb826e0d7626bff710e7a49cbf0a8323"
+      "size_bytes": 24881,
+      "sha256": "eefe123859f98a6ba89d25ee1eb2761d6d5e37475df171717aded6b73de634a0"
     },
     {
       "name": "work_sequence.py",
@@ -4603,6 +4403,16 @@
       "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
       "size_bytes": 14244,
       "sha256": "2011df07ec6ba6c579902c5ca91d0807d6b873f47ee746adc547746843bbb131"
+    },
+    {
+      "name": "coordinator_db.py",
+      "path": "tare.tools.os/relay/coordinator_db.py",
+      "summary": "SQLite WAL coordinator database for work leases, fences, bindings and terminal claims.",
+      "disposition": "RETAIN_CORE",
+      "target_repository": "tare.tools.os",
+      "rationale": "OS owns bounded exploration composition, operator settings and shared delivery accounting.",
+      "size_bytes": 33445,
+      "sha256": "f13fab87ee77ebd77409a27218c62a6feb58369a891b648591db7fbaf6f0edf6"
     }
   ]
 }

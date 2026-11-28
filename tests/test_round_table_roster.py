@@ -68,14 +68,11 @@ def test_bedrock_catalog_and_native_role_deployments_preserve_access_policy():
 def test_shipped_local_endpoints_resolve_to_this_machines_gateway(monkeypatch):
     # The catalogs named one operator's node by address; each machine now resolves the placeholder, as bundled
     # profiles do, and a machine without a gateway setting gets localhost.
-    from relay import resource_telemetry
     monkeypatch.setenv('TARE_LOCAL_GATEWAY', 'http://gpu-node:8080')
-    monkeypatch.delenv('RELAY_COORDINATOR_URL', raising=False)
     roster, roles = round_table_roster.load_roster(), round_table_roster.load_role_deployments()
     endpoints = [e['native_profile']['endpoint'] for e in [*round_table_roster._all_entries(roster), *roles['deployments']]
                  if 'native_profile' in e and e['native_profile']['endpoint'].startswith('http://')]
     assert endpoints and set(endpoints) == {'http://gpu-node:8080/v1'}
-    assert resource_telemetry.coordinator_candidates() == ['http://127.0.0.1:8765', 'http://gpu-node:8765']
 
 
 def test_one_company_keeps_one_author_identity_across_gateways():

@@ -44,7 +44,7 @@ def test_fault_matrix_preserves_work_without_reexecution(sequence, monkeypatch, 
     from compute_plane.native_journal import NativeJournal, custody_lock
     from compute_plane import native_journal
     from tare_tools_agent_runtime import CancellationToken
-    from relay.cluster_coordinator import CoordinatorDB
+    from relay.coordinator_db import CoordinatorDB
     from relay.runtime_authority import CoordinatorAuthorityGate
 
     start(sequence)
