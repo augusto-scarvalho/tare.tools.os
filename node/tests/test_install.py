@@ -103,3 +103,80 @@ def test_gateway_perimeter_enforces_require_token_all_and_allowed_cidrs(monkeypa
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_tare_node_install_apply_sets_up_unprivileged_auto_updates_in_one_command(tmp_path, monkeypatch):
+    import os
+    import stat
+    from tare_node import install, update
+
+    home = tmp_path/'operator'
+    home.mkdir()
+    systemd = tmp_path/'systemd'
+    sudoers = tmp_path/'sudoers.d'
+    override_dir = systemd/'llm-inference.service.d'
+    override_dir.mkdir(parents=True)
+    override = override_dir/'zzz-shared-gpu.conf'
+    override.write_text(GATEWAY, encoding='utf-8')
+
+    ran = []
+    monkeypatch.setattr(install.subprocess, 'run', lambda argv, check: ran.append(argv))
+    monkeypatch.setattr(update.subprocess, 'run', lambda argv, check: ran.append(argv))
+
+    assert install.main([
+        '--home', str(home), '--user', 'operator',
+        '--systemd', str(systemd), '--sudoers', str(sudoers), '--apply',
+    ]) == 0
+
+    assert (override_dir/'zzz-shared-gpu.conf.bak').read_text(encoding='utf-8') == GATEWAY
+    assert 'tare-node-gateway' in override.read_text(encoding='utf-8')
+    assert (home/'.local/state/tare-qualified-models/api-token').is_file()
+    assert (home/'.local/bin/gpu').is_symlink()
+    assert (home/'.local/bin/gpu-run').is_symlink()
+
+    service = (systemd/'tare-node-update.service').read_text(encoding='utf-8')
+    assert 'User=operator\n' in service
+    assert (systemd/'tare-node-update.timer').is_file()
+    rule = sudoers/'tare-node-update'
+    assert rule.read_text(encoding='utf-8').startswith('operator ALL=(root) NOPASSWD: ')
+    if os.name == 'posix':
+        assert stat.S_IMODE(rule.stat().st_mode) == 0o440
+    assert ['systemctl', 'enable', '--now', 'tare-node-update.timer'] in ran
+    assert ran[-1] == ['systemctl', 'restart', 'llm-inference.service']
+
+
+def test_tare_node_install_no_auto_update_and_rejects_root_user_before_mutating(tmp_path, monkeypatch):
+    import pytest
+    from tare_node import install
+
+    home = tmp_path/'operator'
+    home.mkdir()
+    systemd = tmp_path/'systemd'
+    sudoers = tmp_path/'sudoers.d'
+    override_dir = systemd/'llm-inference.service.d'
+    override_dir.mkdir(parents=True)
+    override = override_dir/'zzz-shared-gpu.conf'
+    override.write_text(GATEWAY, encoding='utf-8')
+
+    # Rejects --user root BEFORE rewriting overrides or creating api-token
+    with pytest.raises(ValueError, match='root'):
+        install.main([
+            '--home', str(home), '--user', 'root',
+            '--systemd', str(systemd), '--sudoers', str(sudoers), '--apply',
+        ])
+    assert override.read_text(encoding='utf-8') == GATEWAY
+    assert not (home/'.local/state/tare-qualified-models/api-token').exists()
+
+    # --no-auto-update skips updater units and sudoers
+    ran = []
+    monkeypatch.setattr(install.subprocess, 'run', lambda argv, check: ran.append(argv))
+    assert install.main([
+        '--home', str(home), '--user', 'operator',
+        '--systemd', str(systemd), '--sudoers', str(sudoers), '--no-auto-update', '--apply',
+    ]) == 0
+    assert not (systemd/'tare-node-update.service').exists()
+    assert not (sudoers/'tare-node-update').exists()
+    assert ran == [
+        ['systemctl', 'daemon-reload'],
+        ['systemctl', 'restart', 'llm-inference.service'],
+    ]

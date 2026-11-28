@@ -14,6 +14,7 @@ import getpass
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,11 @@ import time
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
+
+try:
+    import pwd
+except ImportError:  # pragma: no cover - non-POSIX
+    pwd = None
 
 GATEWAY = 'http://127.0.0.1:8080'
 DEFAULT_REPO = 'augusto-scarvalho/tare.tools.os'
@@ -39,7 +45,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User={user}
-ExecStart={home}/.venvs/tare-node/bin/tare-node-update --home {home} --user {user}
+ExecStart={exec_start}
 """
 SUDOERS = (
     '{user} ALL=(root) NOPASSWD: '
@@ -65,7 +71,47 @@ WantedBy=timers.target
 def _validate_user(user):
     if not isinstance(user, str) or not USER_RE.fullmatch(user):
         raise ValueError(f'invalid service user name: {user!r}')
+    if user == 'root':
+        raise ValueError("service user must not be 'root'; pass --user <service-user>")
     return user
+
+
+def _validate_home(home):
+    text = str(home)
+    if not text or any(ch in text for ch in ('\n', '\r', '\0')):
+        raise ValueError(f'invalid service home path: {home!r}')
+    if not (Path(text).is_absolute() or text.startswith('/')):
+        raise ValueError(f'service home path must be absolute: {home!r}')
+    return str(Path(text)) if os.name == 'posix' else (text.rstrip('/') or '/')
+
+
+def _default_service_user():
+    return os.environ.get('SUDO_USER') or os.environ.get('USER') or getpass.getuser()
+
+
+def _lookup_passwd(user):
+    if pwd is None or not user:
+        return None
+    try:
+        return pwd.getpwnam(user)
+    except KeyError:
+        return None
+
+
+def _default_service_home(user):
+    if pwd is not None and user:
+        sudo_user = os.environ.get('SUDO_USER')
+        is_root = hasattr(os, 'geteuid') and os.geteuid() == 0
+        if sudo_user or is_root or user != getpass.getuser():
+            entry = _lookup_passwd(user)
+            if entry is not None and entry.pw_dir:
+                return entry.pw_dir
+    return str(Path.home())
+
+
+def _lookup_uid(user):
+    entry = _lookup_passwd(user)
+    return entry.pw_uid if entry is not None else None
 
 
 def _reject_symlink(path, *, stop_at=None):
@@ -292,10 +338,16 @@ def update(node):
     return 0, f'installed {latest[:7]}' + ('; ComfyUI restarted' if restarted else '; ComfyUI later' if comfy else '')
 
 
+def _service_exec_start(home, user):
+    argv = [f'{home}/.venvs/tare-node/bin/tare-node-update', '--home', home, '--user', user]
+    return ' '.join(map(shlex.quote, argv))
+
+
 def install_units(home, user, systemd=Path('/etc/systemd/system'), sudoers=Path('/etc/sudoers.d')):
     user = _validate_user(user)
-    home = str(Path(home))
-    _write_text_atomic(Path(systemd)/'tare-node-update.service', SERVICE.format(home=home, user=user))
+    home = _validate_home(home)
+    exec_start = _service_exec_start(home, user)
+    _write_text_atomic(Path(systemd)/'tare-node-update.service', SERVICE.format(user=user, exec_start=exec_start))
     _write_text_atomic(Path(systemd)/'tare-node-update.timer', TIMER)
     if sudoers is not None:
         _write_text_atomic(Path(sudoers)/'tare-node-update', SUDOERS.format(user=user), mode=0o440)
@@ -303,24 +355,92 @@ def install_units(home, user, systemd=Path('/etc/systemd/system'), sudoers=Path(
     subprocess.run(['systemctl', 'enable', '--now', 'tare-node-update.timer'], check=True)
 
 
+def migrate_legacy_root_unit(home, user, *, systemd=Path('/etc/systemd/system'), sudoers=Path('/etc/sudoers.d'),
+                             invocation_id=None, lookup_uid=None):
+    """One-time self-demotion for nodes still running the pre-hardening root systemd unit.
+
+    Only migrates when invoked by systemd (INVOCATION_ID set) from a root-owned, non-symlink
+    tare-node-update.service lacking User= whose sole ExecStart matches this non-root (home, user).
+    Never executes update() as root.
+    """
+    inv_id = os.environ.get('INVOCATION_ID') if invocation_id is None else invocation_id
+    if not inv_id:
+        return False
+    try:
+        user = _validate_user(user)
+        home_str = _validate_home(home)
+    except ValueError:
+        return False
+    uid = (_lookup_uid if lookup_uid is None else lookup_uid)(user)
+    if uid is None or uid == 0:
+        return False
+    home_path = Path(home_str)
+    if home_path.is_symlink() or not home_path.is_dir():
+        return False
+    if os.name == 'posix' and home_path.stat().st_uid != uid:
+        return False
+    systemd_dir = Path(systemd)
+    unit_path = systemd_dir/'tare-node-update.service'
+    if systemd_dir.is_symlink() or unit_path.is_symlink() or not unit_path.is_file():
+        return False
+    if os.name == 'posix' and systemd_dir == Path('/etc/systemd/system') and unit_path.stat().st_uid != 0:
+        return False
+    unit_text = unit_path.read_text(encoding='utf-8')
+    exec_lines = []
+    for raw_line in unit_text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith(('#', ';')):
+            continue
+        if line.lower().startswith('user='):
+            return False
+        if line.startswith('ExecStart='):
+            value = line[len('ExecStart='):].strip()
+            if value:
+                exec_lines.append(value)
+    expected_argv = [f'{home_str}/.venvs/tare-node/bin/tare-node-update', '--home', home_str, '--user', user]
+    if len(exec_lines) != 1:
+        return False
+    try:
+        parsed_argv = shlex.split(exec_lines[0])
+    except ValueError:
+        return False
+    if parsed_argv != expected_argv:
+        return False
+    install_units(home_str, user, systemd=systemd_dir, sudoers=sudoers)
+    return True
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='tare-node-update', description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--home', default=str(Path.home()))
-    parser.add_argument('--user', default=os.environ.get('SUDO_USER') or os.environ.get('USER') or getpass.getuser())
+    parser.add_argument('--home', default=None)
+    parser.add_argument('--user', default=None)
     parser.add_argument('--repo', default=DEFAULT_REPO, help='GitHub owner/repo checked for CI verification')
     parser.add_argument('--install-units', action='store_true',
                         help='write and enable unprivileged tare-node-update.timer and scoped sudoers rule (root)')
     args = parser.parse_args(argv)
+    user = args.user or _default_service_user()
+    home = args.home or _default_service_home(user)
     if args.install_units:
-        install_units(args.home, args.user)
-        print('tare-node-update.timer enabled: every 30 minutes (unprivileged service user)')
+        try:
+            install_units(home, user)
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+            print(f'failed: {type(exc).__name__}: {getattr(exc, "stderr", None) or exc}')
+            return 1
+        print(f'tare-node-update.timer enabled for {user}: every 30 minutes (unprivileged service user)')
         return 0
     if hasattr(os, 'geteuid') and os.geteuid() == 0:
+        try:
+            if migrate_legacy_root_unit(home, user):
+                print(f'migrated tare-node-update.service to unprivileged user {user}; next timer run updates without root')
+                return 0
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+            print(f'failed: could not migrate legacy root unit ({type(exc).__name__}: {exc}); re-run with --install-units')
+            return 1
         print('failed: refusing to run update as root; re-run with --install-units to install the unprivileged unit')
         return 1
     try:
-        code, outcome = update(Node(args.home, args.user, repo=args.repo))
+        code, outcome = update(Node(home, user, repo=args.repo))
     except (OSError, subprocess.SubprocessError, ValueError, StopIteration) as exc:
         code, outcome = 1, f'failed: {type(exc).__name__}: {getattr(exc, "stderr", None) or exc}'
     print(outcome)

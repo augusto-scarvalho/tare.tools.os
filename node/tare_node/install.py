@@ -14,6 +14,19 @@ import shlex
 import subprocess
 from pathlib import Path
 
+from tare_node.update import (
+    _default_service_home,
+    _default_service_user,
+    _validate_home,
+    _validate_user,
+    install_units,
+)
+
+try:
+    import pwd
+except ImportError:  # pragma: no cover - non-POSIX
+    pwd = None
+
 OVERRIDES = {'llm-inference.service': 'zzz-shared-gpu.conf', 'comfyui.service': 'zzz-shared-gpu.conf'}
 PACKAGED = {'--config': 'config/qualified_model_fleet.json', '--image-routes': 'config/comfy_image_routes.json'}
 
@@ -79,28 +92,59 @@ def ensure_token(path):
     return True
 
 
+def _resolve_user_and_home(explicit_user, explicit_home):
+    if explicit_user:
+        user = explicit_user
+    else:
+        user = _default_service_user()
+        if user == 'root' and explicit_home and pwd is not None:
+            home_path = Path(explicit_home)
+            if home_path.exists() and not home_path.is_symlink():
+                st_uid = home_path.stat().st_uid
+                if st_uid != 0:
+                    try:
+                        user = pwd.getpwuid(st_uid).pw_name
+                    except KeyError:
+                        pass
+    home = explicit_home or _default_service_home(user)
+    return user, home
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='tare-node-install', description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--home', default=str(Path.home()), help="the service user's home (with sudo: /home/<user>)")
+    parser.add_argument('--home', default=None, help="the service user's home (auto-detected under sudo)")
+    parser.add_argument('--user', default=None, help='the unprivileged service user (auto-detected under sudo)')
     parser.add_argument('--systemd', type=Path, default=Path('/etc/systemd/system'))
+    parser.add_argument('--sudoers', type=Path, default=Path('/etc/sudoers.d'))
+    parser.add_argument('--no-auto-update', action='store_true',
+                        help='do not install or enable the unprivileged tare-node-update.timer')
     parser.add_argument('--apply', action='store_true')
     args = parser.parse_args(argv)
+    user, home = _resolve_user_and_home(args.user, args.home)
+    if args.apply and not args.no_auto_update:
+        _validate_user(user)
+        home = _validate_home(home)
     for unit, name in OVERRIDES.items():
         path = args.systemd/(unit + '.d')/name
         if not path.is_file() or path.is_symlink() or path.parent.is_symlink():
             print(f'{unit}: no regular override at {path}; nothing to change')
             continue
         old = path.read_text(encoding='utf-8')
-        new = rewrite(old, args.home)
+        new = rewrite(old, home)
         print(f'== {path}\n{new}' if new != old else f'{unit}: already on the installed version')
         if args.apply and new != old:
             _write_no_symlink(path.with_suffix(path.suffix + '.bak'), old)
             _write_no_symlink(path, new)
+    if not args.apply:
+        if args.no_auto_update:
+            print('tare-node-update.timer: skipped (--no-auto-update)')
+        else:
+            print(f'tare-node-update.timer: would install for {user} (home {home}) with scoped sudoers')
     if args.apply:
-        token = Path(args.home)/'.local/state/tare-qualified-models/api-token'
+        token = Path(home)/'.local/state/tare-qualified-models/api-token'
         print(f'API token for GPU reservations: {token} ' + ('created' if ensure_token(token) else 'kept'))
-        bin_dir = Path(args.home)/'.local/bin'
+        bin_dir = Path(home)/'.local/bin'
         _reject_symlink(bin_dir)
         _reject_symlink(bin_dir.parent)
         bin_dir.mkdir(parents=True, exist_ok=True)
@@ -112,8 +156,12 @@ def main(argv=None):
                 link.rename(bak)
             elif link.is_symlink():
                 link.unlink()
-            os.symlink(Path(args.home)/'.venvs/tare-node/bin'/command, link)
-        subprocess.run(['systemctl', 'daemon-reload'], check=True)
+            os.symlink(Path(home)/'.venvs/tare-node/bin'/command, link)
+        if not args.no_auto_update:
+            install_units(home, user, systemd=args.systemd, sudoers=args.sudoers)
+            print(f'Auto-updates enabled for {user} (tare-node-update.timer, unprivileged).')
+        else:
+            subprocess.run(['systemctl', 'daemon-reload'], check=True)
         subprocess.run(['systemctl', 'restart', 'llm-inference.service'], check=True)
         print('Gateway restarted. Restart ComfyUI (systemctl restart comfyui) once `gpu status` shows no image job.')
     return 0
