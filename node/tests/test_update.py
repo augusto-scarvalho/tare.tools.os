@@ -7,12 +7,18 @@ QUIET = {'role': 'qualified-model-gateway', 'gpu_coordination': {'enabled': True
 
 
 class FakeNode:
-    def __init__(self, state, latest='b' * 40, statuses=None, healthy=True, hook_changed=False, service_changed=True):
+    def __init__(self, state, latest='b' * 40, statuses=None, healthy=True, hook_changed=False, service_changed=True,
+                 verified=True):
         self.state, self._latest, self.statuses = dict(state), latest, list(statuses or [QUIET])
-        self._healthy, self._hook, self._service, self.done = healthy, hook_changed, service_changed, []
+        self._healthy, self._hook, self._service, self._verified, self.done = (
+            healthy, hook_changed, service_changed, verified, []
+        )
 
     def latest(self):
         return self._latest
+
+    def verified(self, commit):
+        return self._verified
 
     def status(self):
         return self.statuses.pop(0) if len(self.statuses) > 1 else self.statuses[0]
@@ -89,14 +95,80 @@ def test_comfyui_restarts_only_for_a_changed_hook_and_never_under_an_image_job()
     assert updater.update(later)[1] == 'up to date at bbbbbbb; ComfyUI restarted' and not later.state['comfy_pending']
 
 
+def test_an_unverified_commit_never_builds_or_installs():
+    node = FakeNode({'commit': 'a' * 40, 'wheel': '/w/aaaaaaa.whl'}, verified=False)
+    code, said = updater.update(node)
+    assert code == 0 and 'CI check not yet verified' in said
+    assert node.done == []
+    assert node.state['commit'] == 'a' * 40
+
+
 def test_the_timer_runs_every_half_hour_as_the_service_user(tmp_path, monkeypatch):
+    import os
+    import stat
     ran = []
     monkeypatch.setattr(updater.subprocess, 'run', lambda argv, check: ran.append(argv))
-    updater.install_units('/home/operator', 'operator', systemd=tmp_path)
-    service = (tmp_path/'tare-node-update.service').read_text()
+    systemd, sudoers = tmp_path/'systemd', tmp_path/'sudoers.d'
+    updater.install_units('/home/operator', 'operator', systemd=systemd, sudoers=sudoers)
+    service = (systemd/'tare-node-update.service').read_text()
+    assert 'User=operator\n' in service
     assert 'ExecStart=/home/operator/.venvs/tare-node/bin/tare-node-update --home /home/operator --user operator' in service
-    assert 'OnUnitActiveSec=30min' in (tmp_path/'tare-node-update.timer').read_text()
+    assert 'OnUnitActiveSec=30min' in (systemd/'tare-node-update.timer').read_text()
+    rule = sudoers/'tare-node-update'
+    rule_text = rule.read_text()
+    assert rule_text.startswith('operator ALL=(root) NOPASSWD: ')
+    assert 'llm-inference.service' in rule_text and 'comfyui.service' in rule_text
+    if os.name == 'posix':
+        assert stat.S_IMODE(rule.stat().st_mode) == 0o440
     assert ran[-1] == ['systemctl', 'enable', '--now', 'tare-node-update.timer']
+
+
+def test_update_refuses_running_as_root_and_rejects_bad_user_or_unit(tmp_path, monkeypatch):
+    monkeypatch.setattr(updater.os, 'geteuid', lambda: 0, raising=False)
+    assert updater.main(['--home', str(tmp_path), '--user', 'operator']) == 1
+    with pytest.raises(ValueError, match='invalid service user'):
+        updater.install_units(tmp_path, 'operator; rm -rf /', systemd=tmp_path/'s', sudoers=tmp_path/'d')
+    node = updater.Node(tmp_path, 'operator')
+    with pytest.raises(ValueError, match='unauthorized systemd unit'):
+        node.restart('ssh.service')
+
+
+def test_node_save_rejects_symlink_target(tmp_path):
+    node = updater.Node(tmp_path, 'operator')
+    node.state_dir.mkdir(parents=True)
+    outside = tmp_path/'outside.txt'
+    outside.write_text('keep')
+    (node.state_dir/'installed.json').symlink_to(outside)
+    with pytest.raises(ValueError, match='symlink'):
+        node.save({'commit': 'a' * 40})
+    assert outside.read_text() == 'keep'
+
+
+def test_node_verified_requires_completed_success_and_rejects_failures(monkeypatch):
+    import io
+
+    class FakeResp(io.BytesIO):
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+
+    def serve_runs(runs):
+        payload = updater.json.dumps({'check_runs': runs}).encode('utf-8')
+        monkeypatch.setattr(updater, 'urlopen', lambda req, timeout=15: FakeResp(payload))
+
+    node = updater.Node('/tmp/home', 'operator')
+    commit = 'a' * 40
+    serve_runs([{'name': updater.REQUIRED_CHECK, 'status': 'completed', 'conclusion': 'success'}])
+    assert node.verified(commit) is True
+    serve_runs([
+        {'name': updater.REQUIRED_CHECK, 'status': 'completed', 'conclusion': 'success'},
+        {'name': 'Tests (windows)', 'status': 'completed', 'conclusion': 'failure'},
+    ])
+    assert node.verified(commit) is False
+    serve_runs([{'name': updater.REQUIRED_CHECK, 'status': 'in_progress', 'conclusion': None}])
+    assert node.verified(commit) is False
+    assert node.verified('not-a-sha') is False
 
 
 @pytest.mark.parametrize(('sudo_user', 'user', 'expected'), [

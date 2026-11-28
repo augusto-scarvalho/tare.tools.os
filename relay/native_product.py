@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -450,10 +451,47 @@ def download_bundle(repo, tag, folder):
         raise SignatureError(f'{tag} has no valid signature')
 
 
+SERVE_TOKEN_FILE = 'serve-token'
+
+
+def ensure_serve_token(home):
+    """Create a per-installation random serve bearer token once (0600, refusing symlinks)."""
+    path = Path(home)/SERVE_TOKEN_FILE
+    if path.is_symlink() or path.parent.is_symlink():
+        raise ValueError(f'refusing symlink serve token path: {path}')
+    if path.is_file():
+        return path.read_text(encoding='utf-8').strip()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    token = secrets.token_urlsafe(32)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0)
+    fd = os.open(path, flags, 0o600)
+    with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+        handle.write(token + '\n')
+    return token
+
+
+def serve_api_key(home=None):
+    """Per-installation bearer token for managed Tare-Serve; falls back to `tare-local` for legacy installs."""
+    env_key = os.environ.get('TARE_SERVE_API_KEY', '').strip()
+    if env_key:
+        return env_key
+    root = home or os.environ.get('TARE_MANAGED_HOME') or os.environ.get('TARE_PRODUCT_HOME')
+    if root:
+        path = Path(root)/SERVE_TOKEN_FILE
+        try:
+            if not path.is_symlink() and path.is_file():
+                value = path.read_text(encoding='utf-8').strip()
+                if value:
+                    return value
+        except OSError:
+            pass
+    return 'tare-local'
+
+
 def serve_health(url=SERVE_HEALTH):
     import urllib.request
     try:
-        request = urllib.request.Request(url, headers={'Authorization': 'Bearer tare-local'})
+        request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + serve_api_key()})
         with urllib.request.urlopen(request, timeout=5) as reply:
             payload = reply.read(65537)
             if len(payload) > 65536:
@@ -508,7 +546,7 @@ def serve_control(identity, owner, action):
     import urllib.request
     request = urllib.request.Request(SERVE_HEALTH.rsplit('/', 1)[0] + '/control/drain',
         data=json.dumps({**identity, 'owner': owner, 'action': action}).encode('utf-8'),
-        headers={'Authorization': 'Bearer tare-local', 'Content-Type': 'application/json'}, method='POST')
+        headers={'Authorization': 'Bearer ' + serve_api_key(), 'Content-Type': 'application/json'}, method='POST')
     with urllib.request.urlopen(request, timeout=5) as reply:
         return json.loads(reply.read())
 
@@ -931,7 +969,7 @@ VSCODE_FLAVOURS = ('Code', 'Code - Insiders')
 
 def published_models():
     import urllib.request
-    request = urllib.request.Request(SERVE_MODELS, headers={'Authorization': 'Bearer tare-local'})
+    request = urllib.request.Request(SERVE_MODELS, headers={'Authorization': 'Bearer ' + serve_api_key()})
     with urllib.request.urlopen(request, timeout=5) as reply:
         return json.loads(reply.read())['data']
 
@@ -955,8 +993,9 @@ def sync_vscode(models, appdata=None):
             continue
         block = next((p for p in data if isinstance(p, dict) and p.get('name') == 'tare'), None) \
             if isinstance(data, list) else None
+        desired_key = serve_api_key()
         if isinstance(data, list) and block is None:
-            block = {'name': 'tare', 'vendor': 'customendpoint', 'apiKey': 'tare-local',
+            block = {'name': 'tare', 'vendor': 'customendpoint', 'apiKey': desired_key,
                      'apiType': 'chat-completions', 'models': []}
             data.append(block)
         if (block is None or block.get('vendor') != 'customendpoint' or block.get('apiType') != 'chat-completions'
@@ -965,6 +1004,9 @@ def sync_vscode(models, appdata=None):
             continue
         listed = {m.get('id'): m for m in block['models'] if isinstance(m, dict)}
         changes = []
+        if block.get('apiKey') != desired_key:
+            block['apiKey'] = desired_key
+            changes.append('updated apiKey')
         for model in models:
             entry = listed.get(model.get('id'))
             if entry is None:

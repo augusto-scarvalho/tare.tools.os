@@ -170,3 +170,25 @@ def test_a_request_that_allows_no_local_models_is_refused_a_local_single_route(s
     assert invalid.value.code == 400
     status, _ = call('/chat/completions', {**body, 'tare_local_models': True})
     assert status == 200 and 'tare_local_models' not in upstream.requests[0]  # never sent upstream
+
+
+def test_non_loopback_bind_requires_api_key(capsys):
+    rc = native_serve.main(['--host', '0.0.0.0', '--no-discovery'])
+    assert rc == 2
+    assert 'required when --host is not loopback' in capsys.readouterr().err
+
+
+def test_api_key_file_reads_regular_file_and_refuses_symlinks(tmp_path, monkeypatch):
+    from pathlib import Path
+    key_file = tmp_path/'serve-token'
+    key_file.write_text('random-key-123\n', encoding='utf-8')
+    assert native_serve._read_api_key_file(key_file) == 'random-key-123'
+    link = tmp_path/'link-token'
+    try:
+        link.symlink_to(key_file)
+    except OSError:
+        link.write_text('random-key-123\n', encoding='utf-8')
+        real_is_symlink = Path.is_symlink
+        monkeypatch.setattr(Path, 'is_symlink', lambda self: True if self == link else real_is_symlink(self))
+    with pytest.raises(ValueError, match='regular non-symlink'):
+        native_serve._read_api_key_file(link)

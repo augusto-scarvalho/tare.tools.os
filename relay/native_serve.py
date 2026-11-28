@@ -10,6 +10,7 @@ qualified request settings and its coding guidance, and records usage in
 import argparse
 from datetime import datetime, timezone
 import hashlib
+import hmac
 import ipaddress
 import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -273,7 +274,8 @@ def handler(models, api_key, default_root=None, admission=None):
         def authorized(self):
             if not api_key:
                 return True
-            if self.headers.get('Authorization', '') == 'Bearer ' + api_key:
+            given = self.headers.get('Authorization', '')
+            if hmac.compare_digest(given.encode('utf-8'), ('Bearer ' + api_key).encode('utf-8')):
                 return True
             self.discard_body()
             self.error(401, 'invalid api key', 'authentication_error')
@@ -559,6 +561,25 @@ def parse_models(specs):
     return models
 
 
+def _is_loopback_host(host):
+    if host == 'localhost':
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _read_api_key_file(path):
+    target = Path(path)
+    if target.is_symlink() or not target.is_file():
+        raise ValueError(f'api key file must be a regular non-symlink file: {target}')
+    value = target.read_text(encoding='utf-8').strip()
+    if not value:
+        raise ValueError(f'api key file is empty: {target}')
+    return value
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='tare serve', description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -567,14 +588,27 @@ def main(argv=None):
     parser.add_argument('--model', action='append', help='NAME=PROFILE; repeat. Default: '
                         + ', '.join(f'{k}={v}' for k, v in DEFAULT_MODELS.items()))
     parser.add_argument('--api-key-env', help='Require this environment variable as the bearer key')
+    parser.add_argument('--api-key-file', help='Require the bearer key stored in this regular file')
     parser.add_argument('--root', help='Folder the tare agent uses when the client names no open workspace')
     parser.add_argument('--no-discovery', action='store_true', help='Do not look for Claude/Codex/AGY CLIs at startup')
     args = parser.parse_args(argv)
     os.environ.setdefault('TARE_CLIENT', 'tare.tools serve')  # who calls a local gateway
     models = parse_models(args.model)
+    if args.api_key_env and args.api_key_file:
+        print('use either --api-key-env or --api-key-file, not both', file=sys.stderr)
+        return 2
     api_key = os.environ.get(args.api_key_env) if args.api_key_env else None
     if args.api_key_env and not api_key:
         print(f'{args.api_key_env} is not set', file=sys.stderr)
+        return 2
+    if args.api_key_file:
+        try:
+            api_key = _read_api_key_file(args.api_key_file)
+        except (OSError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+    if not api_key and not _is_loopback_host(args.host):
+        print('--api-key-env or --api-key-file is required when --host is not loopback', file=sys.stderr)
         return 2
     admission = Admission()
     try:
