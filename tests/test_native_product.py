@@ -608,3 +608,27 @@ def test_fake_install_refusal_cleanup_without_shutdown_confirmation(
                for key in ('current', 'previous', 'last_transition'))
     assert not product.release_at(home, identifier).exists()
     assert (home/'last-catalog-trial.json').is_file()
+
+
+def test_per_installation_serve_token_is_created_once_and_used_by_vscode_sync(tmp_path, monkeypatch):
+    home = tmp_path/'home'
+    home.mkdir()
+    monkeypatch.delenv('TARE_SERVE_API_KEY', raising=False)
+    monkeypatch.delenv('TARE_MANAGED_HOME', raising=False)
+    monkeypatch.delenv('TARE_PRODUCT_HOME', raising=False)
+    assert product.serve_api_key(home) == 'tare-local'
+    token = product.ensure_serve_token(home)
+    assert len(token) >= 40 and product.ensure_serve_token(home) == token
+    assert product.serve_api_key(home) == token
+    monkeypatch.setenv('TARE_MANAGED_HOME', str(home))
+    user = tmp_path/'Code'/'User'
+    user.mkdir(parents=True)
+    report = product.sync_vscode([{'id': 'tare', 'context_window': 131072}], appdata=tmp_path)
+    assert report == ['Code: added tare']
+    data = json.loads((user/'chatLanguageModels.json').read_text(encoding='utf-8'))
+    assert data[0]['apiKey'] == token
+    # Existing VS Code provider with legacy 'tare-local' key is updated on sync.
+    data[0]['apiKey'] = 'tare-local'
+    (user/'chatLanguageModels.json').write_text(json.dumps(data), encoding='utf-8')
+    assert product.sync_vscode([{'id': 'tare', 'context_window': 131072}], appdata=tmp_path) == ['Code: updated apiKey']
+    assert json.loads((user/'chatLanguageModels.json').read_text(encoding='utf-8'))[0]['apiKey'] == token

@@ -52,3 +52,54 @@ def test_the_node_token_is_created_once_and_only_its_owner_reads_it(tmp_path):
     assert len(first.strip()) >= 40 and ensure_token(token) is False and token.read_text() == first
     if os.name == 'posix':
         assert stat.S_IMODE(token.stat().st_mode) == 0o600
+
+
+def test_install_refuses_symlinks_in_token_and_override_bak(tmp_path):
+    import pytest
+    from tare_node.install import ensure_token, _write_no_symlink
+    outside = tmp_path/'outside.txt'
+    outside.write_text('keep')
+    bad_token = tmp_path/'api-token'
+    bad_token.symlink_to(outside)
+    with pytest.raises(ValueError, match='symlink'):
+        ensure_token(bad_token)
+    bad_bak = tmp_path/'override.conf.bak'
+    bad_bak.symlink_to(outside)
+    with pytest.raises(ValueError, match='symlink'):
+        _write_no_symlink(bad_bak, 'overwrite')
+    assert outside.read_text() == 'keep'
+
+
+def test_gateway_perimeter_enforces_require_token_all_and_allowed_cidrs(monkeypatch):
+    import http.client
+    import ipaddress
+    import threading
+    from http.server import ThreadingHTTPServer
+    from tare_node import qualified_model_gateway as qmg
+
+    monkeypatch.setattr(qmg, 'GPU_API_TOKEN', 'secret-node-token')
+    monkeypatch.setattr(qmg, 'REQUIRE_TOKEN_ALL', True)
+    monkeypatch.setattr(qmg, 'ALLOWED_NETWORKS', (ipaddress.ip_network('100.64.0.0/10'),))
+    server = ThreadingHTTPServer(('127.0.0.1', 0), qmg.Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        conn = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
+        # Loopback not in 100.64.0.0/10 and no token -> 403
+        conn.request('GET', '/v1/gpu/power?since=0&until=1')
+        assert conn.getresponse().status == 403
+        conn.close()
+        # With valid token -> bypasses CIDR block and satisfies REQUIRE_TOKEN_ALL -> 200
+        conn = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
+        conn.request('GET', '/v1/gpu/power?since=0&until=1', headers={'Authorization': 'Bearer secret-node-token'})
+        assert conn.getresponse().status == 200
+        conn.close()
+        # Now allow loopback CIDR, keep REQUIRE_TOKEN_ALL -> missing token still gets 401
+        monkeypatch.setattr(qmg, 'ALLOWED_NETWORKS', (ipaddress.ip_network('127.0.0.0/8'),))
+        conn = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
+        conn.request('GET', '/v1/gpu/power?since=0&until=1')
+        assert conn.getresponse().status == 401
+        conn.close()
+    finally:
+        server.shutdown()
+        server.server_close()

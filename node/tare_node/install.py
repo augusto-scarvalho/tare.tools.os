@@ -45,14 +45,32 @@ def entry(argv, home):
     return argv
 
 
+def _reject_symlink(path):
+    target = Path(path)
+    if target.is_symlink():
+        raise ValueError(f'refusing symlink path: {target}')
+
+
+def _write_no_symlink(path, content):
+    path = Path(path)
+    _reject_symlink(path)
+    _reject_symlink(path.parent)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, 'O_NOFOLLOW', 0)
+    fd = os.open(path, flags, 0o644)
+    with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+        handle.write(content)
+
+
 def ensure_token(path):
     """The node's API token for GPU reservations (contract gpu-lease/2): created once, readable only by the owner
     of the folder it lives in (the service user, also under sudo); never printed. True when it was created."""
     path = Path(path)
+    _reject_symlink(path)
+    _reject_symlink(path.parent)
     if path.is_file():
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
     with os.fdopen(fd, 'w', encoding='utf-8') as handle:
         handle.write(secrets.token_urlsafe(32) + '\n')
     owner = path.parent.stat()
@@ -70,23 +88,28 @@ def main(argv=None):
     args = parser.parse_args(argv)
     for unit, name in OVERRIDES.items():
         path = args.systemd/(unit + '.d')/name
-        if not path.is_file() or path.is_symlink():
+        if not path.is_file() or path.is_symlink() or path.parent.is_symlink():
             print(f'{unit}: no regular override at {path}; nothing to change')
             continue
         old = path.read_text(encoding='utf-8')
         new = rewrite(old, args.home)
         print(f'== {path}\n{new}' if new != old else f'{unit}: already on the installed version')
         if args.apply and new != old:
-            path.with_suffix(path.suffix + '.bak').write_text(old, encoding='utf-8')
-            path.write_text(new, encoding='utf-8')
+            _write_no_symlink(path.with_suffix(path.suffix + '.bak'), old)
+            _write_no_symlink(path, new)
     if args.apply:
         token = Path(args.home)/'.local/state/tare-qualified-models/api-token'
         print(f'API token for GPU reservations: {token} ' + ('created' if ensure_token(token) else 'kept'))
         bin_dir = Path(args.home)/'.local/bin'
+        _reject_symlink(bin_dir)
+        _reject_symlink(bin_dir.parent)
+        bin_dir.mkdir(parents=True, exist_ok=True)
         for command in ('gpu', 'gpu-run'):
             link = bin_dir/command
+            bak = link.with_suffix('.bak')
+            _reject_symlink(bak)
             if link.exists() and not link.is_symlink():
-                link.rename(link.with_suffix('.bak'))
+                link.rename(bak)
             elif link.is_symlink():
                 link.unlink()
             os.symlink(Path(args.home)/'.venvs/tare-node/bin'/command, link)

@@ -78,10 +78,12 @@ keep the installed service's state and GPU-lock paths when adapting an existing 
 
 ## Updates
 
-The node keeps itself on the latest tare.tools.os `main` (which takes only CI-green pull requests), as the installed
-tare keeps itself current: `tare-node-update.timer` (root, every 30 minutes) runs `tare-node-update`, which fetches
-`~/src/tare.tools.os`, and when `main` changed `node/tare_node/` or `node/pyproject.toml` and no text request or
-reservation is in flight builds the wheel, installs it in both venvs, restarts the gateway and checks it answers;
+The node keeps itself on the latest CI-verified tare.tools.os `main` (which takes only CI-green pull requests), as the
+installed tare keeps itself current: `tare-node-update.timer` runs `tare-node-update` every 30 minutes **as the
+unprivileged service user** (never as root). It fetches `~/src/tare.tools.os`, and when `main` changed `node/tare_node/`
+or `node/pyproject.toml`, the commit passed the GitHub `node (Linux flock)` check, and no text request or reservation is
+in flight, it builds the wheel in a clean directory, installs it in both venvs, restarts the gateway via a scoped
+`/etc/sudoers.d/tare-node-update` rule (`llm-inference.service` and `comfyui.service` only), and checks it answers;
 a gateway that does not come back gets the previous wheel again. ComfyUI restarts only when its hook changed and no
 image job runs. `journalctl -u tare-node-update` shows each run; state and wheels are in `~/.local/state/tare-node/`.
 Set up once with `sudo ~/.venvs/tare-node/bin/tare-node-update --install-units`.

@@ -2991,8 +2991,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator-facing entry points; Runtime retains session execution.",
-      "size_bytes": 28085,
-      "sha256": "e0f4a5a5b18e4aad9fdbecb67365a986e35bd0aeb916f23b17a667461dd8d4a5"
+      "size_bytes": 29350,
+      "sha256": "4d9e3f1da7a8aa583d6a1b58bf0da1824adf54a7f263c94a1e7e60cbfff50fe6"
     },
     {
       "name": "copilot_mode.py",
@@ -3551,8 +3551,8 @@
       "disposition": "RETAIN_CORE",
       "target_repository": "tare.tools.os",
       "rationale": "OS owns operator interaction, workflow composition and evidence inspection; execution ports remain in Kernel and Runtime.",
-      "size_bytes": 69361,
-      "sha256": "016ca8f6930341db496dc87f7237802a6d6cc332cdec0dd20f04de69e194f5a8"
+      "size_bytes": 70945,
+      "sha256": "1ef6e5278f90ca734664de26d3be31a191ee81090fa5ab82879ade1f09ddc0eb"
     },
     {
       "name": "provider_prices.py",

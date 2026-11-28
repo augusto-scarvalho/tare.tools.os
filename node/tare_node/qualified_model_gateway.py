@@ -413,6 +413,9 @@ RESERVATION_HEADER = "X-Tare-GPU-Reservation"
 MAX_RESERVATION, TTL_RANGE, MAX_RESERVE_WAIT = 4 * 3600, (15, 600), 120
 RESERVATION_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 GPU_API_TOKEN: str | None = None
+REQUIRE_TOKEN_ALL: bool = False
+ALLOWED_NETWORKS: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] | None = None
+MAX_CONTROL_BODY = 1024 * 1024
 RESERVATION: dict[str, Any] | None = None
 POWER = PowerLog()  # the board's power, sampled while the gateway runs (GET /v1/gpu/power)
 RESERVATION_LOCK = threading.Lock()
@@ -699,8 +702,39 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: Any) -> None:
         LOG.info("%s - %s", self.address_string(), fmt % args)
 
+    def _has_valid_api_token(self) -> bool:
+        if not GPU_API_TOKEN:
+            return False
+        given = (self.headers.get("Authorization") or "").encode()
+        return hmac.compare_digest(given, ("Bearer " + GPU_API_TOKEN).encode())
+
+    def _check_perimeter(self, path: str) -> bool:
+        if path == "/internal/gpu/yield":
+            return True
+        if ALLOWED_NETWORKS is not None:
+            client_ip = self.client_address[0]
+            allowed = False
+            try:
+                addr = ipaddress.ip_address(client_ip)
+                allowed = any(addr in net for net in ALLOWED_NETWORKS)
+            except ValueError:
+                allowed = False
+            if not allowed and not self._has_valid_api_token():
+                send_json(self, 403, {"error": {"type": "forbidden", "message": "client address not in allowed CIDRs"}})
+                return False
+        if REQUIRE_TOKEN_ALL:
+            if not GPU_API_TOKEN:
+                send_json(self, 404, {"error": {"type": "auth_disabled", "message": "this node has no API token"}})
+                return False
+            if not self._has_valid_api_token():
+                send_json(self, 401, {"error": {"type": "unauthorized", "message": "Authorization: Bearer <node token>"}})
+                return False
+        return True
+
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
+        if not self._check_perimeter(path):
+            return
         if path in {"/health", "/v1/health", "/fleet/status", "/v1/fleet/status"}:
             send_json(self, 200, with_reservation(RUNTIME.status()))
             return
@@ -812,12 +846,15 @@ class Handler(BaseHTTPRequestHandler):
         if not GPU_API_TOKEN:
             send_json(self, 404, {"error": {"type": disabled, "message": "this node has no API token"}})
             return None
-        given = (self.headers.get("Authorization") or "").encode()
-        if not hmac.compare_digest(given, ("Bearer " + GPU_API_TOKEN).encode()):
+        if not self._has_valid_api_token():
             send_json(self, 401, {"error": {"type": "unauthorized", "message": "Authorization: Bearer <node token>"}})
             return None
         try:
             length = int(self.headers.get("Content-Length") or 0)
+            if length < 0 or length > MAX_CONTROL_BODY:
+                send_json(self, 413 if length > MAX_CONTROL_BODY else 400,
+                          {"error": {"type": "invalid_request", "message": "invalid body length"}})
+                return None
             body = json.loads(self.rfile.read(length)) if length else {}
             if not isinstance(body, dict):
                 raise ValueError
@@ -844,6 +881,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
+        if not self._check_perimeter(path):
+            return
         if path != "/v1/fleet" or getattr(RUNTIME, "catalog", None) is None:
             send_json(self, 404, {"error": {"type": "not_found", "message": path}})
             return
@@ -853,6 +892,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
+        if not self._check_perimeter(path):
+            return
         if path.startswith("/v1/gpu/reservations/"):
             self.reservation_api(path, "DELETE")
             return
@@ -860,6 +901,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
+        if not self._check_perimeter(path):
+            return
         if path == "/v1/gpu/reservations" or path.startswith("/v1/gpu/reservations/"):
             self.reservation_api(path, "POST")
             return
@@ -1186,6 +1229,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--image-routes", default=None, help="path to image routes JSON configuration")
     parser.add_argument("--gpu-api-token-file", default=None,
                         help="the node's API token for GPU reservations (default <state-dir>/api-token); none: off")
+    parser.add_argument("--require-token-all", action="store_true",
+                        help="require the node API token on all gateway endpoints (including /v1/chat/completions and /v1/images/jobs)")
+    parser.add_argument("--allowed-cidrs", default=None,
+                        help="comma-separated client CIDRs allowed without API token (e.g. 127.0.0.0/8,::1/128,100.64.0.0/10)")
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args(argv)
 
@@ -1242,7 +1289,16 @@ def main(argv: list[str] | None = None) -> int:
 
     threading.Thread(target=power_watch, name="gpu-power", daemon=True).start()
 
-    global GPU_API_TOKEN
+    global GPU_API_TOKEN, REQUIRE_TOKEN_ALL, ALLOWED_NETWORKS
+    REQUIRE_TOKEN_ALL = bool(args.require_token_all)
+    if args.allowed_cidrs:
+        ALLOWED_NETWORKS = tuple(
+            ipaddress.ip_network(item.strip(), strict=False)
+            for item in args.allowed_cidrs.split(",")
+            if item.strip()
+        )
+    else:
+        ALLOWED_NETWORKS = None
     token_file = Path(args.gpu_api_token_file or Path(args.state_dir) / "api-token")
     with contextlib.suppress(OSError):
         GPU_API_TOKEN = token_file.read_text(encoding="utf-8").strip() or None
