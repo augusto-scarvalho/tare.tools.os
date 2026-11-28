@@ -76,7 +76,7 @@ def test_resume_refuses_revocation_and_unknown_effect_without_reexecution(host, 
     from compute_plane.native_journal import NativeJournal
     from relay import native_work_credentials
     from relay.runtime_authority import CoordinatorAuthorityGate
-    from relay.cluster_coordinator import CoordinatorDB
+    from relay.coordinator_db import CoordinatorDB
     from tare_tools_agent_runtime import BindingRef
     import tare_ops
     with monkeypatch.context() as cut:
@@ -113,7 +113,7 @@ def test_resume_refuses_revocation_and_unknown_effect_without_reexecution(host, 
 
 
 def test_rotated_token_stops_old_control_and_lost_ack_retry_is_idempotent(os_root, tmp_path):
-    from relay.cluster_coordinator import CoordinatorDB
+    from relay.coordinator_db import CoordinatorDB
     from relay.runtime_authority import CoordinatorAuthorityGate
     gate = CoordinatorAuthorityGate(CoordinatorDB(tmp_path/'db.sqlite'))
     old = gate.acquire('work', 'owner')
@@ -128,7 +128,7 @@ def test_rotated_token_stops_old_control_and_lost_ack_retry_is_idempotent(os_roo
 
 
 def test_recover_after_lease_expired_during_process_death(os_root, tmp_path):
-    from relay.cluster_coordinator import CoordinatorDB
+    from relay.coordinator_db import CoordinatorDB
     from relay.runtime_authority import CoordinatorAuthorityGate
     clock = [0]
     gate = CoordinatorAuthorityGate(CoordinatorDB(tmp_path/'db.sqlite', clock=lambda: clock[0]))
@@ -195,7 +195,7 @@ def test_plan_audit_resume_preserves_policy_and_original_deadline(tmp_path, monk
 
 def test_keyring_rotation_survives_database_commit_before_vault_finalization(os_root, tmp_path, monkeypatch):
     from relay import native_work_credentials as credentials
-    from relay.cluster_coordinator import CoordinatorDB
+    from relay.coordinator_db import CoordinatorDB
     from relay.runtime_authority import CoordinatorAuthorityGate
     from relay.native_attempt import binding_identity
     gate = CoordinatorAuthorityGate(CoordinatorDB(tmp_path/'db.sqlite'))

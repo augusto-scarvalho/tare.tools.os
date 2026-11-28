@@ -1,6 +1,6 @@
-"""Importing the coordinator or Work entrypoints must not open the coordinator DB.
+"""Importing the coordinator DB or Work entrypoints must not open the coordinator DB.
 
-The process-default ``cluster_coordinator.DB`` initializes lazily, exactly once
+The process-default ``coordinator_db.DB`` initializes lazily, exactly once
 under concurrency, and retries after a failed initialization. Explicit
 ``CoordinatorDB(path)`` construction is unchanged.
 """
@@ -16,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from relay import cluster_coordinator as cc  # noqa: E402
+from relay import coordinator_db as cc  # noqa: E402
 
 PROBE = textwrap.dedent('''
     import importlib, sqlite3, sys
@@ -34,8 +34,8 @@ PROBE = textwrap.dedent('''
 
 
 @pytest.mark.parametrize('modules', [
-    ['relay.cluster_coordinator'],
-    ['relay.work_run', 'relay.work_resume', 'relay.native_work_host', 'relay.cluster_coordinator'],
+    ['relay.coordinator_db'],
+    ['relay.work_run', 'relay.work_resume', 'relay.native_work_host', 'relay.coordinator_db'],
 ])
 def test_clean_process_import_opens_no_sqlite_connection(modules):
     proc = subprocess.run([sys.executable, '-c', PROBE, str(REPO_ROOT), *modules],

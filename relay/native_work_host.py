@@ -141,7 +141,7 @@ def create_runner(deployment, work_id, custody, *, budget=None, timeout=native_l
     from tare_tools_agent_runtime import CancellationToken, ContextPolicy, ExecutionControl, ModelFailure, NativeBudget
     from .native_generation import deployment_profile, model_context_policy, vault_secret, inference_client
     from .runtime_authority import CoordinatorAuthorityGate
-    from .cluster_coordinator import CoordinatorDB
+    from .coordinator_db import CoordinatorDB
     from .landing_policy import attest_identity
     from .native_settlement import NativeWorkRunner
     from . import relay_mesh
