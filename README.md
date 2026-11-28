@@ -90,11 +90,11 @@ tare.tools.os/
 ├── docs/                                     # Guides, decisions (ADRs) and specifications
 ├── node/                                     # GPU node service: model gateway, shared GPU lease (Linux)
 ├── satellites/
-│   ├── tare.tools.kernel/        (@ 662103d) # Execution boundaries, journals, terminal sessions
+│   ├── tare.tools.kernel/        (@ 5ff057d) # Execution boundaries, journals, terminal sessions
 │   ├── tare.tools.agent-runtime/ (@ f5e9b39) # Bounded agent loop
-│   ├── tare.tools.specgraph/     (@ cce9edd) # Project specification and code graph
-│   ├── tare.tools.backlog-graph/ (@ 086f02e) # Task graph with compare-and-swap updates
-│   └── tare.tools.library/       (@ 6e9639e) # Technical library and knowledge records
+│   ├── tare.tools.specgraph/     (@ 6202fc2) # Project specification and code graph
+│   ├── tare.tools.backlog-graph/ (@ 1488178) # Task graph with compare-and-swap updates
+│   └── tare.tools.library/       (@ 10baa05) # Technical library and knowledge records
 └── scripts/                                  # Release, CI and maintenance tools
 ```
 

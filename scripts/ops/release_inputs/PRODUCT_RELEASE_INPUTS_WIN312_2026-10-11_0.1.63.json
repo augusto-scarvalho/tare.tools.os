@@ -29,10 +29,7 @@
         "README.md",
         "LICENSE*",
         "assurance_plane/**",
-        "compute_plane/**",
-        "control_plane/**",
-        "data_plane/**",
-        "experience_plane/**"
+        "compute_plane/**"
       ],
       "package": "tare-kernel",
       "version": "0.9.21"

@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tare-tools-os"
-version = "0.1.134"
+version = "0.1.135"
 description = "tare.tools native execution and Work composition"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
-    "tare-kernel[attachments]>=0.9.103,<0.10",
+    "tare-kernel[attachments]>=0.9.104,<0.10",
     "tare-tools-agent-runtime>=0.14.12,<0.15",
     "tare-tools-specgraph>=0.7.9,<0.8",
     "tare-tools-backlog-graph>=1.3.1,<2",
