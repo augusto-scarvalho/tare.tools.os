@@ -187,3 +187,117 @@ def test_update_cli_uses_the_detected_service_user(monkeypatch, sudo_user, user,
     monkeypatch.setattr(updater, 'install_units', lambda home, owner: installed.append((home, owner)))
     assert updater.main(['--install-units', '--home', '/srv/service']) == 0
     assert installed == [('/srv/service', expected)]
+
+
+def test_install_units_rejects_root_user_and_invalid_home(tmp_path):
+    with pytest.raises(ValueError, match='root'):
+        updater.install_units(tmp_path, 'root', systemd=tmp_path/'s', sudoers=tmp_path/'d')
+    with pytest.raises(ValueError, match='invalid service home'):
+        updater.install_units('/home/operator\nUser=root', 'operator', systemd=tmp_path/'s', sudoers=tmp_path/'d')
+    with pytest.raises(ValueError, match='absolute'):
+        updater.install_units('relative/home', 'operator', systemd=tmp_path/'s', sudoers=tmp_path/'d')
+
+
+def test_default_service_home_resolves_sudo_user_home_from_passwd(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setenv('SUDO_USER', 'operator')
+    monkeypatch.setattr(updater, 'pwd', SimpleNamespace(getpwnam=lambda u: SimpleNamespace(pw_dir=f'/home/{u}', pw_uid=1000)))
+    assert updater._default_service_home('operator') == '/home/operator'
+
+
+def test_legacy_root_unit_self_migrates_once_under_systemd_without_running_update(tmp_path, monkeypatch):
+    import os
+    import stat
+
+    home = tmp_path/'operator'
+    home.mkdir()
+    systemd, sudoers = tmp_path/'systemd', tmp_path/'sudoers.d'
+    systemd.mkdir()
+    unit_path = systemd/'tare-node-update.service'
+    unit_path.write_text(
+        '[Unit]\nDescription=Legacy\n\n[Service]\nType=oneshot\n'
+        f'ExecStart={home}/.venvs/tare-node/bin/tare-node-update --home {home} --user operator\n',
+        encoding='utf-8',
+    )
+    ran = []
+    monkeypatch.setattr(updater.subprocess, 'run', lambda argv, check: ran.append(argv))
+    owner_uid = home.stat().st_uid if os.name == 'posix' else 1000
+    assert updater.migrate_legacy_root_unit(
+        home, 'operator', systemd=systemd, sudoers=sudoers,
+        invocation_id='abc123', lookup_uid=lambda u: owner_uid,
+    ) is True
+    migrated = unit_path.read_text(encoding='utf-8')
+    assert 'User=operator\n' in migrated
+    rule = sudoers/'tare-node-update'
+    assert rule.read_text(encoding='utf-8').startswith('operator ALL=(root) NOPASSWD: ')
+    if os.name == 'posix':
+        assert stat.S_IMODE(rule.stat().st_mode) == 0o440
+    assert ran[-1] == ['systemctl', 'enable', '--now', 'tare-node-update.timer']
+    # Once migrated (User= present), running again refuses to migrate a second time.
+    assert updater.migrate_legacy_root_unit(
+        home, 'operator', systemd=systemd, sudoers=sudoers,
+        invocation_id='abc123', lookup_uid=lambda u: owner_uid,
+    ) is False
+
+    # End-to-end main() path when invoked as root under systemd never calls update().
+    monkeypatch.setattr(updater.os, 'geteuid', lambda: 0, raising=False)
+    monkeypatch.setattr(updater, 'migrate_legacy_root_unit', lambda h, u: True)
+    monkeypatch.setattr(updater, 'update', lambda node: pytest.fail('update() must never run as root'))
+    assert updater.main(['--home', str(home), '--user', 'operator']) == 0
+
+
+def test_legacy_root_unit_migration_fails_closed_on_manual_or_tampered_inputs(tmp_path, monkeypatch):
+    import os
+
+    home = tmp_path/'operator'
+    home.mkdir()
+    systemd, sudoers = tmp_path/'systemd', tmp_path/'sudoers.d'
+    systemd.mkdir()
+    unit_path = systemd/'tare-node-update.service'
+    valid_unit = (
+        '[Service]\nType=oneshot\n'
+        f'ExecStart={home}/.venvs/tare-node/bin/tare-node-update --home {home} --user operator\n'
+    )
+    unit_path.write_text(valid_unit, encoding='utf-8')
+    monkeypatch.setattr(updater.subprocess, 'run', lambda argv, check: pytest.fail('must not run systemctl'))
+    owner_uid = home.stat().st_uid if os.name == 'posix' else 1000
+
+    # Manual CLI invocation without INVOCATION_ID
+    assert updater.migrate_legacy_root_unit(
+        home, 'operator', systemd=systemd, sudoers=sudoers,
+        invocation_id='', lookup_uid=lambda u: owner_uid,
+    ) is False
+    # Root / uid 0 / unknown user
+    assert updater.migrate_legacy_root_unit(
+        home, 'root', systemd=systemd, sudoers=sudoers,
+        invocation_id='id', lookup_uid=lambda u: 0,
+    ) is False
+    assert updater.migrate_legacy_root_unit(
+        home, 'operator', systemd=systemd, sudoers=sudoers,
+        invocation_id='id', lookup_uid=lambda u: 0,
+    ) is False
+    assert updater.migrate_legacy_root_unit(
+        home, 'operator', systemd=systemd, sudoers=sudoers,
+        invocation_id='id', lookup_uid=lambda u: None,
+    ) is False
+    # Wrong home owner on POSIX
+    if os.name == 'posix':
+        assert updater.migrate_legacy_root_unit(
+            home, 'operator', systemd=systemd, sudoers=sudoers,
+            invocation_id='id', lookup_uid=lambda u: owner_uid + 1,
+        ) is False
+    # Tampered ExecStart or extra ExecStart
+    unit_path.write_text(valid_unit + 'ExecStart=/bin/sh -c evil\n', encoding='utf-8')
+    assert updater.migrate_legacy_root_unit(
+        home, 'operator', systemd=systemd, sudoers=sudoers,
+        invocation_id='id', lookup_uid=lambda u: owner_uid,
+    ) is False
+    # Symlinked unit file
+    other = tmp_path/'other.service'
+    other.write_text(valid_unit, encoding='utf-8')
+    unit_path.unlink()
+    unit_path.symlink_to(other)
+    assert updater.migrate_legacy_root_unit(
+        home, 'operator', systemd=systemd, sudoers=sudoers,
+        invocation_id='id', lookup_uid=lambda u: owner_uid,
+    ) is False
